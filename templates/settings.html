@@ -1,0 +1,593 @@
+{% extends "base.html" %}
+
+{% block title %}Einstellungen - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>Einstellungen</h2>
+    
+    <div class="row mt-4 g-4">
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#0f172a,#1e1b4b);color:#f8fafc;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <div>
+                            <p class="text-uppercase small mb-1 opacity-75">KI-Konfiguration</p>
+                            <h4 class="mb-2">Provider & Modell wählen</h4>
+                            <p class="mb-0" style="max-width:520px;">
+                                Bestimme hier, ob lokal (Ollama) oder über OpenAI/Anthropic analysiert werden soll. Cloud-Modelle nutzen automatisch die
+                                stark pseudonymisierte Variante.
+                            </p>
+                        </div>
+                        <span class="badge bg-light text-dark px-3 py-2 align-self-start">Experimentell 🔧</span>
+                    </div>
+                    <form class="row gy-3 mt-3" method="POST" action="/settings/ai">
+                        <div class="col-12">
+                            <div class="alert alert-info small mb-3">
+                                <strong>Two-Pass System:</strong> Base-Pass (schnell) → Optimize-Pass (optional, bessere Kategorisierung)
+                            </div>
+                        </div>
+                        
+                        <div class="col-12">
+                            <h6 class="border-bottom pb-2">⚡ Base-Pass (Schnelle erste Analyse)</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiProviderSelectBase" class="form-label">Provider</label>
+                            <select class="form-select" id="aiProviderSelectBase" name="ai_provider_base" required onchange="updateModels('Base')">
+                                <option value="">-- Wird geladen --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiModelSelectBase" class="form-label">Modell</label>
+                            <select class="form-select" id="aiModelSelectBase" name="ai_model_base" required>
+                                <option value="">-- Bitte Provider wählen --</option>
+                            </select>
+                            <small class="text-muted d-block mt-1">Oder eintippen für custom Modell</small>
+                        </div>
+                        
+                        <div class="col-12">
+                            <h6 class="border-bottom pb-2 mt-3">🔧 Optimize-Pass (Optional, für Scores 8-9)</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiProviderSelectOptimize" class="form-label">Provider</label>
+                            <select class="form-select" id="aiProviderSelectOptimize" name="ai_provider_optimize" required onchange="updateModels('Optimize')">
+                                <option value="">-- Wird geladen --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiModelSelectOptimize" class="form-label">Modell</label>
+                            <select class="form-select" id="aiModelSelectOptimize" name="ai_model_optimize" required>
+                                <option value="">-- Bitte Provider wählen --</option>
+                            </select>
+                            <small class="text-muted d-block mt-1">Oder eintippen für custom Modell</small>
+                        </div>
+                        
+                        <div class="col-12">
+                            <div id="aiProviderWarning" class="alert alert-warning d-none mb-0"></div>
+                        </div>
+                        <div class="col-12 d-flex justify-content-end gap-2">
+                            <button type="submit" class="btn btn-light text-dark px-4">Speichern</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#0f172a,#1e1b4b);color:#f8fafc;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+                        <div>
+                            <p class="text-uppercase small mb-1 opacity-75">🧠 Machine Learning</p>
+                            <h4 class="mb-2">Training & Feedback-Loop</h4>
+                            <p class="mb-0" style="max-width:520px;">
+                                Deine Korrektionen verbessern das System kontinuierlich. Wenn du ≥5 Emails korrigiert hast, kannst du neue Modelle trainieren.
+                            </p>
+                        </div>
+                        <span class="badge bg-info px-3 py-2 align-self-start">Live 🚀</span>
+                    </div>
+
+                    <div class="row g-3" id="trainingStatsContainer">
+                        <div class="col-md-6">
+                            <div class="p-3 bg-dark rounded">
+                                <small class="text-uppercase opacity-75">Korrektionen gespeichert</small>
+                                <h5 id="correctionsCount" class="mb-0">-- <span class="text-muted">/ ~50</span></h5>
+                                <div class="progress mt-2" style="height:6px;">
+                                    <div id="correctionsBar" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                                </div>
+                                <small class="text-muted d-block mt-2">Zum Trainieren: mind. 5 Korrektionen</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="p-3 bg-dark rounded">
+                                <small class="text-uppercase opacity-75">Trainierte Modelle</small>
+                                <h5 id="trainedModelsCount" class="mb-2">-- / 3</h5>
+                                <div id="trainedModelsList" class="small">
+                                    <small class="text-muted">wird geladen...</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div id="lastCorrectionInfo" class="alert alert-secondary d-none">
+                                <small>Letzte Korrektur: <strong id="lastCorrectionDate">--</strong></small>
+                            </div>
+                        </div>
+                        <div class="col-12 d-flex justify-content-end gap-2">
+                            <button id="retrainBtn" class="btn btn-primary" onclick="triggerRetraining()">
+                                🚀 Neue Modelle trainieren
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h4>Mail-Accounts</h4>
+            
+            {% if mail_accounts %}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Server</th>
+                            <th>Port</th>
+                            <th>Benutzer</th>
+                            <th>Status</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account in mail_accounts %}
+                        <tr>
+                            <td><strong>{{ account.name }}</strong></td>
+                            <td>{{ account.imap_server }}</td>
+                            <td>{{ account.imap_port }}</td>
+                            <td>{{ account.imap_username }}</td>
+                            <td>
+                                {% if account.enabled %}
+                                <span class="badge bg-success">Aktiv</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Inaktiv</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Mail-Aktionen" style="gap:0.25rem;">
+                                    <a href="/settings/mail-account/{{ account.id }}/edit" class="btn btn-info">Bearbeiten</a>
+                                    <button type="button" class="btn btn-success" onclick='fetchMails(event, {{ account.id }}, {{ account.name|tojson }})'>Abrufen</button>
+                                    <button type="button" class="btn btn-outline-danger" onclick='purgeMails(event, {{ account.id }}, {{ account.name|tojson }})'>Daten löschen</button>
+                                    <form method="POST" action="/settings/mail-account/{{ account.id }}/delete" style="display: inline;">
+                                        <button type="submit" class="btn btn-danger" onclick="return confirm('Wirklich löschen?')">Löschen</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted">Noch keine Mail-Accounts konfiguriert</p>
+            {% endif %}
+            
+            <a href="/settings/mail-account/select-type" class="btn btn-primary mt-3">Neuen Account hinzufügen</a>
+            
+            <hr class="my-5">
+            
+            <h4>Zwei-Faktor-Authentifizierung (2FA)</h4>
+            {% if totp_enabled %}
+            <div class="alert alert-success">2FA ist aktiviert</div>
+            <p>Dein Account ist mit TOTP geschützt.</p>
+            {% else %}
+            <p>2FA ist nicht aktiviert. Für zusätzliche Sicherheit aktivieren:</p>
+            <a href="/settings/2fa/setup" class="btn btn-warning">2FA aktivieren</a>
+            {% endif %}
+            
+            <hr class="my-5">
+            
+            <div>
+                <a href="/dashboard" class="btn btn-secondary">Zurück zum Dashboard</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function formatTime(seconds) {
+    if (seconds < 60) return seconds + 's';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins < 60) return mins + 'm ' + secs + 's';
+    const hours = Math.floor(mins / 60);
+    return hours + 'h ' + (mins % 60) + 'm';
+}
+
+function fetchMails(evt, accountId, accountName) {
+    const btn = evt ? evt.target : null;
+    const originalLabel = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Job wird gestartet...';
+    }
+
+    fetch(`/mail-account/${accountId}/fetch`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'queued') {
+            alert(`🕒 ${accountName}: Analyse läuft im Hintergrund.`);
+            if (data.job_id) {
+                pollJobStatus(data.job_id, accountName, btn, originalLabel);
+            }
+            return;
+        }
+        if (data.status === 'ok') {
+            alert(`✅ ${accountName}: ${data.message || 'Fertig.'}`);
+        } else {
+            throw new Error(data.error || 'Unbekannter Fehler');
+        }
+    })
+    .catch(err => {
+        alert(`❌ Fehler: ${err}`);
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalLabel || 'Abrufen';
+        }
+    });
+}
+
+let analysisModal = null;
+
+function getAnalysisModal() {
+    if (!analysisModal) {
+        analysisModal = new bootstrap.Modal(document.getElementById('progressModal'), {backdrop: 'static', keyboard: false});
+    }
+    return analysisModal;
+}
+
+function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, startTime = Date.now(), emailStartTime = null, lastEmailIndex = null) {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const modal = getAnalysisModal();
+    if (attempt === 0) modal.show();
+    
+    const perEmailTimeout = 600;  // 10 Minuten pro E-Mail
+    
+    fetch(`/jobs/${jobId}`, {cache: 'no-store'})
+        .then(r => {
+            if (r.status === 404) {
+                throw new Error('Job nicht gefunden');
+            }
+            return r.json();
+        })
+        .then(status => {
+            const currentIdx = status.current_email_index || 0;
+            
+            // Wenn neue E-Mail begonnen wird, Timer zurücksetzen
+            if (lastEmailIndex !== null && currentIdx > lastEmailIndex) {
+                emailStartTime = Date.now();
+            }
+            if (emailStartTime === null) {
+                emailStartTime = Date.now();
+            }
+            
+            const emailElapsed = Math.floor((Date.now() - emailStartTime) / 1000);
+            const emailRemaining = perEmailTimeout - emailElapsed;
+            
+            document.getElementById('elapsedTime').textContent = formatTime(elapsed);
+            document.getElementById('remainingTime').textContent = emailRemaining > 0 ? '~' + formatTime(emailRemaining) : 'abgelaufen!';
+            
+            if (status.state === 'done') {
+                const saved = status.saved ?? 0;
+                const processed = status.processed ?? 0;
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressPercent').textContent = '100%';
+                document.getElementById('emailCount').textContent = `${status.current_email_index || status.total_emails || '?'}/${status.total_emails || '?'}`;
+                document.getElementById('progressText').textContent = `✅ ${accountName}: Fertig!`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusTitle').textContent = '✅ Analyse abgeschlossen';
+                document.getElementById('statusDetails').textContent = `${saved} neue / ${processed} verarbeitet.`;
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    const modal = getAnalysisModal();
+                    modal.hide();
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel || 'Abrufen';
+                    }
+                });
+                return;
+            }
+            if (status.state === 'error') {
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressBar').classList.add('bg-danger');
+                document.getElementById('emailCount').textContent = `${status.current_email_index || '?'}/${status.total_emails || '?'}`;
+                document.getElementById('progressText').textContent = `❌ ${accountName}: ${status.message || 'Job fehlgeschlagen.'}`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
+                document.getElementById('statusTitle').textContent = '❌ Fehler bei der Analyse';
+                document.getElementById('statusDetails').textContent = status.message || 'Job fehlgeschlagen.';
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    const modal = getAnalysisModal();
+                    modal.hide();
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel || 'Abrufen';
+                    }
+                });
+                return;
+            }
+            
+            const totalEmails = status.total_emails || 1;
+            const currentSubject = status.current_subject || '';
+            
+            document.getElementById('emailCount').textContent = `${currentIdx}/${totalEmails}`;
+            
+            if (emailRemaining <= 0) {
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressBar').classList.add('bg-danger');
+                document.getElementById('progressText').textContent = `❌ ${accountName}: Timeout überschritten.`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-warning mb-0';
+                document.getElementById('statusTitle').textContent = '⏱️ Timeout überschritten';
+                document.getElementById('statusDetails').textContent = `Die Analyse konnte nicht within ${Math.floor((Date.now() - startTime) / 1000)}s abgeschlossen werden.`;
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    const modal = getAnalysisModal();
+                    modal.hide();
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel || 'Abrufen';
+                    }
+                });
+                return;
+            }
+            
+            const progress = Math.min(95, (currentIdx / totalEmails) * 100);
+            document.getElementById('progressBar').style.width = progress + '%';
+            document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+            const subjectDisplay = currentSubject ? ` - ${currentSubject}` : '';
+            document.getElementById('progressText').textContent = `${accountName}: Mail ${currentIdx}/${totalEmails}${subjectDisplay}`;
+            
+            setTimeout(() => pollJobStatus(jobId, accountName, btn, originalLabel, attempt + 1, startTime, emailStartTime, currentIdx), 2000);
+        })
+        .catch(err => {
+            modal.hide();
+            alert(`❌ Status-Check fehlgeschlagen: ${err}`);
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalLabel || 'Abrufen';
+            }
+        });
+}
+
+function purgeMails(evt, accountId, accountName) {
+    if (!confirm(`Alle lokal gespeicherten Mails für ${accountName} löschen?`)) {
+        return;
+    }
+    const btn = evt ? evt.target : null;
+    const originalLabel = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Lösche...';
+    }
+
+    fetch(`/mail-account/${accountId}/purge`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            alert(`🧹 ${accountName}: ${data.raw_deleted} Raw / ${data.processed_deleted} Processed gelöscht.`);
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+        }
+    })
+    .catch(e => alert(`❌ Fehler: ${e}`))
+    .finally(() => {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalLabel || 'Daten löschen';
+        }
+    });
+}
+
+async function initializeProviders() {
+    try {
+        const response = await fetch('/api/available-providers');
+        const data = await response.json();
+        const providers = data.providers || [];
+        
+        const savedValues = window.savedAIValues || {
+            Base: { provider: 'ollama', model: 'all-minilm:22m' },
+            Optimize: { provider: 'ollama', model: 'llama3.2:1b' }
+        };
+        
+        ['Base', 'Optimize'].forEach(pass => {
+            const select = document.getElementById(`aiProviderSelect${pass}`);
+            if (select) {
+                select.innerHTML = '';
+                if (providers.length === 0) {
+                    select.innerHTML = '<option value="">Keine Provider verfügbar</option>';
+                } else {
+                    providers.forEach(p => {
+                        const option = document.createElement('option');
+                        option.value = p.id;
+                        option.textContent = `${p.name} - ${p.description}`;
+                        if (p.id === savedValues[pass].provider) {
+                            option.selected = true;
+                        }
+                        select.appendChild(option);
+                    });
+                }
+                
+                if (savedValues[pass].provider) {
+                    updateModels(pass);
+                }
+            }
+        });
+    } catch (err) {
+        console.error('Error loading providers:', err);
+    }
+}
+
+async function updateModels(pass) {
+    const providerSelect = document.getElementById(`aiProviderSelect${pass}`);
+    const modelSelect = document.getElementById(`aiModelSelect${pass}`);
+    
+    if (!providerSelect || !modelSelect) return;
+    
+    const provider = providerSelect.value;
+    if (!provider) {
+        modelSelect.innerHTML = '<option value="">-- Bitte Provider wählen --</option>';
+        return;
+    }
+    
+    try {
+        modelSelect.innerHTML = '<option value="">Modelle werden geladen...</option>';
+        const response = await fetch(`/api/available-models/${provider}?kind=${pass.toLowerCase()}`);
+        const data = await response.json();
+        let models = data.models || [];
+        
+        const savedModel = (window.savedAIValues && window.savedAIValues[pass]) ? window.savedAIValues[pass].model : null;
+        
+        modelSelect.innerHTML = '';
+        if (models.length === 0) {
+            modelSelect.innerHTML = '<option value="">Keine Modelle verfügbar</option>';
+        } else {
+            models.forEach(m => {
+                const option = document.createElement('option');
+                
+                if (typeof m === 'object' && m.name) {
+                    option.value = m.name;
+                    const icon = m.icon || '?';
+                    const type = m.type || 'unknown';
+                    const hint = pass === 'Base' && type === 'embedding' ? ' (Empfohlen)' : 
+                                 pass === 'Optimize' && type === 'chat' ? ' (Empfohlen)' : '';
+                    option.textContent = `${icon} ${m.name} (${type})${hint}`;
+                    if (m.type === 'embedding' && pass === 'Optimize') {
+                        option.disabled = true;
+                        option.textContent += ' ⚠️ Nur für Base geeignet';
+                    }
+                    if (m.type === 'chat' && pass === 'Base') {
+                        option.textContent += ' (aber Heuristiken effizienter)';
+                    }
+                } else {
+                    option.value = m;
+                    option.textContent = m;
+                }
+                
+                if (savedModel && (typeof m === 'object' ? m.name : m) === savedModel) {
+                    option.selected = true;
+                }
+                modelSelect.appendChild(option);
+            });
+        }
+    } catch (err) {
+        console.error('Error loading models:', err);
+        modelSelect.innerHTML = '<option value="">Fehler beim Laden von Modellen</option>';
+    }
+}
+
+async function loadTrainingStats() {
+    try {
+        const response = await fetch('/api/training-stats');
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        
+        const correctionsCount = data.corrections_count || 0;
+        const maxCorrections = 50;
+        const progressPercent = Math.min(100, (correctionsCount / maxCorrections) * 100);
+        
+        document.getElementById('correctionsCount').textContent = correctionsCount + ' ';
+        document.getElementById('correctionsBar').style.width = progressPercent + '%';
+        
+        const trainedCount = data.trained_models_count || 0;
+        document.getElementById('trainedModelsCount').textContent = trainedCount + ' / 3';
+        
+        if (data.trained_models && data.trained_models.length > 0) {
+            const modelsList = data.trained_models.map(m => {
+                const date = new Date(m.modified * 1000).toLocaleDateString('de-DE');
+                return `<div class="badge bg-success">${m.name} ✓ (${date})</div>`;
+            }).join('');
+            document.getElementById('trainedModelsList').innerHTML = modelsList;
+        } else {
+            document.getElementById('trainedModelsList').innerHTML = '<small class="text-muted">Noch keine trainierten Modelle</small>';
+        }
+        
+        if (data.last_correction_date) {
+            const corrDate = new Date(data.last_correction_date);
+            document.getElementById('lastCorrectionDate').textContent = corrDate.toLocaleDateString('de-DE', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            document.getElementById('lastCorrectionInfo').classList.remove('d-none');
+        }
+        
+        const retrainBtn = document.getElementById('retrainBtn');
+        if (data.ready_for_training) {
+            retrainBtn.disabled = false;
+            retrainBtn.textContent = `🚀 Neue Modelle trainieren (${correctionsCount} Korrektionen)`;
+        } else {
+            retrainBtn.disabled = true;
+            retrainBtn.textContent = `🚀 Noch ${5 - correctionsCount} Korrektionen nötig`;
+        }
+    } catch (err) {
+        console.error('Error loading training stats:', err);
+    }
+}
+
+async function triggerRetraining() {
+    const btn = document.getElementById('retrainBtn');
+    const originalText = btn.textContent;
+    
+    btn.disabled = true;
+    btn.textContent = '⏳ Training läuft...';
+    
+    try {
+        const response = await fetch('/retrain', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            alert(`✅ ${data.message}`);
+            await loadTrainingStats();
+        } else if (data.status === 'no_data') {
+            alert(`⚠️ ${data.message}`);
+            btn.disabled = false;
+            btn.textContent = originalText;
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    } catch (err) {
+        alert(`❌ Training fehlgeschlagen: ${err}`);
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    window.savedAIValues = {
+        Base: {
+            provider: {{ ai_selected_provider_base|tojson }},
+            model: {{ ai_selected_model_base|tojson }}
+        },
+        Optimize: {
+            provider: {{ ai_selected_provider_optimize|tojson }},
+            model: {{ ai_selected_model_optimize|tojson }}
+        }
+    };
+    initializeProviders();
+    loadTrainingStats();
+});
+</script>
+{% endblock %}

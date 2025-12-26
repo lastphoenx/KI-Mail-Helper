@@ -1,0 +1,60 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+
+# Flask Server-Side Sessions (Zero-Knowledge)
+.flask_sessions/
+
+# Datenbank
+*.db
+*.sqlite
+*.sqlite3
+emails.db
+*.db.backup
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporäre Dateien
+tmp/
+temp/
+*.tmp
+# Database backups and recovery logs
+# (covered by *.db.backup above)
+
+# Project-specific maintenance scripts (user-specific, veraltet)
+# scripts/fix_master_key.py  # ← Wenn noch gebraucht, auskommentieren

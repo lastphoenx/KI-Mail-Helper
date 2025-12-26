@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Registrieren - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+            <h2 class="text-center mb-4">Registrieren</h2>
+            
+            {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+            {% endif %}
+            
+            <form method="POST">
+                <div class="mb-3">
+                    <label for="username" class="form-label">Benutzername</label>
+                    <input type="text" class="form-control" id="username" name="username" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="email" class="form-label">E-Mail-Adresse</label>
+                    <input type="email" class="form-control" id="email" name="email" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="password" class="form-label">Passwort</label>
+                    <input type="password" class="form-control" id="password" name="password" required>
+                    <small class="text-muted">Mindestens 8 Zeichen</small>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="password_confirm" class="form-label">Passwort wiederholen</label>
+                    <input type="password" class="form-control" id="password_confirm" name="password_confirm" required>
+                </div>
+                
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary">Registrieren</button>
+                </div>
+            </form>
+            
+            <hr class="my-4">
+            
+            <p class="text-center">
+                Bereits registriert? <a href="/login">Jetzt anmelden</a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

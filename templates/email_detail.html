@@ -1,0 +1,634 @@
+﻿{% extends "base.html" %}
+
+{% block title %}E-Mail Details - Mail Helper{% endblock %}
+
+{% block content %}
+<style>
+    #rawHtmlCode {
+        background-color: #f8f8f8;
+        border-radius: 4px;
+        padding: 15px;
+        overflow-x: auto;
+        font-size: 13px;
+        line-height: 1.5;
+        max-height: 600px;
+        overflow-y: auto;
+    }
+    
+    .nav-tabs {
+        border-bottom: 2px solid #dee2e6;
+        margin-bottom: 0;
+    }
+    
+    .nav-tabs .nav-link {
+        border: none;
+        border-bottom: 3px solid transparent;
+        color: #666;
+        padding: 10px 15px;
+        transition: all 0.2s;
+    }
+    
+    .nav-tabs .nav-link:hover {
+        border-bottom-color: #0d6efd;
+        color: #0d6efd;
+    }
+    
+    .nav-tabs .nav-link.active {
+        background: none;
+        color: #0d6efd;
+        border-bottom-color: #0d6efd;
+    }
+</style>
+<div class="mb-3">
+    <a href="/list" class="btn btn-outline-secondary">← Zurück zur Liste</a>
+</div>
+
+<div class="card">
+    <div class="card-header bg-light">
+        <div class="row align-items-center">
+            <div class="col">
+                <h4 class="mb-0">{{ decrypted_subject|default('Kein Betreff') }}</h4>
+            </div>
+            <div class="col-auto">
+                <span class="badge priority-{{ email.farbe }} fs-5">
+                    Score: {{ email.score }}
+                </span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card-body">
+        <!-- Meta-Informationen -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <p><strong>Von:</strong> {{ decrypted_sender }}</p>
+                <p><strong>Datum:</strong> {{ raw.received_at }}</p>
+                <p><strong>Status:</strong> 
+                    {% if email.done %}
+                    <span class="badge bg-success">Erledigt</span>
+                    {% else %}
+                    <span class="badge bg-warning">Offen</span>
+                    {% endif %}
+                </p>
+            </div>
+            <div class="col-md-6">
+                <p id="wichtigkeitDisplay"><strong>Wichtigkeit:</strong> <span id="wichtigkeitValue">{{ email.wichtigkeit }}/3</span> <span id="wichtigkeitSource" class="badge bg-secondary">vom System</span></p>
+                <p id="dringlichkeitDisplay"><strong>Dringlichkeit:</strong> <span id="dringlichkeitValue">{{ email.dringlichkeit }}/3</span> <span id="dringlichkeitSource" class="badge bg-secondary">vom System</span></p>
+                <p><strong>Matrix-Position:</strong> ({{ email.matrix_x }}, {{ email.matrix_y }})</p>
+                <p id="kategorieDisplay"><strong>Kategorie:</strong> <span id="kategorieValue">{{ email.kategorie_aktion }}</span> <span id="kategorieSource" class="badge bg-secondary">vom System</span></p>
+            </div>
+        </div>
+        
+        <div class="alert alert-info mb-4">
+            <strong>ℹ️ Bewertung korrigieren</strong><br>
+            Hat das System die Email falsch eingestuft? Korrigiere die Werte – das hilft dem System, besser zu werden!
+            <button type="button" class="btn btn-sm btn-primary ms-3" id="correctScoreBtn" data-bs-toggle="modal" data-bs-target="#correctionModal">✏️ Bewertung korrigieren</button>
+        </div>
+        
+        <!-- Tags -->
+        {% if decrypted_tags %}
+        <div class="mb-4">
+            <strong>Tags:</strong>
+            {% if decrypted_tags %}
+                {% for tag in decrypted_tags.split(',') %}
+                    {% if tag.strip() %}
+                    <span class="badge bg-secondary">{{ tag.strip() }}</span>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        </div>
+        {% endif %}
+        
+        <!-- Zusammenfassung -->
+        <div class="alert alert-info">
+            <h5>📝 Zusammenfassung</h5>
+            <p>{{ decrypted_summary_de|default('Keine Zusammenfassung verfügbar') }}</p>
+        </div>
+        
+        <!-- Deutsche Übersetzung -->
+        <div class="mb-4">
+            <h5>📄 Übersetzter Text (DE)</h5>
+            <div class="border p-3 bg-light" style="white-space: pre-wrap;">{{ decrypted_text_de|default('Keine Übersetzung verfügbar') }}</div>
+        </div>
+        
+        <!-- Email-Inhalt Tabs -->
+        <div class="mb-4">
+            <h5>📧 E-Mail Inhalt</h5>
+            <ul class="nav nav-tabs" id="emailTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="renderedTab" data-bs-toggle="tab" data-bs-target="#renderedContent" type="button" role="tab" aria-controls="renderedContent" aria-selected="true">
+                        🔍 Gerendert
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="rawHtmlTab" data-bs-toggle="tab" data-bs-target="#rawHtmlContent" type="button" role="tab" aria-controls="rawHtmlContent" aria-selected="false">
+                        <> Raw HTML
+                    </button>
+                </li>
+            </ul>
+            
+            <div class="tab-content" id="emailTabContent">
+                <!-- Rendered Tab -->
+                <div class="tab-pane fade show active" id="renderedContent" role="tabpanel" aria-labelledby="renderedTab">
+                    <div class="border mt-3 bg-white">
+                        <iframe 
+                            id="emailFrame" 
+                            style="width: 100%; height: 600px; border: none;" 
+                            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                            title="E-Mail Vorschau">
+                        </iframe>
+                    </div>
+                </div>
+                
+                <!-- Raw HTML Tab -->
+                <div class="tab-pane fade" id="rawHtmlContent" role="tabpanel" aria-labelledby="rawHtmlTab">
+                    <div class="mt-3">
+                        <div class="d-flex justify-content-between mb-2">
+                            <small class="text-muted">HTML-Quelltext</small>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="copyRawHtml()" title="Kopieren">
+                                📋 Kopieren
+                            </button>
+                        </div>
+                        <pre><code id="rawHtmlCode" class="language-html">{{ decrypted_body|default('Kein Original verfügbar') }}</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- IMAP-Flags Status -->
+        <div class="mb-4">
+            <h5>🚩 IMAP-Flags</h5>
+            <div class="row">
+                <div class="col-md-6">
+                    <h6 class="text-muted">Beim Processing:</h6>
+                    <div id="flagsAtProcessing" class="mb-3">
+                        {% if email.was_seen_at_processing %}
+                        <span class="badge bg-info">👁️ Gelesen</span>
+                        {% else %}
+                        <span class="badge bg-secondary">🔘 Ungelesen</span>
+                        {% endif %}
+                        {% if email.was_answered_at_processing %}
+                        <span class="badge bg-success">✉️ Beantwortet</span>
+                        {% endif %}
+                        {% if email.imap_flags_at_processing %}
+                        <div class="small text-muted mt-2"><code>{{ email.imap_flags_at_processing }}</code></div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h6 class="text-muted">Aktuell vom Server:</h6>
+                    <div id="flagsCurrent" class="mb-3">
+                        <div id="currentFlagsLoading"><small class="text-muted">⏳ Wird abgerufen...</small></div>
+                    </div>
+                </div>
+            </div>
+            <div id="flagsChangedAlert" class="alert alert-warning mt-3" style="display: none;">
+                <strong>⚠️ Status hat sich geändert!</strong>
+                <div id="flagChangesDetail"></div>
+            </div>
+        </div>
+        
+        <!-- Technische Informationen -->
+        <div class="mb-4">
+            <h5>🔧 Technische Informationen</h5>
+            <table class="table table-sm table-borderless">
+                <tbody>
+                    <tr>
+                        <td><strong>IMAP UID:</strong></td>
+                        <td>
+                            {% if email.raw_email.imap_uid %}
+                            <code>{{ email.raw_email.imap_uid }}</code>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>IMAP Folder:</strong></td>
+                        <td>
+                            {% if email.raw_email.imap_folder %}
+                            <code>{{ email.raw_email.imap_folder }}</code>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>IMAP Flags:</strong></td>
+                        <td>
+                            {% if email.raw_email.imap_flags %}
+                            <code>{{ email.raw_email.imap_flags }}</code>
+                            {% else %}
+                            <span class="text-muted">Keine</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Base-Pass (Schnell):</strong></td>
+                        <td>
+                            {% if email.base_model and email.base_provider %}
+                            <code>{{ email.base_provider }}: {{ email.base_model }}</code>
+                            {% else %}
+                            <span class="text-muted">Noch nicht verarbeitet</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Optimize-Pass (LLM):</strong></td>
+                        <td>
+                            {% if email.optimize_model and email.optimize_provider %}
+                            <code>{{ email.optimize_provider }}: {{ email.optimize_model }}</code>
+                            {% else %}
+                            <span class="text-muted">Noch nicht optimiert</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Base-Pass durchgeführt:</strong></td>
+                        <td>{{ email.processed_at or 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Optimize durchgeführt:</strong></td>
+                        <td>{{ email.optimization_completed_at or 'N/A' }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Aktionen -->
+        <div class="card bg-light">
+            <div class="card-body">
+                <h5>⚡ Vorgeschlagene Aktionen</h5>
+                <div class="btn-group-vertical w-100" role="group">
+                    <button id="reprocessBtn" class="btn btn-warning w-100" onclick="reprocessEmail({{ email.id }})">
+                        🔄 Email neu verarbeiten (Base-Pass)
+                    </button>
+                    <button id="optimizeBtn" class="btn btn-info w-100" onclick="optimizeEmail({{ email.id }})">
+                        🔧 Optimize-Pass (bessere Kategorisierung)
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="alert('TODO: Antwort-Entwurf generieren')">
+                        ✍️ Antwort-Entwurf generieren
+                    </button>
+                    <button class="btn btn-outline-info" onclick="alert('TODO: Kalendereintrag anlegen')">
+                        📅 Kalendereintrag anlegen
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="alert('TODO: Auf ToDo-Liste setzen')">
+                        📋 Auf ToDo-Liste setzen
+                    </button>
+                    {% if not email.done %}
+                    <form method="post" action="/email/{{ email.id }}/done" id="markDoneForm">
+                        <button type="submit" id="markDoneBtn" class="btn btn-success w-100">
+                            ✓ Als erledigt markieren
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function getAnalysisModal() {
+    if (typeof analysisModal === 'undefined' || !analysisModal) {
+        analysisModal = new bootstrap.Modal(document.getElementById('progressModal'), {backdrop: 'static', keyboard: false});
+    }
+    return analysisModal;
+}
+
+function reprocessEmail(emailId) {
+    const btn = document.getElementById('reprocessBtn');
+    const markDoneBtn = document.getElementById('markDoneBtn');
+    const optimizeBtn = document.getElementById('optimizeBtn');
+    
+    btn.disabled = true;
+    if (markDoneBtn) markDoneBtn.disabled = true;
+    if (optimizeBtn) optimizeBtn.disabled = true;
+    
+    const modal = getAnalysisModal();
+    modal.show();
+    
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressBar').classList.remove('bg-danger');
+    document.getElementById('progressPercent').textContent = '0%';
+    document.getElementById('progressText').textContent = 'Reprocessing: Email wird neu verarbeitet...';
+    document.getElementById('statusMessage').style.display = 'none';
+    document.getElementById('closeAnalysisBtn').style.display = 'none';
+    
+    const startTime = Date.now();
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+        progress = Math.min(90, progress + Math.random() * 30);
+        document.getElementById('progressBar').style.width = progress + '%';
+        document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+    }, 200);
+    
+    fetch(`/email/${emailId}/reprocess`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        clearInterval(progressInterval);
+        document.getElementById('progressBar').style.width = '100%';
+        if (data.status === 'success') {
+            document.getElementById('progressPercent').textContent = '100%';
+            document.getElementById('progressText').textContent = '✅ Neuer Score: ' + data.score;
+            document.getElementById('statusMessage').style.display = 'block';
+            document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-success mb-0';
+            document.getElementById('statusTitle').textContent = '✅ Reprocessing erfolgreich';
+            document.getElementById('statusDetails').textContent = 'Die Email wurde neu analysiert.';
+            document.getElementById('closeAnalysisBtn').style.display = 'block';
+            document.getElementById('closeAnalysisBtn').onclick = function() {
+                modal.hide();
+                location.reload();
+            };
+        } else {
+            document.getElementById('progressBar').classList.add('bg-danger');
+            document.getElementById('progressText').textContent = '❌ Fehler beim Reprocessing';
+            document.getElementById('statusMessage').style.display = 'block';
+            document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
+            document.getElementById('statusTitle').textContent = '❌ Fehler';
+            document.getElementById('statusDetails').textContent = data.message || data.error || 'Unbekannter Fehler';
+            document.getElementById('closeAnalysisBtn').style.display = 'block';
+            document.getElementById('closeAnalysisBtn').onclick = function() {
+                modal.hide();
+                btn.disabled = false;
+                if (markDoneBtn) markDoneBtn.disabled = false;
+                if (optimizeBtn) optimizeBtn.disabled = false;
+            };
+        }
+    })
+    .catch(error => {
+        clearInterval(progressInterval);
+        document.getElementById('progressBar').style.width = '100%';
+        document.getElementById('progressBar').classList.add('bg-danger');
+        document.getElementById('progressText').textContent = '❌ Netzwerkfehler';
+        document.getElementById('statusMessage').style.display = 'block';
+        document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
+        document.getElementById('statusTitle').textContent = '❌ Netzwerkfehler';
+        document.getElementById('statusDetails').textContent = error.message || 'Verbindung fehlgeschlagen';
+        document.getElementById('closeAnalysisBtn').style.display = 'block';
+        document.getElementById('closeAnalysisBtn').onclick = function() {
+            modal.hide();
+            btn.disabled = false;
+            if (markDoneBtn) markDoneBtn.disabled = false;
+            if (optimizeBtn) optimizeBtn.disabled = false;
+        };
+    });
+}
+
+function optimizeEmail(emailId) {
+    const btn = document.getElementById('optimizeBtn');
+    const reprocessBtn = document.getElementById('reprocessBtn');
+    const markDoneBtn = document.getElementById('markDoneBtn');
+    
+    if (!btn) return;
+    
+    btn.disabled = true;
+    if (reprocessBtn) reprocessBtn.disabled = true;
+    if (markDoneBtn) markDoneBtn.disabled = true;
+    
+    const modal = getAnalysisModal();
+    modal.show();
+    
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressBar').classList.remove('bg-danger');
+    document.getElementById('progressPercent').textContent = '0%';
+    document.getElementById('progressText').textContent = 'Optimize: Email wird optimiert...';
+    document.getElementById('statusMessage').style.display = 'none';
+    document.getElementById('closeAnalysisBtn').style.display = 'none';
+    
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+        progress = Math.min(90, progress + Math.random() * 30);
+        document.getElementById('progressBar').style.width = progress + '%';
+        document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+    }, 200);
+    
+    fetch(`/email/${emailId}/optimize`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.message || data.error || 'Unbekannter Fehler');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        clearInterval(progressInterval);
+        document.getElementById('progressBar').style.width = '100%';
+        if (data.status === 'success') {
+            document.getElementById('progressPercent').textContent = '100%';
+            document.getElementById('progressText').textContent = '✅ Optimize erfolgreich';
+            document.getElementById('statusMessage').style.display = 'block';
+            document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-success mb-0';
+            document.getElementById('statusTitle').textContent = '✅ Optimize-Pass abgeschlossen';
+            document.getElementById('statusDetails').textContent = 'Die Email wurde mit erweiterten Modellen analysiert.';
+            document.getElementById('closeAnalysisBtn').style.display = 'block';
+            document.getElementById('closeAnalysisBtn').onclick = function() {
+                modal.hide();
+                location.reload();
+            };
+        } else {
+            throw new Error(data.message || 'Fehler bei Optimize');
+        }
+    })
+    .catch(error => {
+        clearInterval(progressInterval);
+        document.getElementById('progressBar').style.width = '100%';
+        document.getElementById('progressBar').classList.add('bg-danger');
+        document.getElementById('progressText').textContent = '❌ Optimize fehlgeschlagen';
+        document.getElementById('statusMessage').style.display = 'block';
+        document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
+        document.getElementById('statusTitle').textContent = '❌ Fehler';
+        document.getElementById('statusDetails').textContent = error.message || 'Unbekannter Fehler';
+        document.getElementById('closeAnalysisBtn').style.display = 'block';
+        document.getElementById('closeAnalysisBtn').onclick = function() {
+            modal.hide();
+            btn.disabled = false;
+            if (reprocessBtn) reprocessBtn.disabled = false;
+            if (markDoneBtn) markDoneBtn.disabled = false;
+        };
+    });
+}
+
+function initCorrectionModal(emailId) {
+    const saveCorrectionBtn = document.getElementById('saveCorrectionBtn');
+    if (!saveCorrectionBtn) return;
+    
+    saveCorrectionBtn.onclick = function() {
+        const dringlichkeit = document.querySelector('input[name="dringlichkeit"]:checked')?.value;
+        const wichtigkeit = document.querySelector('input[name="wichtigkeit"]:checked')?.value;
+        const kategorie = document.getElementById('kategorie').value;
+        const spamFlag = document.getElementById('spamFlag').checked;
+        const tagsInput = document.getElementById('tagsInput').value;
+        const note = document.getElementById('noteInput').value;
+        
+        const tags = tagsInput.split(',').map(t => t.trim()).filter(t => t);
+        
+        fetch(`/email/${emailId}/correct`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                dringlichkeit: dringlichkeit ? parseInt(dringlichkeit) : null,
+                wichtigkeit: wichtigkeit ? parseInt(wichtigkeit) : null,
+                kategorie: kategorie,
+                spam_flag: spamFlag,
+                tags: tags,
+                note: note || null
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success') {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('correctionModal'));
+                modal.hide();
+                
+                document.getElementById('wichtigkeitValue').textContent = wichtigkeit + '/3';
+                document.getElementById('wichtigkeitSource').textContent = 'vom User';
+                document.getElementById('wichtigkeitSource').className = 'badge bg-success';
+                
+                document.getElementById('dringlichkeitValue').textContent = dringlichkeit + '/3';
+                document.getElementById('dringlichkeitSource').textContent = 'vom User';
+                document.getElementById('dringlichkeitSource').className = 'badge bg-success';
+                
+                document.getElementById('kategorieValue').textContent = kategorie;
+                document.getElementById('kategorieSource').textContent = 'vom User';
+                document.getElementById('kategorieSource').className = 'badge bg-success';
+                
+                alert('✅ ' + data.message);
+            } else {
+                alert('❌ Fehler: ' + (data.message || 'Unbekannter Fehler'));
+            }
+        })
+        .catch(err => {
+            alert('❌ Fehler: ' + err.message);
+        });
+    };
+}
+
+function copyRawHtml() {
+    const codeElement = document.getElementById('rawHtmlCode');
+    const text = codeElement.textContent;
+    
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = event.target;
+        const oldText = btn.innerHTML;
+        btn.innerHTML = '✅ Kopiert!';
+        setTimeout(() => {
+            btn.innerHTML = oldText;
+        }, 2000);
+    }).catch(err => {
+        alert('Fehler beim Kopieren: ' + err);
+    });
+}
+
+function initializeEmailFrame() {
+    const rawHtmlCode = document.getElementById('rawHtmlCode');
+    const htmlContent = rawHtmlCode.textContent;
+    const emailFrame = document.getElementById('emailFrame');
+    
+    emailFrame.srcdoc = htmlContent;
+}
+
+function highlightRawHtml() {
+    const codeElement = document.getElementById('rawHtmlCode');
+    if (codeElement && window.hljs) {
+        hljs.highlightElement(codeElement);
+    }
+}
+
+function fetchCurrentFlags(emailId) {
+    fetch(`/api/email/${emailId}/flags`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+    })
+    .then(data => {
+        const container = document.getElementById('flagsCurrent');
+        
+        if (!data.imap_flags) {
+            container.innerHTML = '<small class="text-muted">Keine Flags verfügbar</small>';
+            return;
+        }
+        
+        const isSeen = data.is_seen;
+        const isAnswered = data.is_answered;
+        const flags = data.imap_flags;
+        
+        let html = '';
+        html += isSeen ? '<span class="badge bg-info">👁️ Gelesen</span>' : '<span class="badge bg-secondary">🔘 Ungelesen</span>';
+        if (isAnswered) html += ' <span class="badge bg-success">✉️ Beantwortet</span>';
+        html += `<div class="small text-muted mt-2"><code>${flags}</code></div>`;
+        
+        container.innerHTML = html;
+        
+        checkFlagChanges(data, emailId);
+    })
+    .catch(err => {
+        document.getElementById('flagsCurrent').innerHTML = `<small class="text-danger">❌ Fehler: ${err.message}</small>`;
+    });
+}
+
+function checkFlagChanges(currentData, emailId) {
+    const oldSeen = document.getElementById('flagsAtProcessing').innerHTML.includes('👁️');
+    const oldAnswered = document.getElementById('flagsAtProcessing').innerHTML.includes('✉️');
+    
+    const newSeen = currentData.is_seen;
+    const newAnswered = currentData.is_answered;
+    
+    if (oldSeen !== newSeen || oldAnswered !== newAnswered) {
+        const alertDiv = document.getElementById('flagsChangedAlert');
+        const detailDiv = document.getElementById('flagChangesDetail');
+        
+        let changes = [];
+        if (oldSeen !== newSeen) {
+            changes.push(newSeen ? '📖 Markiert als gelesen' : '📭 Markiert als ungelesen');
+        }
+        if (oldAnswered !== newAnswered) {
+            changes.push(newAnswered ? '✉️ Beantwortet' : 'Antwort entfernt');
+        }
+        
+        detailDiv.innerHTML = '<ul><li>' + changes.join('</li><li>') + '</li></ul>';
+        alertDiv.style.display = 'block';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const emailId = window.location.pathname.split('/').pop();
+    initCorrectionModal(emailId);
+    
+    initializeEmailFrame();
+    highlightRawHtml();
+    fetchCurrentFlags(emailId);
+    
+    const modal = document.getElementById('correctionModal');
+    if (modal) {
+        modal.addEventListener('show.bs.modal', function() {
+            document.querySelectorAll('input[name="dringlichkeit"], input[name="wichtigkeit"]').forEach(el => {
+                el.checked = false;
+            });
+            document.getElementById('kategorie').value = 'nur_information';
+            document.getElementById('spamFlag').checked = false;
+            document.getElementById('tagsInput').value = '';
+            document.getElementById('noteInput').value = '';
+        });
+    }
+});
+</script>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-light.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+
+{% endblock %}

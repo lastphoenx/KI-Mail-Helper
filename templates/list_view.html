@@ -1,0 +1,125 @@
+﻿{% extends "base.html" %}
+
+{% block title %}E-Mail Liste - Mail Helper{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">📝 E-Mail Liste</h1>
+
+<!-- Filter -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Priorität</label>
+                <select name="farbe" class="form-select">
+                    <option value="" {% if not filter_color %}selected{% endif %}>Alle</option>
+                    <option value="rot" {% if filter_color == 'rot' %}selected{% endif %}>🔴 Rot (Hoch)</option>
+                    <option value="gelb" {% if filter_color == 'gelb' %}selected{% endif %}>🟡 Gelb (Mittel)</option>
+                    <option value="grün" {% if filter_color == 'grün' %}selected{% endif %}>🟢 Grün (Niedrig)</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Status</label>
+                <select name="done" class="form-select">
+                    <option value="" {% if filter_done not in ['true','false'] %}selected{% endif %}>Alle</option>
+                    <option value="false" {% if filter_done == 'false' %}selected{% endif %}>Offen</option>
+                    <option value="true" {% if filter_done == 'true' %}selected{% endif %}>Erledigt</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Suche</label>
+                <input type="text" name="search" class="form-control" placeholder="Betreff, Absender..." value="{{ search_term }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">&nbsp;</label>
+                <button type="submit" class="btn btn-primary w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- E-Mail-Liste -->
+<div class="card">
+    <div class="card-header">
+        <strong>{{ mails|length }} Mails</strong> (sortiert nach Score)
+    </div>
+    <ul class="list-group list-group-flush">
+        {% for email in mails|default([]) %}
+        {% set raw = email.raw_email %}
+        {% set tag_list = email._decrypted_tags.split(',') if email._decrypted_tags else [] %}
+        <li class="list-group-item">
+            <div class="row align-items-center">
+                <div class="col-md-1 text-center">
+                    <span class="badge priority-{{ email.farbe }} fs-5">
+                        {{ email.score }}
+                    </span>
+                </div>
+                <div class="col-md-8">
+                    <h6 class="mb-1">
+                        <a href="/email/{{ email.id }}" class="text-decoration-none">
+                            {{ email._decrypted_subject|default("(ohne Betreff)") }}
+                        </a>
+                    </h6>
+                    <small class="text-muted">
+                        Von: {{ email._decrypted_sender|default("Unbekannt") }}
+                        {% if raw and raw.received_at %}| {{ raw.received_at }}{% endif %}
+                    </small>
+                    <p class="mb-2 mt-2">{{ email._decrypted_summary_de|default('Keine Zusammenfassung verfügbar')|truncate(200) }}</p>
+                    <div class="small text-muted mb-2">
+                        Dringlichkeit: {{ email.dringlichkeit }} | Wichtigkeit: {{ email.wichtigkeit }} |
+                        Aktion: {{ email.kategorie_aktion|replace('_',' ') }} | Spam: {{ 'Ja' if email.spam_flag else 'Nein' }}
+                    </div>
+                    {% if tag_list %}
+                    <div class="mt-2">
+                        {% for tag in tag_list if tag %}
+                        <span class="badge bg-secondary">{{ tag.strip() }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="col-md-3 text-end">
+                    {% if not email.done %}
+                    <form method="post" action="/email/{{ email.id }}/done" class="d-inline action-form">
+                        <button type="submit" class="btn btn-sm btn-success action-btn" data-action="done">✓ Erledigt</button>
+                    </form>
+                    {% else %}
+                    <span class="badge bg-success">✓ Erledigt</span>
+                    {% endif %}
+                    <a href="/email/{{ email.id }}" class="btn btn-sm btn-outline-primary action-btn" data-action="details">Details</a>
+                </div>
+            </div>
+        </li>
+        {% else %}
+        <li class="list-group-item text-center text-muted py-5">
+            Keine E-Mails gefunden
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+
+<script>
+let isProcessing = false;
+
+document.querySelectorAll('.action-form').forEach(form => {
+    form.addEventListener('submit', function(e) {
+        if (isProcessing) {
+            e.preventDefault();
+            return false;
+        }
+        const btn = this.querySelector('.action-btn');
+        btn.disabled = true;
+        btn.innerHTML = '⏳...';
+        isProcessing = true;
+    });
+});
+
+document.querySelectorAll('.action-btn[data-action="details"]').forEach(btn => {
+    btn.addEventListener('click', function(e) {
+        if (isProcessing) {
+            e.preventDefault();
+            return false;
+        }
+    });
+});
+</script>
+{% endblock %}

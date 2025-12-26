@@ -1,0 +1,455 @@
+"""
+Mail Helper - Datenbankmodelle (SQLAlchemy + SQLite)
+Phase 1: raw_emails, processed_emails
+Phase 2: User, MailAccount, ServiceToken, RecoveryCode
+"""
+
+from datetime import datetime, timedelta, UTC
+from enum import Enum
+from sqlalchemy import create_engine, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, UniqueConstraint, event
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy.pool import StaticPool
+from werkzeug.security import generate_password_hash, check_password_hash
+import secrets
+
+
+Base = declarative_base()
+
+
+class AIProvider(str, Enum):
+    """KI-Provider für Email-Analyse"""
+    OLLAMA = "ollama"
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    MISTRAL = "mistral"
+
+
+class EmailActionCategory(str, Enum):
+    """Kategorien für Email-Aktionen"""
+    ACTION_REQUIRED = "aktion_erforderlich"
+    URGENT = "dringend"
+    INFO_ONLY = "nur_information"
+
+
+class EmailColor(str, Enum):
+    """Farben für Email-Priorität/Scoring"""
+    RED = "red"
+    YELLOW = "yellow"
+    GREEN = "green"
+    BLUE = "blue"
+
+
+class IMAPEncryption(str, Enum):
+    """IMAP Verschlüsselungstypen"""
+    SSL = "SSL"
+    STARTTLS = "STARTTLS"
+    NONE = "NONE"
+
+
+class SMTPEncryption(str, Enum):
+    """SMTP Verschlüsselungstypen"""
+    STARTTLS = "STARTTLS"
+    SSL = "SSL"
+    NONE = "NONE"
+
+
+class AuthType(str, Enum):
+    """Authentifizierungs-Typen für Mail-Accounts"""
+    IMAP = "imap"
+    OAUTH = "oauth"
+    POP3 = "pop3"  # Future Support
+
+
+class OptimizationStatus(str, Enum):
+    """Status der Email-Optimierung (zweiter Pass)"""
+    PENDING = "pending"
+    DONE = "done"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+class User(Base):
+    """Benutzer des Systems (Phase 2)"""
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True)
+    username = Column(String(80), unique=True, nullable=False, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    
+    # Key-Management (Phase 3)
+    # Zero-Knowledge: Master-Key nur verschlüsselt mit User-Passwort
+    salt = Column(String(32))
+    encrypted_master_key = Column(Text)
+    
+    # 2FA (TOTP)
+    totp_secret = Column(String(32))
+    totp_enabled = Column(Boolean, default=False)
+
+    # KI-Präferenzen
+    preferred_ai_provider = Column(String(20), default=AIProvider.OLLAMA.value)
+    preferred_ai_model = Column(String(100), default="llama3.2")
+    preferred_ai_provider_optimize = Column(String(20), default=AIProvider.OLLAMA.value)
+    preferred_ai_model_optimize = Column(String(100), default="llama3.2:1b")
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    
+    # Relationships
+    mail_accounts = relationship("MailAccount", back_populates="user", cascade="all, delete-orphan")
+    raw_emails = relationship("RawEmail", back_populates="user", cascade="all, delete-orphan")
+    service_tokens = relationship("ServiceToken", back_populates="user", cascade="all, delete-orphan")
+    recovery_codes = relationship("RecoveryCode", back_populates="user", cascade="all, delete-orphan")
+    
+    def set_password(self, password: str):
+        """Hasht das Passwort"""
+        self.password_hash = generate_password_hash(password)
+    
+    def check_password(self, password: str) -> bool:
+        """Überprüft das Passwort"""
+        return check_password_hash(self.password_hash, password)
+    
+    def __repr__(self):
+        return f"<User(id={self.id}, username='{self.username}')>"
+
+
+class MailAccount(Base):
+    """Mail-Account eines Benutzers (Phase 2 + Zero-Knowledge Phase)
+    
+    Unterstützt Multi-Auth:
+    - auth_type="imap": Klassische IMAP/SMTP Authentifizierung
+    - auth_type="oauth": OAuth 2.0 (Gmail, Outlook)
+    - auth_type="pop3": POP3 (zukünftig)
+    
+    Zero-Knowledge:
+    - E-Mail-Adressen und Server werden verschlüsselt gespeichert
+    - Hash-Felder ermöglichen Suche ohne Klartext-Zugriff
+    
+    Felder-Mapping:
+    - IMAP: encrypted_imap_server, encrypted_imap_username, encrypted_imap_password
+    - OAuth: oauth_provider, encrypted_oauth_token, encrypted_oauth_refresh_token
+    - POP3: encrypted_pop3_server, encrypted_pop3_username, encrypted_pop3_password
+    """
+    __tablename__ = "mail_accounts"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Allgemeine Felder
+    name = Column(String(100), nullable=False)
+    auth_type = Column(String(20), default=AuthType.IMAP.value, nullable=False)
+    
+    # IMAP-spezifische Felder (verschlüsselt für Zero-Knowledge)
+    encrypted_imap_server = Column(Text, nullable=True)  # verschlüsselt
+    imap_server_hash = Column(String(64), nullable=True, index=True)  # für Suche
+    imap_port = Column(Integer, default=993)
+    encrypted_imap_username = Column(Text, nullable=True)  # verschlüsselt
+    imap_username_hash = Column(String(64), nullable=True, index=True)  # für Suche
+    encrypted_imap_password = Column(Text)
+    imap_encryption = Column(String(50), default=IMAPEncryption.SSL.value)
+    
+    # SMTP-spezifische Felder (optional für Versand, verschlüsselt)
+    encrypted_smtp_server = Column(Text)
+    smtp_port = Column(Integer, default=587)
+    encrypted_smtp_username = Column(Text)
+    encrypted_smtp_password = Column(Text)
+    smtp_encryption = Column(String(50), default=SMTPEncryption.STARTTLS.value)
+    
+    # OAuth-spezifische Felder (wenn auth_type="oauth")
+    oauth_provider = Column(String(20))  # "google", "microsoft"
+    encrypted_oauth_token = Column(Text)
+    encrypted_oauth_refresh_token = Column(Text)
+    oauth_expires_at = Column(DateTime)
+    
+    # POP3-spezifische Felder (zukünftig, wenn auth_type="pop3", verschlüsselt)
+    encrypted_pop3_server = Column(Text, nullable=True)
+    pop3_port = Column(Integer, default=995)
+    encrypted_pop3_username = Column(Text, nullable=True)
+    encrypted_pop3_password = Column(Text)
+    
+    enabled = Column(Boolean, default=True)
+    last_fetch_at = Column(DateTime)
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Relationship
+    user = relationship("User", back_populates="mail_accounts")
+    raw_emails = relationship("RawEmail", back_populates="mail_account", cascade="all, delete-orphan")
+    
+    def validate_auth_fields(self) -> tuple[bool, str]:
+        """Validiert ob die richtigen Felder für auth_type gesetzt sind
+        
+        Returns:
+            (valid: bool, error_message: str)
+        """
+        if self.auth_type == AuthType.IMAP.value:
+            if not all([self.encrypted_imap_server, self.encrypted_imap_username, self.encrypted_imap_password]):
+                return False, "IMAP requires: server, username, password"
+        
+        elif self.auth_type == AuthType.OAUTH.value:
+            if not all([self.oauth_provider, self.encrypted_oauth_token]):
+                return False, "OAuth requires: provider, token"
+        
+        elif self.auth_type == AuthType.POP3.value:
+            if not all([self.encrypted_pop3_server, self.encrypted_pop3_username, self.encrypted_pop3_password]):
+                return False, "POP3 requires: server, username, password"
+        
+        return True, ""
+    
+    def __repr__(self):
+        return f"<MailAccount(id={self.id}, user={self.user_id}, name='{self.name}', auth={self.auth_type})>"
+
+
+class ServiceToken(Base):
+    """Token für Background-Jobs (Phase 2)"""
+    __tablename__ = "service_tokens"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    token_hash = Column(String(255), unique=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Relationship
+    user = relationship("User", back_populates="service_tokens")
+    
+    @staticmethod
+    def generate_token() -> str:
+        """Generiert einen neuen Token"""
+        return secrets.token_urlsafe(32)
+    
+    @staticmethod
+    def hash_token(token: str) -> str:
+        """Hasht einen Token"""
+        return generate_password_hash(token)
+    
+    @staticmethod
+    def verify_token(token: str, token_hash: str) -> bool:
+        """Überprüft einen Token"""
+        return check_password_hash(token_hash, token)
+    
+    def is_valid(self) -> bool:
+        """Überprüft ob Token noch gültig ist"""
+        return datetime.now(UTC) < self.expires_at
+    
+    def __repr__(self):
+        return f"<ServiceToken(id={self.id}, user={self.user_id})>"
+
+
+class RecoveryCode(Base):
+    """Recovery-Codes für Passwort-Reset (Phase 3)"""
+    __tablename__ = "recovery_codes"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    code_hash = Column(String(255), unique=True, nullable=False)
+    used_at = Column(DateTime)
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Relationship
+    user = relationship("User", back_populates="recovery_codes")
+    
+    @staticmethod
+    def generate_code() -> str:
+        """Generiert einen Recovery-Code"""
+        return secrets.token_hex(4).upper()
+    
+    @staticmethod
+    def hash_code(code: str) -> str:
+        """Hasht einen Code"""
+        return generate_password_hash(code)
+    
+    @staticmethod
+    def verify_code(code: str, code_hash: str) -> bool:
+        """Überprüft einen Code"""
+        return check_password_hash(code_hash, code)
+    
+    def is_unused(self) -> bool:
+        """Überprüft ob Code noch nicht verwendet wurde"""
+        return self.used_at is None
+    
+    def mark_used(self):
+        """Markiert Code als verwendet"""
+        self.used_at = datetime.now(UTC)
+    
+    def __repr__(self):
+        return f"<RecoveryCode(id={self.id}, user={self.user_id}, used={'yes' if self.used_at else 'no'})>"
+
+
+class RawEmail(Base):
+    """Rohdaten der abgeholten E-Mails (Zero-Knowledge verschlüsselt)
+    
+    Alle persönlichen Daten (sender, subject, body) werden verschlüsselt gespeichert.
+    """
+    __tablename__ = "raw_emails"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    mail_account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False, index=True)
+    
+    uid = Column(String(255), nullable=False)
+    
+    # Zero-Knowledge: Verschlüsselte persönliche Daten
+    encrypted_sender = Column(Text, nullable=False)
+    encrypted_subject = Column(Text)
+    encrypted_body = Column(Text)
+    
+    received_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_verm = Column(Boolean, default=False)
+    
+    imap_uid = Column(String(100), nullable=True, index=True)
+    imap_folder = Column(String(200), nullable=True)
+    imap_flags = Column(String(500), nullable=True)
+    imap_last_seen_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    user = relationship("User", back_populates="raw_emails")
+    mail_account = relationship("MailAccount", back_populates="raw_emails")
+    processed = relationship("ProcessedEmail", back_populates="raw_email", uselist=False)
+    
+    __table_args__ = (
+        UniqueConstraint('user_id', 'mail_account_id', 'uid', name='uq_raw_emails_uid'),
+    )
+    
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+    
+    def __repr__(self):
+        return f"<RawEmail(id={self.id}, user={self.user_id}, uid='{self.uid}')>"
+
+
+class ProcessedEmail(Base):
+    """Von der KI verarbeitete E-Mails mit Scoring"""
+    __tablename__ = "processed_emails"
+    
+    id = Column(Integer, primary_key=True)
+    raw_email_id = Column(Integer, ForeignKey("raw_emails.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    
+    # KI-Ergebnisse
+    dringlichkeit = Column(Integer)
+    wichtigkeit = Column(Integer)
+    kategorie_aktion = Column(String(50), default=EmailActionCategory.ACTION_REQUIRED.value)
+    spam_flag = Column(Boolean, default=False)
+    
+    # Zero-Knowledge: Verschlüsselte KI-Texte
+    encrypted_summary_de = Column(Text)
+    encrypted_text_de = Column(Text)
+    encrypted_tags = Column(Text)
+    encrypted_correction_note = Column(Text, nullable=True)
+    
+    # Scoring
+    score = Column(Integer)
+    matrix_x = Column(Integer)
+    matrix_y = Column(Integer)
+    farbe = Column(String(10), default=EmailColor.BLUE.value)
+    
+    # Status und Audit
+    done = Column(Boolean, default=False)
+    done_at = Column(DateTime, nullable=True)
+    processed_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_verm = Column(Boolean, default=False)
+    
+    # Optimization (zweiter Pass für bessere Kategorisierung)
+    optimization_status = Column(String(20), default=OptimizationStatus.PENDING.value)
+    optimization_tried_at = Column(DateTime, nullable=True)
+    optimization_completed_at = Column(DateTime, nullable=True)
+    base_provider = Column(String(50), nullable=True)
+    base_model = Column(String(100), nullable=True)
+    optimize_provider = Column(String(50), nullable=True)
+    optimize_model = Column(String(100), nullable=True)
+    
+    # User-Korrektionen für ML-Training (Phase 8)
+    # Diese Spalten speichern Nutzer-Feedback zur manuellen Korrektur von AI-Ergebnissen
+    # Dienen als Trainingsdaten für die sklearn-Klassifikatoren (train_classifier.py)
+    user_override_dringlichkeit = Column(Integer, nullable=True)  # Korrigierte Dringlichkeit (1-3)
+    user_override_wichtigkeit = Column(Integer, nullable=True)  # Korrigierte Wichtigkeit (1-3)
+    user_override_kategorie = Column(String(50), nullable=True)  # Korrigierte Kategorie
+    user_override_spam_flag = Column(Boolean, nullable=True)  # Korrigiertes Spam-Flag
+    user_override_tags = Column(String(500), nullable=True)  # Korrigierte Tags (Klartext für Suche)
+    correction_timestamp = Column(DateTime, nullable=True)  # Zeitpunkt der Korrektur
+    
+    imap_flags_at_processing = Column(String(500), nullable=True)
+    was_seen_at_processing = Column(Boolean, nullable=True)
+    was_answered_at_processing = Column(Boolean, nullable=True)
+    
+    # Relationships
+    raw_email = relationship("RawEmail", back_populates="processed")
+    
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+    
+    def __repr__(self):
+        return f"<ProcessedEmail(id={self.id}, raw_email_id={self.raw_email_id}, score={self.score})>"
+
+
+class EmailFolder(Base):
+    """IMAP-Ordnerstruktur für einen Mail-Account"""
+    __tablename__ = "email_folders"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    mail_account_id = Column(Integer, ForeignKey("mail_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    name = Column(String(255), nullable=False)
+    imap_path = Column(String(500), nullable=False)
+    unread_count = Column(Integer, default=0)
+    total_count = Column(Integer, default=0)
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    
+    # Relationships
+    user = relationship("User")
+    mail_account = relationship("MailAccount")
+    
+    __table_args__ = (
+        UniqueConstraint('user_id', 'mail_account_id', 'imap_path', name='uq_email_folders_path'),
+    )
+    
+    def __repr__(self):
+        return f"<EmailFolder(id={self.id}, account={self.mail_account_id}, name='{self.name}')>"
+
+
+# DB-Setup
+def init_db(db_path="emails.db"):
+    """Initialisiert die Datenbank"""
+    if db_path == ":memory:":
+        engine = create_engine(
+            f"sqlite:///{db_path}",
+            echo=False,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool
+        )
+    else:
+        engine = create_engine(
+            f"sqlite:///{db_path}",
+            echo=False,
+            connect_args={"check_same_thread": False}
+        )
+    
+    if engine.url.drivername.startswith("sqlite"):
+        @event.listens_for(engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+    
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    return engine, Session
+
+
+if __name__ == "__main__":
+    print("📊 Initialisiere Datenbank...")
+    engine, Session = init_db()
+    print(f"✅ Datenbank erstellt: {engine.url}")
