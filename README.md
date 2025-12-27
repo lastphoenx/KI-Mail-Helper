@@ -19,11 +19,13 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
 ## ✨ Features
 
 ### Kernfunktionen
-- **🔐 Zero-Knowledge Encryption** – AES-256-GCM End-to-End Verschlüsselung (siehe [docs/ZERO_KNOWLEDGE_COMPLETE.md](docs/ZERO_KNOWLEDGE_COMPLETE.md))
+- **🔐 Zero-Knowledge Encryption (Phase 8a+8b)** – AES-256-GCM End-to-End Verschlüsselung (siehe [docs/ZERO_KNOWLEDGE_COMPLETE.md](docs/ZERO_KNOWLEDGE_COMPLETE.md))
+  - **DEK/KEK Pattern** – Passwort ändern ohne E-Mails neu zu verschlüsseln
   - Alle E-Mails verschlüsselt (Sender, Subject, Body, AI-Ergebnisse)
   - Alle Credentials verschlüsselt (IMAP/SMTP Server, Usernames, Passwords)
-  - Master-Key nur in Server-RAM (Flask Server-Side Sessions)
+  - DEK (Data Encryption Key) nur in Server-RAM (Flask Server-Side Sessions)
   - Server kann niemals auf Klartext-Daten zugreifen
+  - Session Security: Auto-Logout bei DEK-Loss, keine Passwörter in Session
 - **Dual Mail-Fetcher** – IMAP (GMX, Yahoo, Hotmail) + Gmail OAuth2 API
 - **IMAP-Metadaten** – Speichert UID, Folder, Flags für jede Email
 - **Two-Pass Optimization** – Base-Pass (schnell) + Optimize-Pass (optional, bessere Kategorisierung)

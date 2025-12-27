@@ -1,24 +1,79 @@
 # Testing Guide - Kompletter Workflow
 
-**Letzte Aktualisierung:** 26. Dezember 2025  
-**Status:** Zero-Knowledge Production Ready (Score: 100/100)
+**Letzte Aktualisierung:** 27. Dezember 2025  
+**Status:** DEK/KEK Pattern Complete (Phase 8b)
 
 ---
 
-## 🔐 Zero-Knowledge Testing
+## 🔐 Zero-Knowledge Testing (DEK/KEK Pattern)
 
-**Wichtig:** Das System verwendet Zero-Knowledge Encryption. Alle sensiblen Daten sind verschlüsselt, der Master-Key existiert nur im RAM.
+**Wichtig:** Das System verwendet Zero-Knowledge Encryption mit DEK/KEK Pattern. Alle sensiblen Daten sind verschlüsselt, der DEK existiert nur im RAM.
+
+### DEK/KEK Architektur:
+- **DEK (Data Encryption Key):** Zufällige 32 Bytes, verschlüsselt alle E-Mails
+- **KEK (Key Encryption Key):** Aus Passwort abgeleitet (PBKDF2-600k), verschlüsselt DEK
+- **Vorteil:** Passwort ändern = nur DEK re-encrypten (nicht alle E-Mails!)
 
 ### Was zu testen ist:
-- ✅ Master-Key wird bei Login erstellt (aus Passwort)
-- ✅ Master-Key wird bei Logout gelöscht
+- ✅ DEK wird bei Registrierung generiert (zufällig)
+- ✅ KEK wird bei Login abgeleitet (aus Passwort)
+- ✅ DEK wird in Session geladen (nur RAM, nicht DB)
+- ✅ DEK wird bei Logout gelöscht (session.clear())
+- ✅ Session-Expire Detection (@app.before_request)
 - ✅ Alle E-Mail-Inhalte verschlüsselt gespeichert
 - ✅ Alle Credentials verschlüsselt gespeichert
 - ✅ Server kann niemals auf Klartext zugreifen
 - ✅ IMAP-Metadaten (UID, Folder, Flags) gespeichert
 - ✅ Beide Mail-Fetcher (IMAP + Gmail OAuth)
+- ✅ 2FA ohne Passwort in Session (nur pending_dek)
 
 **📖 Details:** [docs/ZERO_KNOWLEDGE_COMPLETE.md](docs/ZERO_KNOWLEDGE_COMPLETE.md)
+
+---
+
+## 🧪 DEK/KEK Migration Testing (Phase 8b)
+
+### Test 1: Neuer User (Clean DEK/KEK)
+```bash
+# Neue DB anlegen
+mv emails.db emails.db.backup
+python src/00_main.py  # Init DB
+
+# Web-App starten
+python src/01_web_app.py
+
+# Registrieren → Mail-Account → Mails abrufen
+# Prüfe DB:
+sqlite3 emails.db "SELECT id, LENGTH(salt), LENGTH(encrypted_dek), encrypted_master_key FROM users;"
+# Output: 1|44|<number>|NULL  ✅ (kein encrypted_master_key!)
+```
+
+### Test 2: Alter User Migration (encrypted_master_key → encrypted_dek)
+```bash
+# Restore alte DB
+mv emails.db.backup emails.db
+
+# Migration ausführen
+python scripts/migrate_to_dek_kek.py
+# → Passwort eingeben
+
+# Prüfe DB:
+sqlite3 emails.db "SELECT id, LENGTH(encrypted_dek), LENGTH(encrypted_master_key) FROM users;"
+# Output: 1|<number>|<number>  ✅ (beide vorhanden)
+
+# Login testen → Mails sollten lesbar sein
+```
+
+### Test 3: Session Security
+```bash
+# Login → Dashboard
+# Session-File prüfen:
+ls -lah .flask_sessions/
+# DEK ist dort (verschlüsselt mit Flask SECRET_KEY)
+
+# Logout → Session sollte gelöscht sein
+# .flask_sessions/ File weg oder leer
+```
 
 ---
 
@@ -47,7 +102,7 @@ python3 -m src.00_main --serve
    - Email: `thomas@example.com`
    - Passwort: `TestPassword123!`
    
-   ✅ Master-Key wird automatisch erstellt!
+   ✅ DEK + KEK werden automatisch erstellt!
 
 ### Phase 3: Login
 - Benutzername: `thomas`

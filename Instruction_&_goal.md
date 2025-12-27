@@ -79,7 +79,7 @@
 - [x] **resolve_model() korrigiert** (Line 387-398) - Gibt nun angeforderte Modelle durch, kein Hardcoding
 - [x] **LocalOllamaClient.__init__()** - Akzeptiert jetzt Benutzer-Modelle, ignoriert nicht mehr
 
-### ✅ Phase 8: Zero-Knowledge Production Ready (Abgeschlossen - 26.12.2025)
+### ✅ Phase 8a: Zero-Knowledge Production Ready (Abgeschlossen - 26.12.2025)
 **Ziel:** 100% Zero-Knowledge Encryption - Server hat keinen Zugriff auf Klartext-Daten
 
 **Security Score: 100/100** ✅
@@ -102,7 +102,58 @@
   - Tests: test_mail_fetcher.py, fetch_endpoint.py nach `tests/`
   - .gitignore: emails.db.backup, RSYNC_RECOVERY_LOG.md hinzugefügt
 
-### ✅ Phase 8: Learning System & Newsletter-Detection (Abgeschlossen - 25.12.2025)
+### ✅ Phase 8b: DEK/KEK Pattern + Security Hardening (Abgeschlossen - 27.12.2025)
+**Ziel:** Passwort-Wechsel ohne E-Mail-Neu-Verschlüsselung + Session Security Fixes
+
+**Architecture:** DEK/KEK Pattern für effizientes Key-Management
+- **DEK (Data Encryption Key):** Zufälliger 32-Byte-Key, verschlüsselt alle E-Mails
+- **KEK (Key Encryption Key):** Aus Passwort abgeleitet (PBKDF2), verschlüsselt DEK
+- **Vorteil:** Passwort-Änderung = nur DEK re-encrypten (nicht alle E-Mails!)
+
+#### **Encryption Layer:**
+- [x] **DEK-Funktionen** (`08_encryption.py`)
+  - `generate_dek()` - Zufällige 32 Bytes
+  - `encrypt_dek(dek, kek)` - AES-256-GCM(DEK, KEK)
+  - `decrypt_dek(encrypted_dek, kek)` - Entschlüsselt DEK
+- [x] **Auth-Manager** (`07_auth.py`)
+  - `setup_dek_for_user()` - Erstellt DEK + verschlüsselt mit KEK
+  - `decrypt_dek_from_password()` - Entschlüsselt DEK beim Login
+  - Fallback für alte User mit `encrypted_master_key`
+- [x] **Models** (`02_models.py`)
+  - `User.encrypted_dek` (Text) - DEK verschlüsselt mit KEK
+  - `User.salt` (Text) - Base64(32 bytes) = 44 chars (TEXT für SQLite)
+  - `User.encrypted_master_key` (deprecated, für Migration)
+
+#### **Security Fixes (Code-Review):**
+- [x] **Salt Feldlänge-Bug** → `String(32)` war zu kurz für base64(32 bytes)=44 chars
+  - Fix: `salt = Column(Text)` - keine Längen-Probleme mehr
+  - Migration: `a8d9d8855a82_change_salt_to_text.py`
+- [x] **PBKDF2 Hardcoding** → `encrypt_master_key()` hatte hardcoded 100000 statt 600000
+  - Fix: `EncryptionManager.ITERATIONS` verwendet (600000)
+- [x] **2FA Passwort-Leak** → `pending_password` in Session gespeichert
+  - Fix: `pending_dek` statt Passwort + `pending_remember` Flag
+- [x] **Session Security** 
+  - `@app.before_request` aktiviert → DEK-Check bei jedem Request
+  - Auto-Logout + Flash-Message bei Session-Expire
+  - `session.clear()` in Logout (statt nur `pop('master_key')`)
+- [x] **Remember-me deaktiviert** → Zero-Knowledge ohne DEK unmöglich
+
+#### **Migrations:**
+- [x] **7ee0bae8b1c2** - `encrypted_dek` Column hinzugefügt
+- [x] **9347aa16b0a6** - `salt` String(32) → String(64)
+- [x] **a8d9d8855a82** - `salt` String(64) → Text (finale Lösung)
+- [x] **Migration-Script** (`scripts/migrate_to_dek_kek.py`)
+  - Konvertiert `encrypted_master_key` → `encrypted_dek`
+  - Verwendet alten Master-Key als DEK (Daten bleiben lesbar)
+  - Salt-Fallback für Legacy-User ohne salt
+
+#### **Testing:**
+- [x] **Neue User:** Registrierung mit `encrypted_dek` (kein `encrypted_master_key`)
+- [x] **Alte User:** Migration-Script ausführbar
+- [x] **Login-Flow:** DEK in Session nach Login/2FA
+- [x] **Backward-Kompatibilität:** `decrypt_dek_from_password()` hat Fallback
+
+### ✅ Phase 9: Learning System & Newsletter-Detection (Abgeschlossen - 25.12.2025)
 **Ziel:** Human-in-the-Loop ML: User-Korrektionen trainieren neue Modelle, bessere Newsletter-Erkennung
 
 #### **Phase A: Erweiterte Newsletter-Heuristik**

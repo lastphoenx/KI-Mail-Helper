@@ -81,7 +81,7 @@ class User(Base):
     # Zero-Knowledge: KEK (Key Encryption Key) aus Passwort abgeleitet (PBKDF2)
     #                 DEK (Data Encryption Key) zufällig generiert, verschlüsselt alle E-Mails
     #                 encrypted_dek = AES-GCM(DEK, KEK) - ermöglicht Passwort-Wechsel ohne Neu-Verschlüsselung
-    salt = Column(String(128))  # base64(32 bytes) = 44 chars, with buffer
+    salt = Column(Text)  # base64(32 bytes) = 44 chars (TEXT für SQLite: keine Längen-Sorgen)
     encrypted_dek = Column(Text)  # DEK verschlüsselt mit KEK (aus Passwort)
     encrypted_master_key = Column(Text)  # DEPRECATED: Wird durch encrypted_dek ersetzt (für Migration behalten)
     

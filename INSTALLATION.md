@@ -239,29 +239,44 @@ curl http://localhost:11434/api/tags
 
 ---
 
-## 🔐 Encryption Key Setup
+## 🔐 Encryption Key Setup (DEK/KEK Pattern - Phase 8b)
 
 ### Erste User-Registrierung
 
 Beim ersten User-Account wird automatisch:
 
-1. **User Salt** generiert (32 Bytes)
-2. **Master-Key** abgeleitet (PBKDF2 aus Passwort + Salt)
-3. **Encrypted Master-Key** (für Session-basierte Nutzung)
-4. **Encrypted Master-Key for Cron** (mit SERVER_MASTER_SECRET)
+1. **User Salt** generiert (32 Bytes, base64-encoded = 44 chars)
+2. **KEK (Key Encryption Key)** abgeleitet (PBKDF2-HMAC-SHA256, 600.000 Iterations)
+3. **DEK (Data Encryption Key)** generiert (zufällige 32 Bytes)
+4. **Encrypted DEK** (AES-256-GCM(DEK, KEK)) in DB gespeichert
+5. **DEK in Session** (Server-RAM, nicht in DB!) für aktuelle Session
+
+**DEK/KEK Architektur:**
+- **DEK** verschlüsselt alle E-Mails (einmal generiert, bleibt konstant)
+- **KEK** aus Passwort abgeleitet (ändert sich bei Passwort-Wechsel)
+- **Vorteil:** Passwort ändern = nur DEK re-encrypten (nicht alle E-Mails!)
 
 **Wichtig:** Das User-Passwort wird **NIEMALS** im Klartext gespeichert!
 
-### Master-Key Überprüfung
+### Encryption Key Überprüfung
 
 ```bash
-sqlite3 emails.db "SELECT id, username, LENGTH(salt), LENGTH(encrypted_master_key) FROM users;"
+sqlite3 emails.db "SELECT id, username, LENGTH(salt), LENGTH(encrypted_dek) FROM users;"
 ```
 
 **Output sollte sein:**
 
 ```
-1|thomas|32|<number>
+1|thomas|44|<number>
+```
+
+### Migration von alten Usern (encrypted_master_key → encrypted_dek)
+
+Falls du einen User aus Phase 8a hast:
+
+```bash
+python scripts/migrate_to_dek_kek.py
+# Gibt Passwort ein → encrypted_master_key wird als DEK verwendet
 ```
 
 ---
