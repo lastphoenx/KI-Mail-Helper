@@ -155,7 +155,38 @@ sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT
 sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
 ```
 
-### 8. Install Fail2Ban (Network-Level Protection)
+### 8. Log Rotation Setup
+
+```bash
+# Log Rotation Config kopieren
+sudo cp logrotate.conf /etc/logrotate.d/mail-helper
+
+# Config anpassen (User, Group, Pfade)
+sudo nano /etc/logrotate.d/mail-helper
+
+# WICHTIG: Folgende Werte anpassen:
+# - /opt/KI-Mail-Helper/logs/*.log  → Dein Installationspfad
+# - create 0640 thomas thomas        → Dein User/Group
+
+# Test (Dry-Run)
+sudo logrotate -d /etc/logrotate.d/mail-helper
+
+# Manuell ausführen (Force)
+sudo logrotate -f /etc/logrotate.d/mail-helper
+
+# Prüfen ob funktioniert (nach 1 Tag)
+ls -lh logs/
+# Sollte zeigen: gunicorn_access.log.1, gunicorn_error.log.1
+```
+
+**Log Rotation Features:**
+- ✅ Täglich rotieren (30 Tage Retention)
+- ✅ Error-Logs: 90 Tage Retention
+- ✅ Automatische Kompression (gzip)
+- ✅ Graceful Reload (keine Downtime)
+- ✅ Permissions beibehalten
+
+### 9. Install Fail2Ban (Network-Level Protection)
 
 Fail2Ban schützt auf Netzwerk-Ebene durch IP-Banning basierend auf Audit-Logs.
 
@@ -388,36 +419,234 @@ ss -tulpn | grep 5001
 
 ## Troubleshooting
 
-### Service won't start
+### ❌ Service won't start
+
+**Symptom:** `systemctl start mail-helper` schlägt fehl
+
+**Lösung:**
 ```bash
-# Check logs
-sudo journalctl -u mail-helper -n 50
+# 1. Logs prüfen
+sudo journalctl -u mail-helper -n 50 --no-pager
 tail -n 50 logs/gunicorn_error.log
 
-# Check config syntax
-/opt/KI-Mail-Helper/venv/bin/gunicorn \
-    --config gunicorn.conf.py \
-    --check-config \
-    src.01_web_app:app
+# 2. Gunicorn Config testen
+cd /opt/KI-Mail-Helper
+source venv/bin/activate
+gunicorn --config gunicorn.conf.py --check-config src.01_web_app:app
+
+# 3. Häufige Fehler:
+# - FLASK_SECRET_KEY nicht gesetzt → .env prüfen
+# - Pfade falsch in service file → WorkingDirectory anpassen
+# - Port 5001 belegt → sudo ss -tulpn | grep 5001
 ```
 
-### Database locked errors
+### ❌ Port 5001 already in use
+
+**Symptom:** `Address already in use`
+
+**Lösung:**
 ```bash
-# Check file permissions
+# Prozess finden und beenden
+sudo lsof -ti:5001 | xargs kill -9
+
+# Oder: Alten Service stoppen
+sudo systemctl stop mail-helper
+```
+
+### ❌ Database locked errors
+
+**Symptom:** `OperationalError: database is locked`
+
+**Lösung:**
+```bash
+# 1. File Permissions prüfen
 ls -la emails.db
-
-# Fix ownership
-chown thomas:thomas emails.db
+chown YOUR_USERNAME:YOUR_USERNAME emails.db
 chmod 644 emails.db
+
+# 2. SQLite Busy Timeout erhöhen (in models.py schon 10s)
+# Falls weiterhin Probleme: Backup + Vacuum
+sqlite3 emails.db "VACUUM;"
 ```
 
-### Workers dying frequently
-```bash
-# Increase worker timeout in gunicorn.conf.py
-timeout = 60  # Instead of 30
+### ❌ Workers dying frequently
 
-# Check memory usage
+**Symptom:** Gunicorn Workers crashen regelmäßig
+
+**Lösung:**
+```bash
+# 1. Memory Usage prüfen
 free -h
+ps aux | grep gunicorn
+
+# 2. Worker Timeout erhöhen (gunicorn.conf.py)
+timeout = 60  # Statt 30
+
+# 3. Worker Count reduzieren (bei wenig RAM)
+workers = 2  # Statt cpu_count * 2 + 1
+
+# 4. Logs prüfen auf Memory-Leaks
+tail -f logs/gunicorn_error.log
+```
+
+### ❌ Fail2Ban nicht aktiv
+
+**Symptom:** `fail2ban-client status` zeigt kein `mail-helper` Jail
+
+**Lösung:**
+```bash
+# 1. Config-Syntax testen
+sudo fail2ban-client -d
+
+# 2. Log-Pfade in jail.conf prüfen (müssen absolut sein!)
+sudo nano /etc/fail2ban/jail.d/mail-helper.conf
+# WICHTIG: /opt/KI-Mail-Helper/logs/... anpassen
+
+# 3. Filter testen
+fail2ban-regex logs/gunicorn_error.log /etc/fail2ban/filter.d/mail-helper.conf
+
+# 4. Fail2Ban neu starten
+sudo systemctl restart fail2ban
+sudo fail2ban-client status mail-helper
+```
+
+### ❌ Session Timeout zu kurz/lang
+
+**Symptom:** User werden zu schnell/langsam ausgeloggt
+
+**Lösung:**
+```bash
+# src/01_web_app.py Zeile 84 anpassen:
+# app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)  # Wert ändern
+
+# Gunicorn neu starten
+sudo systemctl restart mail-helper
+```
+
+### ❌ HTTPS Zertifikat-Warnung
+
+**Symptom:** Browser zeigt "Your connection is not private"
+
+**Lösung (Development):**
+```bash
+# Self-signed Cert ist OK für Development
+# Browser-Warnung einmal akzeptieren: "Advanced" → "Proceed"
+```
+
+**Lösung (Production):**
+```bash
+# Let's Encrypt via Nginx/Caddy verwenden
+sudo certbot --nginx -d your-domain.com
+
+# Oder Caddy (automatisch):
+# caddy reverse-proxy --from your-domain.com --to https://127.0.0.1:5001
+```
+
+### ❌ 2FA QR-Code nicht sichtbar
+
+**Symptom:** QR-Code lädt nicht in Settings
+
+**Lösung:**
+```bash
+# 1. CSP Nonce prüfen (sollte automatisch sein)
+# 2. Browser Console öffnen (F12) → Errors prüfen
+# 3. Häufig: qrcode.min.js nicht geladen
+#    → Netzwerk-Tab prüfen
+```
+
+### ❌ Logs werden zu groß
+
+**Symptom:** `logs/` Verzeichnis frisst Speicherplatz
+
+**Lösung:**
+```bash
+# Log Rotation Setup (einmalig):
+sudo cp logrotate.conf /etc/logrotate.d/mail-helper
+
+# Anpassen:
+sudo nano /etc/logrotate.d/mail-helper
+# Pfade + User/Group anpassen!
+
+# Manuell rotieren (Test):
+sudo logrotate -f /etc/logrotate.d/mail-helper
+
+# Alte Logs manuell löschen:
+find logs/ -name "*.log.*" -mtime +30 -delete
+```
+
+### ❌ Backup Script schlägt fehl
+
+**Symptom:** `scripts/backup_database.sh` gibt Fehler
+
+**Lösung:**
+```bash
+# 1. Script ausführbar?
+chmod +x scripts/backup_database.sh
+
+# 2. Manuelle Ausführung testen
+./scripts/backup_database.sh
+# Fehler lesen und fixen
+
+# 3. Häufig: sqlite3 nicht installiert
+sudo apt install sqlite3
+
+# 4. Backup-Verzeichnis erstellen
+mkdir -p backups/{daily,weekly}
+```
+
+### ❌ Rate Limiting greift nicht
+
+**Symptom:** Brute-Force-Angriffe kommen durch
+
+**Lösung:**
+```bash
+# 1. Flask-Limiter aktiv? (sollte sein)
+# src/01_web_app.py Zeile 114-119
+
+# 2. Fail2Ban Status prüfen
+sudo fail2ban-client status mail-helper
+
+# 3. Logs prüfen auf SECURITY[] Tags
+grep "SECURITY\[LOGIN_FAILED\]" logs/gunicorn_error.log
+
+# 4. Bei Multi-Worker: Redis-Backend empfohlen
+# (Für Heimnetz nicht kritisch)
+```
+
+### 🔍 Generelles Debugging
+
+**Verbose Logging aktivieren:**
+```bash
+# .env anpassen:
+FLASK_DEBUG=True
+LOG_LEVEL=DEBUG
+
+# Service neu starten
+sudo systemctl restart mail-helper
+
+# ACHTUNG: Debug-Mode nicht in Production lassen!
+```
+
+**Health Check:**
+```bash
+# Service Status
+sudo systemctl status mail-helper
+
+# Prozesse
+ps aux | grep gunicorn
+
+# Ports
+sudo ss -tulpn | grep 5001
+
+# Disk Space
+df -h
+
+# Memory
+free -h
+
+# Application Logs
+tail -f logs/gunicorn_access.log
+tail -f logs/gunicorn_error.log
 ```
 
 ## Updates

@@ -5,9 +5,11 @@ After=network.target
 
 [Service]
 Type=notify
-User=thomas
-Group=thomas
-WorkingDirectory=/home/thomas/projects/KI-Mail-Helper
+# WICHTIG: User/Group anpassen!
+User=YOUR_USERNAME
+Group=YOUR_USERNAME
+# WICHTIG: WorkingDirectory anpassen!
+WorkingDirectory=/opt/KI-Mail-Helper
 
 # Environment Variables
 Environment="FLASK_SECRET_KEY=CHANGE_ME_TO_RANDOM_64_CHAR_STRING"
@@ -18,16 +20,18 @@ Environment="BEHIND_REVERSE_PROXY=true"
 Environment="FORCE_HTTPS=true"
 
 # Gunicorn Command
-ExecStart=/home/thomas/projects/KI-Mail-Helper/venv/bin/gunicorn \
-    --config /home/thomas/projects/KI-Mail-Helper/gunicorn.conf.py \
+# WICHTIG: Pfade anpassen!
+ExecStart=/opt/KI-Mail-Helper/venv/bin/gunicorn \
+    --config /opt/KI-Mail-Helper/gunicorn.conf.py \
     --bind 0.0.0.0:5001 \
     src.01_web_app:app
 
 # Restart Policy
 Restart=always
 RestartSec=5
-StandardOutput=append:/home/thomas/projects/KI-Mail-Helper/logs/systemd_output.log
-StandardError=append:/home/thomas/projects/KI-Mail-Helper/logs/systemd_error.log
+# WICHTIG: Log-Pfade anpassen!
+StandardOutput=append:/opt/KI-Mail-Helper/logs/systemd_output.log
+StandardError=append:/opt/KI-Mail-Helper/logs/systemd_error.log
 
 # Security Hardening
 NoNewPrivileges=true
