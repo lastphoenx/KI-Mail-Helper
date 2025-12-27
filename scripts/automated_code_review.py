@@ -44,7 +44,7 @@ KNOWN_FALSE_POSITIVES = {
     "JSON Deserialization": [
         {
             "pattern": r"json\.loads",
-            "reason": "Python 3.9+ has built-in memory limits in json.loads()",
+            "reason": "Python 3.13+ has built-in memory limits in json.loads()",
             "applies_to": ["00_main.py", "10_google_oauth.py"]
         },
     ],
@@ -60,6 +60,27 @@ KNOWN_FALSE_POSITIVES = {
             "pattern": r"threading\.Thread.*ensure_worker",
             "reason": "Single worker thread per instance (controlled)",
             "applies_to": ["14_background_jobs.py"]
+        },
+    ],
+    "Rate Limiting Storage": [
+        {
+            "pattern": r"storage_uri.*memory://",
+            "reason": "In-memory OK für Heimnetz + Fail2Ban backup (Phase 9 Design-Decision)",
+            "applies_to": ["01_web_app.py"]
+        },
+    ],
+    "Hardcoded Secrets": [
+        {
+            "pattern": r"SECRET_KEY.*CHANGE_ME",
+            "reason": "Template-Wert in service file, wird durch Admin ersetzt (documented)",
+            "applies_to": ["mail-helper.service"]
+        },
+    ],
+    "Session Fixation": [
+        {
+            "pattern": r"session\.regenerate\(\)",
+            "reason": "Flask-Session 0.8.0 mit 256-bit random IDs + SameSite=Lax (Phase 9 Decision)",
+            "applies_to": ["01_web_app.py"]
         },
     ],
 }
@@ -211,44 +232,62 @@ def build_review_prompt(filepath, code_content, layer_name):
 ## 🎯 SECURITY CONTEXT (Critical - Read First!)
 
 **Application Profile:**
-- **Type:** Local email analysis tool (single-user desktop application)
-- **Database:** SQLite (single-threaded, local file - NOT exposed to network)
-- **Users:** Single user on local machine (NOT multi-tenant)
-- **Authentication:** Web dashboard with 2FA on localhost:5000
-- **Email Input:** From IMAP server (user controls which emails to fetch)
-- **AI Processing:** Optional cloud (user chooses Ollama local OR OpenAI/Anthropic)
-- **Logs:** Written to local disk files (NOT exposed in web interface)
-- **Deployment:** Desktop application (NOT cloud/SaaS)
+- **Type:** Multi-user home server (Familie im Heimnetz + VPN Remote-Access)
+- **Database:** SQLite (single-threaded, local file)
+- **Users:** Multi-user (Familie: ~2-5 User)
+- **Authentication:** Web dashboard mit 2FA + Recovery-Codes auf Port 5001 (HTTPS)
+- **Deployment:** Debian Home-Server (Heimnetz + VPN + Reverse Proxy)
+- **Email Input:** IMAP (GMX, Yahoo, Hotmail) + Gmail OAuth
+- **AI Processing:** Lokal (Ollama) ODER Cloud (OpenAI/Anthropic) mit Sanitization
+- **Logs:** Written to local disk files + Fail2Ban Integration
+- **Encryption:** Zero-Knowledge (DEK/KEK Pattern, AES-256-GCM)
 
-**Threat Model - What to Focus On:**
-1. ✅ **Real code vulnerabilities** (SQL injection, XSS, CSRF)
-2. ✅ **Credential exposure** (logs, error messages, process arguments)
-3. ✅ **Input validation** (user-provided data in web forms)
-4. ✅ **Zero-Knowledge encryption** (master key handling, DEK/KEK breaks)
-5. ✅ **Session security** (hijacking, fixation, CSRF)
+**Production Hardening (Phase 9):**
+- ✅ Flask-Limiter (5 requests/min Login/2FA)
+- ✅ Account Lockout (5 failed → 15min ban)
+- ✅ Session Timeout (30min Inaktivität)
+- ✅ Fail2Ban Integration (5 fails/10min → 1h IP-Ban)
+- ✅ Gunicorn Production Server (Multi-Worker)
+- ✅ Systemd Service (Auto-Start, Security Hardening)
+- ✅ Automated Backups (Daily + Weekly mit Rotation)
+- ✅ Audit Logging (Strukturierte SECURITY[] Tags)
+- ✅ HIBP Password Check (500M+ kompromittierte Passwörter)
+- ✅ CSRF Protection (Flask-WTF)
+- ✅ SECRET_KEY aus System Environment (nicht .env!)
 
-**Threat Model - What to IGNORE (False Alarms):**
-1. ❌ "Command Injection" when no shell execution exists (e.g., Flask app.run(host=...))
-2. ❌ "Connection Pool Exhaustion" for SQLite (single-threaded, doesn't apply)
-3. ❌ "Process memory inspection" attacks (requires local root = game over)
-4. ❌ Theoretical attacks requiring environment compromise (if attacker has ENV access, game over)
-5. ❌ Over-paranoid readings of Python stdlib (json.loads has memory limits, argparse validates)
-6. ❌ Multi-threading issues for single-threaded operations
+**Threat Model - Was ist KRITISCH:**
+1. ✅ **SQL Injection** (Multi-User → kritisch!)
+2. ✅ **XSS & CSRF** (Web-Dashboard für Familie)
+3. ✅ **Session Hijacking** (VPN Remote-Access)
+4. ✅ **Brute-Force** (Login über Internet erreichbar)
+5. ✅ **Zero-Knowledge Breaks** (DEK/KEK Pattern, Master-Key Leaks)
+6. ✅ **Credential Exposure** (Logs, Errors, Environment)
+7. ✅ **Rate Limiting Bypass** (Multi-Worker Gunicorn Setup)
+8. ✅ **IMAP/OAuth Token Leaks** (verschlüsselt, aber Decrypt-Bugs?)
+
+**Threat Model - Was IGNORIEREN (False Alarms):**
+1. ❌ "Command Injection" ohne Shell-Execution (Flask app.run(host=...))
+2. ❌ "Connection Pool Exhaustion" für SQLite (single-threaded)
+3. ❌ "Process memory inspection" (requires root = game over)
+4. ❌ Theoretische Angriffe auf Environment (ENV-Zugriff = game over)
+5. ❌ Paranoia über Python stdlib (json.loads, argparse sind safe)
+6. ❌ Threading-Probleme bei single-threaded Ops
 
 **Python Context:**
-- Python 3.9+ with standard library security features
-- json.loads() has built-in memory limits
-- argparse validates types automatically
+- Python 3.13 mit SQLAlchemy 2.0
+- json.loads() hat built-in memory limits
+- argparse validates types automatisch
 - Flask validates host/port in app.run()
 
-**Your Job:**
-- Find **actually exploitable** bugs in **this specific context**
-- Ignore theoretical attacks not relevant to a local desktop app
-- Consider Python 3.9+ standard library behaviors
-- **Be practical, not paranoid**
+**Deine Aufgabe:**
+- Finde **WIRKLICH exploitable** Bugs im **Production Home-Server Kontext**
+- Ignoriere theoretische Angriffe ohne Relevanz
+- Berücksichtige Python 3.13 stdlib behaviors
+- **Sei praktisch, nicht paranoid**
+- **ANTWORTE AUF DEUTSCH** für bessere Verständlichkeit
 """
     
-    prompt = f"""# Security Code Review
+    prompt = f"""# Security Code Review (Production Home-Server)
 
 **File:** {filepath}
 **Layer:** {layer_name}
@@ -256,29 +295,29 @@ def build_review_prompt(filepath, code_content, layer_name):
 {threat_model}
 
 ## Review Guidelines
-1. **Be Specific:** Reference exact line numbers from THIS file
-2. **Rate Severity:** CRITICAL/HIGH/MEDIUM/LOW (only for exploitable issues)
-3. **Only Report if Exploitable:** Don't report theoretical issues that can't be exploited
-4. **Provide Fixes:** Include concrete code examples
-5. **Explain Context:** Why is this dangerous in **this specific application**?
+1. **Sei Spezifisch:** Referenziere exakte Zeilennummern aus DIESER Datei
+2. **Severity bewerten:** KRITISCH/HOCH/MITTEL/NIEDRIG (nur für exploitable Issues)
+3. **Nur echte Probleme:** Keine theoretischen Issues ohne Exploit-Potential
+4. **Fixes bereitstellen:** Konkrete Code-Beispiele
+5. **Kontext erklären:** Warum ist das gefährlich im **Home-Server-Szenario**?
 
-## Output Format
-For each finding:
+## Output Format (DEUTSCH!)
+Für jedes Finding:
 
-**[SEVERITY] Issue Title**
+**[SEVERITY] Issue Titel**
 - **Location:** file.py:line_number
-- **Description:** What is the vulnerability?
-- **Exploitability:** How can this actually be exploited? (be specific)
-- **Impact:** What happens if exploited?
-- **Recommendation:** Concrete fix with code
+- **Beschreibung:** Was ist die Schwachstelle?
+- **Exploitability:** Wie kann das konkret ausgenutzt werden?
+- **Impact:** Was passiert bei Exploitation?
+- **Empfehlung:** Konkreter Fix mit Code-Beispiel
 
-## Code to Review
+## Code zu reviewen
 
 {code_content}
 
 ---
 
-Begin analysis. Focus on real, exploitable issues. Ignore false alarms."""
+**WICHTIG: Antworte auf DEUTSCH!** Beginne Analyse. Fokus auf echte, exploitable Issues. Ignoriere False Alarms."""
 
     return prompt
 
