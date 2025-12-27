@@ -1,11 +1,13 @@
 ﻿#!/usr/bin/env python3
 """
-Automated Code Review mit Claude API (v2.0)
+Automated Code Review mit Claude API (v2.1)
 ============================================
 Improved with:
 - Context-aware prompts with Threat Model
+- Project documentation as context (README, DEPLOYMENT, Instruction_&_goal)
 - File-by-file reviews (50-200 lines each)
 - Known False Positives calibration layer
+- Kontext-basierte Bewertung (nicht komplett ignorieren!)
 """
 
 import os
@@ -224,8 +226,40 @@ def _write_file_content(outf, filepath, rel_path):
     outf.write("#" * 100 + "\n\n\n")
 
 
+def load_project_context():
+    """Lädt relevante Projekt-Dokumentation als Context"""
+    context_files = {
+        'README.md': 'Projekt-Übersicht, Features, Tech Stack',
+        'DEPLOYMENT.md': 'Production Setup, Security Architecture',
+        'Instruction_&_goal.md': 'Detaillierte Architektur, Phase 0-9'
+    }
+    
+    context = "## 📚 PROJEKT-KONTEXT\n\n"
+    
+    for filename, description in context_files.items():
+        filepath = project_root / filename
+        if filepath.exists():
+            context += f"### {filename} ({description})\n\n"
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    # Nur erste 3000 Zeichen (ca. 500 Zeilen) für Token-Limit
+                    if len(content) > 3000:
+                        content = content[:3000] + "\n\n[... gekürzt für Token-Limit ...]"
+                    context += f"```\n{content}\n```\n\n"
+            except Exception as e:
+                context += f"⚠️ Fehler beim Laden: {e}\n\n"
+        else:
+            context += f"### {filename} (nicht gefunden)\n\n"
+    
+    return context
+
+
 def build_review_prompt(filepath, code_content, layer_name):
     """Erstellt Context-aware Review-Prompt mit Threat Model"""
+    
+    # Load project context
+    project_context = load_project_context()
     
     # Threat Model Context
     threat_model = """
@@ -255,7 +289,7 @@ def build_review_prompt(filepath, code_content, layer_name):
 - ✅ CSRF Protection (Flask-WTF)
 - ✅ SECRET_KEY aus System Environment (nicht .env!)
 
-**Threat Model - Was ist KRITISCH:**
+**Threat Model - Kritische Risiken:**
 1. ✅ **SQL Injection** (Multi-User → kritisch!)
 2. ✅ **XSS & CSRF** (Web-Dashboard für Familie)
 3. ✅ **Session Hijacking** (VPN Remote-Access)
@@ -265,13 +299,34 @@ def build_review_prompt(filepath, code_content, layer_name):
 7. ✅ **Rate Limiting Bypass** (Multi-Worker Gunicorn Setup)
 8. ✅ **IMAP/OAuth Token Leaks** (verschlüsselt, aber Decrypt-Bugs?)
 
-**Threat Model - Was IGNORIEREN (False Alarms):**
-1. ❌ "Command Injection" ohne Shell-Execution (Flask app.run(host=...))
-2. ❌ "Connection Pool Exhaustion" für SQLite (single-threaded)
-3. ❌ "Process memory inspection" (requires root = game over)
-4. ❌ Theoretische Angriffe auf Environment (ENV-Zugriff = game over)
-5. ❌ Paranoia über Python stdlib (json.loads, argparse sind safe)
-6. ❌ Threading-Probleme bei single-threaded Ops
+**Threat Model - Kontext-basierte Bewertung (nicht komplett ignorieren!):**
+
+Diese Themen im **Home-Server Kontext** richtig bewerten:
+
+1. 🟡 **"Command Injection"** - Nur relevant bei Shell-Execution (subprocess, os.system)
+   - Flask app.run(host=...) ist KEIN Command Injection (keine Shell)
+   - Aber: Wenn irgendwo subprocess.run(shell=True) mit User-Input → KRITISCH!
+
+2. 🟡 **"Connection Pool Exhaustion"** - SQLite ist single-threaded
+   - Connection Pool Attacks funktionieren nicht bei SQLite
+   - Aber: Race Conditions in Multi-Worker Setup trotzdem möglich!
+
+3. 🟡 **"Process Memory Inspection"** - Erfordert root/debugging
+   - Attacker mit root-Zugriff = game over
+   - Aber: Sensitive Data in Logs/Errors ist trotzdem ein Problem!
+
+4. 🟡 **"Environment Variable Angriffe"** - Erfordert ENV-Zugriff
+   - Attacker mit ENV-Zugriff = game over
+   - Aber: .env Files in Git-Repo oder World-Readable → KRITISCH!
+
+5. 🟡 **"Python stdlib Paranoia"** - Python 3.13 hat Sicherheitsfixes
+   - json.loads() hat built-in memory limits
+   - argparse validates types automatisch
+   - Aber: Unsafe deserialization (pickle) bleibt KRITISCH!
+
+6. 🟡 **"Threading-Probleme"** - Kontext wichtig
+   - Single-threaded Ops haben keine Race Conditions
+   - Aber: Gunicorn Multi-Worker + SQLite kann Deadlocks haben!
 
 **Python Context:**
 - Python 3.13 mit SQLAlchemy 2.0
@@ -280,10 +335,9 @@ def build_review_prompt(filepath, code_content, layer_name):
 - Flask validates host/port in app.run()
 
 **Deine Aufgabe:**
-- Finde **WIRKLICH exploitable** Bugs im **Production Home-Server Kontext**
-- Ignoriere theoretische Angriffe ohne Relevanz
-- Berücksichtige Python 3.13 stdlib behaviors
-- **Sei praktisch, nicht paranoid**
+- Bewerte Risiken **im Production Home-Server Kontext**
+- Erwähne auch niedrig-priorisierte Themen, wenn sie im Kontext relevant sein könnten
+- Sei praktisch, aber nicht paranoid
 - **ANTWORTE AUF DEUTSCH** für bessere Verständlichkeit
 """
     
@@ -292,14 +346,16 @@ def build_review_prompt(filepath, code_content, layer_name):
 **File:** {filepath}
 **Layer:** {layer_name}
 
+{project_context}
+
 {threat_model}
 
 ## Review Guidelines
 1. **Sei Spezifisch:** Referenziere exakte Zeilennummern aus DIESER Datei
-2. **Severity bewerten:** KRITISCH/HOCH/MITTEL/NIEDRIG (nur für exploitable Issues)
-3. **Nur echte Probleme:** Keine theoretischen Issues ohne Exploit-Potential
+2. **Severity bewerten:** KRITISCH/HOCH/MITTEL/NIEDRIG (im Home-Server Kontext!)
+3. **Kontext-basierte Bewertung:** Auch niedrige Risiken erwähnen, wenn relevant
 4. **Fixes bereitstellen:** Konkrete Code-Beispiele
-5. **Kontext erklären:** Warum ist das gefährlich im **Home-Server-Szenario**?
+5. **Kontext erklären:** Warum ist das gefährlich **in diesem Deployment**?
 
 ## Output Format (DEUTSCH!)
 Für jedes Finding:
@@ -307,8 +363,9 @@ Für jedes Finding:
 **[SEVERITY] Issue Titel**
 - **Location:** file.py:line_number
 - **Beschreibung:** Was ist die Schwachstelle?
-- **Exploitability:** Wie kann das konkret ausgenutzt werden?
+- **Exploitability:** Wie kann das konkret ausgenutzt werden? (im Home-Server Kontext!)
 - **Impact:** Was passiert bei Exploitation?
+- **Kontext-Bewertung:** Warum ist das in DIESEM Setup relevant/nicht relevant?
 - **Empfehlung:** Konkreter Fix mit Code-Beispiel
 
 ## Code zu reviewen
@@ -317,7 +374,7 @@ Für jedes Finding:
 
 ---
 
-**WICHTIG: Antworte auf DEUTSCH!** Beginne Analyse. Fokus auf echte, exploitable Issues. Ignoriere False Alarms."""
+**WICHTIG: Antworte auf DEUTSCH!** Beginne Analyse. Fokus auf exploitable Issues im Home-Server Kontext. Erwähne auch niedrig-priorisierte Themen wenn sie Kontext-relevant sind."""
 
     return prompt
 
