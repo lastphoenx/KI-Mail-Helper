@@ -309,12 +309,19 @@
   - X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host
   - Nginx/Caddy/Traefik kompatibel
   - Aktivierbar via `BEHIND_REVERSE_PROXY=true`
+- [x] **CSRF-Protection** (Flask-WTF - 27.12.2025)
+  - Flask-WTF==1.2.1 für CSRF-Tokens
+  - CSRFProtect mit context_processor
+  - 14 POST-Forms mit CSRF-Tokens ausgestattet
+  - AJAX-Requests (fetchMails, purgeMails) mit X-CSRFToken Header
+  - Meta-Tag `csrf-token` für JavaScript
 - [x] **CLI Flag** (`--https`)
   - Start mit: `python3 -m src.00_main --serve --https`
   - Dual-Port: 5000 (HTTP Redirector) + 5001 (HTTPS Server)
 - [x] **Dependencies hinzugefügt:**
   - pyOpenSSL==24.0.0 (Self-signed Certificates)
   - flask-talisman==1.1.0 (HTTPS-Enforcement)
+  - Flask-WTF==1.2.1 (CSRF-Protection)
 
 #### **.env Konfiguration:**
 ```bash
