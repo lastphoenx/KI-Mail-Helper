@@ -258,8 +258,22 @@ def login():
             
             user = db.query(models.User).filter_by(username=username).first()
             
+            # Account Lockout Check (Phase 9)
+            if user and user.is_locked():
+                remaining = (user.locked_until - datetime.now(UTC)).total_seconds() / 60
+                logger.warning(f"🔒 Login blocked for user {username} (locked for {remaining:.1f} more minutes)")
+                return render_template("login.html", error=f"Account gesperrt. Bitte versuche es in {int(remaining)} Minuten erneut."), 403
+            
             if not user or not user.check_password(password):
+                if user:
+                    user.record_failed_login()
+                    db.commit()
+                    logger.warning(f"❌ Failed login attempt {user.failed_login_attempts}/5 for user {username}")
                 return render_template("login.html", error="Ungültige Anmeldedaten"), 401
+            
+            # Erfolgreicher Login - Failed Counter zurücksetzen
+            user.reset_failed_logins()
+            db.commit()
             
             # Phase 8: DEK/KEK Pattern - DEK entschlüsseln
             dek = auth.MasterKeyManager.decrypt_dek_from_password(user, password)

@@ -77,6 +77,11 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     
+    # Account Security (Phase 9: Production Hardening)
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime, nullable=True)  # NULL = nicht gesperrt
+    last_failed_login = Column(DateTime, nullable=True)
+    
     # Key-Management (Phase 8: DEK/KEK Pattern)
     # Zero-Knowledge: KEK (Key Encryption Key) aus Passwort abgeleitet (PBKDF2)
     #                 DEK (Data Encryption Key) zufällig generiert, verschlüsselt alle E-Mails
@@ -111,6 +116,32 @@ class User(Base):
     def check_password(self, password: str) -> bool:
         """Überprüft das Passwort"""
         return check_password_hash(self.password_hash, password)
+    
+    def is_locked(self) -> bool:
+        """Prüft ob Account gesperrt ist"""
+        if not self.locked_until:
+            return False
+        if datetime.now(UTC) >= self.locked_until:
+            # Sperre abgelaufen - automatisch aufheben
+            self.locked_until = None
+            self.failed_login_attempts = 0
+            return False
+        return True
+    
+    def record_failed_login(self):
+        """Fehlgeschlagenen Login-Versuch registrieren"""
+        self.failed_login_attempts = (self.failed_login_attempts or 0) + 1
+        self.last_failed_login = datetime.now(UTC)
+        
+        # Nach 5 Fehlversuchen: 15 Minuten Sperre
+        if self.failed_login_attempts >= 5:
+            self.locked_until = datetime.now(UTC) + timedelta(minutes=15)
+    
+    def reset_failed_logins(self):
+        """Erfolgreicher Login - Counter zurücksetzen"""
+        self.failed_login_attempts = 0
+        self.last_failed_login = None
+        self.locked_until = None
     
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}')>"
