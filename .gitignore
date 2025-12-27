@@ -44,6 +44,9 @@ emails.db
 *.log
 logs/
 
+# Code Reviews (SENSIBEL - nicht auf GitHub!)
+review_output/
+
 # OS
 .DS_Store
 Thumbs.db
