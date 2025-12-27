@@ -9,6 +9,7 @@ import json
 import os
 import requests
 import logging
+import time
 from pathlib import Path
 
 try:
@@ -482,10 +483,16 @@ class LocalOllamaClient(AIClient):
                 timeout=self.timeout,
             )
         except requests.exceptions.Timeout:
-            logger.error("Ollama-Request timed out")
+            logger.error("Ollama-Request timed out (model=%s)", self.model)
+            return self._get_fallback_response()
+        except requests.exceptions.ConnectionError:
+            logger.error("Ollama Connection failed (model=%s, url=%s)", self.model, self.chat_url)
+            return self._get_fallback_response()
+        except requests.exceptions.RequestException as e:
+            logger.error("Ollama Request Error (model=%s): %s", self.model, type(e).__name__)
             return self._get_fallback_response()
         except Exception as e:
-            logger.error("Fehler bei Ollama-Aufruf (%s): %s", self.model, e)
+            logger.error("Unexpected Ollama Error (model=%s): %s", self.model, type(e).__name__)
             return self._get_fallback_response()
 
         if response.status_code == 404:
@@ -508,12 +515,14 @@ class LocalOllamaClient(AIClient):
         try:
             data = response.json()
         except json.JSONDecodeError as e:
-            logger.error("Antwort von Ollama ist kein JSON (subject=%r, model=%s): %s", subject, self.model, e)
+            safe_subject = subject[:30] + '...' if len(subject) > 30 else subject
+            logger.error("Antwort von Ollama ist kein JSON (subject=%r, model=%s): %s", safe_subject, self.model, type(e).__name__)
             return self._get_fallback_response()
 
         content = (data.get("message") or {}).get("content", "").strip()
         if not content:
-            logger.error("Ollama-Antwort enthält keinen Content (subject=%r, model=%s)", subject, self.model)
+            safe_subject = subject[:30] + '...' if len(subject) > 30 else subject
+            logger.error("Ollama-Antwort enthält keinen Content (subject=%r, model=%s)", safe_subject, self.model)
             return self._get_fallback_response()
 
         parsed = _parse_model_json(content)
@@ -550,30 +559,74 @@ class OpenAIClient(AIClient):
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        try:
-            response = requests.post(self.API_URL, json=payload, headers=headers, timeout=self.timeout)
-            response.raise_for_status()
-        except requests.exceptions.Timeout:
-            logger.error("OpenAI-Request timed out (%s)", self.model)
-            return _fallback_response()
-        except Exception as exc:
-            logger.error("OpenAI Fehler (%s): %s", self.model, exc)
-            return _fallback_response()
+        
+        # Retry-Loop mit Exponential Backoff
+        for attempt in range(self.max_retries):
+            try:
+                response = requests.post(self.API_URL, json=payload, headers=headers, timeout=self.timeout)
+                
+                # Rate Limiting (429) → Retry mit Backoff
+                if response.status_code == 429:
+                    wait_time = self.retry_delay ** attempt
+                    logger.warning("OpenAI Rate Limit (429) - Retry %d/%d nach %ds", attempt + 1, self.max_retries, wait_time)
+                    if attempt < self.max_retries - 1:
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        logger.error("OpenAI Rate Limit - Max Retries erreicht")
+                        return _fallback_response()
+                
+                response.raise_for_status()
+                break  # Erfolgreich → Loop verlassen
+                
+            except requests.exceptions.Timeout:
+                logger.error("OpenAI-Request timed out (model=%s, attempt=%d)", self.model, attempt + 1)
+                if attempt == self.max_retries - 1:
+                    return _fallback_response()
+                time.sleep(self.retry_delay ** attempt)
+                
+            except requests.exceptions.ConnectionError:
+                logger.error("OpenAI Connection failed (model=%s, attempt=%d)", self.model, attempt + 1)
+                if attempt == self.max_retries - 1:
+                    return _fallback_response()
+                time.sleep(self.retry_delay ** attempt)
+                
+            except requests.exceptions.HTTPError as exc:
+                if exc.response.status_code == 401:
+                    logger.error("OpenAI Authentication failed (invalid API key)")
+                elif exc.response.status_code == 429:
+                    pass  # Bereits oben behandelt
+                else:
+                    logger.error("OpenAI HTTP Error (model=%s): %d", self.model, exc.response.status_code)
+                return _fallback_response()
+                
+            except requests.exceptions.RequestException as exc:
+                logger.error("OpenAI Request Error (model=%s): %s", self.model, type(exc).__name__)
+                if attempt == self.max_retries - 1:
+                    return _fallback_response()
+                time.sleep(self.retry_delay ** attempt)
+                
+            except Exception as exc:
+                logger.error("Unexpected OpenAI Error (model=%s): %s", self.model, type(exc).__name__)
+                return _fallback_response()
 
         try:
             data = response.json()
         except json.JSONDecodeError as exc:
-            logger.error("OpenAI lieferte kein JSON (subject=%r): %s", subject, exc)
+            safe_subject = subject[:30] + '...' if len(subject) > 30 else subject
+            logger.error("OpenAI lieferte kein JSON (subject=%r): %s", safe_subject, type(exc).__name__)
             return _fallback_response()
 
         choices = data.get("choices") or []
         if not choices:
-            logger.error("OpenAI Antwort ohne choices (subject=%r)", subject)
+            safe_subject = subject[:30] + '...' if len(subject) > 30 else subject
+            logger.error("OpenAI Antwort ohne choices (subject=%r)", safe_subject)
             return _fallback_response()
 
         content = ((choices[0].get("message") or {}).get("content") or "").strip()
         if not content:
-            logger.error("OpenAI Antwort ohne Content (subject=%r)", subject)
+            safe_subject = subject[:30] + '...' if len(subject) > 30 else subject
+            logger.error("OpenAI Antwort ohne Content (subject=%r)", safe_subject)
             return _fallback_response()
 
         parsed = _parse_model_json(content)
@@ -584,7 +637,7 @@ class OpenAIClient(AIClient):
 
 
 class AnthropicClient(AIClient):
-    """Anthropic Claude Messages API."""
+    """Anthropic Claude Messages API mit Rate Limiting."""
 
     API_URL = "https://api.anthropic.com/v1/messages"
 
@@ -594,6 +647,8 @@ class AnthropicClient(AIClient):
         self.api_key = api_key
         self.model = model or PROVIDER_REGISTRY["anthropic"]["default_model"]
         self.timeout = int(os.getenv("ANTHROPIC_TIMEOUT", "300"))
+        self.max_retries = 3
+        self.retry_delay = 2  # Sekunden
 
     def analyze_email(self, subject: str, body: str, language: str = "de") -> Dict[str, Any]:
         payload = {
@@ -617,20 +672,62 @@ class AnthropicClient(AIClient):
             "content-type": "application/json",
             "anthropic-version": "2023-06-01",
         }
-        try:
-            response = requests.post(self.API_URL, json=payload, headers=headers, timeout=self.timeout)
-            response.raise_for_status()
-        except requests.exceptions.Timeout:
-            logger.error("Anthropic-Request timed out (%s)", self.model)
-            return _fallback_response()
-        except Exception as exc:
-            logger.error("Anthropic Fehler (%s): %s", self.model, exc)
-            return _fallback_response()
+        
+        # Retry-Loop mit Exponential Backoff
+        for attempt in range(self.max_retries):
+            try:
+                response = requests.post(self.API_URL, json=payload, headers=headers, timeout=self.timeout)
+                
+                # Rate Limiting (429) → Retry mit Backoff
+                if response.status_code == 429:
+                    wait_time = self.retry_delay ** attempt
+                    logger.warning("Anthropic Rate Limit (429) - Retry %d/%d nach %ds", attempt + 1, self.max_retries, wait_time)
+                    if attempt < self.max_retries - 1:
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        logger.error("Anthropic Rate Limit - Max Retries erreicht")
+                        return _fallback_response()
+                
+                response.raise_for_status()
+                break  # Erfolgreich → Loop verlassen
+                
+            except requests.exceptions.Timeout:
+                logger.error("Anthropic-Request timed out (model=%s, attempt=%d)", self.model, attempt + 1)
+                if attempt == self.max_retries - 1:
+                    return _fallback_response()
+                time.sleep(self.retry_delay ** attempt)
+                
+            except requests.exceptions.ConnectionError:
+                logger.error("Anthropic Connection failed (model=%s, attempt=%d)", self.model, attempt + 1)
+                if attempt == self.max_retries - 1:
+                    return _fallback_response()
+                time.sleep(self.retry_delay ** attempt)
+                
+            except requests.exceptions.HTTPError as exc:
+                if exc.response.status_code == 401:
+                    logger.error("Anthropic Authentication failed (invalid API key)")
+                elif exc.response.status_code == 429:
+                    pass  # Bereits oben behandelt
+                else:
+                    logger.error("Anthropic HTTP Error (model=%s): %d", self.model, exc.response.status_code)
+                return _fallback_response()
+                
+            except requests.exceptions.RequestException as exc:
+                logger.error("Anthropic Request Error (model=%s): %s", self.model, type(exc).__name__)
+                if attempt == self.max_retries - 1:
+                    return _fallback_response()
+                time.sleep(self.retry_delay ** attempt)
+                
+            except Exception as exc:
+                logger.error("Unexpected Anthropic Error (model=%s): %s", self.model, type(exc).__name__)
+                return _fallback_response()
 
         try:
             data = response.json()
         except json.JSONDecodeError as exc:
-            logger.error("Anthropic lieferte kein JSON (subject=%r): %s", subject, exc)
+            safe_subject = subject[:30] + '...' if len(subject) > 30 else subject
+            logger.error("Anthropic lieferte kein JSON (subject=%r): %s", safe_subject, type(exc).__name__)
             return _fallback_response()
 
         content_blocks = data.get("content") or []
@@ -640,7 +737,8 @@ class AnthropicClient(AIClient):
                 text_parts.append(block["text"])
         content = "\n".join(text_parts).strip()
         if not content:
-            logger.error("Anthropic Antwort ohne Content (subject=%r)", subject)
+            safe_subject = subject[:30] + '...' if len(subject) > 30 else subject
+            logger.error("Anthropic Antwort ohne Content (subject=%r)", safe_subject)
             return _fallback_response()
 
         parsed = _parse_model_json(content)

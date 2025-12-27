@@ -101,11 +101,27 @@ def _pseudonymize(text: str) -> str:
         counters['url'] += 1
         return f"[URL_{counters['url']}]"
     
-    # E-Mail-Adressen
+    # E-Mail-Adressen (robuster gegen Spaces: "user @ example.com")
     text = re.sub(
-        r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+        r'\b[A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9.-]+\s*\.\s*[A-Z|a-z]{2,}\b',
         replace_email,
         text
+    )
+    
+    # IBAN (DE + International) - robuster gegen variable Spaces
+    # WICHTIG: VOR Telefonnummern prüfen, sonst wird IBAN als Phone erkannt!
+    def normalize_and_replace_iban(match):
+        normalized = match.group(0).replace(' ', '').replace('\t', '')
+        # IBAN hat 15-34 Zeichen: 2 Ländercode + 2 Prüfziffer + 11-30 BBAN
+        if len(normalized) >= 15 and len(normalized) <= 34:
+            return replace_iban(match)
+        return match.group(0)  # Kein IBAN
+    
+    text = re.sub(
+        r'\b[A-Z]{2}\s*\d{2}(?:\s*[\dA-Z]){11,30}\b',
+        normalize_and_replace_iban,
+        text,
+        flags=re.IGNORECASE
     )
     
     # Telefonnummern (einfaches Pattern)
@@ -113,14 +129,6 @@ def _pseudonymize(text: str) -> str:
         r'\b(\+?\d{1,3}[\s\-\.]?)?\(?\d{2,4}\)?[\s\-\.]?\d{3,4}[\s\-\.]?\d{3,4}\b',
         replace_phone,
         text
-    )
-    
-    # IBAN (DE + International)
-    text = re.sub(
-        r'\b[A-Z]{2}\d{2}[\s]?[\dA-Z]{4}[\s]?[\dA-Z]{4}[\s]?[\dA-Z]{4}[\s]?[\dA-Z]{0,4}\b',
-        replace_iban,
-        text,
-        flags=re.IGNORECASE
     )
     
     # URLs
