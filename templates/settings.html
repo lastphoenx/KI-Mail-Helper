@@ -189,9 +189,9 @@
             {% if totp_enabled %}
             <div class="alert alert-success">✓ 2FA ist aktiviert</div>
             <p>Dein Account ist mit TOTP geschützt.</p>
-            <form method="POST" action="/settings/2fa/recovery-codes/regenerate" class="mt-3">
+            <form method="POST" action="/settings/2fa/recovery-codes/regenerate" class="mt-3" onsubmit="return confirmRegenerate()">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                <button type="submit" class="btn btn-outline-warning" onclick="return confirm('Wirklich neue Recovery-Codes generieren? Die alten werden ungültig!')">
+                <button type="submit" class="btn btn-outline-warning">
                     <i class="fas fa-sync"></i> Recovery-Codes regenerieren
                 </button>
             </form>
@@ -210,6 +210,17 @@
 </div>
 
 <script nonce="{{ csp_nonce() }}">
+function confirmRegenerate() {
+    return confirm(
+        '⚠️ Wirklich neue Recovery-Codes generieren?\n\n' +
+        'ACHTUNG:\n' +
+        '• Alle alten Recovery-Codes werden ungültig\n' +
+        '• Du musst die neuen Codes sofort sichern\n' +
+        '• Dieser Vorgang kann nicht rückgängig gemacht werden\n\n' +
+        'Fortfahren?'
+    );
+}
+
 function formatTime(seconds) {
     if (seconds < 60) return seconds + 's';
     const mins = Math.floor(seconds / 60);

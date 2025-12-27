@@ -67,11 +67,58 @@ function copyToClipboard() {
     ];
     
     const text = codes.join('\n');
-    navigator.clipboard.writeText(text).then(() => {
-        alert('✓ Recovery-Codes in Zwischenablage kopiert!');
-    }).catch(() => {
-        alert('❌ Kopieren fehlgeschlagen. Bitte manuell kopieren.');
-    });
+    
+    // Moderne Browser mit Clipboard API
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => {
+            showCopyFeedback(true);
+        }).catch((err) => {
+            console.error('Clipboard API failed:', err);
+            fallbackCopy(text);
+        });
+    } else {
+        // Fallback für ältere Browser oder unsichere Kontexte
+        fallbackCopy(text);
+    }
+}
+
+function fallbackCopy(text) {
+    // Temporäres Textarea-Element erstellen
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    
+    try {
+        const successful = document.execCommand('copy');
+        showCopyFeedback(successful);
+    } catch (err) {
+        console.error('Fallback copy failed:', err);
+        showCopyFeedback(false);
+    } finally {
+        document.body.removeChild(textarea);
+    }
+}
+
+function showCopyFeedback(success) {
+    if (success) {
+        // Visuelles Feedback
+        const btn = document.querySelector('.btn-outline-primary');
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i> Kopiert!';
+        btn.classList.remove('btn-outline-primary');
+        btn.classList.add('btn-success');
+        
+        setTimeout(() => {
+            btn.innerHTML = originalHTML;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-outline-primary');
+        }, 2000);
+    } else {
+        alert('❌ Kopieren fehlgeschlagen.\n\nBitte markiere die Codes manuell und drücke Strg+C (Windows/Linux) bzw. Cmd+C (Mac).');
+    }
 }
 
 function downloadCodes() {

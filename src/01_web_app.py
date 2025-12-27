@@ -349,7 +349,9 @@ def register():
             if password != password_confirm:
                 return render_template(
                     "register.html",
-                    error="Passwörter stimmen nicht überein"
+                    error="Passwörter stimmen nicht überein",
+                    username=username,
+                    email=email
                 ), 400
             
             # Phase 8c: Security Hardening - OWASP Password Policy
@@ -357,19 +359,23 @@ def register():
             if not is_valid:
                 return render_template(
                     "register.html",
-                    error=error_msg
+                    error=error_msg,
+                    username=username,
+                    email=email
                 ), 400
             
             if db.query(models.User).filter_by(username=username).first():
                 return render_template(
                     "register.html",
-                    error="Benutzername existiert bereits"
+                    error="Benutzername existiert bereits",
+                    email=email
                 ), 400
             
             if db.query(models.User).filter_by(email=email).first():
                 return render_template(
                     "register.html",
-                    error="E-Mail existiert bereits"
+                    error="E-Mail existiert bereits",
+                    username=username
                 ), 400
             
             user = models.User(username=username, email=email)

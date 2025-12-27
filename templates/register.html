@@ -12,22 +12,33 @@
             <div class="alert alert-danger">{{ error }}</div>
             {% endif %}
             
+            <div class="alert alert-info">
+                <strong>🔐 Passwort-Anforderungen:</strong>
+                <ul class="mb-0 mt-2 small">
+                    <li>Mindestens 24 Zeichen lang</li>
+                    <li>Groß- und Kleinbuchstaben</li>
+                    <li>Mindestens eine Zahl</li>
+                    <li>Mindestens ein Sonderzeichen</li>
+                    <li>Nicht in Top-100 häufige Passwörter</li>
+                </ul>
+            </div>
+            
             <form method="POST">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <div class="mb-3">
                     <label for="username" class="form-label">Benutzername</label>
-                    <input type="text" class="form-control" id="username" name="username" required>
+                    <input type="text" class="form-control" id="username" name="username" value="{{ username or '' }}" required>
                 </div>
                 
                 <div class="mb-3">
                     <label for="email" class="form-label">E-Mail-Adresse</label>
-                    <input type="email" class="form-control" id="email" name="email" required>
+                    <input type="email" class="form-control" id="email" name="email" value="{{ email or '' }}" required>
                 </div>
                 
                 <div class="mb-3">
                     <label for="password" class="form-label">Passwort</label>
                     <input type="password" class="form-control" id="password" name="password" required>
-                    <small class="text-muted">Mindestens 8 Zeichen</small>
+                    <small class="text-muted">Nutze einen Passwort-Manager für sichere Passwörter</small>
                 </div>
                 
                 <div class="mb-3">
