@@ -2041,6 +2041,10 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
     global talisman
     
     if use_https:
+        # Enable Secure Cookie Flag for HTTPS mode
+        app.config['SESSION_COOKIE_SECURE'] = True
+        logger.info("🔒 SESSION_COOKIE_SECURE=True (HTTPS-Modus)")
+        
         # Dual-Port Setup: HTTP Redirector + HTTPS Server
         https_port = port + 1  # z.B. 5001 für HTTPS
         
