@@ -13,6 +13,12 @@ import logging
 import importlib
 import os
 
+try:
+    from flask_talisman import Talisman
+    TALISMAN_AVAILABLE = True
+except ImportError:
+    TALISMAN_AVAILABLE = False
+
 env_validator = importlib.import_module('.00_env_validator', 'src')
 env_validator.validate_environment()
 
@@ -48,6 +54,18 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True  # Kein JavaScript-Zugriff
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF-Schutz
 
 Session(app)
+
+# HTTPS Enforcement mit Flask-Talisman (optional, nur wenn verfügbar)
+talisman = None
+if TALISMAN_AVAILABLE and os.getenv('FORCE_HTTPS', 'false').lower() == 'true':
+    talisman = Talisman(
+        app,
+        force_https=True,
+        strict_transport_security=True,
+        strict_transport_security_max_age=31536000,  # 1 Jahr
+        content_security_policy=None,  # Deaktiviert für Development (sonst CSS/JS-Probleme)
+    )
+    logger.info("🔒 Flask-Talisman aktiviert - HTTPS erzwungen")
 
 @app.before_request
 def check_dek_in_session():

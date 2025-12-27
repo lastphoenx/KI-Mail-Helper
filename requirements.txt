@@ -4,6 +4,7 @@
 Flask==3.0.0
 Flask-Login==0.6.3         # User authentication
 Flask-Session==0.8.0       # Server-side session storage (>= 0.7.0 required for Werkzeug 3.x compatibility)
+flask-talisman==1.1.0      # HTTPS enforcement + security headers
 # Alternative: fastapi==0.104.1
 # Alternative: uvicorn==0.24.0
 
