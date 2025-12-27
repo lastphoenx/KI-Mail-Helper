@@ -78,7 +78,10 @@ session_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.flask_s
 os.makedirs(session_dir, mode=0o700, exist_ok=True)
 
 app.config['SESSION_FILE_DIR'] = session_dir
-app.config['SESSION_PERMANENT'] = False
+
+# Session Timeout (Phase 9: Production Hardening)
+app.config['SESSION_PERMANENT'] = True  # Enable permanent sessions with timeout
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)  # 30min inactivity timeout
 app.config['SESSION_USE_SIGNER'] = False  # EMPFOHLEN: Deprecated seit Flask-Session 0.7.0 (server-side irrelevant, 256-bit Session-ID = ausreichend)
 app.config['SESSION_KEY_PREFIX'] = 'mail_helper_'
 app.config['SESSION_ID_LENGTH'] = 32  # 256-bit Entropie für Session-ID (default, explizit dokumentiert)
