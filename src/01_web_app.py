@@ -2100,10 +2100,9 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
                 strict_transport_security=True,
                 strict_transport_security_max_age=31536000,
                 content_security_policy=csp,
-                # NOTE: nonce deaktiviert - inline-scripts funktionieren mit 'unsafe-inline'
-                # content_security_policy_nonce_in=['script-src'],  
+                content_security_policy_nonce_in=['script-src'],  # Nonce-basierte CSP für inline-scripts
             )
-            logger.info("🔒 Flask-Talisman aktiviert - Security Headers + CSP")
+            logger.info("🔒 Flask-Talisman aktiviert - Security Headers + CSP + Nonce")
         
         print(f"🌐 Dashboard läuft auf https://{host}:{https_port}")
         print(f"💡 Tipp: Browser öffnet http://localhost:{port} → Auto-Redirect zu HTTPS")
