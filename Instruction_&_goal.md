@@ -283,8 +283,54 @@
 - ✅ Recovery-Codes Invalidierung sauber
 - ✅ 2FA Mandatory ohne Redirect-Loop
 - ✅ Autocomplete-Attribute korrekt gesetzt
+- ✅ HIBP API: User-Agent + Add-Padding Header (Best Practices)
+- ✅ HIBP: Robustes Parsing (split(':', 1), strip(), timeout als tuple)
+- ✅ HIBP: 429 Rate-Limit Handling mit TODO für Production-Caching
+- ✅ Flask-Session 0.8.0 in requirements.txt (kritischer Bug-Fix)
 
 **Gesamt-Aufwand:** ~90 Minuten (Prio 1+2)
+
+---
+
+### **✅ Phase 8d: HTTPS Support + Reverse Proxy (Abgeschlossen - 27.12.2025)**
+**Ziel:** Production-Ready HTTPS Setup mit Reverse Proxy Support
+
+#### **Features implementiert:**
+- [x] **Dual-Port Setup** (`01_web_app.py`)
+  - HTTP Redirector auf Port 5000 → HTTPS Port 5001
+  - Automatischer 301 Redirect (HTTP → HTTPS)
+  - Self-signed Certificate Support (pyOpenSSL adhoc)
+  - Threading: Beide Server parallel aktiv
+- [x] **Flask-Talisman Integration**
+  - HTTPS-Enforcement
+  - Security Headers (HSTS, X-Content-Type-Options, etc.)
+  - Konfigurierbar via `FORCE_HTTPS=true` in .env
+- [x] **Reverse Proxy Support** (`ProxyFix` Middleware)
+  - X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host
+  - Nginx/Caddy/Traefik kompatibel
+  - Aktivierbar via `BEHIND_REVERSE_PROXY=true`
+- [x] **CLI Flag** (`--https`)
+  - Start mit: `python3 -m src.00_main --serve --https`
+  - Dual-Port: 5000 (HTTP Redirector) + 5001 (HTTPS Server)
+- [x] **Dependencies hinzugefügt:**
+  - pyOpenSSL==24.0.0 (Self-signed Certificates)
+  - flask-talisman==1.1.0 (HTTPS-Enforcement)
+
+#### **.env Konfiguration:**
+```bash
+# HTTPS Settings
+FORCE_HTTPS=true                     # Talisman aktivieren
+SESSION_COOKIE_SECURE=false          # false für Development, true für Production
+BEHIND_REVERSE_PROXY=false           # true wenn hinter Nginx/Caddy
+```
+
+#### **Production Setup (Nginx/Caddy):**
+- Nginx-Beispiel in README.md + INSTALLATION.md
+- Caddy-Beispiel (noch einfacher!)
+- ProxyFix für korrekte Client-IP & HTTPS-Detection
+- Let's Encrypt Integration dokumentiert
+
+**Gesamt-Aufwand:** ~45 Minuten
 
 ---
 

@@ -76,8 +76,10 @@ nano .env  # oder vim, code, etc.
 # Generiere mit: python -c "import secrets; print(secrets.token_hex(32))"
 FLASK_SECRET_KEY=your-generated-secret-key-here
 
-# Nicht mehr verwendet (veraltet)
-# SERVER_MASTER_SECRET=...  # War für Cron-Jobs, Zero-Knowledge verhindert automatische Jobs
+# === HTTPS Settings ===
+FORCE_HTTPS=true                     # Flask-Talisman aktivieren
+SESSION_COOKIE_SECURE=false          # false für Development, true für Production
+BEHIND_REVERSE_PROXY=false           # true wenn hinter Nginx/Caddy
 
 # === KI-Backend ===
 AI_BACKEND=ollama                    # ollama, openai, anthropic, mistral
@@ -427,7 +429,73 @@ alembic upgrade head
 
 ---
 
-## 📚 Weiterführende Dokumentation
+## � Production Deployment
+
+### HTTPS mit Reverse Proxy (Nginx/Caddy)
+
+**1. .env für Production anpassen:**
+```bash
+BEHIND_REVERSE_PROXY=true
+SESSION_COOKIE_SECURE=true
+FORCE_HTTPS=true
+```
+
+**2. Flask mit HTTPS starten:**
+```bash
+python3 -m src.00_main --serve --https
+# Dual-Port: HTTP Redirector (5000) + HTTPS Server (5001)
+```
+
+**3. Nginx Konfiguration:**
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com;
+    
+    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    
+    location / {
+        proxy_pass https://127.0.0.1:5001;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Host $host;
+    }
+}
+
+server {
+    listen 80;
+    server_name your-domain.com;
+    return 301 https://$server_name$request_uri;
+}
+```
+
+**4. Caddy Konfiguration (einfacher):**
+```caddy
+your-domain.com {
+    reverse_proxy https://127.0.0.1:5001 {
+        transport http {
+            tls_insecure_skip_verify  # Für Self-signed Cert
+        }
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+    }
+}
+```
+
+**5. Let's Encrypt SSL Zertifikat:**
+```bash
+# Nginx
+sudo certbot --nginx -d your-domain.com
+
+# Caddy (automatisch!)
+sudo systemctl restart caddy
+```
+
+---
+
+## �📚 Weiterführende Dokumentation
 
 - [README.md](README.md) - Projekt-Übersicht & Quick Start
 - [OAUTH_AND_IMAP_SETUP.md](OAUTH_AND_IMAP_SETUP.md) - OAuth & IMAP Konfiguration

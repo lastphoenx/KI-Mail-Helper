@@ -137,9 +137,30 @@ python3 -m src.00_main --init-db
 ```
 
 ### 6. Web-Dashboard starten
+
+**Development (HTTP):**
 ```bash
 python3 -m src.00_main --serve
 # http://localhost:5000
+```
+
+**Development mit HTTPS (Self-signed Certificate):**
+```bash
+python3 -m src.00_main --serve --https
+# Dual-Port Setup:
+#   - HTTP Redirector: http://localhost:5000 → https://localhost:5001
+#   - HTTPS Server: https://localhost:5001
+# Browser zeigt Sicherheitswarnung (einmal akzeptieren)
+```
+
+**Production (hinter Reverse Proxy):**
+```bash
+# .env anpassen:
+BEHIND_REVERSE_PROXY=true
+SESSION_COOKIE_SECURE=true
+
+python3 -m src.00_main --serve --https
+# Siehe "Production Deployment" für Nginx/Caddy Konfiguration
 ```
 
 ---
@@ -362,7 +383,76 @@ python3 -m pytest tests/test_scoring.py -v
 
 ---
 
-## 📦 Tech Stack
+## � Production Deployment
+
+### Reverse Proxy Setup (Nginx/Caddy)
+
+**1. Start Flask mit HTTPS:**
+```bash
+python3 -m src.00_main --serve --https
+# Läuft auf https://localhost:5001
+```
+
+**2. .env anpassen:**
+```bash
+BEHIND_REVERSE_PROXY=true      # ProxyFix aktivieren
+SESSION_COOKIE_SECURE=true     # Cookies nur über HTTPS
+FORCE_HTTPS=true               # Talisman Security Headers
+```
+
+**3. Nginx Konfiguration:**
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com;
+    
+    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    
+    location / {
+        proxy_pass https://127.0.0.1:5001;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Host $host;
+        
+        # WebSocket Support (optional für Live-Updates)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+# HTTP → HTTPS Redirect
+server {
+    listen 80;
+    server_name your-domain.com;
+    return 301 https://$server_name$request_uri;
+}
+```
+
+**4. Caddy Konfiguration (Alternative):**
+```caddy
+your-domain.com {
+    reverse_proxy https://127.0.0.1:5001 {
+        transport http {
+            tls_insecure_skip_verify  # Für Self-signed Cert
+        }
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+    }
+}
+```
+
+**5. Systemd Service:**
+```bash
+sudo systemctl enable mail-helper-processor.service
+sudo systemctl start mail-helper-processor.service
+```
+
+---
+
+## �📦 Tech Stack
 
 - **Python:** 3.13 (mit SQLAlchemy 2.0)
 - **Web:** Flask 3.x + Bootstrap 5
