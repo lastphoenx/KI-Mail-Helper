@@ -372,10 +372,7 @@ def verify_2fa():
                 )
             
             if verified:
-                # Regenerate session ID after successful 2FA (prevent session fixation)
-                session.modified = True
-                
-                # Extract pending data before session operations
+                # Extract pending data BEFORE session operations
                 dek = session.get('pending_dek')
                 remember = session.get('pending_remember', False)
                 
