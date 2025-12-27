@@ -39,7 +39,13 @@ password_validator = importlib.import_module('.09_password_validator', 'src')
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, template_folder="../templates")
-app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-change-in-production')
+
+# SECRET_KEY MUST be set in .env (no fallback to prevent accidental production deployment)
+secret_key = os.getenv('FLASK_SECRET_KEY')
+if not secret_key:
+    raise ValueError("FLASK_SECRET_KEY environment variable must be set in .env file")
+app.config['SECRET_KEY'] = secret_key
+
 app.config['WTF_CSRF_ENABLED'] = True  # CSRF Protection aktivieren
 app.config['WTF_CSRF_TIME_LIMIT'] = None  # Kein Timeout (Session-basiert)
 
@@ -59,7 +65,12 @@ if os.getenv('BEHIND_REVERSE_PROXY', 'false').lower() == 'true':
 # Server-Side Sessions für Zero-Knowledge Security
 # Master-Keys werden NUR auf dem Server gespeichert, NICHT im Browser-Cookie
 app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_FILE_DIR'] = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.flask_sessions')
+
+# Create session directory if it doesn't exist (prevent runtime errors)
+session_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.flask_sessions')
+os.makedirs(session_dir, mode=0o700, exist_ok=True)
+
+app.config['SESSION_FILE_DIR'] = session_dir
 app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_USE_SIGNER'] = False  # EMPFOHLEN: Deprecated seit Flask-Session 0.7.0 (server-side irrelevant, 256-bit Session-ID = ausreichend)
 app.config['SESSION_KEY_PREFIX'] = 'mail_helper_'
@@ -361,8 +372,14 @@ def verify_2fa():
                 )
             
             if verified:
+                # Regenerate session ID after successful 2FA (prevent session fixation)
+                session.modified = True
+                
+                # Extract pending data before session operations
                 dek = session.get('pending_dek')
                 remember = session.get('pending_remember', False)
+                
+                # Clear pending 2FA data
                 session.pop('pending_user_id', None)
                 session.pop('pending_dek', None)
                 session.pop('pending_remember', None)
