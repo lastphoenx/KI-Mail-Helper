@@ -197,40 +197,93 @@ class RecoveryCodeManager:
 
 
 class MasterKeyManager:
-    """Verwaltet Encryption Master-Keys (Phase 3)"""
+    """Verwaltet Encryption Keys (Phase 8: DEK/KEK Pattern)"""
     
     @staticmethod
-    def setup_master_key_for_user(user_id: int, password: str, session) -> tuple:
-        """Erstellt Master-Key beim Registrieren (Zero-Knowledge)
+    def setup_dek_for_user(user_id: int, password: str, session) -> tuple:
+        """Erstellt DEK beim Registrieren (Zero-Knowledge mit DEK/KEK Pattern)
         
-        Master-Key wird nur mit User-Passwort verschlüsselt.
-        Nur der User kann ihn entschlüsseln (Session-basiert).
+        1. Generiert Salt
+        2. Leitet KEK aus Passwort ab (PBKDF2)
+        3. Generiert zufälligen DEK
+        4. Verschlüsselt DEK mit KEK
+        5. Speichert encrypted_dek in DB
         
         Returns:
-            (salt, encrypted_master_key)
+            (salt, encrypted_dek, dek)
         """
         encryption = importlib.import_module('.08_encryption', 'src')
         models = importlib.import_module('.02_models', 'src')
         
         salt = encryption.EncryptionManager.generate_salt()
-        master_key = encryption.EncryptionManager.generate_master_key(password, salt)
-        
-        encrypted_master_key = encryption.EncryptionManager.encrypt_master_key(master_key, password)
+        kek = encryption.EncryptionManager.generate_master_key(password, salt)  # KEK via PBKDF2
+        dek = encryption.EncryptionManager.generate_dek()  # Zufälliger DEK
+        encrypted_dek = encryption.EncryptionManager.encrypt_dek(dek, kek)
         
         user = session.query(models.User).filter_by(id=user_id).first()
         if user:
             user.salt = salt
-            user.encrypted_master_key = encrypted_master_key
+            user.encrypted_dek = encrypted_dek
             session.commit()
-            logger.info(f"✅ Master-Key erstellt für User {user_id} (Zero-Knowledge)")
+            logger.info(f"✅ DEK erstellt für User {user_id} (Zero-Knowledge DEK/KEK)")
         
-        return salt, encrypted_master_key
+        return salt, encrypted_dek, dek
+    
+    @staticmethod
+    def setup_master_key_for_user(user_id: int, password: str, session) -> tuple:
+        """DEPRECATED: Verwende setup_dek_for_user() stattdessen
+        
+        Nur für Migrations-Kompatibilität behalten.
+        """
+        logger.warning("setup_master_key_for_user() ist deprecated, verwende setup_dek_for_user()")
+        return MasterKeyManager.setup_dek_for_user(user_id, password, session)
+    
+    @staticmethod
+    def decrypt_dek_from_password(user, password: str) -> str:
+        """Entschlüsselt DEK mit Passwort (KEK wird aus Passwort abgeleitet)
+        
+        Wird beim Login verwendet:
+        1. KEK aus Passwort ableiten (PBKDF2 mit User.salt)
+        2. DEK mit KEK entschlüsseln
+        3. DEK in Session speichern
+        
+        Args:
+            user: User-Model mit salt und encrypted_dek
+            password: User-Passwort
+            
+        Returns:
+            Base64-kodierter DEK
+        """
+        encryption = importlib.import_module('.08_encryption', 'src')
+        
+        try:
+            # Fallback für alte User mit encrypted_master_key (vor DEK/KEK Migration)
+            if user.encrypted_dek:
+                kek = encryption.EncryptionManager.generate_master_key(password, user.salt)
+                dek = encryption.EncryptionManager.decrypt_dek(user.encrypted_dek, kek)
+                logger.info("✅ DEK erfolgreich entschlüsselt")
+                return dek
+            elif user.encrypted_master_key:
+                # DEPRECATED: Alte User ohne DEK
+                logger.warning(f"User {user.id} nutzt altes encrypted_master_key Format")
+                master_key = encryption.EncryptionManager.decrypt_master_key(
+                    user.encrypted_master_key,
+                    password
+                )
+                return master_key
+            else:
+                logger.error(f"User {user.id} hat weder encrypted_dek noch encrypted_master_key")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ DEK Entschlüsselung fehlgeschlagen: {e}")
+            return None
     
     @staticmethod
     def decrypt_master_key_from_password(password: str, encrypted_master_key: str) -> str:
-        """Entschlüsselt Master-Key mit Passwort
+        """DEPRECATED: Verwende decrypt_dek_from_password() stattdessen
         
-        Wird beim Login verwendet um den Master-Key aus der DB zu laden.
+        Nur für Migrations-Kompatibilität behalten.
         """
         encryption = importlib.import_module('.08_encryption', 'src')
         

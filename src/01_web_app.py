@@ -47,6 +47,26 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF-Schutz
 
 Session(app)
 
+@app.before_request
+def check_dek_in_session():
+    """Überprüft ob DEK in Session vorhanden ist (für Zero-Knowledge Encryption)
+    
+    Falls User authentifiziert ist aber DEK fehlt (z.B. nach Session-Expire),
+    wird der User zur Passwort-Reauth weitergeleitet.
+    """
+    # Skip für Login/Logout/Static-Routes
+    if request.endpoint in ['login', 'register', 'logout', 'static', 'verify_2fa']:
+        return None
+    
+    if current_user.is_authenticated and not session.get('master_key'):
+        logger.warning(f"⚠️ User {current_user.user_model.id} authenticated aber DEK in Session fehlt - Reauth erforderlich")
+        session.clear()
+        logout_user()
+        flash("Sitzung abgelaufen - bitte erneut anmelden", "warning")
+        return redirect(url_for("login"))
+    return None
+
+
 DATABASE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "emails.db")
 job_queue = background_jobs.BackgroundJobQueue(DATABASE_PATH)
 login_manager = LoginManager()
@@ -159,22 +179,26 @@ def login():
             if not user or not user.check_password(password):
                 return render_template("login.html", error="Ungültige Anmeldedaten"), 401
             
+            # Phase 8: DEK/KEK Pattern - DEK entschlüsseln
+            dek = auth.MasterKeyManager.decrypt_dek_from_password(user, password)
+            if not dek:
+                logger.error("❌ DEK-Entschlüsselung fehlgeschlagen")
+                return render_template("login.html", error="Entschlüsselung fehlgeschlagen"), 401
+            
             if user.totp_enabled:
+                # Security: DEK statt Passwort in Session (2FA-Zwischenschritt)
                 session['pending_user_id'] = user.id
-                session['pending_password'] = password
+                session['pending_dek'] = dek
+                session['pending_remember'] = bool(request.form.get("remember"))
                 session['pending_auth_time'] = str(__import__('datetime').datetime.utcnow())
                 return redirect(url_for("verify_2fa"))
             
-            master_key = None
-            if user.encrypted_master_key:
-                master_key = auth.MasterKeyManager.decrypt_master_key_from_password(
-                    password,
-                    user.encrypted_master_key
-                )
-                if master_key:
-                    session['master_key'] = master_key
+            # DEK in Session speichern
+            session['master_key'] = dek  # Session-Key heißt "master_key" aus Kompatibilität
+            logger.info("✅ DEK erfolgreich in Session geladen")
             
-            login_user(UserWrapper(user), remember=request.form.get("remember"))
+            # Zero-Knowledge: Disable remember-me (verhindert DEK-Loss nach Session-Expire)
+            login_user(UserWrapper(user), remember=False)
             logger.info(f"✅ User angemeldet (ID: {user.id})")
             return redirect(url_for("dashboard"))
         
@@ -235,9 +259,11 @@ def register():
             db.add(user)
             db.commit()
             
-            auth.MasterKeyManager.setup_master_key_for_user(user.id, password, db)
+            # Phase 8: DEK/KEK Pattern - DEK erstellen und in Session speichern
+            salt, encrypted_dek, dek = auth.MasterKeyManager.setup_dek_for_user(user.id, password, db)
+            session['master_key'] = dek  # Session-Key heißt "master_key" aus Kompatibilität
             
-            logger.info(f"✅ User registriert (ID: {user.id}, Master-Key erstellt)")
+            logger.info(f"✅ User registriert (ID: {user.id}, DEK/KEK erstellt)")
             
             return render_template(
                 "register_success.html",
@@ -281,20 +307,23 @@ def verify_2fa():
                 )
             
             if verified:
-                password = session.get('pending_password')
+                dek = session.get('pending_dek')
+                remember = session.get('pending_remember', False)
                 session.pop('pending_user_id', None)
-                session.pop('pending_password', None)
+                session.pop('pending_dek', None)
+                session.pop('pending_remember', None)
                 session.pop('pending_auth_time', None)
                 
-                if password and user.encrypted_master_key:
-                    master_key = auth.MasterKeyManager.decrypt_master_key_from_password(
-                        password,
-                        user.encrypted_master_key
-                    )
-                    if master_key:
-                        session['master_key'] = master_key
+                # Phase 8: DEK/KEK Pattern
+                if not dek:
+                    logger.error("❌ Kein DEK für 2FA gefunden")
+                    flash("Session abgelaufen - bitte erneut einloggen", "danger")
+                    return redirect(url_for("login"))
                 
-                login_user(UserWrapper(user))
+                session['master_key'] = dek
+                logger.info("✅ DEK nach 2FA in Session geladen")
+                
+                login_user(UserWrapper(user), remember=remember)
                 logger.info(f"✅ 2FA für User {user.username} bestätigt")
                 return redirect(url_for("dashboard"))
             
@@ -315,11 +344,11 @@ def logout():
     """Logout"""
     username = current_user.user_model.username if hasattr(current_user, 'user_model') else 'User'
     
-    # Zero-Knowledge: Master-Key aus Session löschen (WICHTIG für Sicherheit!)
-    session.pop('master_key', None)
+    # Zero-Knowledge: Komplette Session löschen (DEK + pending_* + oauth-state etc.)
+    session.clear()
     
     logout_user()
-    logger.info(f"🔌 User {username} abgemeldet - Master-Key aus Session gelöscht")
+    logger.info(f"🔌 User {username} abgemeldet - Session komplett gelöscht")
     return redirect(url_for("login"))
 
 

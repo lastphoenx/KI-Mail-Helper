@@ -77,10 +77,13 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     
-    # Key-Management (Phase 3)
-    # Zero-Knowledge: Master-Key nur verschlüsselt mit User-Passwort
-    salt = Column(String(32))
-    encrypted_master_key = Column(Text)
+    # Key-Management (Phase 8: DEK/KEK Pattern)
+    # Zero-Knowledge: KEK (Key Encryption Key) aus Passwort abgeleitet (PBKDF2)
+    #                 DEK (Data Encryption Key) zufällig generiert, verschlüsselt alle E-Mails
+    #                 encrypted_dek = AES-GCM(DEK, KEK) - ermöglicht Passwort-Wechsel ohne Neu-Verschlüsselung
+    salt = Column(String(128))  # base64(32 bytes) = 44 chars, with buffer
+    encrypted_dek = Column(Text)  # DEK verschlüsselt mit KEK (aus Passwort)
+    encrypted_master_key = Column(Text)  # DEPRECATED: Wird durch encrypted_dek ersetzt (für Migration behalten)
     
     # 2FA (TOTP)
     totp_secret = Column(String(32))

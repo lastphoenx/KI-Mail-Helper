@@ -120,8 +120,89 @@ class EncryptionManager:
             raise
     
     @staticmethod
+    def generate_dek() -> str:
+        """Generiert einen zufälligen Data Encryption Key (DEK)
+        
+        DEK ist ein 256-Bit zufälliger Schlüssel, der alle E-Mail-Daten verschlüsselt.
+        Wird mit KEK (aus Passwort) verschlüsselt gespeichert.
+        
+        Returns:
+            Base64-kodierter DEK (32 Bytes)
+        """
+        dek = os.urandom(32)  # 256 Bit
+        return base64.b64encode(dek).decode()
+    
+    @staticmethod
+    def encrypt_dek(dek: str, kek: str) -> str:
+        """Verschlüsselt DEK mit KEK (Key Encryption Key)
+        
+        Args:
+            dek: Base64-kodierter Data Encryption Key
+            kek: Base64-kodierter Key Encryption Key (aus Passwort via PBKDF2)
+            
+        Returns:
+            Base64-kodiertes Encrypted-Blob (IV + Ciphertext + Tag)
+        """
+        try:
+            key = base64.b64decode(kek)
+            dek_bytes = base64.b64decode(dek)
+            iv = os.urandom(12)
+            
+            cipher = Cipher(
+                algorithms.AES(key),
+                modes.GCM(iv),
+                backend=default_backend()
+            )
+            encryptor = cipher.encryptor()
+            
+            ciphertext = encryptor.update(dek_bytes) + encryptor.finalize()
+            
+            encrypted_blob = iv + ciphertext + encryptor.tag
+            return base64.b64encode(encrypted_blob).decode()
+            
+        except Exception as e:
+            logger.error(f"DEK encryption error: {e}")
+            raise
+    
+    @staticmethod
+    def decrypt_dek(encrypted_dek: str, kek: str) -> str:
+        """Entschlüsselt DEK mit KEK
+        
+        Args:
+            encrypted_dek: Base64-kodiertes Encrypted-Blob
+            kek: Base64-kodierter Key Encryption Key (aus Passwort via PBKDF2)
+            
+        Returns:
+            Base64-kodierter DEK
+        """
+        try:
+            key = base64.b64decode(kek)
+            encrypted_bytes = base64.b64decode(encrypted_dek)
+            
+            iv = encrypted_bytes[:12]
+            ciphertext = encrypted_bytes[12:-EncryptionManager.TAG_LENGTH]
+            tag = encrypted_bytes[-EncryptionManager.TAG_LENGTH:]
+            
+            cipher = Cipher(
+                algorithms.AES(key),
+                modes.GCM(iv, tag),
+                backend=default_backend()
+            )
+            decryptor = cipher.decryptor()
+            
+            dek_bytes = decryptor.update(ciphertext) + decryptor.finalize()
+            return base64.b64encode(dek_bytes).decode()
+            
+        except Exception as e:
+            logger.error(f"DEK decryption error: {e}")
+            raise
+    
+    @staticmethod
     def encrypt_master_key(master_key: str, password: str) -> str:
         """Verschlüsselt den Master-Key mit dem User-Passwort
+        
+        DEPRECATED: Wird durch encrypt_dek() ersetzt.
+        Nur für Migrations-Kompatibilität behalten.
         
         Wird verwendet um den Master-Key in der DB zu speichern.
         Beim Login wird dieser mit dem eingegebenen Passwort entschlüsselt.
@@ -143,7 +224,7 @@ class EncryptionManager:
                 'sha256',
                 password.encode(),
                 salt,
-                100000
+                EncryptionManager.ITERATIONS
             )[:32]
             
             cipher = Cipher(
