@@ -40,10 +40,17 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__, template_folder="../templates")
 
-# SECRET_KEY MUST be set in .env (no fallback to prevent accidental production deployment)
+# SECRET_KEY from System Environment (NOT from .env file for production security)
+# Development: Set in .env file (not committed to git)
+# Production: Set in systemd service or /etc/environment
 secret_key = os.getenv('FLASK_SECRET_KEY')
 if not secret_key:
-    raise ValueError("FLASK_SECRET_KEY environment variable must be set in .env file")
+    raise ValueError(
+        "FLASK_SECRET_KEY environment variable must be set!\n"
+        "Development: Add to .env file (see .env.example)\n"
+        "Production: Set in systemd service or /etc/environment\n"
+        "Generate with: python3 -c 'import secrets; print(secrets.token_urlsafe(48))'"
+    )
 app.config['SECRET_KEY'] = secret_key
 
 app.config['WTF_CSRF_ENABLED'] = True  # CSRF Protection aktivieren
