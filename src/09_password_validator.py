@@ -149,7 +149,11 @@ class PasswordValidator:
             
             # 3. API-Request (k-Anonymity Model)
             url = f"https://api.pwnedpasswords.com/range/{prefix}"
-            response = requests.get(url, timeout=3)
+            headers = {
+                "User-Agent": "KI-Mail-Helper/1.0 (Security Hardening Phase 8c)",
+                "Add-Padding": "true",  # Privacy-Plus: verhindert Timing-Angriffe
+            }
+            response = requests.get(url, headers=headers, timeout=3)
             
             if response.status_code != 200:
                 logger.warning(f"HIBP API error: {response.status_code}")
