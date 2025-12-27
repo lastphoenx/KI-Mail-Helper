@@ -264,14 +264,28 @@ def login():
             # Account Lockout Check (Phase 9)
             if user and user.is_locked():
                 remaining = (user.locked_until - datetime.now(UTC)).total_seconds() / 60
-                logger.warning(f"🔒 Login blocked for user {username} (locked for {remaining:.1f} more minutes)")
+                # Audit Log für Fail2Ban
+                logger.warning(
+                    f"SECURITY[LOCKOUT]: user={username} ip={request.remote_addr} "
+                    f"remaining={int(remaining)}min reason=account_locked"
+                )
                 return render_template("login.html", error=f"Account gesperrt. Bitte versuche es in {int(remaining)} Minuten erneut."), 403
             
             if not user or not user.check_password(password):
                 if user:
                     user.record_failed_login()
                     db.commit()
-                    logger.warning(f"❌ Failed login attempt {user.failed_login_attempts}/5 for user {username}")
+                    # Audit Log für Fail2Ban
+                    logger.warning(
+                        f"SECURITY[LOGIN_FAILED]: user={username} ip={request.remote_addr} "
+                        f"attempts={user.failed_login_attempts}/5 reason=invalid_credentials"
+                    )
+                else:
+                    # Unknown user - auch loggen für Fail2Ban
+                    logger.warning(
+                        f"SECURITY[LOGIN_FAILED]: user={username} ip={request.remote_addr} "
+                        f"reason=user_not_found"
+                    )
                 return render_template("login.html", error="Ungültige Anmeldedaten"), 401
             
             # Erfolgreicher Login - Failed Counter zurücksetzen
@@ -298,7 +312,11 @@ def login():
             
             # Zero-Knowledge: Disable remember-me (verhindert DEK-Loss nach Session-Expire)
             login_user(UserWrapper(user), remember=False)
-            logger.info(f"✅ User angemeldet (ID: {user.id})")
+            # Audit Log für erfolgreichen Login
+            logger.info(
+                f"SECURITY[LOGIN_SUCCESS]: user={user.username} ip={request.remote_addr} "
+                f"2fa=disabled method=password"
+            )
             return redirect(url_for("dashboard"))
         
         return render_template("login.html")
@@ -431,9 +449,18 @@ def verify_2fa():
                 logger.info("✅ DEK nach 2FA in Session geladen")
                 
                 login_user(UserWrapper(user), remember=remember)
-                logger.info(f"✅ 2FA für User {user.username} bestätigt")
+                # Audit Log für erfolgreichen Login mit 2FA
+                logger.info(
+                    f"SECURITY[LOGIN_SUCCESS]: user={user.username} ip={request.remote_addr} "
+                    f"2fa=verified method=totp"
+                )
                 return redirect(url_for("dashboard"))
             
+            # Fehlgeschlagener 2FA-Versuch
+            logger.warning(
+                f"SECURITY[2FA_FAILED]: user={user.username} ip={request.remote_addr} "
+                f"reason=invalid_token"
+            )
             return render_template(
                 "verify_2fa.html",
                 error="Ungültiger Code"
@@ -450,12 +477,17 @@ def verify_2fa():
 def logout():
     """Logout"""
     username = current_user.user_model.username if hasattr(current_user, 'user_model') else 'User'
+    ip = request.remote_addr
+    
+    # Audit Log für Logout
+    logger.info(
+        f"SECURITY[LOGOUT]: user={username} ip={ip}"
+    )
     
     # Zero-Knowledge: Komplette Session löschen (DEK + pending_* + oauth-state etc.)
     session.clear()
     
     logout_user()
-    logger.info(f"🔌 User {username} abgemeldet - Session komplett gelöscht")
     return redirect(url_for("login"))
 
 
