@@ -194,6 +194,21 @@ class RecoveryCodeManager:
         ).filter(models.RecoveryCode.used_at == None).count()
         
         return unused
+    
+    @staticmethod
+    def invalidate_all_codes(user_id: int, session):
+        """Invalidiert alle Recovery-Codes eines Users (Phase 8c Security Hardening)
+        
+        Verwendet für Recovery-Code Regeneration - alte Codes werden gelöscht.
+        """
+        models = importlib.import_module('.02_models', 'src')
+        
+        deleted = session.query(models.RecoveryCode).filter_by(
+            user_id=user_id
+        ).delete()
+        
+        session.commit()
+        logger.info(f"🗑️ {deleted} Recovery-Codes invalidiert für User {user_id}")
 
 
 class MasterKeyManager:

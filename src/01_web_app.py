@@ -26,6 +26,7 @@ ai_client = importlib.import_module('.03_ai_client', 'src')
 processing = importlib.import_module('.12_processing', 'src')
 background_jobs = importlib.import_module('.14_background_jobs', 'src')
 provider_utils = importlib.import_module('.15_provider_utils', 'src')
+password_validator = importlib.import_module('.09_password_validator', 'src')
 
 logger = logging.getLogger(__name__)
 
@@ -54,17 +55,28 @@ def check_dek_in_session():
     
     Falls User authentifiziert ist aber DEK fehlt (z.B. nach Session-Expire),
     wird der User zur Passwort-Reauth weitergeleitet.
+    
+    Phase 8c: Security Hardening - Mandatory 2FA Check
+    User ohne aktivierte 2FA werden automatisch zu /2fa/setup weitergeleitet.
     """
-    # Skip für Login/Logout/Static-Routes
-    if request.endpoint in ['login', 'register', 'logout', 'static', 'verify_2fa']:
+    # Skip für Login/Logout/Static-Routes + 2FA-Setup
+    if request.endpoint in ['login', 'register', 'logout', 'static', 'verify_2fa', 'setup_2fa']:
         return None
     
+    # DEK-Check (Zero-Knowledge)
     if current_user.is_authenticated and not session.get('master_key'):
         logger.warning(f"⚠️ User {current_user.user_model.id} authenticated aber DEK in Session fehlt - Reauth erforderlich")
         session.clear()
         logout_user()
         flash("Sitzung abgelaufen - bitte erneut anmelden", "warning")
         return redirect(url_for("login"))
+    
+    # Mandatory 2FA Check (Phase 8c Security Hardening)
+    if current_user.is_authenticated and not current_user.user_model.totp_enabled:
+        logger.warning(f"⚠️ User {current_user.user_model.id} hat 2FA nicht aktiviert - Redirect zu Setup")
+        flash("2FA ist Pflicht - bitte jetzt einrichten", "warning")
+        return redirect(url_for("setup_2fa"))
+    
     return None
 
 
@@ -236,10 +248,12 @@ def register():
                     error="Passwörter stimmen nicht überein"
                 ), 400
             
-            if len(password) < 8:
+            # Phase 8c: Security Hardening - OWASP Password Policy
+            is_valid, error_msg = password_validator.PasswordValidator.validate(password)
+            if not is_valid:
                 return render_template(
                     "register.html",
-                    error="Passwort muss mindestens 8 Zeichen lang sein"
+                    error=error_msg
                 ), 400
             
             if db.query(models.User).filter_by(username=username).first():
@@ -266,10 +280,12 @@ def register():
             
             logger.info(f"✅ User registriert (ID: {user.id}, DEK/KEK erstellt)")
             
-            return render_template(
-                "register_success.html",
-                username=username
-            )
+            # Phase 8c: Security Hardening - Mandatory 2FA Setup
+            # User wird automatisch zu 2FA-Setup weitergeleitet
+            session['mandatory_2fa_setup'] = True
+            session['new_user_id'] = user.id
+            flash("Registrierung erfolgreich! Bitte richte jetzt 2FA ein (Pflichtfeld).", "success")
+            return redirect(url_for("setup_2fa"))
         
         return render_template("register.html")
     
@@ -1152,6 +1168,87 @@ def save_ai_preferences():
     return redirect(url_for("settings"))
 
 
+@app.route("/settings/password", methods=["GET", "POST"])
+@login_required
+def change_password():
+    """Passwort-Änderung mit KEK-Neuableitung (Phase 8c Security Hardening)"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect(url_for("login"))
+        
+        if request.method == "POST":
+            old_password = request.form.get("old_password", "").strip()
+            new_password = request.form.get("new_password", "").strip()
+            new_password_confirm = request.form.get("new_password_confirm", "").strip()
+            
+            # 1. Validierung: Alle Felder ausgefüllt
+            if not all([old_password, new_password, new_password_confirm]):
+                flash("Alle Felder sind erforderlich", "danger")
+                return render_template("change_password.html")
+            
+            # 2. Validierung: Neue Passwörter stimmen überein
+            if new_password != new_password_confirm:
+                flash("Neue Passwörter stimmen nicht überein", "danger")
+                return render_template("change_password.html")
+            
+            # 3. Validierung: Altes Passwort korrekt
+            if not user.check_password(old_password):
+                flash("Altes Passwort ist falsch", "danger")
+                return render_template("change_password.html")
+            
+            # 4. Validierung: Password Policy (OWASP)
+            is_valid, error_msg = password_validator.PasswordValidator.validate(new_password)
+            if not is_valid:
+                flash(error_msg, "danger")
+                return render_template("change_password.html")
+            
+            # 5. KEK-Neuableitung + DEK-Re-Encryption
+            try:
+                # Entschlüssele DEK mit altem Passwort
+                old_dek = auth.MasterKeyManager.decrypt_dek_from_password(user, old_password)
+                if not old_dek:
+                    flash("DEK-Entschlüsselung fehlgeschlagen", "danger")
+                    return render_template("change_password.html")
+                
+                # Generiere neuen Salt + KEK aus neuem Passwort
+                import secrets
+                import base64
+                new_salt = base64.b64encode(secrets.token_bytes(32)).decode()
+                new_kek = encryption.EncryptionManager.generate_master_key(new_password, new_salt)
+                
+                # Verschlüssele DEK mit neuem KEK
+                new_encrypted_dek = encryption.EncryptionManager.encrypt_dek(old_dek, new_kek)
+                
+                # Speichere neuen Salt + encrypted_dek
+                user.salt = new_salt
+                user.encrypted_dek = new_encrypted_dek
+                user.set_password(new_password)
+                db.commit()
+                
+                logger.info(f"✅ Passwort geändert für User {user.id} - KEK neu abgeleitet, DEK re-encrypted")
+                
+                # 6. Session-Invalidierung (Sicherheit)
+                session.clear()
+                logout_user()
+                
+                flash("Passwort erfolgreich geändert! Bitte neu anmelden.", "success")
+                return redirect(url_for("login"))
+                
+            except Exception as e:
+                db.rollback()
+                logger.error(f"❌ Fehler bei Passwort-Änderung: {e}")
+                flash("Passwort-Änderung fehlgeschlagen. Bitte erneut versuchen.", "danger")
+                return render_template("change_password.html")
+        
+        return render_template("change_password.html")
+    
+    finally:
+        db.close()
+
+
 @app.route("/api/available-models/<provider>")
 @login_required
 def get_available_models(provider):
@@ -1227,6 +1324,38 @@ def setup_2fa():
             "setup_2fa.html",
             qr_code=qr_code,
             totp_secret=totp_secret
+        )
+    
+    finally:
+        db.close()
+
+
+@app.route("/settings/2fa/recovery-codes/regenerate", methods=["POST"])
+@login_required
+def regenerate_recovery_codes():
+    """Generiert neue Recovery-Codes und invalidiert alte (Phase 8c Security Hardening)"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect(url_for("login"))
+        
+        if not user.totp_enabled:
+            flash("2FA ist nicht aktiviert", "danger")
+            return redirect(url_for("settings"))
+        
+        # Invalidiere alle alten Recovery-Codes
+        auth.RecoveryCodeManager.invalidate_all_codes(user.id, db)
+        
+        # Generiere neue 10 Recovery-Codes
+        recovery_codes = auth.RecoveryCodeManager.create_recovery_codes(user.id, db, count=10)
+        
+        logger.info(f"✅ Recovery-Codes regeneriert für User {user.id}")
+        
+        return render_template(
+            "recovery_codes_regenerated.html",
+            recovery_codes=recovery_codes
         )
     
     finally:
