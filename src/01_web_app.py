@@ -2100,7 +2100,8 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
                 strict_transport_security=True,
                 strict_transport_security_max_age=31536000,
                 content_security_policy=csp,
-                content_security_policy_nonce_in=['script-src'],  # Nonce für inline-scripts
+                # NOTE: nonce deaktiviert - inline-scripts funktionieren mit 'unsafe-inline'
+                # content_security_policy_nonce_in=['script-src'],  
             )
             logger.info("🔒 Flask-Talisman aktiviert - Security Headers + CSP")
         
