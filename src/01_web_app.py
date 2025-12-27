@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, UTC
 import logging
 import importlib
 import os
+import threading
+from werkzeug.serving import make_server
 
 try:
     from flask_talisman import Talisman
@@ -1993,37 +1995,58 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
         port: Server Port (default: 5000)
         debug: Debug-Modus (default: True)
         use_https: HTTPS aktivieren (default: False)
-                   - True: Self-signed Certificate (adhoc)
+                   - True: Self-signed Certificate (adhoc) + HTTP Redirector
                    - ('cert.pem', 'key.pem'): Eigene Zertifikate
     """
     global talisman
-    ssl_context = None
-    protocol = "http"
     
     if use_https:
-        protocol = "https"
-        if use_https is True:
-            # Adhoc Self-signed Certificate (requires pyOpenSSL)
-            ssl_context = 'adhoc'
-            logger.info("🔒 HTTPS aktiviert (Self-signed Certificate)")
-        else:
-            # Custom Certificate
-            ssl_context = use_https
-            logger.info(f"🔒 HTTPS aktiviert (Custom Certificate: {use_https[0]})")
+        # Dual-Port Setup: HTTP Redirector + HTTPS Server
+        https_port = port + 1  # z.B. 5001 für HTTPS
         
-        # Flask-Talisman: HTTPS-Enforcement nur wenn HTTPS aktiv
+        # 1. HTTP Redirector auf Port 5000
+        def run_http_redirector():
+            """Einfacher HTTP→HTTPS Redirector"""
+            from flask import Flask as RedirectorApp
+            redirector = RedirectorApp('redirector')
+            
+            @redirector.route('/', defaults={'path': ''})
+            @redirector.route('/<path:path>')
+            def redirect_to_https(path):
+                https_url = request.url.replace('http://', 'https://').replace(f':{port}', f':{https_port}')
+                return redirect(https_url, code=301)
+            
+            print(f"🔀 HTTP Redirector läuft auf http://{host}:{port} → https://localhost:{https_port}")
+            redirector_server = make_server(host, port, redirector, threaded=True)
+            redirector_server.serve_forever()
+        
+        # Starte HTTP Redirector in separatem Thread
+        redirector_thread = threading.Thread(target=run_http_redirector, daemon=True)
+        redirector_thread.start()
+        
+        # 2. HTTPS Server auf Port 5001
+        ssl_context = 'adhoc' if use_https is True else use_https
+        logger.info(f"🔒 HTTPS aktiviert (Port {https_port}, Self-signed Certificate)")
+        
+        # Flask-Talisman für zusätzliche Security Headers
         if TALISMAN_AVAILABLE and os.getenv('FORCE_HTTPS', 'false').lower() == 'true':
             talisman = Talisman(
                 app,
-                force_https=True,
+                force_https=False,  # Redirector übernimmt das
                 strict_transport_security=True,
-                strict_transport_security_max_age=31536000,  # 1 Jahr
-                content_security_policy=None,  # Deaktiviert für Development
+                strict_transport_security_max_age=31536000,
+                content_security_policy=None,
             )
-            logger.info("🔒 Flask-Talisman aktiviert - HTTP→HTTPS Redirect")
+            logger.info("🔒 Flask-Talisman aktiviert - Security Headers")
+        
+        print(f"🌐 Dashboard läuft auf https://{host}:{https_port}")
+        print(f"💡 Tipp: Browser öffnet http://localhost:{port} → Auto-Redirect zu HTTPS")
+        app.run(host=host, port=https_port, debug=debug, ssl_context=ssl_context)
     
-    print(f"🌐 Dashboard läuft auf {protocol}://{host}:{port}")
-    app.run(host=host, port=port, debug=debug, ssl_context=ssl_context)
+    else:
+        # Standard HTTP-Modus (ohne HTTPS)
+        print(f"🌐 Dashboard läuft auf http://{host}:{port}")
+        app.run(host=host, port=port, debug=debug)
 
 
 if __name__ == "__main__":
