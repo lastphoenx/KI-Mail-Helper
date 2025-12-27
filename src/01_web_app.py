@@ -37,8 +37,9 @@ app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-change-in-producti
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SESSION_FILE_DIR'] = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.flask_sessions')
 app.config['SESSION_PERMANENT'] = False
-app.config['SESSION_USE_SIGNER'] = False  # WORKAROUND: Flask-Session 0.5.0-0.8.0 + Werkzeug 3.x + Python 3.13 Bug (bytes vs str in cookie regex)
+app.config['SESSION_USE_SIGNER'] = False  # EMPFOHLEN: Deprecated seit Flask-Session 0.7.0 (server-side irrelevant, 256-bit Session-ID = ausreichend)
 app.config['SESSION_KEY_PREFIX'] = 'mail_helper_'
+app.config['SESSION_ID_LENGTH'] = 32  # 256-bit Entropie für Session-ID (default, explizit dokumentiert)
 
 # Session-Cookie Security (OWASP Best Practices)
 app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', 'false').lower() == 'true'  # True für HTTPS

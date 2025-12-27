@@ -137,6 +137,17 @@
   - Auto-Logout + Flash-Message bei Session-Expire
   - `session.clear()` in Logout (statt nur `pop('master_key')`)
 - [x] **Remember-me deaktiviert** → Zero-Knowledge ohne DEK unmöglich
+- [x] **SESSION_USE_SIGNER=False** → Deprecated seit Flask-Session 0.7.0
+  - Server-Side Sessions benötigen keine Cookie-Signatur
+  - 256-bit Session-ID (`SESSION_ID_LENGTH=32`) = ausreichend Entropie
+  - Empfohlen laut Flask-Session Docs (historische Option)
+
+#### **AI-Model Defaults korrigiert:**
+- [x] **Base-Pass:** `preferred_ai_model = "all-minilm:22m"` (war llama3.2)
+- [x] **Optimize-Pass:** `preferred_ai_model_optimize = "llama3.2:1b"` (war all-minilm:22m)
+- [x] **resolve_model()** erweitert mit `kind` Parameter (base/optimize)
+- [x] **Settings-View Fallbacks** korrigiert
+- [x] **PROVIDER_REGISTRY** aktualisiert mit `default_model_base` / `default_model_optimize`
 
 #### **Migrations:**
 - [x] **7ee0bae8b1c2** - `encrypted_dek` Column hinzugefügt
@@ -146,12 +157,15 @@
   - Konvertiert `encrypted_master_key` → `encrypted_dek`
   - Verwendet alten Master-Key als DEK (Daten bleiben lesbar)
   - Salt-Fallback für Legacy-User ohne salt
+  - Import-Fix mit importlib für scripts/
 
 #### **Testing:**
 - [x] **Neue User:** Registrierung mit `encrypted_dek` (kein `encrypted_master_key`)
-- [x] **Alte User:** Migration-Script ausführbar
+- [x] **Alte User:** Migration-Script erfolgreich getestet
 - [x] **Login-Flow:** DEK in Session nach Login/2FA
 - [x] **Backward-Kompatibilität:** `decrypt_dek_from_password()` hat Fallback
+- [x] **Fresh DB Setup:** DB-Reset + Neuregistrierung getestet
+- [x] **19 Test-Emails:** Analyse erfolgreich (martina: Fertig! ~10m 0s, 19/19)
 
 ### ✅ Phase 9: Learning System & Newsletter-Detection (Abgeschlossen - 25.12.2025)
 **Ziel:** Human-in-the-Loop ML: User-Korrektionen trainieren neue Modelle, bessere Newsletter-Erkennung
@@ -212,7 +226,64 @@
 
 ## 🚀 **Ausstehende Aufgaben (Priorität)**
 
-### **🔴 Höchste Priorität**
+### **🔴 Phase 8c: Security Hardening (In Arbeit - 27.12.2025)**
+**Ziel:** System-weite Sicherheitshärtung nach OWASP-Standards
+
+#### **Prio 1: Password Policy (30 min)**
+- [ ] **PasswordValidator-Klasse** (`07_auth.py`)
+  - Mindestlänge: 24 Zeichen
+  - Komplexität: Groß-, Kleinbuchstaben, Zahlen, Sonderzeichen
+  - Blacklist: 10k häufigste Passwörter (rockyou.txt)
+  - zxcvbn-Integration für Entropy-Messung
+- [ ] **Register-Route Update** (`01_web_app.py`)
+  - Password-Validation vor User-Creation
+  - UI-Feedback: Strength-Meter
+- [ ] **Mandatory 2FA** für neue Registrierungen
+  - Direkter Redirect zu `/2fa/setup` nach Register
+  - Kein Dashboard-Zugriff ohne 2FA-Aktivierung
+
+**Aufwand:** ~30 Minuten
+
+#### **Prio 2: Settings-Features (60 min)**
+- [ ] **Password-Change Route** (`/settings/password`, `01_web_app.py`)
+  - Altes Passwort verifizieren
+  - Neues Passwort validieren (PasswordValidator)
+  - KEK neu ableiten + DEK re-encrypten
+  - Session-Invalidierung nach Passwort-Änderung
+- [ ] **Recovery-Codes Regeneration** (`/settings/2fa/recovery-codes`)
+  - Alte Codes invalidieren
+  - Neue 10 Codes generieren
+  - Download als .txt
+
+**Aufwand:** ~60 Minuten
+
+#### **Prio 3: Argon2id Evaluation (2-3h)**
+- [ ] **Argon2id statt PBKDF2** (`08_encryption.py`)
+  - argon2-cffi installieren
+  - Parameters: time_cost=2, memory_cost=102400 (100MB), parallelism=8
+  - Backward-Kompatibilität: PBKDF2-Fallback
+  - Migration-Script: PBKDF2 → Argon2id (passwort-abhängig)
+- [ ] **Performance-Tests** auf Intel N100
+  - KEK-Derivation-Zeit messen
+  - RAM-Verbrauch überwachen
+- [ ] **Deployment-Strategie**
+  - Rolling Migration oder Big-Bang?
+
+**Aufwand:** ~2-3 Stunden
+
+#### **Prio 4: Pepper (Optional, 15 min)**
+- [ ] **Pepper in .env** (`SECURITY_PEPPER`)
+  - 32 Bytes hex, generiert mit `secrets.token_hex(32)`
+  - Für KEK-Derivation: `PBKDF2(password + pepper, salt)`
+- [ ] **Dokumentation** in INSTALLATION.md
+
+**Aufwand:** ~15 Minuten
+
+**Gesamt-Aufwand:** ~4 Stunden (Prio 1+2+3+4)
+
+---
+
+### **🟡 Mittlere Priorität**
 - [ ] **C1: Scheduler für Auto-Training** (APScheduler / Celery)
   - Nächtlich ≥5 neue Korrektionen → automatisch trainieren
   - Robustheit & Fehlerbehandlung
