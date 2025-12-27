@@ -2056,14 +2056,35 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
         
         # Flask-Talisman für zusätzliche Security Headers
         if TALISMAN_AVAILABLE and os.getenv('FORCE_HTTPS', 'false').lower() == 'true':
+            # CSP Policy: Erlaubt Bootstrap CDN, inline-styles/-scripts für bestehende App
+            csp = {
+                'default-src': "'self'",
+                'script-src': [
+                    "'self'",
+                    "'unsafe-inline'",  # TODO: Refactor inline-scripts zu external files
+                    "https://cdn.jsdelivr.net",  # Bootstrap JS
+                ],
+                'style-src': [
+                    "'self'",
+                    "'unsafe-inline'",  # Bootstrap inline-styles
+                    "https://cdn.jsdelivr.net",  # Bootstrap CSS
+                ],
+                'img-src': "'self' data:",  # Data-URLs für embedded images
+                'font-src': ["'self'", "https://cdn.jsdelivr.net"],
+                'connect-src': "'self'",  # AJAX nur zu eigenem Server
+                'frame-src': "'none'",  # Keine externen Frames (nur sandbox-iframes)
+                'object-src': "'none'",  # Kein Flash/Java
+            }
+            
             talisman = Talisman(
                 app,
                 force_https=False,  # Redirector übernimmt das
                 strict_transport_security=True,
                 strict_transport_security_max_age=31536000,
-                content_security_policy=None,
+                content_security_policy=csp,
+                content_security_policy_nonce_in=['script-src'],  # Nonce für inline-scripts
             )
-            logger.info("🔒 Flask-Talisman aktiviert - Security Headers")
+            logger.info("🔒 Flask-Talisman aktiviert - Security Headers + CSP")
         
         print(f"🌐 Dashboard läuft auf https://{host}:{https_port}")
         print(f"💡 Tipp: Browser öffnet http://localhost:{port} → Auto-Redirect zu HTTPS")
