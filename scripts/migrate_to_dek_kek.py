@@ -16,11 +16,14 @@ import logging
 import getpass
 import sys
 import os
+import importlib
 
 # Path-Fix für Import aus scripts/
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src import models, encryption
+# Importlib-basierte Imports (wie in anderen Modulen)
+models = importlib.import_module('src.02_models')
+encryption = importlib.import_module('src.08_encryption')
 
 logging.basicConfig(
     level=logging.INFO,

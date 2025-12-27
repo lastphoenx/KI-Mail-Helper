@@ -91,9 +91,9 @@ class User(Base):
 
     # KI-Präferenzen
     preferred_ai_provider = Column(String(20), default=AIProvider.OLLAMA.value)
-    preferred_ai_model = Column(String(100), default="llama3.2")
+    preferred_ai_model = Column(String(100), default="all-minilm:22m")  # Base-Pass: schnelles Embedding-Modell
     preferred_ai_provider_optimize = Column(String(20), default=AIProvider.OLLAMA.value)
-    preferred_ai_model_optimize = Column(String(100), default="llama3.2:1b")
+    preferred_ai_model_optimize = Column(String(100), default="llama3.2:1b")  # Optimize-Pass: besseres LLM
     
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))

@@ -207,7 +207,7 @@ def _fallback_response() -> Dict[str, Any]:
 class LocalOllamaClient(AIClient):
     """Lokales LLM via Ollama (Standard-Backend)"""
 
-    DEFAULT_MODEL = "llama3.2"
+    DEFAULT_MODEL = "all-minilm:22m"  # Base-Pass Default
 
     def __init__(
         self,
@@ -650,10 +650,18 @@ class AnthropicClient(AIClient):
         return _validate_ai_payload(parsed)
 
 
-def resolve_model(provider: str, requested_model: Optional[str]) -> str:
+def resolve_model(provider: str, requested_model: Optional[str], kind: str = "base") -> str:
     """
     Resolves das Modell für einen Provider.
     WICHTIG: Kein ENFORCED_MODEL mehr! Gibt angeforderte Modelle durch.
+    
+    Args:
+        provider: KI-Provider (ollama, openai, etc.)
+        requested_model: Gewünschtes Modell (optional)
+        kind: 'base' oder 'optimize' für Default-Lookup
+    
+    Returns:
+        Resolved model name
     """
     provider_key = (provider or "ollama").lower()
     config = PROVIDER_REGISTRY.get(provider_key) or {}
@@ -661,7 +669,9 @@ def resolve_model(provider: str, requested_model: Optional[str]) -> str:
     if requested_model and requested_model.strip():
         return requested_model.strip()
     
-    return config.get("default_model", LocalOllamaClient.DEFAULT_MODEL)
+    # Lookup: default_model_base oder default_model_optimize (Fallback: base)
+    default_key = f"default_model_{kind}" if kind in ("base", "optimize") else "default_model_base"
+    return config.get(default_key, config.get("default_model_base", LocalOllamaClient.DEFAULT_MODEL))
 
 
 def provider_requires_cloud(provider: str) -> bool:
@@ -692,8 +702,11 @@ def describe_provider_options() -> List[Dict[str, Any]]:
         options.append({
             "id": provider_key,
             "label": cfg["label"],
-            "default_model": cfg.get("default_model"),
+            "default_model_base": cfg.get("default_model_base"),
+            "default_model_optimize": cfg.get("default_model_optimize"),
             "models": cfg.get("models", []),
+            "models_base": cfg.get("models_base", []),
+            "models_optimize": cfg.get("models_optimize", []),
             "requires_api_key": cfg.get("requires_api_key", False),
             "env_key": env_key,
             "available": available,

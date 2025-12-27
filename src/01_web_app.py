@@ -37,7 +37,7 @@ app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-change-in-producti
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SESSION_FILE_DIR'] = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.flask_sessions')
 app.config['SESSION_PERMANENT'] = False
-app.config['SESSION_USE_SIGNER'] = True  # Flask-Session 0.5.x: Session-ID signieren (Tamper-Schutz)
+app.config['SESSION_USE_SIGNER'] = False  # WORKAROUND: Flask-Session 0.5.0-0.8.0 + Werkzeug 3.x + Python 3.13 Bug (bytes vs str in cookie regex)
 app.config['SESSION_KEY_PREFIX'] = 'mail_helper_'
 
 # Session-Cookie Security (OWASP Best Practices)
@@ -1087,10 +1087,10 @@ def settings():
                     account.imap_username = "***verschlüsselt***"
         
         selected_provider_base = (user.preferred_ai_provider or "ollama").lower()
-        selected_model_base = user.preferred_ai_model or "llama3.2"
+        selected_model_base = user.preferred_ai_model or "all-minilm:22m"
         
         selected_provider_optimize = (user.preferred_ai_provider_optimize or "ollama").lower()
-        selected_model_optimize = user.preferred_ai_model_optimize or "all-minilm:22m"
+        selected_model_optimize = user.preferred_ai_model_optimize or "llama3.2:1b"
         
         return render_template(
             "settings.html",
