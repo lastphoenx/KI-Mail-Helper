@@ -121,7 +121,8 @@ class GoogleOAuthManager:
             return token_data
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Token Refresh Fehler: {e}")
+            logger.debug(f"Token refresh error details: {e}")
+            logger.error("❌ Token Refresh fehlgeschlagen (credentials sanitized)")
             return None
     
     @staticmethod
@@ -149,7 +150,8 @@ class GoogleOAuthManager:
             return None
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"❌ User Info Fehler: {e}")
+            logger.debug(f"User info error details: {e}")
+            logger.error("❌ User Info Fehler (credentials sanitized)")
             return None
 
 
