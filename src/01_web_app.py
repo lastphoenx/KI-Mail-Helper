@@ -1214,9 +1214,7 @@ def change_password():
                     return render_template("change_password.html")
                 
                 # Generiere neuen Salt + KEK aus neuem Passwort
-                import secrets
-                import base64
-                new_salt = base64.b64encode(secrets.token_bytes(32)).decode()
+                new_salt = encryption.EncryptionManager.generate_salt()
                 new_kek = encryption.EncryptionManager.generate_master_key(new_password, new_salt)
                 
                 # Verschlüssele DEK mit neuem KEK

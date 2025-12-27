@@ -1,10 +1,12 @@
 ﻿"""
 Mail Helper - Password Validator (Security Hardening Phase 8c)
-OWASP-konforme Password-Policy mit Entropie-Messung
+OWASP-konforme Password-Policy mit Entropie-Messung + HIBP-Check
 """
 
 import re
 import logging
+import hashlib
+import requests
 from typing import Tuple, Optional
 
 logger = logging.getLogger(__name__)
@@ -88,6 +90,11 @@ class PasswordValidator:
         if password_lower in COMMON_PASSWORDS:
             return False, "Passwort ist zu häufig/unsicher (in Top-100 Passwortliste)"
         
+        # 3b. Have I Been Pwned Check (k-Anonymity Model - Zero-Knowledge!)
+        hibp_count = cls._check_hibp(password)
+        if hibp_count is not None and hibp_count > 0:
+            return False, f"⚠️ Passwort wurde {hibp_count:,}x in Datenlecks gefunden (Have I Been Pwned). Bitte anderes Passwort wählen!"
+        
         # 4. zxcvbn-Check (optional, wenn installiert)
         try:
             import zxcvbn
@@ -117,6 +124,53 @@ class PasswordValidator:
         
         # Alle Checks bestanden
         return True, None
+    
+    @staticmethod
+    def _check_hibp(password: str) -> Optional[int]:
+        """Prüft Passwort gegen Have I Been Pwned API (k-Anonymity Model - Zero-Knowledge!)
+        
+        Sendet nur erste 5 Zeichen vom SHA-1 Hash an API.
+        API gibt alle Hashes mit gleichem Prefix zurück.
+        Client matched lokal → kein Passwort wird übertragen!
+        
+        Args:
+            password: Zu prüfendes Passwort
+            
+        Returns:
+            Anzahl der Fundstellen in Datenlecks (None bei API-Fehler)
+        """
+        try:
+            # 1. SHA-1 Hash des Passworts berechnen
+            sha1_hash = hashlib.sha1(password.encode('utf-8')).hexdigest().upper()
+            
+            # 2. Erste 5 Zeichen (Prefix) an API senden
+            prefix = sha1_hash[:5]
+            suffix = sha1_hash[5:]
+            
+            # 3. API-Request (k-Anonymity Model)
+            url = f"https://api.pwnedpasswords.com/range/{prefix}"
+            response = requests.get(url, timeout=3)
+            
+            if response.status_code != 200:
+                logger.warning(f"HIBP API error: {response.status_code}")
+                return None  # Bei API-Fehler: nicht blockieren
+            
+            # 4. Lokaler Match (Zero-Knowledge!)
+            for line in response.text.splitlines():
+                hash_suffix, count = line.split(':')
+                if hash_suffix == suffix:
+                    return int(count)
+            
+            # Passwort nicht in HIBP gefunden ✅
+            return 0
+        
+        except requests.exceptions.Timeout:
+            logger.warning("HIBP API timeout - überspringe Check")
+            return None  # Bei Timeout: nicht blockieren
+        
+        except Exception as e:
+            logger.error(f"HIBP Check fehlgeschlagen: {e}")
+            return None  # Bei Fehler: nicht blockieren
     
     @staticmethod
     def _has_sequential_chars(password: str, min_seq_length: int = 4) -> bool:
