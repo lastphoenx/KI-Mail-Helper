@@ -19,6 +19,9 @@ ai_client = importlib.import_module('.03_ai_client', 'src')
 
 logger = logging.getLogger(__name__)
 
+# Layer 4 Security: Resource Exhaustion Prevention
+MAX_EMAILS_PER_REQUEST = 1000
+
 
 @dataclass
 class FetchJob:
@@ -74,6 +77,9 @@ class BackgroundJobQueue:
         sanitize_level: int,
         meta: Optional[Dict[str, Any]] = None,
     ) -> str:
+        if max_mails > MAX_EMAILS_PER_REQUEST:
+            raise ValueError(f"max_mails darf maximal {MAX_EMAILS_PER_REQUEST} sein (gegeben: {max_mails})")
+        
         job_id = uuid.uuid4().hex
         job = FetchJob(
             job_id=job_id,
@@ -184,7 +190,7 @@ class BackgroundJobQueue:
             logger.error("❌ Job %s fehlgeschlagen: %s", job.job_id, exc, exc_info=True)
             self._update_status(job.job_id, {
                 "state": "error",
-                "message": str(exc),
+                "message": "Verarbeitung fehlgeschlagen (siehe Server-Logs)",  # Layer 4: Exception Sanitization
             })
         finally:
             session.close()

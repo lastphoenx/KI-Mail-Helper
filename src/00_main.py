@@ -35,6 +35,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DATABASE_PATH = "emails.db"
+MAX_EMAILS_PER_REQUEST = 1000  # Layer 4 Security: Resource Exhaustion Prevention
 
 
 def init_db():
@@ -50,10 +51,13 @@ def fetch_and_process(max_mails: int = 50, user_id: int = None, master_keys: dic
     """Holt neue Mails und verarbeitet sie
     
     Args:
-        max_mails: Max. Mails pro Account
+        max_mails: Max. Mails pro Account (max 1000)
         user_id: Spezifischer User (None = alle)
         master_keys: Dict von user_id -> master_key für Entschlüsselung
     """
+    if max_mails > MAX_EMAILS_PER_REQUEST:
+        raise ValueError(f"max_mails darf maximal {MAX_EMAILS_PER_REQUEST} sein (gegeben: {max_mails})")
+    
     if master_keys is None:
         master_keys = {}
     
@@ -334,13 +338,35 @@ def main():
         logger.info("📧 Hole und verarbeite Mails einmalig...")
         master_keys = {}
         if args.master_keys:
+            # DEPRECATED: CLI-Args sind in 'ps aux' sichtbar (Security-Risk)
+            logger.warning("⚠️  Master-Keys via CLI sind unsicher (ps aux)! Besser: stdin ohne --master-keys")
             try:
                 master_keys = json.loads(args.master_keys)
                 master_keys = {int(k): v for k, v in master_keys.items()}
             except json.JSONDecodeError as e:
                 logger.error(f"❌ Ungültiges Master-Keys JSON-Format: {e}")
                 return 1
-        success = fetch_and_process(max_mails=args.max_mails, master_keys=master_keys)
+        else:
+            # SECURE: Master-Keys via stdin (nicht in ps aux sichtbar)
+            import getpass
+            try:
+                keys_input = getpass.getpass("Master-Keys JSON (oder Enter für leer): ")
+                if keys_input.strip():
+                    master_keys = json.loads(keys_input)
+                    master_keys = {int(k): v for k, v in master_keys.items()}
+                    logger.info("✅ Master-Keys erfolgreich geladen (via stdin)")
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Ungültiges Master-Keys JSON-Format: {e}")
+                return 1
+            except (KeyboardInterrupt, EOFError):
+                logger.info("❌ Abbruch durch User")
+                return 1
+        
+        try:
+            success = fetch_and_process(max_mails=args.max_mails, master_keys=master_keys)
+        except ValueError as e:
+            logger.error(f"❌ {e}")
+            return 1
         return 0 if success else 1
         
     elif args.fetch_only:

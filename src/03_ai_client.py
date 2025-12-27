@@ -547,6 +547,8 @@ class OpenAIClient(AIClient):
         self.api_key = api_key
         self.model = model or PROVIDER_REGISTRY["openai"]["default_model"]
         self.timeout = int(os.getenv("OPENAI_TIMEOUT", "300"))
+        self.max_retries = 3
+        self.retry_delay = 2  # Sekunden
 
     def analyze_email(self, subject: str, body: str, language: str = "de") -> Dict[str, Any]:
         payload = {
