@@ -39,7 +39,11 @@ class AuthManager:
         img = qr.make_image(fill_color="black", back_color="white")
         
         buf = BytesIO()
-        img.save(buf, format='PNG')
+        # PyPNGImage (qrcode ohne PIL) vs PIL.Image haben unterschiedliche save() APIs
+        try:
+            img.save(buf, format='PNG')  # PIL/Pillow
+        except TypeError:
+            img.save(buf)  # pypng (kein format-Parameter)
         buf.seek(0)
         
         img_base64 = base64.b64encode(buf.getvalue()).decode()
