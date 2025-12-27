@@ -41,6 +41,19 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, template_folder="../templates")
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-change-in-production')
 
+# Reverse Proxy Support (nginx, caddy, traefik, etc.)
+# Verarbeitet X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, X-Forwarded-Prefix
+if os.getenv('BEHIND_REVERSE_PROXY', 'false').lower() == 'true':
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,      # X-Forwarded-For (Client IP)
+        x_proto=1,    # X-Forwarded-Proto (http/https)
+        x_host=1,     # X-Forwarded-Host (Domain)
+        x_prefix=1    # X-Forwarded-Prefix (URL Prefix)
+    )
+    logger.info("🔄 ProxyFix aktiviert - App läuft hinter Reverse Proxy")
+
 # Server-Side Sessions für Zero-Knowledge Security
 # Master-Keys werden NUR auf dem Server gespeichert, NICHT im Browser-Cookie
 app.config['SESSION_TYPE'] = 'filesystem'
