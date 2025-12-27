@@ -55,17 +55,8 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF-Schutz
 
 Session(app)
 
-# HTTPS Enforcement mit Flask-Talisman (optional, nur wenn verfügbar)
+# HTTPS Enforcement mit Flask-Talisman wird dynamisch in start_server() aktiviert
 talisman = None
-if TALISMAN_AVAILABLE and os.getenv('FORCE_HTTPS', 'false').lower() == 'true':
-    talisman = Talisman(
-        app,
-        force_https=True,
-        strict_transport_security=True,
-        strict_transport_security_max_age=31536000,  # 1 Jahr
-        content_security_policy=None,  # Deaktiviert für Development (sonst CSS/JS-Probleme)
-    )
-    logger.info("🔒 Flask-Talisman aktiviert - HTTPS erzwungen")
 
 @app.before_request
 def check_dek_in_session():
@@ -2005,6 +1996,7 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
                    - True: Self-signed Certificate (adhoc)
                    - ('cert.pem', 'key.pem'): Eigene Zertifikate
     """
+    global talisman
     ssl_context = None
     protocol = "http"
     
@@ -2018,6 +2010,17 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
             # Custom Certificate
             ssl_context = use_https
             logger.info(f"🔒 HTTPS aktiviert (Custom Certificate: {use_https[0]})")
+        
+        # Flask-Talisman: HTTPS-Enforcement nur wenn HTTPS aktiv
+        if TALISMAN_AVAILABLE and os.getenv('FORCE_HTTPS', 'false').lower() == 'true':
+            talisman = Talisman(
+                app,
+                force_https=True,
+                strict_transport_security=True,
+                strict_transport_security_max_age=31536000,  # 1 Jahr
+                content_security_policy=None,  # Deaktiviert für Development
+            )
+            logger.info("🔒 Flask-Talisman aktiviert - HTTP→HTTPS Redirect")
     
     print(f"🌐 Dashboard läuft auf {protocol}://{host}:{port}")
     app.run(host=host, port=port, debug=debug, ssl_context=ssl_context)
