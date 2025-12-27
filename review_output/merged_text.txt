@@ -1,0 +1,98 @@
+####################################################################################################
+# MERGED FILE: Text Files
+# GENERATED: 2025-12-27 16:38:28
+# FILE COUNT: 1
+####################################################################################################
+
+
+####################################################################################################
+# FILE: templates/change_password_route.txt
+# PATH: /home/thomas/projects/KI-Mail-Helper/templates/change_password_route.txt
+# TYPE: Text
+####################################################################################################
+
+﻿@app.route("/settings/password", methods=["GET", "POST"])
+@login_required
+def change_password():
+    """Passwort-Änderung mit KEK-Neuableitung (Phase 8c Security Hardening)"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect(url_for("login"))
+        
+        if request.method == "POST":
+            old_password = request.form.get("old_password", "").strip()
+            new_password = request.form.get("new_password", "").strip()
+            new_password_confirm = request.form.get("new_password_confirm", "").strip()
+            
+            # 1. Validierung: Alle Felder ausgefüllt
+            if not all([old_password, new_password, new_password_confirm]):
+                flash("Alle Felder sind erforderlich", "danger")
+                return render_template("change_password.html")
+            
+            # 2. Validierung: Neue Passwörter stimmen überein
+            if new_password != new_password_confirm:
+                flash("Neue Passwörter stimmen nicht überein", "danger")
+                return render_template("change_password.html")
+            
+            # 3. Validierung: Altes Passwort korrekt
+            if not user.check_password(old_password):
+                flash("Altes Passwort ist falsch", "danger")
+                return render_template("change_password.html")
+            
+            # 4. Validierung: Password Policy (OWASP)
+            is_valid, error_msg = password_validator.PasswordValidator.validate(new_password)
+            if not is_valid:
+                flash(error_msg, "danger")
+                return render_template("change_password.html")
+            
+            # 5. KEK-Neuableitung + DEK-Re-Encryption
+            try:
+                # Entschlüssele DEK mit altem Passwort
+                old_dek = auth.MasterKeyManager.decrypt_dek_from_password(user, old_password)
+                if not old_dek:
+                    flash("DEK-Entschlüsselung fehlgeschlagen", "danger")
+                    return render_template("change_password.html")
+                
+                # Generiere neuen Salt + KEK aus neuem Passwort
+                import secrets
+                import base64
+                new_salt = base64.b64encode(secrets.token_bytes(32)).decode()
+                new_kek = encryption.EncryptionManager.generate_master_key(new_password, new_salt)
+                
+                # Verschlüssele DEK mit neuem KEK
+                new_encrypted_dek = encryption.EncryptionManager.encrypt_dek(old_dek, new_kek)
+                
+                # Speichere neuen Salt + encrypted_dek
+                user.salt = new_salt
+                user.encrypted_dek = new_encrypted_dek
+                user.set_password(new_password)
+                db.commit()
+                
+                logger.info(f"✅ Passwort geändert für User {user.id} - KEK neu abgeleitet, DEK re-encrypted")
+                
+                # 6. Session-Invalidierung (Sicherheit)
+                session.clear()
+                logout_user()
+                
+                flash("Passwort erfolgreich geändert! Bitte neu anmelden.", "success")
+                return redirect(url_for("login"))
+                
+            except Exception as e:
+                db.rollback()
+                logger.error(f"❌ Fehler bei Passwort-Änderung: {e}")
+                flash("Passwort-Änderung fehlgeschlagen. Bitte erneut versuchen.", "danger")
+                return render_template("change_password.html")
+        
+        return render_template("change_password.html")
+    
+    finally:
+        db.close()
+
+####################################################################################################
+# END OF FILE: templates/change_password_route.txt
+####################################################################################################
+
+

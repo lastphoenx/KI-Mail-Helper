@@ -1,0 +1,2921 @@
+<!--
+====================================================================================================
+ MERGED FILE: HTML Files
+ GENERATED: 2025-12-27 16:38:28
+ FILE COUNT: 17
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/add_mail_account.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/add_mail_account.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Mail-Account hinzufügen - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <h2>Neuen Mail-Account hinzufügen</h2>
+            
+            {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+            {% endif %}
+            
+            <form method="POST" class="mt-4">
+                <!-- IMAP (Eingang) -->
+                <h4 class="mt-4 mb-3">📥 Eingangsserver (IMAP)</h4>
+                
+                <div class="mb-3">
+                    <label for="name" class="form-label">Account-Name (z.B. "Martina GMX")</label>
+                    <input type="text" class="form-control" id="name" name="name" required>
+                    <small class="text-muted">Nur für deine Übersicht</small>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="imap_server" class="form-label">IMAP-Server</label>
+                    <input type="text" class="form-control" id="imap_server" name="imap_server" placeholder="z.B. imap.gmx.net" required>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="imap_port" class="form-label">IMAP-Port</label>
+                            <input type="number" class="form-control" id="imap_port" name="imap_port" value="993" required>
+                            <small class="text-muted">993 (SSL) oder 143 (STARTTLS)</small>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="imap_encryption" class="form-label">Verschlüsselung</label>
+                            <select class="form-select" id="imap_encryption" name="imap_encryption">
+                                <option value="SSL" selected>SSL/TLS (Port 993)</option>
+                                <option value="STARTTLS">STARTTLS (Port 143)</option>
+                                <option value="NONE">Keine</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="imap_username" class="form-label">E-Mail-Adresse / Benutzername</label>
+                    <input type="email" class="form-control" id="imap_username" name="imap_username" placeholder="z.B. martina@gmx.net" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="imap_password" class="form-label">IMAP-Passwort</label>
+                    <input type="password" class="form-control" id="imap_password" name="imap_password" required>
+                    <small class="text-muted">Wird verschlüsselt in der Datenbank gespeichert</small>
+                </div>
+                
+                <hr class="my-4">
+                
+                <!-- SMTP (Ausgang) -->
+                <h4 class="mt-4 mb-3">📤 Ausgangsserver (SMTP) <small class="text-muted">(optional)</small></h4>
+                <p class="text-muted">Für den Mailversand - meist identisch mit IMAP-Einstellungen</p>
+                
+                <div class="mb-3">
+                    <label for="smtp_server" class="form-label">SMTP-Server</label>
+                    <input type="text" class="form-control" id="smtp_server" name="smtp_server" placeholder="z.B. smtp.gmx.net">
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="smtp_port" class="form-label">SMTP-Port</label>
+                            <input type="number" class="form-control" id="smtp_port" name="smtp_port" value="587">
+                            <small class="text-muted">587 (STARTTLS) oder 465 (SSL)</small>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="smtp_encryption" class="form-label">Verschlüsselung</label>
+                            <select class="form-select" id="smtp_encryption" name="smtp_encryption">
+                                <option value="STARTTLS" selected>STARTTLS (Port 587)</option>
+                                <option value="SSL">SSL (Port 465)</option>
+                                <option value="NONE">Keine</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="smtp_username" class="form-label">SMTP-Benutzername</label>
+                    <input type="email" class="form-control" id="smtp_username" name="smtp_username" placeholder="Usually same as IMAP">
+                    <small class="text-muted">Meist wie IMAP-Benutzername</small>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="smtp_password" class="form-label">SMTP-Passwort</label>
+                    <input type="password" class="form-control" id="smtp_password" name="smtp_password">
+                    <small class="text-muted">Lass leer um IMAP-Passwort zu verwenden</small>
+                </div>
+                
+                <hr class="my-4">
+                
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                    <a href="/settings" class="btn btn-secondary">Abbrechen</a>
+                    <button type="submit" class="btn btn-primary">Account hinzufügen</button>
+                </div>
+            </form>
+            
+            <!-- Help Sections -->
+            <div class="mt-5">
+                <h5>📚 Hilfe für bekannte Provider:</h5>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="alert alert-info">
+                            <strong>GMX:</strong>
+                            <ul class="mb-0 small">
+                                <li><strong>IMAP:</strong> imap.gmx.net:993 (SSL)</li>
+                                <li><strong>SMTP:</strong> smtp.gmx.net:587 (STARTTLS)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="alert alert-info">
+                            <strong>Gmail:</strong>
+                            <ul class="mb-0 small">
+                                <li>Nutze <strong>Google OAuth</strong> (Empfohlen)</li>
+                                <li>Oder: imap.gmail.com:993, smtp.gmail.com:587</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/add_mail_account.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/base.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/base.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Mail Helper{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .priority-rot { background-color: #dc3545; color: white; }
+        .priority-gelb { background-color: #ffc107; color: black; }
+        .priority-grün { background-color: #28a745; color: white; }
+        
+        .matrix-cell {
+            border: 2px solid #dee2e6;
+            min-height: 120px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .matrix-cell:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">📧 Mail Helper</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <div class="navbar-nav">
+                    <a class="nav-link" href="/dashboard">📊 Matrix</a>
+                    <a class="nav-link" href="/list">📋 Liste</a>
+                    <a class="nav-link" href="/settings">⚙️ Einstellungen</a>
+                </div>
+                <div class="navbar-nav ms-auto">
+                    {% if current_user.is_authenticated %}
+                    <div class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="userMenu" role="button" data-bs-toggle="dropdown">
+                            👤 {{ current_user.user_model.username }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenu">
+                            <li><a class="dropdown-item" href="/settings">Einstellungen</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="/logout">Abmelden</a></li>
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+    
+    <main class="container mt-4">
+        {% with flashes = get_flashed_messages(with_categories=true) %}
+        {% if flashes %}
+        <div class="mb-3">
+            {% for category, message in flashes %}
+            <div class="alert alert-{{ category }} shadow-sm" role="alert">
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Progress Modal -->
+    <div class="modal fade" id="progressModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">⏳ Analyse läuft...</h5>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <small class="text-muted" id="progressText">Wird gestartet...</small>
+                        <div class="progress mt-2" style="height: 25px;">
+                            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%">
+                                <span id="progressPercent">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row text-center small">
+                        <div class="col-4">
+                            <strong id="elapsedTime">0s</strong><br><small>Verstrichen</small>
+                        </div>
+                        <div class="col-4">
+                            <strong id="remainingTime">~10min</strong><br><small>Timeout (pro Mail)</small>
+                        </div>
+                        <div class="col-4">
+                            <strong id="emailCount">0/0</strong><br><small>Emails</small>
+                        </div>
+                    </div>
+                    <div class="mt-3" id="statusMessage" style="display: none;">
+                        <div class="alert alert-info mb-0">
+                            <strong id="statusTitle">Analyse abgeschlossen</strong><br>
+                            <small id="statusDetails">Die Analyse wurde erfolgreich abgeschlossen.</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" id="closeAnalysisBtn" style="display: none;">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Korrektur Modal -->
+    <div class="modal fade" id="correctionModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">✏️ Bewertung korrigieren</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-4">
+                        <label class="form-label"><strong>Dringlichkeit</strong></label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="dringlichkeit" id="dring1" value="1">
+                            <label class="btn btn-outline-primary" for="dring1">🟢 Niedrig (1)</label>
+                            <input type="radio" class="btn-check" name="dringlichkeit" id="dring2" value="2">
+                            <label class="btn btn-outline-warning" for="dring2">🟡 Mittel (2)</label>
+                            <input type="radio" class="btn-check" name="dringlichkeit" id="dring3" value="3">
+                            <label class="btn btn-outline-danger" for="dring3">🔴 Hoch (3)</label>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="form-label"><strong>Wichtigkeit</strong></label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="wichtigkeit" id="wich1" value="1">
+                            <label class="btn btn-outline-secondary" for="wich1">⬜ Unwichtig (1)</label>
+                            <input type="radio" class="btn-check" name="wichtigkeit" id="wich2" value="2">
+                            <label class="btn btn-outline-info" for="wich2">⬙ Wichtig (2)</label>
+                            <input type="radio" class="btn-check" name="wichtigkeit" id="wich3" value="3">
+                            <label class="btn btn-outline-success" for="wich3">⬛ Sehr wichtig (3)</label>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="kategorie" class="form-label"><strong>Kategorie / Aktion</strong></label>
+                        <select id="kategorie" class="form-select">
+                            <option value="nur_information">📧 Nur Information</option>
+                            <option value="aktion_erforderlich">📋 Aktion erforderlich</option>
+                            <option value="dringend">🚨 Dringend</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="spamFlag">
+                            <label class="form-check-label" for="spamFlag">
+                                <strong>🚫 Spam?</strong>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="tagsInput" class="form-label"><strong>Tags</strong></label>
+                        <input type="text" id="tagsInput" class="form-control" placeholder="z.B. Rechnung, Dringend, Sicherheit (kommagetrennt)">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="noteInput" class="form-label"><strong>Notiz (optional)</strong></label>
+                        <textarea id="noteInput" class="form-control" rows="2" placeholder="Warum hast du das korrigiert?"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="button" class="btn btn-primary" id="saveCorrectionBtn">💾 Speichern & als Training markieren</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
+
+<!--
+====================================================================================================
+ END OF FILE: templates/base.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/change_password.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/change_password.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+﻿{% extends "base.html" %}
+
+{% block title %}Passwort ändern - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4">
+                    <h3 class="card-title mb-4">🔐 Passwort ändern</h3>
+                    
+                    <div class="alert alert-info">
+                        <strong>Zero-Knowledge Sicherheit:</strong> Dein DEK (Data Encryption Key) wird mit dem neuen Passwort neu verschlüsselt. 
+                        Alle E-Mails bleiben verschlüsselt - keine Neu-Verschlüsselung nötig!
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <strong>⚠️ Wichtig:</strong> Nach Passwort-Änderung wirst du automatisch abgemeldet und musst dich neu anmelden.
+                    </div>
+                    
+                    <form method="POST" action="/settings/password" id="changePasswordForm">
+                        <div class="mb-4">
+                            <label for="old_password" class="form-label">Aktuelles Passwort</label>
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="old_password" 
+                                   name="old_password" 
+                                   required
+                                   autocomplete="current-password">
+                        </div>
+                        
+                        <hr class="my-4">
+                        
+                        <div class="mb-3">
+                            <label for="new_password" class="form-label">Neues Passwort</label>
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="new_password" 
+                                   name="new_password" 
+                                   required
+                                   autocomplete="new-password"
+                                   minlength="24">
+                            <small class="text-muted">
+                                Mindestens 24 Zeichen, mit Groß-/Kleinbuchstaben, Zahlen und Sonderzeichen
+                            </small>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label for="new_password_confirm" class="form-label">Neues Passwort bestätigen</label>
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="new_password_confirm" 
+                                   name="new_password_confirm" 
+                                   required
+                                   autocomplete="new-password"
+                                   minlength="24">
+                        </div>
+                        
+                        <div id="passwordStrength" class="mb-3" style="display:none;">
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                            </div>
+                            <small class="text-muted" id="strengthLabel"></small>
+                        </div>
+                        
+                        <div class="alert alert-secondary small">
+                            <strong>Passwort-Anforderungen:</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>Mindestens 24 Zeichen lang</li>
+                                <li>Groß- und Kleinbuchstaben</li>
+                                <li>Mindestens eine Zahl</li>
+                                <li>Mindestens ein Sonderzeichen</li>
+                                <li>Nicht in Top-100 häufige Passwörter</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Passwort ändern
+                            </button>
+                            <a href="/settings" class="btn btn-secondary">Abbrechen</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const newPasswordInput = document.getElementById('new_password');
+    const confirmInput = document.getElementById('new_password_confirm');
+    const strengthDiv = document.getElementById('passwordStrength');
+    const strengthBar = strengthDiv.querySelector('.progress-bar');
+    const strengthLabel = document.getElementById('strengthLabel');
+    
+    // Simple client-side password strength indicator
+    newPasswordInput.addEventListener('input', function() {
+        const password = this.value;
+        if (password.length === 0) {
+            strengthDiv.style.display = 'none';
+            return;
+        }
+        
+        strengthDiv.style.display = 'block';
+        
+        let strength = 0;
+        if (password.length >= 24) strength += 25;
+        if (password.length >= 32) strength += 15;
+        if (/[a-z]/.test(password)) strength += 15;
+        if (/[A-Z]/.test(password)) strength += 15;
+        if (/\d/.test(password)) strength += 15;
+        if (/[^a-zA-Z0-9]/.test(password)) strength += 15;
+        
+        strengthBar.style.width = strength + '%';
+        
+        if (strength < 40) {
+            strengthBar.className = 'progress-bar bg-danger';
+            strengthLabel.textContent = 'Schwach';
+        } else if (strength < 70) {
+            strengthBar.className = 'progress-bar bg-warning';
+            strengthLabel.textContent = 'Mittel';
+        } else if (strength < 90) {
+            strengthBar.className = 'progress-bar bg-info';
+            strengthLabel.textContent = 'Stark';
+        } else {
+            strengthBar.className = 'progress-bar bg-success';
+            strengthLabel.textContent = 'Sehr stark';
+        }
+    });
+    
+    // Confirm password validation
+    const form = document.getElementById('changePasswordForm');
+    form.addEventListener('submit', function(e) {
+        if (newPasswordInput.value !== confirmInput.value) {
+            e.preventDefault();
+            alert('Neue Passwörter stimmen nicht überein!');
+            confirmInput.focus();
+        }
+    });
+});
+</script>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/change_password.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/dashboard.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/dashboard.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+﻿{% extends "base.html" %}
+
+{% block title %}Dashboard - Mail Helper{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">📊 Mail-Prioritäten Dashboard</h1>
+
+<div class="row mb-4">
+    <div class="col">
+        <div class="alert alert-info">
+            <strong>3×3 Prioritäten-Matrix:</strong> Wichtigkeit (X-Achse) × Dringlichkeit (Y-Achse)
+        </div>
+    </div>
+</div>
+
+<!-- 3x3 Matrix -->
+<div class="mb-5">
+    <h3>Matrix-Ansicht</h3>
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th></th>
+                <th class="text-center">Wenig wichtig (1)</th>
+                <th class="text-center">Mittel wichtig (2)</th>
+                <th class="text-center">Sehr wichtig (3)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Zeile 3: Sehr dringend -->
+            <tr>
+                <td><strong>Sehr dringend (3)</strong></td>
+                <td class="matrix-cell priority-gelb text-center">
+                    <div class="h2">{{ matrix.get('13', 0) }}</div>
+                    <small>Score: 7</small>
+                </td>
+                <td class="matrix-cell priority-rot text-center">
+                    <div class="h2">{{ matrix.get('23', 0) }}</div>
+                    <small>Score: 8</small>
+                </td>
+                <td class="matrix-cell priority-rot text-center">
+                    <div class="h2">{{ matrix.get('33', 0) }}</div>
+                    <small>Score: 9</small>
+                </td>
+            </tr>
+            <!-- Zeile 2: Mittel dringend -->
+            <tr>
+                <td><strong>Mittel dringend (2)</strong></td>
+                <td class="matrix-cell priority-gelb text-center">
+                    <div class="h2">{{ matrix.get('12', 0) }}</div>
+                    <small>Score: 5</small>
+                </td>
+                <td class="matrix-cell priority-gelb text-center">
+                    <div class="h2">{{ matrix.get('22', 0) }}</div>
+                    <small>Score: 6</small>
+                </td>
+                <td class="matrix-cell priority-gelb text-center">
+                    <div class="h2">{{ matrix.get('32', 0) }}</div>
+                    <small>Score: 7</small>
+                </td>
+            </tr>
+            <!-- Zeile 1: Wenig dringend -->
+            <tr>
+                <td><strong>Wenig dringend (1)</strong></td>
+                <td class="matrix-cell priority-grün text-center">
+                    <div class="h2">{{ matrix.get('11', 0) }}</div>
+                    <small>Score: 3</small>
+                </td>
+                <td class="matrix-cell priority-grün text-center">
+                    <div class="h2">{{ matrix.get('21', 0) }}</div>
+                    <small>Score: 4</small>
+                </td>
+                <td class="matrix-cell priority-gelb text-center">
+                    <div class="h2">{{ matrix.get('31', 0) }}</div>
+                    <small>Score: 5</small>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Ampel-Ansicht -->
+<div class="mb-5">
+    <h3>Ampel-Ansicht</h3>
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5>🔴 Hohe Priorität</h5>
+                </div>
+                <div class="card-body">
+                    <p class="h2">{{ ampel.rot|default(0) }}</p>
+                    <p>Mails mit Score 8-9</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-warning">
+                <div class="card-header bg-warning">
+                    <h5>🟡 Mittlere Priorität</h5>
+                </div>
+                <div class="card-body">
+                    <p class="h2">{{ ampel.gelb|default(0) }}</p>
+                    <p>Mails mit Score 5-7</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-success">
+                <div class="card-header bg-success text-white">
+                    <h5>🟢 Niedrige Priorität</h5>
+                </div>
+                <div class="card-body">
+                    <p class="h2">{{ ampel.grün|default(0) }}</p>
+                    <p>Mails mit Score 3-4</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5>📊 Statistik</h5>
+                <ul>
+                    <li>Gesamt: <strong>{{ stats.total|default(0) }}</strong> Mails</li>
+                    <li>Offen: <strong>{{ stats.open|default(0) }}</strong></li>
+                    <li>Erledigt: <strong>{{ stats.done|default(0) }}</strong></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5>🏷️ Top Tags</h5>
+                <ul>
+                    {% for tag in top_tags|default([]) %}
+                    <li>{{ tag }}</li>
+                    {% else %}
+                    <li class="text-muted">Keine Tags vorhanden</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/dashboard.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/edit_mail_account.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/edit_mail_account.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Mail-Account bearbeiten - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <h2>Mail-Account bearbeiten</h2>
+            <p class="text-muted">Kontoname: <strong>{{ account.name }}</strong></p>
+            
+            {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+            {% endif %}
+            
+            <form method="POST" class="mt-4">
+                <!-- IMAP (Eingang) -->
+                <h4 class="mt-4 mb-3">📥 Eingangsserver (IMAP)</h4>
+                
+                <div class="mb-3">
+                    <label for="name" class="form-label">Account-Name</label>
+                    <input type="text" class="form-control" id="name" name="name" value="{{ account.name }}" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="imap_server" class="form-label">IMAP-Server</label>
+                    <input type="text" class="form-control" id="imap_server" name="imap_server" value="{{ account.imap_server }}" required>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="imap_port" class="form-label">IMAP-Port</label>
+                            <input type="number" class="form-control" id="imap_port" name="imap_port" value="{{ account.imap_port }}" required>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="imap_encryption" class="form-label">Verschlüsselung</label>
+                            <select class="form-select" id="imap_encryption" name="imap_encryption">
+                                <option value="SSL" {% if account.imap_encryption == 'SSL' %}selected{% endif %}>SSL/TLS</option>
+                                <option value="STARTTLS" {% if account.imap_encryption == 'STARTTLS' %}selected{% endif %}>STARTTLS</option>
+                                <option value="NONE" {% if account.imap_encryption == 'NONE' %}selected{% endif %}>Keine</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="imap_username" class="form-label">E-Mail-Adresse / Benutzername</label>
+                    <input type="email" class="form-control" id="imap_username" name="imap_username" value="{{ account.imap_username }}" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="imap_password" class="form-label">IMAP-Passwort</label>
+                    <input type="password" class="form-control" id="imap_password" name="imap_password" placeholder="Lass leer um nicht zu ändern">
+                    <small class="text-muted">Nur eingeben wenn du das Passwort ändern möchtest. Wird verschlüsselt gespeichert.</small>
+                </div>
+                
+                <hr class="my-4">
+                
+                <!-- SMTP (Ausgang) -->
+                <h4 class="mt-4 mb-3">📤 Ausgangsserver (SMTP) <small class="text-muted">(optional)</small></h4>
+                
+                <div class="mb-3">
+                    <label for="smtp_server" class="form-label">SMTP-Server</label>
+                    <input type="text" class="form-control" id="smtp_server" name="smtp_server" value="{{ account.smtp_server or '' }}">
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="smtp_port" class="form-label">SMTP-Port</label>
+                            <input type="number" class="form-control" id="smtp_port" name="smtp_port" value="{{ account.smtp_port or 587 }}">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="smtp_encryption" class="form-label">Verschlüsselung</label>
+                            <select class="form-select" id="smtp_encryption" name="smtp_encryption">
+                                <option value="STARTTLS" {% if account.smtp_encryption == 'STARTTLS' or account.smtp_encryption == None %}selected{% endif %}>STARTTLS</option>
+                                <option value="SSL" {% if account.smtp_encryption == 'SSL' %}selected{% endif %}>SSL</option>
+                                <option value="NONE" {% if account.smtp_encryption == 'NONE' %}selected{% endif %}>Keine</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="smtp_username" class="form-label">SMTP-Benutzername</label>
+                    <input type="email" class="form-control" id="smtp_username" name="smtp_username" value="{{ account.smtp_username or '' }}">
+                    <small class="text-muted">Meist wie IMAP-Benutzername</small>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="smtp_password" class="form-label">SMTP-Passwort</label>
+                    <input type="password" class="form-control" id="smtp_password" name="smtp_password" placeholder="Lass leer um nicht zu ändern">
+                    <small class="text-muted">Nur eingeben wenn du das Passwort ändern möchtest oder das IMAP-Passwort nutzen möchtest</small>
+                </div>
+                
+                <hr class="my-4">
+                
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                    <a href="/settings" class="btn btn-secondary">Abbrechen</a>
+                    <button type="submit" class="btn btn-primary">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/edit_mail_account.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/email_detail.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/email_detail.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+﻿{% extends "base.html" %}
+
+{% block title %}E-Mail Details - Mail Helper{% endblock %}
+
+{% block content %}
+<style>
+    #rawHtmlCode {
+        background-color: #f8f8f8;
+        border-radius: 4px;
+        padding: 15px;
+        overflow-x: auto;
+        font-size: 13px;
+        line-height: 1.5;
+        max-height: 600px;
+        overflow-y: auto;
+    }
+    
+    .nav-tabs {
+        border-bottom: 2px solid #dee2e6;
+        margin-bottom: 0;
+    }
+    
+    .nav-tabs .nav-link {
+        border: none;
+        border-bottom: 3px solid transparent;
+        color: #666;
+        padding: 10px 15px;
+        transition: all 0.2s;
+    }
+    
+    .nav-tabs .nav-link:hover {
+        border-bottom-color: #0d6efd;
+        color: #0d6efd;
+    }
+    
+    .nav-tabs .nav-link.active {
+        background: none;
+        color: #0d6efd;
+        border-bottom-color: #0d6efd;
+    }
+</style>
+<div class="mb-3">
+    <a href="/list" class="btn btn-outline-secondary">← Zurück zur Liste</a>
+</div>
+
+<div class="card">
+    <div class="card-header bg-light">
+        <div class="row align-items-center">
+            <div class="col">
+                <h4 class="mb-0">{{ decrypted_subject|default('Kein Betreff') }}</h4>
+            </div>
+            <div class="col-auto">
+                <span class="badge priority-{{ email.farbe }} fs-5">
+                    Score: {{ email.score }}
+                </span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card-body">
+        <!-- Meta-Informationen -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <p><strong>Von:</strong> {{ decrypted_sender }}</p>
+                <p><strong>Datum:</strong> {{ raw.received_at }}</p>
+                <p><strong>Status:</strong> 
+                    {% if email.done %}
+                    <span class="badge bg-success">Erledigt</span>
+                    {% else %}
+                    <span class="badge bg-warning">Offen</span>
+                    {% endif %}
+                </p>
+            </div>
+            <div class="col-md-6">
+                <p id="wichtigkeitDisplay"><strong>Wichtigkeit:</strong> <span id="wichtigkeitValue">{{ email.wichtigkeit }}/3</span> <span id="wichtigkeitSource" class="badge bg-secondary">vom System</span></p>
+                <p id="dringlichkeitDisplay"><strong>Dringlichkeit:</strong> <span id="dringlichkeitValue">{{ email.dringlichkeit }}/3</span> <span id="dringlichkeitSource" class="badge bg-secondary">vom System</span></p>
+                <p><strong>Matrix-Position:</strong> ({{ email.matrix_x }}, {{ email.matrix_y }})</p>
+                <p id="kategorieDisplay"><strong>Kategorie:</strong> <span id="kategorieValue">{{ email.kategorie_aktion }}</span> <span id="kategorieSource" class="badge bg-secondary">vom System</span></p>
+            </div>
+        </div>
+        
+        <div class="alert alert-info mb-4">
+            <strong>ℹ️ Bewertung korrigieren</strong><br>
+            Hat das System die Email falsch eingestuft? Korrigiere die Werte – das hilft dem System, besser zu werden!
+            <button type="button" class="btn btn-sm btn-primary ms-3" id="correctScoreBtn" data-bs-toggle="modal" data-bs-target="#correctionModal">✏️ Bewertung korrigieren</button>
+        </div>
+        
+        <!-- Tags -->
+        {% if decrypted_tags %}
+        <div class="mb-4">
+            <strong>Tags:</strong>
+            {% if decrypted_tags %}
+                {% for tag in decrypted_tags.split(',') %}
+                    {% if tag.strip() %}
+                    <span class="badge bg-secondary">{{ tag.strip() }}</span>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        </div>
+        {% endif %}
+        
+        <!-- Zusammenfassung -->
+        <div class="alert alert-info">
+            <h5>📝 Zusammenfassung</h5>
+            <p>{{ decrypted_summary_de|default('Keine Zusammenfassung verfügbar') }}</p>
+        </div>
+        
+        <!-- Deutsche Übersetzung -->
+        <div class="mb-4">
+            <h5>📄 Übersetzter Text (DE)</h5>
+            <div class="border p-3 bg-light" style="white-space: pre-wrap;">{{ decrypted_text_de|default('Keine Übersetzung verfügbar') }}</div>
+        </div>
+        
+        <!-- Email-Inhalt Tabs -->
+        <div class="mb-4">
+            <h5>📧 E-Mail Inhalt</h5>
+            <ul class="nav nav-tabs" id="emailTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="renderedTab" data-bs-toggle="tab" data-bs-target="#renderedContent" type="button" role="tab" aria-controls="renderedContent" aria-selected="true">
+                        🔍 Gerendert
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="rawHtmlTab" data-bs-toggle="tab" data-bs-target="#rawHtmlContent" type="button" role="tab" aria-controls="rawHtmlContent" aria-selected="false">
+                        <> Raw HTML
+                    </button>
+                </li>
+            </ul>
+            
+            <div class="tab-content" id="emailTabContent">
+                <!-- Rendered Tab -->
+                <div class="tab-pane fade show active" id="renderedContent" role="tabpanel" aria-labelledby="renderedTab">
+                    <div class="border mt-3 bg-white">
+                        <iframe 
+                            id="emailFrame" 
+                            style="width: 100%; height: 600px; border: none;" 
+                            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                            title="E-Mail Vorschau">
+                        </iframe>
+                    </div>
+                </div>
+                
+                <!-- Raw HTML Tab -->
+                <div class="tab-pane fade" id="rawHtmlContent" role="tabpanel" aria-labelledby="rawHtmlTab">
+                    <div class="mt-3">
+                        <div class="d-flex justify-content-between mb-2">
+                            <small class="text-muted">HTML-Quelltext</small>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="copyRawHtml()" title="Kopieren">
+                                📋 Kopieren
+                            </button>
+                        </div>
+                        <pre><code id="rawHtmlCode" class="language-html">{{ decrypted_body|default('Kein Original verfügbar') }}</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- IMAP-Flags Status -->
+        <div class="mb-4">
+            <h5>🚩 IMAP-Flags</h5>
+            <div class="row">
+                <div class="col-md-6">
+                    <h6 class="text-muted">Beim Processing:</h6>
+                    <div id="flagsAtProcessing" class="mb-3">
+                        {% if email.was_seen_at_processing %}
+                        <span class="badge bg-info">👁️ Gelesen</span>
+                        {% else %}
+                        <span class="badge bg-secondary">🔘 Ungelesen</span>
+                        {% endif %}
+                        {% if email.was_answered_at_processing %}
+                        <span class="badge bg-success">✉️ Beantwortet</span>
+                        {% endif %}
+                        {% if email.imap_flags_at_processing %}
+                        <div class="small text-muted mt-2"><code>{{ email.imap_flags_at_processing }}</code></div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h6 class="text-muted">Aktuell vom Server:</h6>
+                    <div id="flagsCurrent" class="mb-3">
+                        <div id="currentFlagsLoading"><small class="text-muted">⏳ Wird abgerufen...</small></div>
+                    </div>
+                </div>
+            </div>
+            <div id="flagsChangedAlert" class="alert alert-warning mt-3" style="display: none;">
+                <strong>⚠️ Status hat sich geändert!</strong>
+                <div id="flagChangesDetail"></div>
+            </div>
+        </div>
+        
+        <!-- Technische Informationen -->
+        <div class="mb-4">
+            <h5>🔧 Technische Informationen</h5>
+            <table class="table table-sm table-borderless">
+                <tbody>
+                    <tr>
+                        <td><strong>IMAP UID:</strong></td>
+                        <td>
+                            {% if email.raw_email.imap_uid %}
+                            <code>{{ email.raw_email.imap_uid }}</code>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>IMAP Folder:</strong></td>
+                        <td>
+                            {% if email.raw_email.imap_folder %}
+                            <code>{{ email.raw_email.imap_folder }}</code>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>IMAP Flags:</strong></td>
+                        <td>
+                            {% if email.raw_email.imap_flags %}
+                            <code>{{ email.raw_email.imap_flags }}</code>
+                            {% else %}
+                            <span class="text-muted">Keine</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Base-Pass (Schnell):</strong></td>
+                        <td>
+                            {% if email.base_model and email.base_provider %}
+                            <code>{{ email.base_provider }}: {{ email.base_model }}</code>
+                            {% else %}
+                            <span class="text-muted">Noch nicht verarbeitet</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Optimize-Pass (LLM):</strong></td>
+                        <td>
+                            {% if email.optimize_model and email.optimize_provider %}
+                            <code>{{ email.optimize_provider }}: {{ email.optimize_model }}</code>
+                            {% else %}
+                            <span class="text-muted">Noch nicht optimiert</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Base-Pass durchgeführt:</strong></td>
+                        <td>{{ email.processed_at or 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Optimize durchgeführt:</strong></td>
+                        <td>{{ email.optimization_completed_at or 'N/A' }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Aktionen -->
+        <div class="card bg-light">
+            <div class="card-body">
+                <h5>⚡ Vorgeschlagene Aktionen</h5>
+                <div class="btn-group-vertical w-100" role="group">
+                    <button id="reprocessBtn" class="btn btn-warning w-100" onclick="reprocessEmail({{ email.id }})">
+                        🔄 Email neu verarbeiten (Base-Pass)
+                    </button>
+                    <button id="optimizeBtn" class="btn btn-info w-100" onclick="optimizeEmail({{ email.id }})">
+                        🔧 Optimize-Pass (bessere Kategorisierung)
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="alert('TODO: Antwort-Entwurf generieren')">
+                        ✍️ Antwort-Entwurf generieren
+                    </button>
+                    <button class="btn btn-outline-info" onclick="alert('TODO: Kalendereintrag anlegen')">
+                        📅 Kalendereintrag anlegen
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="alert('TODO: Auf ToDo-Liste setzen')">
+                        📋 Auf ToDo-Liste setzen
+                    </button>
+                    {% if not email.done %}
+                    <form method="post" action="/email/{{ email.id }}/done" id="markDoneForm">
+                        <button type="submit" id="markDoneBtn" class="btn btn-success w-100">
+                            ✓ Als erledigt markieren
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function getAnalysisModal() {
+    if (typeof analysisModal === 'undefined' || !analysisModal) {
+        analysisModal = new bootstrap.Modal(document.getElementById('progressModal'), {backdrop: 'static', keyboard: false});
+    }
+    return analysisModal;
+}
+
+function reprocessEmail(emailId) {
+    const btn = document.getElementById('reprocessBtn');
+    const markDoneBtn = document.getElementById('markDoneBtn');
+    const optimizeBtn = document.getElementById('optimizeBtn');
+    
+    btn.disabled = true;
+    if (markDoneBtn) markDoneBtn.disabled = true;
+    if (optimizeBtn) optimizeBtn.disabled = true;
+    
+    const modal = getAnalysisModal();
+    modal.show();
+    
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressBar').classList.remove('bg-danger');
+    document.getElementById('progressPercent').textContent = '0%';
+    document.getElementById('progressText').textContent = 'Reprocessing: Email wird neu verarbeitet...';
+    document.getElementById('statusMessage').style.display = 'none';
+    document.getElementById('closeAnalysisBtn').style.display = 'none';
+    
+    const startTime = Date.now();
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+        progress = Math.min(90, progress + Math.random() * 30);
+        document.getElementById('progressBar').style.width = progress + '%';
+        document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+    }, 200);
+    
+    fetch(`/email/${emailId}/reprocess`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        clearInterval(progressInterval);
+        document.getElementById('progressBar').style.width = '100%';
+        if (data.status === 'success') {
+            document.getElementById('progressPercent').textContent = '100%';
+            document.getElementById('progressText').textContent = '✅ Neuer Score: ' + data.score;
+            document.getElementById('statusMessage').style.display = 'block';
+            document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-success mb-0';
+            document.getElementById('statusTitle').textContent = '✅ Reprocessing erfolgreich';
+            document.getElementById('statusDetails').textContent = 'Die Email wurde neu analysiert.';
+            document.getElementById('closeAnalysisBtn').style.display = 'block';
+            document.getElementById('closeAnalysisBtn').onclick = function() {
+                modal.hide();
+                location.reload();
+            };
+        } else {
+            document.getElementById('progressBar').classList.add('bg-danger');
+            document.getElementById('progressText').textContent = '❌ Fehler beim Reprocessing';
+            document.getElementById('statusMessage').style.display = 'block';
+            document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
+            document.getElementById('statusTitle').textContent = '❌ Fehler';
+            document.getElementById('statusDetails').textContent = data.message || data.error || 'Unbekannter Fehler';
+            document.getElementById('closeAnalysisBtn').style.display = 'block';
+            document.getElementById('closeAnalysisBtn').onclick = function() {
+                modal.hide();
+                btn.disabled = false;
+                if (markDoneBtn) markDoneBtn.disabled = false;
+                if (optimizeBtn) optimizeBtn.disabled = false;
+            };
+        }
+    })
+    .catch(error => {
+        clearInterval(progressInterval);
+        document.getElementById('progressBar').style.width = '100%';
+        document.getElementById('progressBar').classList.add('bg-danger');
+        document.getElementById('progressText').textContent = '❌ Netzwerkfehler';
+        document.getElementById('statusMessage').style.display = 'block';
+        document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
+        document.getElementById('statusTitle').textContent = '❌ Netzwerkfehler';
+        document.getElementById('statusDetails').textContent = error.message || 'Verbindung fehlgeschlagen';
+        document.getElementById('closeAnalysisBtn').style.display = 'block';
+        document.getElementById('closeAnalysisBtn').onclick = function() {
+            modal.hide();
+            btn.disabled = false;
+            if (markDoneBtn) markDoneBtn.disabled = false;
+            if (optimizeBtn) optimizeBtn.disabled = false;
+        };
+    });
+}
+
+function optimizeEmail(emailId) {
+    const btn = document.getElementById('optimizeBtn');
+    const reprocessBtn = document.getElementById('reprocessBtn');
+    const markDoneBtn = document.getElementById('markDoneBtn');
+    
+    if (!btn) return;
+    
+    btn.disabled = true;
+    if (reprocessBtn) reprocessBtn.disabled = true;
+    if (markDoneBtn) markDoneBtn.disabled = true;
+    
+    const modal = getAnalysisModal();
+    modal.show();
+    
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressBar').classList.remove('bg-danger');
+    document.getElementById('progressPercent').textContent = '0%';
+    document.getElementById('progressText').textContent = 'Optimize: Email wird optimiert...';
+    document.getElementById('statusMessage').style.display = 'none';
+    document.getElementById('closeAnalysisBtn').style.display = 'none';
+    
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+        progress = Math.min(90, progress + Math.random() * 30);
+        document.getElementById('progressBar').style.width = progress + '%';
+        document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+    }, 200);
+    
+    fetch(`/email/${emailId}/optimize`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.message || data.error || 'Unbekannter Fehler');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        clearInterval(progressInterval);
+        document.getElementById('progressBar').style.width = '100%';
+        if (data.status === 'success') {
+            document.getElementById('progressPercent').textContent = '100%';
+            document.getElementById('progressText').textContent = '✅ Optimize erfolgreich';
+            document.getElementById('statusMessage').style.display = 'block';
+            document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-success mb-0';
+            document.getElementById('statusTitle').textContent = '✅ Optimize-Pass abgeschlossen';
+            document.getElementById('statusDetails').textContent = 'Die Email wurde mit erweiterten Modellen analysiert.';
+            document.getElementById('closeAnalysisBtn').style.display = 'block';
+            document.getElementById('closeAnalysisBtn').onclick = function() {
+                modal.hide();
+                location.reload();
+            };
+        } else {
+            throw new Error(data.message || 'Fehler bei Optimize');
+        }
+    })
+    .catch(error => {
+        clearInterval(progressInterval);
+        document.getElementById('progressBar').style.width = '100%';
+        document.getElementById('progressBar').classList.add('bg-danger');
+        document.getElementById('progressText').textContent = '❌ Optimize fehlgeschlagen';
+        document.getElementById('statusMessage').style.display = 'block';
+        document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
+        document.getElementById('statusTitle').textContent = '❌ Fehler';
+        document.getElementById('statusDetails').textContent = error.message || 'Unbekannter Fehler';
+        document.getElementById('closeAnalysisBtn').style.display = 'block';
+        document.getElementById('closeAnalysisBtn').onclick = function() {
+            modal.hide();
+            btn.disabled = false;
+            if (reprocessBtn) reprocessBtn.disabled = false;
+            if (markDoneBtn) markDoneBtn.disabled = false;
+        };
+    });
+}
+
+function initCorrectionModal(emailId) {
+    const saveCorrectionBtn = document.getElementById('saveCorrectionBtn');
+    if (!saveCorrectionBtn) return;
+    
+    saveCorrectionBtn.onclick = function() {
+        const dringlichkeit = document.querySelector('input[name="dringlichkeit"]:checked')?.value;
+        const wichtigkeit = document.querySelector('input[name="wichtigkeit"]:checked')?.value;
+        const kategorie = document.getElementById('kategorie').value;
+        const spamFlag = document.getElementById('spamFlag').checked;
+        const tagsInput = document.getElementById('tagsInput').value;
+        const note = document.getElementById('noteInput').value;
+        
+        const tags = tagsInput.split(',').map(t => t.trim()).filter(t => t);
+        
+        fetch(`/email/${emailId}/correct`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                dringlichkeit: dringlichkeit ? parseInt(dringlichkeit) : null,
+                wichtigkeit: wichtigkeit ? parseInt(wichtigkeit) : null,
+                kategorie: kategorie,
+                spam_flag: spamFlag,
+                tags: tags,
+                note: note || null
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success') {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('correctionModal'));
+                modal.hide();
+                
+                document.getElementById('wichtigkeitValue').textContent = wichtigkeit + '/3';
+                document.getElementById('wichtigkeitSource').textContent = 'vom User';
+                document.getElementById('wichtigkeitSource').className = 'badge bg-success';
+                
+                document.getElementById('dringlichkeitValue').textContent = dringlichkeit + '/3';
+                document.getElementById('dringlichkeitSource').textContent = 'vom User';
+                document.getElementById('dringlichkeitSource').className = 'badge bg-success';
+                
+                document.getElementById('kategorieValue').textContent = kategorie;
+                document.getElementById('kategorieSource').textContent = 'vom User';
+                document.getElementById('kategorieSource').className = 'badge bg-success';
+                
+                alert('✅ ' + data.message);
+            } else {
+                alert('❌ Fehler: ' + (data.message || 'Unbekannter Fehler'));
+            }
+        })
+        .catch(err => {
+            alert('❌ Fehler: ' + err.message);
+        });
+    };
+}
+
+function copyRawHtml() {
+    const codeElement = document.getElementById('rawHtmlCode');
+    const text = codeElement.textContent;
+    
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = event.target;
+        const oldText = btn.innerHTML;
+        btn.innerHTML = '✅ Kopiert!';
+        setTimeout(() => {
+            btn.innerHTML = oldText;
+        }, 2000);
+    }).catch(err => {
+        alert('Fehler beim Kopieren: ' + err);
+    });
+}
+
+function initializeEmailFrame() {
+    const rawHtmlCode = document.getElementById('rawHtmlCode');
+    const htmlContent = rawHtmlCode.textContent;
+    const emailFrame = document.getElementById('emailFrame');
+    
+    emailFrame.srcdoc = htmlContent;
+}
+
+function highlightRawHtml() {
+    const codeElement = document.getElementById('rawHtmlCode');
+    if (codeElement && window.hljs) {
+        hljs.highlightElement(codeElement);
+    }
+}
+
+function fetchCurrentFlags(emailId) {
+    fetch(`/api/email/${emailId}/flags`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+    })
+    .then(data => {
+        const container = document.getElementById('flagsCurrent');
+        
+        if (!data.imap_flags) {
+            container.innerHTML = '<small class="text-muted">Keine Flags verfügbar</small>';
+            return;
+        }
+        
+        const isSeen = data.is_seen;
+        const isAnswered = data.is_answered;
+        const flags = data.imap_flags;
+        
+        let html = '';
+        html += isSeen ? '<span class="badge bg-info">👁️ Gelesen</span>' : '<span class="badge bg-secondary">🔘 Ungelesen</span>';
+        if (isAnswered) html += ' <span class="badge bg-success">✉️ Beantwortet</span>';
+        html += `<div class="small text-muted mt-2"><code>${flags}</code></div>`;
+        
+        container.innerHTML = html;
+        
+        checkFlagChanges(data, emailId);
+    })
+    .catch(err => {
+        document.getElementById('flagsCurrent').innerHTML = `<small class="text-danger">❌ Fehler: ${err.message}</small>`;
+    });
+}
+
+function checkFlagChanges(currentData, emailId) {
+    const oldSeen = document.getElementById('flagsAtProcessing').innerHTML.includes('👁️');
+    const oldAnswered = document.getElementById('flagsAtProcessing').innerHTML.includes('✉️');
+    
+    const newSeen = currentData.is_seen;
+    const newAnswered = currentData.is_answered;
+    
+    if (oldSeen !== newSeen || oldAnswered !== newAnswered) {
+        const alertDiv = document.getElementById('flagsChangedAlert');
+        const detailDiv = document.getElementById('flagChangesDetail');
+        
+        let changes = [];
+        if (oldSeen !== newSeen) {
+            changes.push(newSeen ? '📖 Markiert als gelesen' : '📭 Markiert als ungelesen');
+        }
+        if (oldAnswered !== newAnswered) {
+            changes.push(newAnswered ? '✉️ Beantwortet' : 'Antwort entfernt');
+        }
+        
+        detailDiv.innerHTML = '<ul><li>' + changes.join('</li><li>') + '</li></ul>';
+        alertDiv.style.display = 'block';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const emailId = window.location.pathname.split('/').pop();
+    initCorrectionModal(emailId);
+    
+    initializeEmailFrame();
+    highlightRawHtml();
+    fetchCurrentFlags(emailId);
+    
+    const modal = document.getElementById('correctionModal');
+    if (modal) {
+        modal.addEventListener('show.bs.modal', function() {
+            document.querySelectorAll('input[name="dringlichkeit"], input[name="wichtigkeit"]').forEach(el => {
+                el.checked = false;
+            });
+            document.getElementById('kategorie').value = 'nur_information';
+            document.getElementById('spamFlag').checked = false;
+            document.getElementById('tagsInput').value = '';
+            document.getElementById('noteInput').value = '';
+        });
+    }
+});
+</script>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-light.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/email_detail.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/google_oauth_setup.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/google_oauth_setup.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Google OAuth Setup - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-4">
+    <div class="col-md-7">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">🔐 Google OAuth einrichten</h4>
+            </div>
+            <div class="card-body p-4">
+                {% if step == 1 %}
+                <!-- Schritt 1: OAuth Credentials eingeben -->
+                <div class="alert alert-info">
+                    <strong>📋 Schritt 1:</strong> Gib deine Google OAuth Credentials ein.
+                </div>
+                
+                <p class="mb-4">
+                    Du brauchst noch deine <strong>Client-ID</strong> und <strong>Client-Secret</strong>?
+                    <a href="#" data-bs-toggle="collapse" data-bs-target="#helpText">Klick hier für Anleitung</a>
+                </p>
+                
+                <div class="collapse mb-4" id="helpText">
+                    <div class="alert alert-light border">
+                        <strong>So bekommst du die Credentials:</strong>
+                        <ol class="small mt-2">
+                            <li>Gehe zu <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a></li>
+                            <li>Erstelle ein neues Projekt: "Mail Helper"</li>
+                            <li>Aktiviere die <strong>Gmail API</strong></li>
+                            <li>Gehe zu <strong>Anmeldedaten</strong> → <strong>OAuth 2.0-Client-ID erstellen</strong></li>
+                            <li>Wähle <strong>"Webapplikation"</strong></li>
+                            <li>Füge diese Redirect URI hinzu:
+                                <code>http://localhost:5000/settings/mail-account/google/callback</code>
+                            </li>
+                            <li>Kopiere <strong>Client-ID</strong> und <strong>Client-Secret</strong></li>
+                        </ol>
+                    </div>
+                </div>
+                
+                {% if error %}
+                <div class="alert alert-danger">
+                    {{ error }}
+                </div>
+                {% endif %}
+                
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="client_id" class="form-label">
+                            <strong>Client-ID</strong>
+                        </label>
+                        <input 
+                            type="text" 
+                            class="form-control" 
+                            id="client_id" 
+                            name="client_id" 
+                            placeholder="xxx.apps.googleusercontent.com"
+                            required
+                        >
+                        <small class="form-text text-muted">
+                            Aus Google Cloud Console
+                        </small>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="client_secret" class="form-label">
+                            <strong>Client-Secret</strong>
+                        </label>
+                        <input 
+                            type="password" 
+                            class="form-control" 
+                            id="client_secret" 
+                            name="client_secret" 
+                            placeholder="••••••••••"
+                            required
+                        >
+                        <small class="form-text text-muted">
+                            Dein Secret wird AES-256 verschlüsselt gespeichert
+                        </small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100 btn-lg">
+                        Weiter zu Google Anmeldung →
+                    </button>
+                </form>
+                
+                {% else %}
+                <!-- Schritt 2: Google Redirect -->
+                <div class="text-center py-5">
+                    <div style="font-size:3rem; margin-bottom:20px;">🔄</div>
+                    <p class="lead">Leite dich zu Google weiter...</p>
+                    <a href="{{ google_auth_url }}" class="btn btn-primary btn-lg">
+                        Mit Google anmelden
+                    </a>
+                </div>
+                {% endif %}
+                
+                <hr>
+                
+                <a href="/settings" class="btn btn-outline-secondary w-100">
+                    ← Zurück zu Einstellungen
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/google_oauth_setup.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/list_view.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/list_view.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+﻿{% extends "base.html" %}
+
+{% block title %}E-Mail Liste - Mail Helper{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">📝 E-Mail Liste</h1>
+
+<!-- Filter -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Priorität</label>
+                <select name="farbe" class="form-select">
+                    <option value="" {% if not filter_color %}selected{% endif %}>Alle</option>
+                    <option value="rot" {% if filter_color == 'rot' %}selected{% endif %}>🔴 Rot (Hoch)</option>
+                    <option value="gelb" {% if filter_color == 'gelb' %}selected{% endif %}>🟡 Gelb (Mittel)</option>
+                    <option value="grün" {% if filter_color == 'grün' %}selected{% endif %}>🟢 Grün (Niedrig)</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Status</label>
+                <select name="done" class="form-select">
+                    <option value="" {% if filter_done not in ['true','false'] %}selected{% endif %}>Alle</option>
+                    <option value="false" {% if filter_done == 'false' %}selected{% endif %}>Offen</option>
+                    <option value="true" {% if filter_done == 'true' %}selected{% endif %}>Erledigt</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Suche</label>
+                <input type="text" name="search" class="form-control" placeholder="Betreff, Absender..." value="{{ search_term }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">&nbsp;</label>
+                <button type="submit" class="btn btn-primary w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- E-Mail-Liste -->
+<div class="card">
+    <div class="card-header">
+        <strong>{{ mails|length }} Mails</strong> (sortiert nach Score)
+    </div>
+    <ul class="list-group list-group-flush">
+        {% for email in mails|default([]) %}
+        {% set raw = email.raw_email %}
+        {% set tag_list = email._decrypted_tags.split(',') if email._decrypted_tags else [] %}
+        <li class="list-group-item">
+            <div class="row align-items-center">
+                <div class="col-md-1 text-center">
+                    <span class="badge priority-{{ email.farbe }} fs-5">
+                        {{ email.score }}
+                    </span>
+                </div>
+                <div class="col-md-8">
+                    <h6 class="mb-1">
+                        <a href="/email/{{ email.id }}" class="text-decoration-none">
+                            {{ email._decrypted_subject|default("(ohne Betreff)") }}
+                        </a>
+                    </h6>
+                    <small class="text-muted">
+                        Von: {{ email._decrypted_sender|default("Unbekannt") }}
+                        {% if raw and raw.received_at %}| {{ raw.received_at }}{% endif %}
+                    </small>
+                    <p class="mb-2 mt-2">{{ email._decrypted_summary_de|default('Keine Zusammenfassung verfügbar')|truncate(200) }}</p>
+                    <div class="small text-muted mb-2">
+                        Dringlichkeit: {{ email.dringlichkeit }} | Wichtigkeit: {{ email.wichtigkeit }} |
+                        Aktion: {{ email.kategorie_aktion|replace('_',' ') }} | Spam: {{ 'Ja' if email.spam_flag else 'Nein' }}
+                    </div>
+                    {% if tag_list %}
+                    <div class="mt-2">
+                        {% for tag in tag_list if tag %}
+                        <span class="badge bg-secondary">{{ tag.strip() }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="col-md-3 text-end">
+                    {% if not email.done %}
+                    <form method="post" action="/email/{{ email.id }}/done" class="d-inline action-form">
+                        <button type="submit" class="btn btn-sm btn-success action-btn" data-action="done">✓ Erledigt</button>
+                    </form>
+                    {% else %}
+                    <span class="badge bg-success">✓ Erledigt</span>
+                    {% endif %}
+                    <a href="/email/{{ email.id }}" class="btn btn-sm btn-outline-primary action-btn" data-action="details">Details</a>
+                </div>
+            </div>
+        </li>
+        {% else %}
+        <li class="list-group-item text-center text-muted py-5">
+            Keine E-Mails gefunden
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+
+<script>
+let isProcessing = false;
+
+document.querySelectorAll('.action-form').forEach(form => {
+    form.addEventListener('submit', function(e) {
+        if (isProcessing) {
+            e.preventDefault();
+            return false;
+        }
+        const btn = this.querySelector('.action-btn');
+        btn.disabled = true;
+        btn.innerHTML = '⏳...';
+        isProcessing = true;
+    });
+});
+
+document.querySelectorAll('.action-btn[data-action="details"]').forEach(btn => {
+    btn.addEventListener('click', function(e) {
+        if (isProcessing) {
+            e.preventDefault();
+            return false;
+        }
+    });
+});
+</script>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/list_view.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/login.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/login.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Anmelden - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+            <h2 class="text-center mb-4">Anmelden</h2>
+            
+            {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+            {% endif %}
+            
+            <form method="POST">
+                <div class="mb-3">
+                    <label for="username" class="form-label">Benutzername</label>
+                    <input type="text" class="form-control" id="username" name="username" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="password" class="form-label">Passwort</label>
+                    <input type="password" class="form-control" id="password" name="password" required>
+                </div>
+                
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="remember" name="remember">
+                    <label class="form-check-label" for="remember">
+                        Anmeldedaten merken
+                    </label>
+                </div>
+                
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary">Anmelden</button>
+                </div>
+            </form>
+            
+            <hr class="my-4">
+            
+            <p class="text-center">
+                Noch kein Account? <a href="/register">Jetzt registrieren</a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/login.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/recovery_codes_regenerated.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/recovery_codes_regenerated.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+﻿{% extends "base.html" %}
+
+{% block title %}Recovery-Codes regeneriert - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="alert alert-success text-center mb-4">
+                <h3>✓ Recovery-Codes erfolgreich regeneriert!</h3>
+            </div>
+            
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body p-4">
+                    <h5 class="card-title">🔑 Neue Recovery-Codes</h5>
+                    <p class="text-muted">
+                        Deine alten Recovery-Codes wurden invalidiert. Speichere diese neuen Codes an einem sicheren Ort. 
+                        Du kannst sie verwenden wenn du keinen Zugriff auf deine Authenticator-App hast.
+                    </p>
+                    
+                    <div class="alert alert-warning">
+                        <strong>⚠️ Wichtig:</strong> Diese Codes werden nur einmal angezeigt. Kopiere sie jetzt!
+                    </div>
+                    
+                    <div class="bg-light p-4 rounded font-monospace border" style="max-height: 400px; overflow-y: auto;">
+                        {% for code in recovery_codes %}
+                        <div class="py-1">
+                            <span class="badge bg-secondary me-2">{{ loop.index }}</span>
+                            <strong>{{ code }}</strong>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <div class="mt-4">
+                        <button class="btn btn-outline-primary" onclick="copyToClipboard()">
+                            <i class="fas fa-copy"></i> Alle kopieren
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="downloadCodes()">
+                            <i class="fas fa-download"></i> Als Textdatei herunterladen
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="alert alert-info">
+                <strong>💡 Tipp:</strong> Bewahre diese Codes an einem sicheren Ort auf:
+                <ul class="mb-0 mt-2">
+                    <li>Passwort-Manager (z.B. KeePass, Bitwarden)</li>
+                    <li>Verschlüsselte Textdatei auf USB-Stick</li>
+                    <li>Ausgedruckt in einem Safe</li>
+                </ul>
+            </div>
+            
+            <div class="d-grid gap-2">
+                <a href="/settings" class="btn btn-primary">Zurück zu Einstellungen</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyToClipboard() {
+    const codes = [
+        {% for code in recovery_codes %}
+        "{{ code }}"{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
+    
+    const text = codes.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+        alert('✓ Recovery-Codes in Zwischenablage kopiert!');
+    }).catch(() => {
+        alert('❌ Kopieren fehlgeschlagen. Bitte manuell kopieren.');
+    });
+}
+
+function downloadCodes() {
+    const codes = [
+        {% for code in recovery_codes %}
+        "{{ code }}"{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
+    
+    const text = `Mail Helper - Recovery Codes
+Generiert am: ${new Date().toLocaleString('de-DE')}
+WICHTIG: Bewahre diese Codes sicher auf!
+
+${codes.map((code, i) => `${i+1}. ${code}`).join('\n')}
+
+⚠️ Diese Codes können nur einmal verwendet werden.
+Nach Verwendung eines Codes, generiere neue Codes in den Einstellungen.
+`;
+    
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `recovery-codes-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+</script>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/recovery_codes_regenerated.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/register.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/register.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Registrieren - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+            <h2 class="text-center mb-4">Registrieren</h2>
+            
+            {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+            {% endif %}
+            
+            <form method="POST">
+                <div class="mb-3">
+                    <label for="username" class="form-label">Benutzername</label>
+                    <input type="text" class="form-control" id="username" name="username" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="email" class="form-label">E-Mail-Adresse</label>
+                    <input type="email" class="form-control" id="email" name="email" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="password" class="form-label">Passwort</label>
+                    <input type="password" class="form-control" id="password" name="password" required>
+                    <small class="text-muted">Mindestens 8 Zeichen</small>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="password_confirm" class="form-label">Passwort wiederholen</label>
+                    <input type="password" class="form-control" id="password_confirm" name="password_confirm" required>
+                </div>
+                
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary">Registrieren</button>
+                </div>
+            </form>
+            
+            <hr class="my-4">
+            
+            <p class="text-center">
+                Bereits registriert? <a href="/login">Jetzt anmelden</a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/register.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/register_success.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/register_success.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Registrierung erfolgreich - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+            <div class="alert alert-success text-center">
+                <h2>✓ Registrierung erfolgreich!</h2>
+            </div>
+            
+            <div class="card">
+                <div class="card-body">
+                    <p class="card-text">
+                        Willkommen <strong>{{ username }}</strong>!
+                    </p>
+                    <p class="text-muted">
+                        Dein Account wurde erstellt und dein Master-Key ist aktiviert. 
+                        Dein Passwort wird verwendet um deine sensiblen Daten zu verschlüsseln.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="d-grid mt-4">
+                <a href="/login" class="btn btn-primary">Zum Anmelden</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/register_success.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/select_account_type.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/select_account_type.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Konto-Typ wählen - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-7">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">📧 Neuer Mail-Account - Konto-Typ wählen</h4>
+            </div>
+            <div class="card-body p-5">
+                <p class="text-center text-muted mb-5">
+                    Wähle eine Authentifizierungsmethode für deinen Mail-Account.
+                </p>
+                
+                <!-- Google Option -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="card border-light h-100 hover-shadow" style="cursor:pointer;" onclick="window.location='/settings/mail-account/google-setup'">
+                            <div class="card-body text-center">
+                                <div style="font-size:3rem; margin-bottom:15px;">
+                                    🔐
+                                </div>
+                                <h5 class="card-title">Google OAuth</h5>
+                                <p class="card-text text-muted small">
+                                    Sicherer & einfacher
+                                </p>
+                                <div class="mt-3">
+                                    <small class="d-block">✓ Kein Passwort nötig</small>
+                                    <small class="d-block">✓ 2FA automatisch</small>
+                                    <small class="d-block">✓ Tokens verschlüsselt</small>
+                                </div>
+                            </div>
+                            <div class="card-footer bg-primary text-white text-center border-primary">
+                                <small>Empfohlen für Gmail</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Manuell Option -->
+                    <div class="col-md-6">
+                        <div class="card border-light h-100 hover-shadow" style="cursor:pointer;" onclick="window.location='/settings/mail-account/add'">
+                            <div class="card-body text-center">
+                                <div style="font-size:3rem; margin-bottom:15px;">
+                                    ⚙️
+                                </div>
+                                <h5 class="card-title">Manuell (IMAP)</h5>
+                                <p class="card-text text-muted small">
+                                    Universell einsetzbar
+                                </p>
+                                <div class="mt-3">
+                                    <small class="d-block">✓ Alle Provider</small>
+                                    <small class="d-block">✓ App-Passwort</small>
+                                    <small class="d-block">✓ Offline-Mail</small>
+                                </div>
+                            </div>
+                            <div class="card-footer bg-secondary text-white text-center border-secondary">
+                                <small>Für Outlook, Yahoo, etc.</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <a href="/settings" class="btn btn-outline-secondary w-100">
+                    ← Zurück zu Einstellungen
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.hover-shadow:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+    transform: translateY(-2px);
+    transition: all 0.3s ease;
+}
+</style>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/select_account_type.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/settings.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/settings.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Einstellungen - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>Einstellungen</h2>
+    
+    <div class="row mt-4 g-4">
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#0f172a,#1e1b4b);color:#f8fafc;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <div>
+                            <p class="text-uppercase small mb-1 opacity-75">KI-Konfiguration</p>
+                            <h4 class="mb-2">Provider & Modell wählen</h4>
+                            <p class="mb-0" style="max-width:520px;">
+                                Bestimme hier, ob lokal (Ollama) oder über OpenAI/Anthropic analysiert werden soll. Cloud-Modelle nutzen automatisch die
+                                stark pseudonymisierte Variante.
+                            </p>
+                        </div>
+                        <span class="badge bg-light text-dark px-3 py-2 align-self-start">Experimentell 🔧</span>
+                    </div>
+                    <form class="row gy-3 mt-3" method="POST" action="/settings/ai">
+                        <div class="col-12">
+                            <div class="alert alert-info small mb-3">
+                                <strong>Two-Pass System:</strong> Base-Pass (schnell) → Optimize-Pass (optional, bessere Kategorisierung)
+                            </div>
+                        </div>
+                        
+                        <div class="col-12">
+                            <h6 class="border-bottom pb-2">⚡ Base-Pass (Schnelle erste Analyse)</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiProviderSelectBase" class="form-label">Provider</label>
+                            <select class="form-select" id="aiProviderSelectBase" name="ai_provider_base" required onchange="updateModels('Base')">
+                                <option value="">-- Wird geladen --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiModelSelectBase" class="form-label">Modell</label>
+                            <select class="form-select" id="aiModelSelectBase" name="ai_model_base" required>
+                                <option value="">-- Bitte Provider wählen --</option>
+                            </select>
+                            <small class="text-muted d-block mt-1">Oder eintippen für custom Modell</small>
+                        </div>
+                        
+                        <div class="col-12">
+                            <h6 class="border-bottom pb-2 mt-3">🔧 Optimize-Pass (Optional, für Scores 8-9)</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiProviderSelectOptimize" class="form-label">Provider</label>
+                            <select class="form-select" id="aiProviderSelectOptimize" name="ai_provider_optimize" required onchange="updateModels('Optimize')">
+                                <option value="">-- Wird geladen --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiModelSelectOptimize" class="form-label">Modell</label>
+                            <select class="form-select" id="aiModelSelectOptimize" name="ai_model_optimize" required>
+                                <option value="">-- Bitte Provider wählen --</option>
+                            </select>
+                            <small class="text-muted d-block mt-1">Oder eintippen für custom Modell</small>
+                        </div>
+                        
+                        <div class="col-12">
+                            <div id="aiProviderWarning" class="alert alert-warning d-none mb-0"></div>
+                        </div>
+                        <div class="col-12 d-flex justify-content-end gap-2">
+                            <button type="submit" class="btn btn-light text-dark px-4">Speichern</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#0f172a,#1e1b4b);color:#f8fafc;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+                        <div>
+                            <p class="text-uppercase small mb-1 opacity-75">🧠 Machine Learning</p>
+                            <h4 class="mb-2">Training & Feedback-Loop</h4>
+                            <p class="mb-0" style="max-width:520px;">
+                                Deine Korrektionen verbessern das System kontinuierlich. Wenn du ≥5 Emails korrigiert hast, kannst du neue Modelle trainieren.
+                            </p>
+                        </div>
+                        <span class="badge bg-info px-3 py-2 align-self-start">Live 🚀</span>
+                    </div>
+
+                    <div class="row g-3" id="trainingStatsContainer">
+                        <div class="col-md-6">
+                            <div class="p-3 bg-dark rounded">
+                                <small class="text-uppercase opacity-75">Korrektionen gespeichert</small>
+                                <h5 id="correctionsCount" class="mb-0">-- <span class="text-muted">/ ~50</span></h5>
+                                <div class="progress mt-2" style="height:6px;">
+                                    <div id="correctionsBar" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                                </div>
+                                <small class="text-muted d-block mt-2">Zum Trainieren: mind. 5 Korrektionen</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="p-3 bg-dark rounded">
+                                <small class="text-uppercase opacity-75">Trainierte Modelle</small>
+                                <h5 id="trainedModelsCount" class="mb-2">-- / 3</h5>
+                                <div id="trainedModelsList" class="small">
+                                    <small class="text-muted">wird geladen...</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div id="lastCorrectionInfo" class="alert alert-secondary d-none">
+                                <small>Letzte Korrektur: <strong id="lastCorrectionDate">--</strong></small>
+                            </div>
+                        </div>
+                        <div class="col-12 d-flex justify-content-end gap-2">
+                            <button id="retrainBtn" class="btn btn-primary" onclick="triggerRetraining()">
+                                🚀 Neue Modelle trainieren
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h4>Mail-Accounts</h4>
+            
+            {% if mail_accounts %}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Server</th>
+                            <th>Port</th>
+                            <th>Benutzer</th>
+                            <th>Status</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account in mail_accounts %}
+                        <tr>
+                            <td><strong>{{ account.name }}</strong></td>
+                            <td>{{ account.imap_server }}</td>
+                            <td>{{ account.imap_port }}</td>
+                            <td>{{ account.imap_username }}</td>
+                            <td>
+                                {% if account.enabled %}
+                                <span class="badge bg-success">Aktiv</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Inaktiv</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Mail-Aktionen" style="gap:0.25rem;">
+                                    <a href="/settings/mail-account/{{ account.id }}/edit" class="btn btn-info">Bearbeiten</a>
+                                    <button type="button" class="btn btn-success" onclick='fetchMails(event, {{ account.id }}, {{ account.name|tojson }})'>Abrufen</button>
+                                    <button type="button" class="btn btn-outline-danger" onclick='purgeMails(event, {{ account.id }}, {{ account.name|tojson }})'>Daten löschen</button>
+                                    <form method="POST" action="/settings/mail-account/{{ account.id }}/delete" style="display: inline;">
+                                        <button type="submit" class="btn btn-danger" onclick="return confirm('Wirklich löschen?')">Löschen</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted">Noch keine Mail-Accounts konfiguriert</p>
+            {% endif %}
+            
+            <a href="/settings/mail-account/select-type" class="btn btn-primary mt-3">Neuen Account hinzufügen</a>
+            
+            <hr class="my-5">
+            
+            <h4>🔐 Sicherheit</h4>
+            
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h6 class="card-title">Passwort ändern</h6>
+                    <p class="text-muted mb-2">Ändere dein Passwort mit Zero-Knowledge Sicherheit (KEK-Neuableitung ohne E-Mail-Neu-Verschlüsselung)</p>
+                    <a href="/settings/password" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-key"></i> Passwort ändern
+                    </a>
+                </div>
+            </div>
+            
+            <h4 class="mt-4">Zwei-Faktor-Authentifizierung (2FA)</h4>
+            {% if totp_enabled %}
+            <div class="alert alert-success">✓ 2FA ist aktiviert</div>
+            <p>Dein Account ist mit TOTP geschützt.</p>
+            <form method="POST" action="/settings/2fa/recovery-codes/regenerate" class="mt-3">
+                <button type="submit" class="btn btn-outline-warning" onclick="return confirm('Wirklich neue Recovery-Codes generieren? Die alten werden ungültig!')">
+                    <i class="fas fa-sync"></i> Recovery-Codes regenerieren
+                </button>
+            </form>
+            {% else %}
+            <div class="alert alert-warning">⚠️ 2FA ist Pflicht - bitte aktivieren</div>
+            <a href="/settings/2fa/setup" class="btn btn-warning">2FA aktivieren</a>
+            {% endif %}
+            
+            <hr class="my-5">
+            
+            <div>
+                <a href="/dashboard" class="btn btn-secondary">Zurück zum Dashboard</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function formatTime(seconds) {
+    if (seconds < 60) return seconds + 's';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins < 60) return mins + 'm ' + secs + 's';
+    const hours = Math.floor(mins / 60);
+    return hours + 'h ' + (mins % 60) + 'm';
+}
+
+function fetchMails(evt, accountId, accountName) {
+    const btn = evt ? evt.target : null;
+    const originalLabel = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Job wird gestartet...';
+    }
+
+    fetch(`/mail-account/${accountId}/fetch`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'queued') {
+            alert(`🕒 ${accountName}: Analyse läuft im Hintergrund.`);
+            if (data.job_id) {
+                pollJobStatus(data.job_id, accountName, btn, originalLabel);
+            }
+            return;
+        }
+        if (data.status === 'ok') {
+            alert(`✅ ${accountName}: ${data.message || 'Fertig.'}`);
+        } else {
+            throw new Error(data.error || 'Unbekannter Fehler');
+        }
+    })
+    .catch(err => {
+        alert(`❌ Fehler: ${err}`);
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalLabel || 'Abrufen';
+        }
+    });
+}
+
+let analysisModal = null;
+
+function getAnalysisModal() {
+    if (!analysisModal) {
+        analysisModal = new bootstrap.Modal(document.getElementById('progressModal'), {backdrop: 'static', keyboard: false});
+    }
+    return analysisModal;
+}
+
+function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, startTime = Date.now(), emailStartTime = null, lastEmailIndex = null) {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const modal = getAnalysisModal();
+    if (attempt === 0) modal.show();
+    
+    const perEmailTimeout = 600;  // 10 Minuten pro E-Mail
+    
+    fetch(`/jobs/${jobId}`, {cache: 'no-store'})
+        .then(r => {
+            if (r.status === 404) {
+                throw new Error('Job nicht gefunden');
+            }
+            return r.json();
+        })
+        .then(status => {
+            const currentIdx = status.current_email_index || 0;
+            
+            // Wenn neue E-Mail begonnen wird, Timer zurücksetzen
+            if (lastEmailIndex !== null && currentIdx > lastEmailIndex) {
+                emailStartTime = Date.now();
+            }
+            if (emailStartTime === null) {
+                emailStartTime = Date.now();
+            }
+            
+            const emailElapsed = Math.floor((Date.now() - emailStartTime) / 1000);
+            const emailRemaining = perEmailTimeout - emailElapsed;
+            
+            document.getElementById('elapsedTime').textContent = formatTime(elapsed);
+            document.getElementById('remainingTime').textContent = emailRemaining > 0 ? '~' + formatTime(emailRemaining) : 'abgelaufen!';
+            
+            if (status.state === 'done') {
+                const saved = status.saved ?? 0;
+                const processed = status.processed ?? 0;
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressPercent').textContent = '100%';
+                document.getElementById('emailCount').textContent = `${status.current_email_index || status.total_emails || '?'}/${status.total_emails || '?'}`;
+                document.getElementById('progressText').textContent = `✅ ${accountName}: Fertig!`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusTitle').textContent = '✅ Analyse abgeschlossen';
+                document.getElementById('statusDetails').textContent = `${saved} neue / ${processed} verarbeitet.`;
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    const modal = getAnalysisModal();
+                    modal.hide();
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel || 'Abrufen';
+                    }
+                });
+                return;
+            }
+            if (status.state === 'error') {
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressBar').classList.add('bg-danger');
+                document.getElementById('emailCount').textContent = `${status.current_email_index || '?'}/${status.total_emails || '?'}`;
+                document.getElementById('progressText').textContent = `❌ ${accountName}: ${status.message || 'Job fehlgeschlagen.'}`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
+                document.getElementById('statusTitle').textContent = '❌ Fehler bei der Analyse';
+                document.getElementById('statusDetails').textContent = status.message || 'Job fehlgeschlagen.';
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    const modal = getAnalysisModal();
+                    modal.hide();
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel || 'Abrufen';
+                    }
+                });
+                return;
+            }
+            
+            const totalEmails = status.total_emails || 1;
+            const currentSubject = status.current_subject || '';
+            
+            document.getElementById('emailCount').textContent = `${currentIdx}/${totalEmails}`;
+            
+            if (emailRemaining <= 0) {
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressBar').classList.add('bg-danger');
+                document.getElementById('progressText').textContent = `❌ ${accountName}: Timeout überschritten.`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-warning mb-0';
+                document.getElementById('statusTitle').textContent = '⏱️ Timeout überschritten';
+                document.getElementById('statusDetails').textContent = `Die Analyse konnte nicht within ${Math.floor((Date.now() - startTime) / 1000)}s abgeschlossen werden.`;
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    const modal = getAnalysisModal();
+                    modal.hide();
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel || 'Abrufen';
+                    }
+                });
+                return;
+            }
+            
+            const progress = Math.min(95, (currentIdx / totalEmails) * 100);
+            document.getElementById('progressBar').style.width = progress + '%';
+            document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+            const subjectDisplay = currentSubject ? ` - ${currentSubject}` : '';
+            document.getElementById('progressText').textContent = `${accountName}: Mail ${currentIdx}/${totalEmails}${subjectDisplay}`;
+            
+            setTimeout(() => pollJobStatus(jobId, accountName, btn, originalLabel, attempt + 1, startTime, emailStartTime, currentIdx), 2000);
+        })
+        .catch(err => {
+            modal.hide();
+            alert(`❌ Status-Check fehlgeschlagen: ${err}`);
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalLabel || 'Abrufen';
+            }
+        });
+}
+
+function purgeMails(evt, accountId, accountName) {
+    if (!confirm(`Alle lokal gespeicherten Mails für ${accountName} löschen?`)) {
+        return;
+    }
+    const btn = evt ? evt.target : null;
+    const originalLabel = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Lösche...';
+    }
+
+    fetch(`/mail-account/${accountId}/purge`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            alert(`🧹 ${accountName}: ${data.raw_deleted} Raw / ${data.processed_deleted} Processed gelöscht.`);
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+        }
+    })
+    .catch(e => alert(`❌ Fehler: ${e}`))
+    .finally(() => {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalLabel || 'Daten löschen';
+        }
+    });
+}
+
+async function initializeProviders() {
+    try {
+        const response = await fetch('/api/available-providers');
+        const data = await response.json();
+        const providers = data.providers || [];
+        
+        const savedValues = window.savedAIValues || {
+            Base: { provider: 'ollama', model: 'all-minilm:22m' },
+            Optimize: { provider: 'ollama', model: 'llama3.2:1b' }
+        };
+        
+        ['Base', 'Optimize'].forEach(pass => {
+            const select = document.getElementById(`aiProviderSelect${pass}`);
+            if (select) {
+                select.innerHTML = '';
+                if (providers.length === 0) {
+                    select.innerHTML = '<option value="">Keine Provider verfügbar</option>';
+                } else {
+                    providers.forEach(p => {
+                        const option = document.createElement('option');
+                        option.value = p.id;
+                        option.textContent = `${p.name} - ${p.description}`;
+                        if (p.id === savedValues[pass].provider) {
+                            option.selected = true;
+                        }
+                        select.appendChild(option);
+                    });
+                }
+                
+                if (savedValues[pass].provider) {
+                    updateModels(pass);
+                }
+            }
+        });
+    } catch (err) {
+        console.error('Error loading providers:', err);
+    }
+}
+
+async function updateModels(pass) {
+    const providerSelect = document.getElementById(`aiProviderSelect${pass}`);
+    const modelSelect = document.getElementById(`aiModelSelect${pass}`);
+    
+    if (!providerSelect || !modelSelect) return;
+    
+    const provider = providerSelect.value;
+    if (!provider) {
+        modelSelect.innerHTML = '<option value="">-- Bitte Provider wählen --</option>';
+        return;
+    }
+    
+    try {
+        modelSelect.innerHTML = '<option value="">Modelle werden geladen...</option>';
+        const response = await fetch(`/api/available-models/${provider}?kind=${pass.toLowerCase()}`);
+        const data = await response.json();
+        let models = data.models || [];
+        
+        const savedModel = (window.savedAIValues && window.savedAIValues[pass]) ? window.savedAIValues[pass].model : null;
+        
+        modelSelect.innerHTML = '';
+        if (models.length === 0) {
+            modelSelect.innerHTML = '<option value="">Keine Modelle verfügbar</option>';
+        } else {
+            models.forEach(m => {
+                const option = document.createElement('option');
+                
+                if (typeof m === 'object' && m.name) {
+                    option.value = m.name;
+                    const icon = m.icon || '?';
+                    const type = m.type || 'unknown';
+                    const hint = pass === 'Base' && type === 'embedding' ? ' (Empfohlen)' : 
+                                 pass === 'Optimize' && type === 'chat' ? ' (Empfohlen)' : '';
+                    option.textContent = `${icon} ${m.name} (${type})${hint}`;
+                    if (m.type === 'embedding' && pass === 'Optimize') {
+                        option.disabled = true;
+                        option.textContent += ' ⚠️ Nur für Base geeignet';
+                    }
+                    if (m.type === 'chat' && pass === 'Base') {
+                        option.textContent += ' (aber Heuristiken effizienter)';
+                    }
+                } else {
+                    option.value = m;
+                    option.textContent = m;
+                }
+                
+                if (savedModel && (typeof m === 'object' ? m.name : m) === savedModel) {
+                    option.selected = true;
+                }
+                modelSelect.appendChild(option);
+            });
+        }
+    } catch (err) {
+        console.error('Error loading models:', err);
+        modelSelect.innerHTML = '<option value="">Fehler beim Laden von Modellen</option>';
+    }
+}
+
+async function loadTrainingStats() {
+    try {
+        const response = await fetch('/api/training-stats');
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        
+        const correctionsCount = data.corrections_count || 0;
+        const maxCorrections = 50;
+        const progressPercent = Math.min(100, (correctionsCount / maxCorrections) * 100);
+        
+        document.getElementById('correctionsCount').textContent = correctionsCount + ' ';
+        document.getElementById('correctionsBar').style.width = progressPercent + '%';
+        
+        const trainedCount = data.trained_models_count || 0;
+        document.getElementById('trainedModelsCount').textContent = trainedCount + ' / 3';
+        
+        if (data.trained_models && data.trained_models.length > 0) {
+            const modelsList = data.trained_models.map(m => {
+                const date = new Date(m.modified * 1000).toLocaleDateString('de-DE');
+                return `<div class="badge bg-success">${m.name} ✓ (${date})</div>`;
+            }).join('');
+            document.getElementById('trainedModelsList').innerHTML = modelsList;
+        } else {
+            document.getElementById('trainedModelsList').innerHTML = '<small class="text-muted">Noch keine trainierten Modelle</small>';
+        }
+        
+        if (data.last_correction_date) {
+            const corrDate = new Date(data.last_correction_date);
+            document.getElementById('lastCorrectionDate').textContent = corrDate.toLocaleDateString('de-DE', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            document.getElementById('lastCorrectionInfo').classList.remove('d-none');
+        }
+        
+        const retrainBtn = document.getElementById('retrainBtn');
+        if (data.ready_for_training) {
+            retrainBtn.disabled = false;
+            retrainBtn.textContent = `🚀 Neue Modelle trainieren (${correctionsCount} Korrektionen)`;
+        } else {
+            retrainBtn.disabled = true;
+            retrainBtn.textContent = `🚀 Noch ${5 - correctionsCount} Korrektionen nötig`;
+        }
+    } catch (err) {
+        console.error('Error loading training stats:', err);
+    }
+}
+
+async function triggerRetraining() {
+    const btn = document.getElementById('retrainBtn');
+    const originalText = btn.textContent;
+    
+    btn.disabled = true;
+    btn.textContent = '⏳ Training läuft...';
+    
+    try {
+        const response = await fetch('/retrain', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            alert(`✅ ${data.message}`);
+            await loadTrainingStats();
+        } else if (data.status === 'no_data') {
+            alert(`⚠️ ${data.message}`);
+            btn.disabled = false;
+            btn.textContent = originalText;
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    } catch (err) {
+        alert(`❌ Training fehlgeschlagen: ${err}`);
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    window.savedAIValues = {
+        Base: {
+            provider: {{ ai_selected_provider_base|tojson }},
+            model: {{ ai_selected_model_base|tojson }}
+        },
+        Optimize: {
+            provider: {{ ai_selected_provider_optimize|tojson }},
+            model: {{ ai_selected_model_optimize|tojson }}
+        }
+    };
+    initializeProviders();
+    loadTrainingStats();
+});
+</script>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/settings.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/setup_2fa.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/setup_2fa.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+{% extends "base.html" %}
+
+{% block title %}2FA Setup - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <h2 class="text-center mb-4">Zwei-Faktor-Authentifizierung aktivieren</h2>
+            
+            {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+            {% endif %}
+            
+            <div class="card mb-4">
+                <div class="card-body text-center">
+                    <p class="mb-3">Scanne diesen QR-Code mit deiner Authenticator-App:</p>
+                    <img src="{{ qr_code }}" alt="QR-Code" style="max-width: 300px;">
+                    <p class="mt-3 text-muted small">Oder gib manuell ein:</p>
+                    <code>{{ totp_secret }}</code>
+                </div>
+            </div>
+            
+            <form method="POST">
+                <div class="mb-3">
+                    <label for="token" class="form-label">Gib den Code aus deiner App ein:</label>
+                    <input type="text" class="form-control" id="token" name="token" 
+                           placeholder="000000" maxlength="6" pattern="[0-9]{6}" required>
+                </div>
+                
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary">Bestätigen</button>
+                    <a href="/settings" class="btn btn-secondary mt-2">Abbrechen</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/setup_2fa.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/setup_2fa_success.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/setup_2fa_success.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+{% extends "base.html" %}
+
+{% block title %}2FA aktiviert - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="alert alert-success text-center mb-4">
+                <h2>✓ 2FA erfolgreich aktiviert!</h2>
+            </div>
+            
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">Recovery-Codes (Sicherung)</h5>
+                    <p class="text-muted">Speichere diese Codes an einem sicheren Ort. Du kannst sie verwenden wenn du keinen Zugriff auf deine Authenticator-App hast.</p>
+                    
+                    <div class="bg-light p-3 rounded font-monospace" style="max-height: 300px; overflow-y: auto;">
+                        {% for code in recovery_codes %}
+                        <div>{{ code }}</div>
+                        {% endfor %}
+                    </div>
+                    
+                    <p class="mt-3 text-warning">⚠️ Schreib diese Codes auf oder speichere sie sicher!</p>
+                </div>
+            </div>
+            
+            <div class="d-grid">
+                <a href="/dashboard" class="btn btn-primary">Zum Dashboard</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/setup_2fa_success.html
+====================================================================================================
+-->
+
+
+<!--
+====================================================================================================
+ FILE: templates/verify_2fa.html
+ PATH: /home/thomas/projects/KI-Mail-Helper/templates/verify_2fa.html
+ TYPE: HTML
+====================================================================================================
+-->
+
+{% extends "base.html" %}
+
+{% block title %}2FA Verifikation - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+            <h2 class="text-center mb-4">Zwei-Faktor-Authentifizierung</h2>
+            
+            {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+            {% endif %}
+            
+            <form method="POST">
+                <div class="mb-4">
+                    <p>Gib den 6-stelligen Code aus deiner Authenticator-App ein:</p>
+                    <input type="text" class="form-control form-control-lg text-center" id="token" name="token" 
+                           placeholder="000000" maxlength="6" pattern="[0-9]{6}" required 
+                           style="font-size: 2em; letter-spacing: 0.5em;">
+                </div>
+                
+                <div class="d-grid mb-3">
+                    <button type="submit" class="btn btn-primary">Verifizieren</button>
+                </div>
+            </form>
+            
+            <hr class="my-4">
+            
+            <p class="text-muted">Authenticator nicht verfügbar?</p>
+            
+            <form method="POST" class="mt-3">
+                <div class="mb-3">
+                    <label for="recovery_code" class="form-label">Recovery-Code verwenden</label>
+                    <input type="text" class="form-control" id="recovery_code" name="recovery_code" 
+                           placeholder="z.B. AB12CD34">
+                </div>
+                
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-secondary">Mit Recovery-Code anmelden</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+<!--
+====================================================================================================
+ END OF FILE: templates/verify_2fa.html
+====================================================================================================
+-->
+
+

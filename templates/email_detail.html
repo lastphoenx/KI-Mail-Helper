@@ -277,6 +277,7 @@
                     </button>
                     {% if not email.done %}
                     <form method="post" action="/email/{{ email.id }}/done" id="markDoneForm">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                         <button type="submit" id="markDoneBtn" class="btn btn-success w-100">
                             ✓ Als erledigt markieren
                         </button>

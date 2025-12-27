@@ -13,6 +13,7 @@
             {% endif %}
             
             <form method="POST" class="mt-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <!-- IMAP (Eingang) -->
                 <h4 class="mt-4 mb-3">📥 Eingangsserver (IMAP)</h4>
                 

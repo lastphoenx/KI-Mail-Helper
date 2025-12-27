@@ -80,6 +80,7 @@
                 <div class="col-md-3 text-end">
                     {% if not email.done %}
                     <form method="post" action="/email/{{ email.id }}/done" class="d-inline action-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                         <button type="submit" class="btn btn-sm btn-success action-btn" data-action="done">✓ Erledigt</button>
                     </form>
                     {% else %}

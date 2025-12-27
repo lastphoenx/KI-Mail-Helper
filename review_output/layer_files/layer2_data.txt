@@ -1,0 +1,1486 @@
+====================================================================================================
+CODE REVIEW LAYER: Data & Processing
+PRIORITY: HOCH
+FILES: 4
+====================================================================================================
+
+
+####################################################################################################
+# FILE: src/02_models.py
+# PATH: /home/thomas/projects/KI-Mail-Helper/src/02_models.py
+####################################################################################################
+
+"""
+Mail Helper - Datenbankmodelle (SQLAlchemy + SQLite)
+Phase 1: raw_emails, processed_emails
+Phase 2: User, MailAccount, ServiceToken, RecoveryCode
+"""
+
+from datetime import datetime, timedelta, UTC
+from enum import Enum
+from sqlalchemy import create_engine, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, UniqueConstraint, event
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy.pool import StaticPool
+from werkzeug.security import generate_password_hash, check_password_hash
+import secrets
+
+
+Base = declarative_base()
+
+
+class AIProvider(str, Enum):
+    """KI-Provider für Email-Analyse"""
+    OLLAMA = "ollama"
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    MISTRAL = "mistral"
+
+
+class EmailActionCategory(str, Enum):
+    """Kategorien für Email-Aktionen"""
+    ACTION_REQUIRED = "aktion_erforderlich"
+    URGENT = "dringend"
+    INFO_ONLY = "nur_information"
+
+
+class EmailColor(str, Enum):
+    """Farben für Email-Priorität/Scoring"""
+    RED = "red"
+    YELLOW = "yellow"
+    GREEN = "green"
+    BLUE = "blue"
+
+
+class IMAPEncryption(str, Enum):
+    """IMAP Verschlüsselungstypen"""
+    SSL = "SSL"
+    STARTTLS = "STARTTLS"
+    NONE = "NONE"
+
+
+class SMTPEncryption(str, Enum):
+    """SMTP Verschlüsselungstypen"""
+    STARTTLS = "STARTTLS"
+    SSL = "SSL"
+    NONE = "NONE"
+
+
+class AuthType(str, Enum):
+    """Authentifizierungs-Typen für Mail-Accounts"""
+    IMAP = "imap"
+    OAUTH = "oauth"
+    POP3 = "pop3"  # Future Support
+
+
+class OptimizationStatus(str, Enum):
+    """Status der Email-Optimierung (zweiter Pass)"""
+    PENDING = "pending"
+    DONE = "done"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+class User(Base):
+    """Benutzer des Systems (Phase 2)"""
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True)
+    username = Column(String(80), unique=True, nullable=False, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    
+    # Key-Management (Phase 8: DEK/KEK Pattern)
+    # Zero-Knowledge: KEK (Key Encryption Key) aus Passwort abgeleitet (PBKDF2)
+    #                 DEK (Data Encryption Key) zufällig generiert, verschlüsselt alle E-Mails
+    #                 encrypted_dek = AES-GCM(DEK, KEK) - ermöglicht Passwort-Wechsel ohne Neu-Verschlüsselung
+    salt = Column(Text)  # base64(32 bytes) = 44 chars (TEXT für SQLite: keine Längen-Sorgen)
+    encrypted_dek = Column(Text)  # DEK verschlüsselt mit KEK (aus Passwort)
+    encrypted_master_key = Column(Text)  # DEPRECATED: Wird durch encrypted_dek ersetzt (für Migration behalten)
+    
+    # 2FA (TOTP)
+    totp_secret = Column(String(32))
+    totp_enabled = Column(Boolean, default=False)
+
+    # KI-Präferenzen
+    preferred_ai_provider = Column(String(20), default=AIProvider.OLLAMA.value)
+    preferred_ai_model = Column(String(100), default="all-minilm:22m")  # Base-Pass: schnelles Embedding-Modell
+    preferred_ai_provider_optimize = Column(String(20), default=AIProvider.OLLAMA.value)
+    preferred_ai_model_optimize = Column(String(100), default="llama3.2:1b")  # Optimize-Pass: besseres LLM
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    
+    # Relationships
+    mail_accounts = relationship("MailAccount", back_populates="user", cascade="all, delete-orphan")
+    raw_emails = relationship("RawEmail", back_populates="user", cascade="all, delete-orphan")
+    service_tokens = relationship("ServiceToken", back_populates="user", cascade="all, delete-orphan")
+    recovery_codes = relationship("RecoveryCode", back_populates="user", cascade="all, delete-orphan")
+    
+    def set_password(self, password: str):
+        """Hasht das Passwort"""
+        self.password_hash = generate_password_hash(password)
+    
+    def check_password(self, password: str) -> bool:
+        """Überprüft das Passwort"""
+        return check_password_hash(self.password_hash, password)
+    
+    def __repr__(self):
+        return f"<User(id={self.id}, username='{self.username}')>"
+
+
+class MailAccount(Base):
+    """Mail-Account eines Benutzers (Phase 2 + Zero-Knowledge Phase)
+    
+    Unterstützt Multi-Auth:
+    - auth_type="imap": Klassische IMAP/SMTP Authentifizierung
+    - auth_type="oauth": OAuth 2.0 (Gmail, Outlook)
+    - auth_type="pop3": POP3 (zukünftig)
+    
+    Zero-Knowledge:
+    - E-Mail-Adressen und Server werden verschlüsselt gespeichert
+    - Hash-Felder ermöglichen Suche ohne Klartext-Zugriff
+    
+    Felder-Mapping:
+    - IMAP: encrypted_imap_server, encrypted_imap_username, encrypted_imap_password
+    - OAuth: oauth_provider, encrypted_oauth_token, encrypted_oauth_refresh_token
+    - POP3: encrypted_pop3_server, encrypted_pop3_username, encrypted_pop3_password
+    """
+    __tablename__ = "mail_accounts"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Allgemeine Felder
+    name = Column(String(100), nullable=False)
+    auth_type = Column(String(20), default=AuthType.IMAP.value, nullable=False)
+    
+    # IMAP-spezifische Felder (verschlüsselt für Zero-Knowledge)
+    encrypted_imap_server = Column(Text, nullable=True)  # verschlüsselt
+    imap_server_hash = Column(String(64), nullable=True, index=True)  # für Suche
+    imap_port = Column(Integer, default=993)
+    encrypted_imap_username = Column(Text, nullable=True)  # verschlüsselt
+    imap_username_hash = Column(String(64), nullable=True, index=True)  # für Suche
+    encrypted_imap_password = Column(Text)
+    imap_encryption = Column(String(50), default=IMAPEncryption.SSL.value)
+    
+    # SMTP-spezifische Felder (optional für Versand, verschlüsselt)
+    encrypted_smtp_server = Column(Text)
+    smtp_port = Column(Integer, default=587)
+    encrypted_smtp_username = Column(Text)
+    encrypted_smtp_password = Column(Text)
+    smtp_encryption = Column(String(50), default=SMTPEncryption.STARTTLS.value)
+    
+    # OAuth-spezifische Felder (wenn auth_type="oauth")
+    oauth_provider = Column(String(20))  # "google", "microsoft"
+    encrypted_oauth_token = Column(Text)
+    encrypted_oauth_refresh_token = Column(Text)
+    oauth_expires_at = Column(DateTime)
+    
+    # POP3-spezifische Felder (zukünftig, wenn auth_type="pop3", verschlüsselt)
+    encrypted_pop3_server = Column(Text, nullable=True)
+    pop3_port = Column(Integer, default=995)
+    encrypted_pop3_username = Column(Text, nullable=True)
+    encrypted_pop3_password = Column(Text)
+    
+    enabled = Column(Boolean, default=True)
+    last_fetch_at = Column(DateTime)
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Relationship
+    user = relationship("User", back_populates="mail_accounts")
+    raw_emails = relationship("RawEmail", back_populates="mail_account", cascade="all, delete-orphan")
+    
+    def validate_auth_fields(self) -> tuple[bool, str]:
+        """Validiert ob die richtigen Felder für auth_type gesetzt sind
+        
+        Returns:
+            (valid: bool, error_message: str)
+        """
+        if self.auth_type == AuthType.IMAP.value:
+            if not all([self.encrypted_imap_server, self.encrypted_imap_username, self.encrypted_imap_password]):
+                return False, "IMAP requires: server, username, password"
+        
+        elif self.auth_type == AuthType.OAUTH.value:
+            if not all([self.oauth_provider, self.encrypted_oauth_token]):
+                return False, "OAuth requires: provider, token"
+        
+        elif self.auth_type == AuthType.POP3.value:
+            if not all([self.encrypted_pop3_server, self.encrypted_pop3_username, self.encrypted_pop3_password]):
+                return False, "POP3 requires: server, username, password"
+        
+        return True, ""
+    
+    def __repr__(self):
+        return f"<MailAccount(id={self.id}, user={self.user_id}, name='{self.name}', auth={self.auth_type})>"
+
+
+class ServiceToken(Base):
+    """Token für Background-Jobs (Phase 2)"""
+    __tablename__ = "service_tokens"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    token_hash = Column(String(255), unique=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Relationship
+    user = relationship("User", back_populates="service_tokens")
+    
+    @staticmethod
+    def generate_token() -> str:
+        """Generiert einen neuen Token"""
+        return secrets.token_urlsafe(32)
+    
+    @staticmethod
+    def hash_token(token: str) -> str:
+        """Hasht einen Token"""
+        return generate_password_hash(token)
+    
+    @staticmethod
+    def verify_token(token: str, token_hash: str) -> bool:
+        """Überprüft einen Token"""
+        return check_password_hash(token_hash, token)
+    
+    def is_valid(self) -> bool:
+        """Überprüft ob Token noch gültig ist"""
+        return datetime.now(UTC) < self.expires_at
+    
+    def __repr__(self):
+        return f"<ServiceToken(id={self.id}, user={self.user_id})>"
+
+
+class RecoveryCode(Base):
+    """Recovery-Codes für Passwort-Reset (Phase 3)"""
+    __tablename__ = "recovery_codes"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    code_hash = Column(String(255), unique=True, nullable=False)
+    used_at = Column(DateTime)
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Relationship
+    user = relationship("User", back_populates="recovery_codes")
+    
+    @staticmethod
+    def generate_code() -> str:
+        """Generiert einen Recovery-Code"""
+        return secrets.token_hex(4).upper()
+    
+    @staticmethod
+    def hash_code(code: str) -> str:
+        """Hasht einen Code"""
+        return generate_password_hash(code)
+    
+    @staticmethod
+    def verify_code(code: str, code_hash: str) -> bool:
+        """Überprüft einen Code"""
+        return check_password_hash(code_hash, code)
+    
+    def is_unused(self) -> bool:
+        """Überprüft ob Code noch nicht verwendet wurde"""
+        return self.used_at is None
+    
+    def mark_used(self):
+        """Markiert Code als verwendet"""
+        self.used_at = datetime.now(UTC)
+    
+    def __repr__(self):
+        return f"<RecoveryCode(id={self.id}, user={self.user_id}, used={'yes' if self.used_at else 'no'})>"
+
+
+class RawEmail(Base):
+    """Rohdaten der abgeholten E-Mails (Zero-Knowledge verschlüsselt)
+    
+    Alle persönlichen Daten (sender, subject, body) werden verschlüsselt gespeichert.
+    """
+    __tablename__ = "raw_emails"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    mail_account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False, index=True)
+    
+    uid = Column(String(255), nullable=False)
+    
+    # Zero-Knowledge: Verschlüsselte persönliche Daten
+    encrypted_sender = Column(Text, nullable=False)
+    encrypted_subject = Column(Text)
+    encrypted_body = Column(Text)
+    
+    received_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_verm = Column(Boolean, default=False)
+    
+    imap_uid = Column(String(100), nullable=True, index=True)
+    imap_folder = Column(String(200), nullable=True)
+    imap_flags = Column(String(500), nullable=True)
+    imap_last_seen_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    user = relationship("User", back_populates="raw_emails")
+    mail_account = relationship("MailAccount", back_populates="raw_emails")
+    processed = relationship("ProcessedEmail", back_populates="raw_email", uselist=False)
+    
+    __table_args__ = (
+        UniqueConstraint('user_id', 'mail_account_id', 'uid', name='uq_raw_emails_uid'),
+    )
+    
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+    
+    def __repr__(self):
+        return f"<RawEmail(id={self.id}, user={self.user_id}, uid='{self.uid}')>"
+
+
+class ProcessedEmail(Base):
+    """Von der KI verarbeitete E-Mails mit Scoring"""
+    __tablename__ = "processed_emails"
+    
+    id = Column(Integer, primary_key=True)
+    raw_email_id = Column(Integer, ForeignKey("raw_emails.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    
+    # KI-Ergebnisse
+    dringlichkeit = Column(Integer)
+    wichtigkeit = Column(Integer)
+    kategorie_aktion = Column(String(50), default=EmailActionCategory.ACTION_REQUIRED.value)
+    spam_flag = Column(Boolean, default=False)
+    
+    # Zero-Knowledge: Verschlüsselte KI-Texte
+    encrypted_summary_de = Column(Text)
+    encrypted_text_de = Column(Text)
+    encrypted_tags = Column(Text)
+    encrypted_correction_note = Column(Text, nullable=True)
+    
+    # Scoring
+    score = Column(Integer)
+    matrix_x = Column(Integer)
+    matrix_y = Column(Integer)
+    farbe = Column(String(10), default=EmailColor.BLUE.value)
+    
+    # Status und Audit
+    done = Column(Boolean, default=False)
+    done_at = Column(DateTime, nullable=True)
+    processed_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_verm = Column(Boolean, default=False)
+    
+    # Optimization (zweiter Pass für bessere Kategorisierung)
+    optimization_status = Column(String(20), default=OptimizationStatus.PENDING.value)
+    optimization_tried_at = Column(DateTime, nullable=True)
+    optimization_completed_at = Column(DateTime, nullable=True)
+    base_provider = Column(String(50), nullable=True)
+    base_model = Column(String(100), nullable=True)
+    optimize_provider = Column(String(50), nullable=True)
+    optimize_model = Column(String(100), nullable=True)
+    
+    # User-Korrektionen für ML-Training (Phase 8)
+    # Diese Spalten speichern Nutzer-Feedback zur manuellen Korrektur von AI-Ergebnissen
+    # Dienen als Trainingsdaten für die sklearn-Klassifikatoren (train_classifier.py)
+    user_override_dringlichkeit = Column(Integer, nullable=True)  # Korrigierte Dringlichkeit (1-3)
+    user_override_wichtigkeit = Column(Integer, nullable=True)  # Korrigierte Wichtigkeit (1-3)
+    user_override_kategorie = Column(String(50), nullable=True)  # Korrigierte Kategorie
+    user_override_spam_flag = Column(Boolean, nullable=True)  # Korrigiertes Spam-Flag
+    user_override_tags = Column(String(500), nullable=True)  # Korrigierte Tags (Klartext für Suche)
+    correction_timestamp = Column(DateTime, nullable=True)  # Zeitpunkt der Korrektur
+    
+    imap_flags_at_processing = Column(String(500), nullable=True)
+    was_seen_at_processing = Column(Boolean, nullable=True)
+    was_answered_at_processing = Column(Boolean, nullable=True)
+    
+    # Relationships
+    raw_email = relationship("RawEmail", back_populates="processed")
+    
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+    
+    def __repr__(self):
+        return f"<ProcessedEmail(id={self.id}, raw_email_id={self.raw_email_id}, score={self.score})>"
+
+
+class EmailFolder(Base):
+    """IMAP-Ordnerstruktur für einen Mail-Account"""
+    __tablename__ = "email_folders"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    mail_account_id = Column(Integer, ForeignKey("mail_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    name = Column(String(255), nullable=False)
+    imap_path = Column(String(500), nullable=False)
+    unread_count = Column(Integer, default=0)
+    total_count = Column(Integer, default=0)
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    
+    # Relationships
+    user = relationship("User")
+    mail_account = relationship("MailAccount")
+    
+    __table_args__ = (
+        UniqueConstraint('user_id', 'mail_account_id', 'imap_path', name='uq_email_folders_path'),
+    )
+    
+    def __repr__(self):
+        return f"<EmailFolder(id={self.id}, account={self.mail_account_id}, name='{self.name}')>"
+
+
+# DB-Setup
+def init_db(db_path="emails.db"):
+    """Initialisiert die Datenbank"""
+    if db_path == ":memory:":
+        engine = create_engine(
+            f"sqlite:///{db_path}",
+            echo=False,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool
+        )
+    else:
+        engine = create_engine(
+            f"sqlite:///{db_path}",
+            echo=False,
+            connect_args={"check_same_thread": False}
+        )
+    
+    if engine.url.drivername.startswith("sqlite"):
+        @event.listens_for(engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+    
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    return engine, Session
+
+
+if __name__ == "__main__":
+    print("📊 Initialisiere Datenbank...")
+    engine, Session = init_db()
+    print(f"✅ Datenbank erstellt: {engine.url}")
+
+
+####################################################################################################
+# END OF FILE: src/02_models.py
+####################################################################################################
+
+
+
+####################################################################################################
+# FILE: src/06_mail_fetcher.py
+# PATH: /home/thomas/projects/KI-Mail-Helper/src/06_mail_fetcher.py
+####################################################################################################
+
+"""
+Mail Helper - Mail Fetcher (IMAP + OAuth)
+Holt E-Mails von IMAP-Servern (GMX, Gmail, etc.) & Google OAuth
+"""
+
+import imaplib
+import email
+from email.header import decode_header
+from datetime import datetime
+from typing import List, Dict, Optional
+import os
+import importlib
+import re
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class MailFetcher:
+    """IMAP-Client zum Abholen von E-Mails"""
+    
+    def __init__(self, server: str, username: str, password: str, port: int = 993):
+        """
+        Initialisiert IMAP-Verbindung
+        
+        Args:
+            server: IMAP-Server (z.B. "imap.gmx.net")
+            username: E-Mail-Adresse
+            password: Passwort
+            port: IMAP-Port (Standard: 993 für SSL)
+        """
+        self.server = server
+        self.username = username
+        self.password = password
+        self.port = port
+        self.connection: Optional[imaplib.IMAP4_SSL] = None
+    
+    def connect(self):
+        """Stellt Verbindung zum IMAP-Server her"""
+        try:
+            self.connection = imaplib.IMAP4_SSL(self.server, self.port)
+            self.connection.login(self.username, self.password)
+            print(f"✅ Verbunden mit {self.server}")
+        except Exception as e:
+            print(f"❌ Verbindungsfehler: {e}")
+            raise
+    
+    def disconnect(self):
+        """Schließt IMAP-Verbindung"""
+        if self.connection:
+            try:
+                self.connection.logout()
+                print("🔌 Verbindung geschlossen")
+            except Exception as e:
+                logger.debug(f"Error closing IMAP connection: {e}")
+    
+    def fetch_new_emails(self, folder: str = "INBOX", limit: int = 50) -> List[Dict]:
+        """
+        Holt E-Mails (readonly - markiert nicht als gelesen)
+        Nutzt UID-Tracking für Deduplication in der DB
+        
+        Args:
+            folder: IMAP-Ordner (Standard: "INBOX")
+            limit: Max. Anzahl Mails (die neuesten)
+        
+        Returns:
+            Liste von E-Mail-Dicts mit uid, sender, subject, body, received_at, imap_uid, imap_folder, imap_flags
+        """
+        if not self.connection:
+            self.connect()
+        
+        try:
+            # Ordner im readonly-Modus auswählen (nicht als gelesen markieren!)
+            self.connection.select(folder, readonly=True)
+            
+            # Hole ALLE Mails (DB dedupliziert per UID)
+            status, messages = self.connection.search(None, 'ALL')
+            
+            if status != 'OK':
+                print("⚠️  Keine Mails gefunden")
+                return []
+            
+            mail_ids = messages[0].split()
+            # Neueste zuerst (reverse)
+            mail_ids = list(reversed(mail_ids))
+            # Limit anwenden
+            mail_ids = mail_ids[:limit]
+            
+            print(f"📧 {len(mail_ids)} Mails gefunden")
+            
+            emails = []
+            for mail_id in mail_ids:
+                email_data = self._fetch_email_by_id(mail_id, folder)
+                if email_data:
+                    emails.append(email_data)
+            
+            return emails
+            
+        except Exception as e:
+            print(f"❌ Fehler beim Abrufen: {e}")
+            return []
+    
+    def _fetch_email_by_id(self, mail_id: bytes, folder: str = "INBOX") -> Optional[Dict]:
+        """Holt eine einzelne E-Mail mit IMAP-Flags"""
+        try:
+            status, msg_data = self.connection.fetch(mail_id, '(RFC822 FLAGS UID)')
+            
+            if status != 'OK':
+                return None
+            
+            # Metadaten parsen (Flags + UID)
+            meta = msg_data[0][0]
+            meta_str = meta.decode('utf-8', errors='ignore')
+            
+            imap_flags = self._parse_imap_flags(meta_str)
+            imap_uid = self._parse_imap_uid(meta_str)
+            
+            # E-Mail parsen
+            raw_email = msg_data[0][1]
+            msg = email.message_from_bytes(raw_email)
+            
+            # Header dekodieren
+            subject = self._decode_header(msg.get('Subject', ''))
+            sender = self._decode_header(msg.get('From', ''))
+            date_str = msg.get('Date', '')
+            
+            # Body extrahieren
+            body = self._extract_body(msg)
+            
+            # Datum parsen
+            try:
+                received_at = email.utils.parsedate_to_datetime(date_str)
+            except Exception as e:
+                logger.debug(f"Failed to parse date '{date_str}': {e}")
+                received_at = datetime.now()
+            
+            return {
+                'uid': mail_id.decode(),
+                'sender': sender,
+                'subject': subject,
+                'body': body,
+                'received_at': received_at,
+                'imap_uid': imap_uid,
+                'imap_folder': folder,
+                'imap_flags': imap_flags
+            }
+            
+        except Exception as e:
+            print(f"⚠️  Fehler bei Mail-ID {mail_id}: {e}")
+            return None
+    
+    def _decode_header(self, header: str) -> str:
+        """Dekodiert E-Mail-Header (Betreff, Absender)"""
+        if not header:
+            return ""
+        
+        decoded_parts = decode_header(header)
+        result = []
+        
+        for part, encoding in decoded_parts:
+            if isinstance(part, bytes):
+                result.append(part.decode(encoding or 'utf-8', errors='ignore'))
+            else:
+                result.append(part)
+        
+        return ' '.join(result)
+    
+    def _extract_body(self, msg) -> str:
+        """Extrahiert Text-Body aus E-Mail"""
+        body = ""
+        
+        if msg.is_multipart():
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                
+                # Nur Text-Parts
+                if content_type == "text/plain":
+                    try:
+                        payload = part.get_payload(decode=True)
+                        charset = part.get_content_charset() or 'utf-8'
+                        body += payload.decode(charset, errors='ignore')
+                    except Exception as e:
+                        logger.debug(f"Failed to decode text/plain payload: {e}")
+        else:
+            # Einfache (nicht-multipart) Mail
+            try:
+                payload = msg.get_payload(decode=True)
+                charset = msg.get_content_charset() or 'utf-8'
+                body = payload.decode(charset, errors='ignore')
+            except Exception as e:
+                logger.debug(f"Failed to decode email payload, falling back to string: {e}")
+                body = str(msg.get_payload())
+        
+        return body.strip()
+    
+    def _parse_imap_flags(self, meta_str: str) -> str:
+        """Extrahiert IMAP-Flags aus Metadaten-String
+        
+        Beispiel Input: '123 (UID 999 FLAGS (\\Seen \\Answered))'
+        Beispiel Output: '\\Seen \\Answered'
+        """
+        flags_match = re.search(r'FLAGS \((.*?)\)', meta_str)
+        if flags_match:
+            return flags_match.group(1).strip()
+        return ''
+    
+    def _parse_imap_uid(self, meta_str: str) -> Optional[str]:
+        """Extrahiert IMAP-UID aus Metadaten-String
+        
+        Beispiel Input: '123 (UID 999 FLAGS (\\Seen))'
+        Beispiel Output: '999'
+        """
+        uid_match = re.search(r'UID (\d+)', meta_str)
+        if uid_match:
+            return uid_match.group(1)
+        return None
+
+
+def get_fetcher_from_env() -> MailFetcher:
+    """
+    Erstellt MailFetcher aus Umgebungsvariablen
+    
+    Benötigt:
+        IMAP_SERVER, IMAP_USERNAME, IMAP_PASSWORD, IMAP_PORT (optional)
+    """
+    server = os.getenv('IMAP_SERVER')
+    username = os.getenv('IMAP_USERNAME')
+    password = os.getenv('IMAP_PASSWORD')
+    port = int(os.getenv('IMAP_PORT', '993'))
+    
+    if not all([server, username, password]):
+        raise ValueError("IMAP-Konfiguration fehlt in Umgebungsvariablen")
+    
+    return MailFetcher(server, username, password, port)
+
+
+def get_mail_fetcher_for_account(mail_account, master_key: str = None):
+    """Factory-Funktion: Erstellt passenden Fetcher für Account-Typ
+    
+    Unterstützt Multi-Auth:
+    - auth_type="imap": Standard IMAP/SMTP
+    - auth_type="oauth": OAuth 2.0 (Gmail, Outlook)
+    - auth_type="pop3": POP3 (experimental)
+    
+    Args:
+        mail_account: MailAccount Model-Instanz
+        master_key: Encrypted Master-Key um Passwörter zu decrypten
+        
+    Returns:
+        MailFetcher (IMAP), GoogleMailFetcher (OAuth) oder POP3MailFetcher
+        
+    Raises:
+        ValueError: Bei fehlenden Credentials oder unbekanntem auth_type
+    """
+    encryption = importlib.import_module('.08_encryption', 'src')
+    
+    # Validiere Auth-Felder
+    is_valid, error_msg = mail_account.validate_auth_fields()
+    if not is_valid:
+        raise ValueError(f"Invalid account configuration: {error_msg}")
+    
+    if not master_key:
+        raise ValueError("Master-Key erforderlich für Credential Decryption")
+    
+    # OAuth-basierte Authentifizierung (Google, Microsoft)
+    if mail_account.auth_type == "oauth":
+        google_oauth = importlib.import_module('.10_google_oauth', 'src')
+        
+        decrypted_token = encryption.CredentialManager.decrypt_imap_password(
+            mail_account.encrypted_oauth_token,
+            master_key
+        )
+        
+        if mail_account.oauth_provider == "google":
+            return google_oauth.GoogleMailFetcher(access_token=decrypted_token)
+        elif mail_account.oauth_provider == "microsoft":
+            # TODO: Microsoft OAuth Fetcher implementieren
+            raise NotImplementedError("Microsoft OAuth not yet implemented")
+        else:
+            raise ValueError(f"Unknown OAuth provider: {mail_account.oauth_provider}")
+    
+    # IMAP-basierte Authentifizierung
+    elif mail_account.auth_type == "imap":
+        imap_password = encryption.CredentialManager.decrypt_imap_password(
+            mail_account.encrypted_imap_password,
+            master_key
+        )
+        
+        return MailFetcher(
+            server=mail_account.imap_server,
+            username=mail_account.imap_username,
+            password=imap_password,
+            port=mail_account.imap_port
+        )
+    
+    # POP3-basierte Authentifizierung (Experimental)
+    elif mail_account.auth_type == "pop3":
+        pop3_fetcher = importlib.import_module('.07_pop3_fetcher', 'src')
+        
+        pop3_password = encryption.CredentialManager.decrypt_imap_password(
+            mail_account.encrypted_pop3_password,
+            master_key
+        )
+        
+        return pop3_fetcher.POP3MailFetcher(
+            server=mail_account.pop3_server,
+            username=mail_account.pop3_username,
+            password=pop3_password,
+            port=mail_account.pop3_port
+        )
+    
+    else:
+        raise ValueError(f"Unknown auth_type: {mail_account.auth_type}")
+
+
+if __name__ == "__main__":
+    try:
+        fetcher = get_fetcher_from_env()
+        fetcher.connect()
+        
+        emails = fetcher.fetch_new_emails(limit=5)
+        
+        print(f"\n=== {len(emails)} Mails abgerufen ===\n")
+        for mail in emails:
+            print(f"Von: {mail['sender']}")
+            print(f"Betreff: {mail['subject']}")
+            print(f"Datum: {mail['received_at']}")
+            print(f"Body: {mail['body'][:100]}...")
+            print("-" * 60)
+        
+        fetcher.disconnect()
+        
+    except Exception as e:
+        print(f"❌ Fehler: {e}")
+        print("\nSetze Umgebungsvariablen:")
+        print("  IMAP_SERVER=imap.gmx.net")
+        print("  IMAP_USERNAME=deine@email.de")
+        print("  IMAP_PASSWORD=deinpasswort")
+
+
+####################################################################################################
+# END OF FILE: src/06_mail_fetcher.py
+####################################################################################################
+
+
+
+####################################################################################################
+# FILE: src/12_processing.py
+# PATH: /home/thomas/projects/KI-Mail-Helper/src/12_processing.py
+####################################################################################################
+
+﻿"""Shared processing helpers for turning RawEmail entries into ProcessedEmail rows."""
+
+from __future__ import annotations
+
+import logging
+import importlib
+from typing import Callable, Optional
+
+from sqlalchemy.exc import IntegrityError
+
+models = importlib.import_module('.02_models', 'src')
+sanitizer_mod = importlib.import_module('.04_sanitizer', 'src')
+ai_client_mod = importlib.import_module('.03_ai_client', 'src')
+scoring = importlib.import_module('.05_scoring', 'src')
+imap_flags_mod = importlib.import_module('.16_imap_flags', 'src')
+
+logger = logging.getLogger(__name__)
+
+
+def process_pending_raw_emails(
+    session,
+    user,
+    *,
+    master_key: Optional[str] = None,
+    mail_account: Optional[object] = None,
+    limit: Optional[int] = None,
+    ai=None,
+    sanitize_level: Optional[int] = None,
+    progress_callback: Optional[Callable[[int, int, str], None]] = None
+) -> int:
+    """Process RawEmails without ProcessedEmail entries for the given user.
+    
+    Args:
+        master_key: Master-Key for encryption/decryption. Required for processing emails.
+        progress_callback: Optional callback(current_index: int, total: int, subject: str) for each email.
+    """
+    if not user:
+        return 0
+    
+    if not master_key:
+        logger.warning("⚠️  Master-Key nicht verfügbar - kann E-Mails nicht verarbeiten")
+        return 0
+
+    level = sanitize_level if sanitize_level is not None else sanitizer_mod.get_sanitization_level(False)
+
+    query = session.query(models.RawEmail).outerjoin(
+        models.ProcessedEmail,
+        models.RawEmail.id == models.ProcessedEmail.raw_email_id
+    ).filter(
+        models.RawEmail.user_id == user.id,
+        models.ProcessedEmail.id.is_(None),
+        models.RawEmail.deleted_at.is_(None),
+        models.RawEmail.deleted_verm.is_(False)
+    )
+
+    if mail_account:
+        query = query.filter(models.RawEmail.mail_account_id == mail_account.id)
+
+    query = query.order_by(models.RawEmail.received_at.asc(), models.RawEmail.id.asc())
+
+    if limit and limit > 0:
+        query = query.limit(limit)
+
+    pending_emails = query.all()
+    if not pending_emails:
+        return 0
+
+    active_ai = ai or ai_client_mod.LocalOllamaClient()
+    
+    # Provider und Modell für Tracking ermitteln
+    ai_provider = "ollama"  # Default
+    if hasattr(active_ai, '__class__'):
+        class_name = active_ai.__class__.__name__
+        if "OpenAI" in class_name:
+            ai_provider = "openai"
+        elif "Anthropic" in class_name:
+            ai_provider = "anthropic"
+        elif "Ollama" in class_name:
+            ai_provider = "ollama"
+    
+    ai_model = getattr(active_ai, 'model', None) or "unknown"
+
+    logger.info(
+        "🧾 Verarbeite %d gespeicherte Mails für %s",
+        len(pending_emails),
+        getattr(mail_account, 'name', user.username)
+    )
+
+    processed_count = 0
+    total_emails = len(pending_emails)
+    
+    # Zero-Knowledge: Hole Master-Key für Entschlüsselung
+    # Wichtig: Dieser Key muss vom Caller übergeben werden (z.B. aus Flask Session)
+    # oder aus user.encrypted_master_key_for_cron entschlüsselt werden
+    # Für manuelle Verarbeitung (Web-Request) sollte master_key aus Session kommen
+
+    for idx, raw_email in enumerate(pending_emails, 1):
+        try:
+            already_processed = session.query(models.ProcessedEmail).filter_by(
+                raw_email_id=raw_email.id
+            ).first()
+            if already_processed:
+                logger.info("⏭️  RawEmail %s bereits verarbeitet – überspringe", raw_email.id)
+                continue
+
+            # Zero-Knowledge: Entschlüssele E-Mail-Inhalte mit master_key
+            try:
+                encryption_mod = importlib.import_module('.08_encryption', 'src')
+                decrypted_subject = encryption_mod.EmailDataManager.decrypt_email_subject(
+                    raw_email.encrypted_subject or "", master_key
+                )
+                decrypted_body = encryption_mod.EmailDataManager.decrypt_email_body(
+                    raw_email.encrypted_body or "", master_key
+                )
+                decrypted_sender = encryption_mod.EmailDataManager.decrypt_email_sender(
+                    raw_email.encrypted_sender or "", master_key
+                )
+            except Exception as e:
+                logger.error(f"❌ Entschlüsselung fehlgeschlagen für RawEmail {raw_email.id}: {e}")
+                continue
+
+            subject_preview = (decrypted_subject or "(ohne Betreff)")[:50]
+            clean_body = sanitizer_mod.sanitize_email(decrypted_body, level=level)
+
+            if progress_callback:
+                progress_callback(idx, total_emails, subject_preview)
+
+            logger.info("🤖 Analysiere gespeicherte Mail: %s...", subject_preview)
+            ai_result = active_ai.analyze_email(
+                subject=decrypted_subject or "",
+                body=clean_body,
+                sender=decrypted_sender or ""
+            )
+
+            priority = scoring.analyze_priority(
+                dringlichkeit=ai_result["dringlichkeit"],
+                wichtigkeit=ai_result["wichtigkeit"]
+            )
+
+            imap_flags_parser = imap_flags_mod.IMAPFlagParser()
+            
+            # Zero-Knowledge: Verschlüssele KI-generierte Inhalte
+            try:
+                encryption_mod = importlib.import_module('.08_encryption', 'src')
+                encrypted_summary = encryption_mod.EmailDataManager.encrypt_summary(
+                    ai_result["summary_de"], master_key
+                )
+                encrypted_text = encryption_mod.EmailDataManager.encrypt_summary(
+                    ai_result["text_de"], master_key
+                )
+                encrypted_tags = encryption_mod.EmailDataManager.encrypt_summary(
+                    ",".join(ai_result.get("tags", [])), master_key
+                )
+            except Exception as e:
+                logger.error(f"❌ Verschlüsselung fehlgeschlagen für ProcessedEmail: {e}")
+                continue
+            
+            processed_email = models.ProcessedEmail(
+                raw_email_id=raw_email.id,
+                dringlichkeit=ai_result["dringlichkeit"],
+                wichtigkeit=ai_result["wichtigkeit"],
+                kategorie_aktion=ai_result["kategorie_aktion"],
+                encrypted_tags=encrypted_tags,
+                spam_flag=ai_result["spam_flag"],
+                encrypted_summary_de=encrypted_summary,
+                encrypted_text_de=encrypted_text,
+                score=priority["score"],
+                matrix_x=priority["matrix_x"],
+                matrix_y=priority["matrix_y"],
+                farbe=priority["farbe"],
+                done=False,
+                base_provider=ai_provider,
+                base_model=ai_model,
+                imap_flags_at_processing=raw_email.imap_flags,
+                was_seen_at_processing=imap_flags_parser.is_seen(raw_email.imap_flags or ''),
+                was_answered_at_processing=imap_flags_parser.is_answered(raw_email.imap_flags or '')
+            )
+
+            session.add(processed_email)
+            session.commit()
+            processed_count += 1
+
+            logger.info(
+                "✅ Mail verarbeitet: Score=%s, Farbe=%s",
+                priority["score"],
+                priority["farbe"]
+            )
+
+        except IntegrityError:
+            session.rollback()
+            logger.warning(
+                "⏭️  Duplikat erkannt (RawEmail %s). Ein Eintrag existiert bereits.",
+                raw_email.id
+            )
+            continue
+        except Exception as exc:  # pragma: no cover - logging side-effect
+            logger.error("❌ Fehler bei Mail-Verarbeitung: %s", exc, exc_info=True)
+            session.rollback()
+            continue
+
+    return processed_count
+
+
+def purge_marked_emails(session, days_to_retain: int = 90) -> dict[str, int]:
+    """
+    Hard-delete emails marked for deletion after retention period.
+    
+    Löscht RawEmails und zugehörige ProcessedEmails, die vor mehr als
+    `days_to_retain` Tagen mit deleted_verm=True markiert wurden.
+    
+    Args:
+        session: SQLAlchemy Session
+        days_to_retain: Tage bis zum Hard-Delete (default: 90)
+    
+    Returns:
+        Dictionary mit Counts: {raw_deleted: int, processed_deleted: int}
+    """
+    from datetime import datetime, timedelta, UTC
+    
+    cutoff_date = datetime.now(UTC) - timedelta(days=days_to_retain)
+    
+    try:
+        raw_emails_to_delete = session.query(models.RawEmail).filter(
+            models.RawEmail.deleted_verm == True,
+            models.RawEmail.deleted_at < cutoff_date
+        ).all()
+        
+        if not raw_emails_to_delete:
+            logger.info("✅ Keine Emails zum Purge nach %d Tagen vorhanden", days_to_retain)
+            return {"raw_deleted": 0, "processed_deleted": 0}
+        
+        raw_ids = [email.id for email in raw_emails_to_delete]
+        
+        processed_count = session.query(models.ProcessedEmail).filter(
+            models.ProcessedEmail.raw_email_id.in_(raw_ids)
+        ).delete(synchronize_session=False)
+        
+        raw_count = session.query(models.RawEmail).filter(
+            models.RawEmail.id.in_(raw_ids)
+        ).delete(synchronize_session=False)
+        
+        session.commit()
+        
+        logger.info(
+            "🧹 Purge abgeschlossen: %d RawEmails, %d ProcessedEmails gelöscht",
+            raw_count,
+            processed_count
+        )
+        
+        return {
+            "raw_deleted": raw_count,
+            "processed_deleted": processed_count
+        }
+        
+    except Exception as exc:
+        session.rollback()
+        logger.error("❌ Fehler beim Purge: %s", exc, exc_info=True)
+        return {"raw_deleted": 0, "processed_deleted": 0}
+
+
+####################################################################################################
+# END OF FILE: src/12_processing.py
+####################################################################################################
+
+
+
+####################################################################################################
+# FILE: src/10_google_oauth.py
+# PATH: /home/thomas/projects/KI-Mail-Helper/src/10_google_oauth.py
+####################################################################################################
+
+"""mail_helper - Google OAuth Integration
+Handles Google OAuth 2.0 flow for Gmail access
+"""
+
+import requests
+import logging
+from datetime import datetime, timedelta, UTC
+from typing import Optional, Dict
+import importlib
+
+logger = logging.getLogger(__name__)
+
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+GMAIL_API_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+]
+
+
+class GoogleOAuthManager:
+    """Verwaltet Google OAuth 2.0 Flow"""
+    
+    @staticmethod
+    def get_auth_url(client_id: str, redirect_uri: str, state: str = None) -> str:
+        """Generiert Google Authorization URL
+        
+        Args:
+            client_id: Google OAuth Client ID
+            redirect_uri: Redirect URI nach Auth (muss registriert sein)
+            state: Optional state parameter für CSRF protection
+            
+        Returns:
+            Google OAuth Authorization URL
+        """
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": " ".join(GMAIL_API_SCOPES),
+            "access_type": "offline",
+            "prompt": "consent"
+        }
+        
+        if state:
+            params["state"] = state
+        
+        query_string = "&".join([f"{k}={v}" for k, v in params.items()])
+        return f"{GOOGLE_AUTH_URL}?{query_string}"
+    
+    @staticmethod
+    def exchange_code_for_token(
+        auth_code: str,
+        client_id: str,
+        client_secret: str,
+        redirect_uri: str
+    ) -> Optional[Dict]:
+        """Tauscht Authorization Code gegen Access Token
+        
+        Args:
+            auth_code: Authorization Code von Google
+            client_id: Google OAuth Client ID
+            client_secret: Google OAuth Client Secret
+            redirect_uri: Muss exakt die registrierte URI sein
+            
+        Returns:
+            Dict mit access_token, refresh_token, expires_in oder None bei Fehler
+        """
+        try:
+            data = {
+                "code": auth_code,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code"
+            }
+            
+            response = requests.post(GOOGLE_TOKEN_URL, data=data, timeout=10)
+            response.raise_for_status()
+            
+            token_data = response.json()
+            logger.info("✅ Google OAuth Token erfolgreich getauscht")
+            return token_data
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Token Exchange Fehler: {e}")
+            return None
+    
+    @staticmethod
+    def refresh_access_token(
+        refresh_token: str,
+        client_id: str,
+        client_secret: str
+    ) -> Optional[Dict]:
+        """Erneuert Access Token mit Refresh Token
+        
+        Args:
+            refresh_token: Google Refresh Token
+            client_id: Google OAuth Client ID
+            client_secret: Google OAuth Client Secret
+            
+        Returns:
+            Dict mit neuem access_token, expires_in oder None bei Fehler
+        """
+        try:
+            data = {
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "grant_type": "refresh_token"
+            }
+            
+            response = requests.post(GOOGLE_TOKEN_URL, data=data, timeout=10)
+            response.raise_for_status()
+            
+            token_data = response.json()
+            logger.info("✅ Access Token erfolgreich erneuert")
+            return token_data
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Token Refresh Fehler: {e}")
+            return None
+    
+    @staticmethod
+    def get_user_email(access_token: str) -> Optional[str]:
+        """Holt User Email mit Access Token
+        
+        Args:
+            access_token: Google Access Token
+            
+        Returns:
+            User Email oder None bei Fehler
+        """
+        try:
+            headers = {"Authorization": f"Bearer {access_token}"}
+            response = requests.get(GOOGLE_USERINFO_URL, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            user_info = response.json()
+            email = user_info.get("email")
+            
+            if email:
+                logger.info(f"✅ User Email abgerufen: {email[:3]}***@***")
+                return email
+            
+            return None
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ User Info Fehler: {e}")
+            return None
+
+
+class OAuthTokenManager:
+    """Verwaltet OAuth Token Refresh und Expiration"""
+    
+    @staticmethod
+    def check_and_refresh_token(mail_account, client_id: str, client_secret: str, master_key: str = None, db_session=None):
+        """Überprüft ob Token abgelaufen ist und erneuert falls nötig
+        
+        Args:
+            mail_account: MailAccount Model instance
+            client_id: Google OAuth Client ID
+            client_secret: Google OAuth Client Secret
+            master_key: Master-Key um Refresh-Token zu decrypten (optional wenn unverschlüsselt)
+            db_session: SQLAlchemy Session für DB-Updates
+            
+        Returns:
+            Boolean - True wenn Token gültig/erneuert, False bei Fehler
+        """
+        from datetime import datetime, timedelta
+        
+        if mail_account.oauth_provider != "google":
+            return True
+        
+        if not mail_account.oauth_expires_at:
+            return True
+        
+        now = datetime.now(UTC)
+        if mail_account.oauth_expires_at > now + timedelta(minutes=5):
+            return True
+        
+        if not mail_account.encrypted_oauth_refresh_token:
+            logger.warning(f"Kein Refresh-Token für Account {mail_account.id}")
+            return False
+        
+        encryption = importlib.import_module('.08_encryption', 'src')
+        
+        refresh_token = mail_account.encrypted_oauth_refresh_token
+        if master_key:
+            try:
+                refresh_token = encryption.CredentialManager.decrypt_imap_password(
+                    mail_account.encrypted_oauth_refresh_token,
+                    master_key
+                )
+            except Exception as e:
+                logger.error(f"Refresh-Token Decryption Fehler: {e}")
+                return False
+        
+        token_data = GoogleOAuthManager.refresh_access_token(
+            refresh_token=refresh_token,
+            client_id=client_id,
+            client_secret=client_secret
+        )
+        
+        if not token_data:
+            logger.error(f"Token Refresh fehlgeschlagen für Account {mail_account.id}")
+            return False
+        
+        new_access_token = token_data.get("access_token")
+        new_expires_in = token_data.get("expires_in", 3600)
+        
+        new_expires_at = datetime.now(UTC) + timedelta(seconds=new_expires_in)
+        
+        encrypted_token = new_access_token
+        if master_key:
+            try:
+                encrypted_token = encryption.CredentialManager.encrypt_imap_password(
+                    new_access_token,
+                    master_key
+                )
+            except Exception as e:
+                logger.error(f"Token Encryption Fehler: {e}")
+                return False
+        
+        mail_account.encrypted_oauth_token = encrypted_token
+        mail_account.oauth_expires_at = new_expires_at
+        
+        if db_session:
+            db_session.commit()
+            logger.info(f"✅ OAuth Token erneuert für Account {mail_account.id}")
+        
+        return True
+
+
+class GoogleMailFetcher:
+    """Holt Mails von Gmail via Google API (OAuth)"""
+    
+    def __init__(self, access_token: str):
+        """
+        Initialisiert Gmail API Client
+        
+        Args:
+            access_token: Google OAuth Access Token
+        """
+        self.access_token = access_token
+        self.base_url = "https://www.googleapis.com/gmail/v1"
+    
+    def _make_request(self, endpoint: str, method: str = "GET", data: Dict = None) -> Optional[Dict]:
+        """Macht authenticated Request zu Gmail API"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            url = f"{self.base_url}{endpoint}"
+            
+            if method == "GET":
+                response = requests.get(url, headers=headers, timeout=10)
+            elif method == "POST":
+                response = requests.post(url, headers=headers, json=data, timeout=10)
+            else:
+                return None
+            
+            response.raise_for_status()
+            return response.json()
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Gmail API Request Fehler: {e}")
+            return None
+    
+    def fetch_new_emails(self, limit: int = 50) -> list:
+        """Holt neue (ungelesene) Mails von Gmail
+        
+        Args:
+            limit: Max. Anzahl Mails
+            
+        Returns:
+            Liste von Email-Dicts mit id, threadId, snippet, headers
+        """
+        try:
+            query = "is:unread"
+            endpoint = f"/users/me/messages?q={query}&maxResults={limit}"
+            
+            result = self._make_request(endpoint)
+            
+            if not result or "messages" not in result:
+                logger.info("ℹ️ Keine neuen Mails gefunden")
+                return []
+            
+            messages = result["messages"]
+            logger.info(f"📧 {len(messages)} neue Mails gefunden")
+            
+            emails = []
+            for msg in messages:
+                email_data = self._fetch_message(msg["id"])
+                if email_data:
+                    emails.append(email_data)
+            
+            return emails
+            
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Mail-Abruf: {e}")
+            return []
+    
+    def _fetch_message(self, message_id: str) -> Optional[Dict]:
+        """Holt vollständige Message von Gmail
+        
+        Returns:
+            Dict mit id, threadId, snippet, senderEmail, subject, body, receivedAt
+        """
+        try:
+            endpoint = f"/users/me/messages/{message_id}"
+            msg = self._make_request(endpoint)
+            
+            if not msg:
+                return None
+            
+            headers = msg.get("payload", {}).get("headers", [])
+            header_dict = {h["name"]: h["value"] for h in headers}
+            
+            sender = header_dict.get("From", "")
+            subject = header_dict.get("Subject", "")
+            date_str = header_dict.get("Date", "")
+            
+            body = self._extract_body(msg.get("payload", {}))
+            
+            try:
+                from email.utils import parsedate_to_datetime
+                received_at = parsedate_to_datetime(date_str)
+            except Exception as e:
+                logger.debug(f"Failed to parse date '{date_str}': {e}")
+                received_at = datetime.now(UTC)
+            
+            return {
+                "uid": msg["id"],  # Gmail Message ID als UID
+                "id": msg["id"],  # Für Backward-Kompatibilität
+                "threadId": msg.get("threadId"),
+                "sender": sender,
+                "subject": subject,
+                "body": body,
+                "received_at": received_at,
+                "snippet": msg.get("snippet", ""),
+                "imap_uid": None,  # Gmail API hat keine IMAP UIDs
+                "imap_folder": "INBOX",  # Standard für Gmail API
+                "imap_flags": None  # Gmail API nutzt Labels statt IMAP Flags
+            }
+            
+        except Exception as e:
+            logger.error(f"⚠️ Fehler bei Message {message_id}: {e}")
+            return None
+    
+    def _extract_body(self, payload: Dict) -> str:
+        """Extrahiert Text-Body aus Message Payload"""
+        try:
+            if "parts" in payload:
+                for part in payload["parts"]:
+                    if part.get("mimeType") == "text/plain":
+                        data = part.get("body", {}).get("data")
+                        if data:
+                            import base64
+                            return base64.urlsafe_b64decode(data + "==").decode("utf-8", errors="ignore")
+            else:
+                data = payload.get("body", {}).get("data")
+                if data:
+                    import base64
+                    return base64.urlsafe_b64decode(data + "==").decode("utf-8", errors="ignore")
+            
+            return ""
+            
+        except Exception as e:
+            logger.error(f"Body extraction error: {e}")
+            return ""
+
+
+####################################################################################################
+# END OF FILE: src/10_google_oauth.py
+####################################################################################################
+
+

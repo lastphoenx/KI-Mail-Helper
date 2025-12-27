@@ -1,3 +1,15 @@
+====================================================================================================
+CODE REVIEW LAYER: Security & Authentication
+PRIORITY: KRITISCH
+FILES: 4
+====================================================================================================
+
+
+####################################################################################################
+# FILE: src/01_web_app.py
+# PATH: /home/thomas/projects/KI-Mail-Helper/src/01_web_app.py
+####################################################################################################
+
 """
 Mail Helper - Web-App (Flask) mit Multi-User & 2FA
 Phase 2: Login, Register, 2FA Setup, Mail-Accounts
@@ -40,8 +52,6 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__, template_folder="../templates")
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-change-in-production')
-app.config['WTF_CSRF_ENABLED'] = True  # CSRF Protection aktivieren
-app.config['WTF_CSRF_TIME_LIMIT'] = None  # Kein Timeout (Session-basiert)
 
 # Reverse Proxy Support (nginx, caddy, traefik, etc.)
 # Verarbeitet X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, X-Forwarded-Prefix
@@ -71,17 +81,6 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True  # Kein JavaScript-Zugriff
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF-Schutz
 
 Session(app)
-
-# CSRF Protection mit Flask-WTF (Phase 8d: Security Hardening)
-from flask_wtf.csrf import CSRFProtect, generate_csrf
-csrf = CSRFProtect(app)
-
-# Make csrf_token available in all templates
-@app.context_processor
-def inject_csrf_token():
-    return dict(csrf_token=generate_csrf)
-
-logger.info("🛡️  CSRF Protection aktiviert (Flask-WTF)")
 
 # HTTPS Enforcement mit Flask-Talisman wird dynamisch in start_server() aktiviert
 talisman = None
@@ -2077,3 +2076,1021 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
 
 if __name__ == "__main__":
     start_server()
+
+
+####################################################################################################
+# END OF FILE: src/01_web_app.py
+####################################################################################################
+
+
+
+####################################################################################################
+# FILE: src/07_auth.py
+# PATH: /home/thomas/projects/KI-Mail-Helper/src/07_auth.py
+####################################################################################################
+
+"""
+Mail Helper - Authentication & 2FA
+Handles Login, Register, TOTP 2FA
+"""
+
+from datetime import datetime, timedelta
+import pyotp
+import qrcode
+from io import BytesIO
+import base64
+import logging
+import importlib
+import os
+
+logger = logging.getLogger(__name__)
+
+
+class AuthManager:
+    """Verwaltet Authentifizierung und 2FA"""
+    
+    @staticmethod
+    def generate_totp_secret() -> str:
+        """Generiert ein neues TOTP-Secret"""
+        return pyotp.random_base32()
+    
+    @staticmethod
+    def generate_qr_code(user_email: str, totp_secret: str) -> str:
+        """Generiert QR-Code für TOTP-Setup"""
+        totp = pyotp.TOTP(totp_secret)
+        uri = totp.provisioning_uri(
+            name=user_email,
+            issuer_name="MailHelper"
+        )
+        
+        qr = qrcode.QRCode(version=1, box_size=10, border=5)
+        qr.add_data(uri)
+        qr.make(fit=True)
+        
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        buf = BytesIO()
+        # PyPNGImage (qrcode ohne PIL) vs PIL.Image haben unterschiedliche save() APIs
+        try:
+            img.save(buf, format='PNG')  # PIL/Pillow
+        except TypeError:
+            img.save(buf)  # pypng (kein format-Parameter)
+        buf.seek(0)
+        
+        img_base64 = base64.b64encode(buf.getvalue()).decode()
+        return f"data:image/png;base64,{img_base64}"
+    
+    @staticmethod
+    def verify_totp(totp_secret: str, token: str) -> bool:
+        """Überprüft einen TOTP-Token"""
+        try:
+            totp = pyotp.TOTP(totp_secret)
+            return totp.verify(token, valid_window=1)
+        except Exception as e:
+            logger.error(f"TOTP-Verifikation Fehler: {e}")
+            return False
+    
+    @staticmethod
+    def get_backup_codes(count: int = 10) -> list:
+        """Generiert Backup-Codes"""
+        import secrets
+        codes = []
+        for _ in range(count):
+            code = secrets.token_hex(3).upper()
+            codes.append(code)
+        return codes
+
+
+class ServiceTokenManager:
+    """Verwaltet Service-Tokens für Background-Jobs"""
+    
+    @staticmethod
+    def create_token(user_id: int, session, days: int = 30) -> tuple:
+        """Erstellt einen neuen Service-Token
+        
+        Returns:
+            (token_plaintext, token_object)
+        """
+        import importlib
+        from datetime import datetime, timedelta
+        
+        models = importlib.import_module('.02_models', 'src')
+        
+        token = models.ServiceToken.generate_token()
+        token_hash = models.ServiceToken.hash_token(token)
+        
+        service_token = models.ServiceToken(
+            user_id=user_id,
+            token_hash=token_hash,
+            expires_at=datetime.utcnow() + timedelta(days=days)
+        )
+        
+        session.add(service_token)
+        session.commit()
+        
+        logger.info(f"✅ Service-Token erstellt für User {user_id}")
+        return token, service_token
+    
+    @staticmethod
+    def verify_token(token: str, session) -> dict or None:
+        """Verifiziert einen Service-Token
+        
+        Returns:
+            User object or None
+        """
+        import importlib
+        models = importlib.import_module('.02_models', 'src')
+        
+        service_tokens = session.query(models.ServiceToken).all()
+        
+        for st in service_tokens:
+            if st.is_valid() and models.ServiceToken.verify_token(token, st.token_hash):
+                return st.user
+        
+        return None
+    
+    @staticmethod
+    def revoke_token(token_id: int, session):
+        """Sperrt einen Token"""
+        import importlib
+        models = importlib.import_module('.02_models', 'src')
+        
+        token = session.query(models.ServiceToken).filter_by(id=token_id).first()
+        if token:
+            session.delete(token)
+            session.commit()
+            logger.info(f"🔒 Token {token_id} gesperrt")
+
+
+class RecoveryCodeManager:
+    """Verwaltet Recovery-Codes für Passwort-Reset"""
+    
+    @staticmethod
+    def create_recovery_codes(user_id: int, session, count: int = 10) -> list:
+        """Erstellt Recovery-Codes für einen User
+        
+        Returns:
+            Liste von ungehashten Codes
+        """
+        import importlib
+        models = importlib.import_module('.02_models', 'src')
+        
+        codes = []
+        code_objects = []
+        
+        for _ in range(count):
+            code = models.RecoveryCode.generate_code()
+            code_hash = models.RecoveryCode.hash_code(code)
+            
+            recovery = models.RecoveryCode(
+                user_id=user_id,
+                code_hash=code_hash
+            )
+            
+            session.add(recovery)
+            codes.append(code)
+            code_objects.append(recovery)
+        
+        session.commit()
+        logger.info(f"✅ {count} Recovery-Codes erstellt für User {user_id}")
+        
+        return codes
+    
+    @staticmethod
+    def verify_recovery_code(user_id: int, code: str, session) -> bool:
+        """Überprüft und verwendet einen Recovery-Code
+        
+        Returns:
+            True wenn Code gültig und verwendet
+        """
+        import importlib
+        models = importlib.import_module('.02_models', 'src')
+        
+        recovery_codes = session.query(models.RecoveryCode).filter_by(
+            user_id=user_id
+        ).all()
+        
+        for rc in recovery_codes:
+            if rc.is_unused() and models.RecoveryCode.verify_code(code, rc.code_hash):
+                rc.mark_used()
+                session.commit()
+                logger.info(f"✅ Recovery-Code verwendet für User {user_id}")
+                return True
+        
+        return False
+    
+    @staticmethod
+    def get_unused_codes(user_id: int, session) -> list:
+        """Gibt Anzahl der ungebrauchten Recovery-Codes"""
+        models = importlib.import_module('.02_models', 'src')
+        
+        unused = session.query(models.RecoveryCode).filter_by(
+            user_id=user_id
+        ).filter(models.RecoveryCode.used_at == None).count()
+        
+        return unused
+    
+    @staticmethod
+    def invalidate_all_codes(user_id: int, session):
+        """Invalidiert alle Recovery-Codes eines Users (Phase 8c Security Hardening)
+        
+        Verwendet für Recovery-Code Regeneration - alte Codes werden gelöscht.
+        """
+        models = importlib.import_module('.02_models', 'src')
+        
+        deleted = session.query(models.RecoveryCode).filter_by(
+            user_id=user_id
+        ).delete()
+        
+        session.commit()
+        logger.info(f"🗑️ {deleted} Recovery-Codes invalidiert für User {user_id}")
+
+
+class MasterKeyManager:
+    """Verwaltet Encryption Keys (Phase 8: DEK/KEK Pattern)"""
+    
+    @staticmethod
+    def setup_dek_for_user(user_id: int, password: str, session) -> tuple:
+        """Erstellt DEK beim Registrieren (Zero-Knowledge mit DEK/KEK Pattern)
+        
+        1. Generiert Salt
+        2. Leitet KEK aus Passwort ab (PBKDF2)
+        3. Generiert zufälligen DEK
+        4. Verschlüsselt DEK mit KEK
+        5. Speichert encrypted_dek in DB
+        
+        Returns:
+            (salt, encrypted_dek, dek)
+        """
+        encryption = importlib.import_module('.08_encryption', 'src')
+        models = importlib.import_module('.02_models', 'src')
+        
+        salt = encryption.EncryptionManager.generate_salt()
+        kek = encryption.EncryptionManager.generate_master_key(password, salt)  # KEK via PBKDF2
+        dek = encryption.EncryptionManager.generate_dek()  # Zufälliger DEK
+        encrypted_dek = encryption.EncryptionManager.encrypt_dek(dek, kek)
+        
+        user = session.query(models.User).filter_by(id=user_id).first()
+        if user:
+            user.salt = salt
+            user.encrypted_dek = encrypted_dek
+            session.commit()
+            logger.info(f"✅ DEK erstellt für User {user_id} (Zero-Knowledge DEK/KEK)")
+        
+        return salt, encrypted_dek, dek
+    
+    @staticmethod
+    def setup_master_key_for_user(user_id: int, password: str, session) -> tuple:
+        """DEPRECATED: Verwende setup_dek_for_user() stattdessen
+        
+        Nur für Migrations-Kompatibilität behalten.
+        """
+        logger.warning("setup_master_key_for_user() ist deprecated, verwende setup_dek_for_user()")
+        return MasterKeyManager.setup_dek_for_user(user_id, password, session)
+    
+    @staticmethod
+    def decrypt_dek_from_password(user, password: str) -> str:
+        """Entschlüsselt DEK mit Passwort (KEK wird aus Passwort abgeleitet)
+        
+        Wird beim Login verwendet:
+        1. KEK aus Passwort ableiten (PBKDF2 mit User.salt)
+        2. DEK mit KEK entschlüsseln
+        3. DEK in Session speichern
+        
+        Args:
+            user: User-Model mit salt und encrypted_dek
+            password: User-Passwort
+            
+        Returns:
+            Base64-kodierter DEK
+        """
+        encryption = importlib.import_module('.08_encryption', 'src')
+        
+        try:
+            # Fallback für alte User mit encrypted_master_key (vor DEK/KEK Migration)
+            if user.encrypted_dek:
+                kek = encryption.EncryptionManager.generate_master_key(password, user.salt)
+                dek = encryption.EncryptionManager.decrypt_dek(user.encrypted_dek, kek)
+                logger.info("✅ DEK erfolgreich entschlüsselt")
+                return dek
+            elif user.encrypted_master_key:
+                # DEPRECATED: Alte User ohne DEK
+                logger.warning(f"User {user.id} nutzt altes encrypted_master_key Format")
+                master_key = encryption.EncryptionManager.decrypt_master_key(
+                    user.encrypted_master_key,
+                    password
+                )
+                return master_key
+            else:
+                logger.error(f"User {user.id} hat weder encrypted_dek noch encrypted_master_key")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ DEK Entschlüsselung fehlgeschlagen: {e}")
+            return None
+    
+    @staticmethod
+    def decrypt_master_key_from_password(password: str, encrypted_master_key: str) -> str:
+        """DEPRECATED: Verwende decrypt_dek_from_password() stattdessen
+        
+        Nur für Migrations-Kompatibilität behalten.
+        """
+        encryption = importlib.import_module('.08_encryption', 'src')
+        
+        try:
+            master_key = encryption.EncryptionManager.decrypt_master_key(
+                encrypted_master_key,
+                password
+            )
+            logger.info("✅ Master-Key erfolgreich entschlüsselt")
+            return master_key
+        except Exception as e:
+            logger.error(f"❌ Master-Key Entschlüsselung fehlgeschlagen: {e}")
+            return None
+    
+
+
+
+####################################################################################################
+# END OF FILE: src/07_auth.py
+####################################################################################################
+
+
+
+####################################################################################################
+# FILE: src/08_encryption.py
+# PATH: /home/thomas/projects/KI-Mail-Helper/src/08_encryption.py
+####################################################################################################
+
+"""
+Mail Helper - Encryption Module
+Phase 3: AES-256-GCM encryption for sensitive data
+"""
+
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
+import os
+import base64
+import logging
+import hashlib
+
+logger = logging.getLogger(__name__)
+
+
+class EncryptionManager:
+    """Verwaltet Verschlüsselung mit AES-256-GCM"""
+    
+    ALGORITHM = algorithms.AES
+    KEY_SIZE = 32
+    ITERATIONS = 600000  # OWASP empfiehlt min. 600.000 für PBKDF2-HMAC-SHA256 (2024)
+    TAG_LENGTH = 16
+    
+    @staticmethod
+    def generate_salt(length: int = 32) -> str:
+        """Generiert einen zufälligen Salt"""
+        return base64.b64encode(os.urandom(length)).decode()
+    
+    @staticmethod
+    def generate_master_key(password: str, salt: str) -> str:
+        """Leitet Master-Key aus Passwort ab (PBKDF2)
+        
+        Args:
+            password: Benutzer-Passwort
+            salt: Salt für PBKDF2
+            
+        Returns:
+            Base64-kodierter Master-Key (256 Bit)
+        """
+        salt_bytes = base64.b64decode(salt)
+        
+        master_key = hashlib.pbkdf2_hmac(
+            'sha256',
+            password.encode(),
+            salt_bytes,
+            EncryptionManager.ITERATIONS
+        )
+        
+        return base64.b64encode(master_key).decode()
+    
+    @staticmethod
+    def encrypt_data(plaintext: str, master_key: str) -> str:
+        """Verschlüsselt Daten mit AES-256-GCM
+        
+        Args:
+            plaintext: Zu verschlüsselnde Daten
+            master_key: Base64-kodierter Master-Key
+            
+        Returns:
+            Base64-kodiertes Encrypted-Blob (IV + Ciphertext + Tag)
+        """
+        if not plaintext:
+            return ""
+        
+        try:
+            key = base64.b64decode(master_key)
+            iv = os.urandom(12)
+            
+            cipher = Cipher(
+                algorithms.AES(key),
+                modes.GCM(iv),
+                backend=default_backend()
+            )
+            encryptor = cipher.encryptor()
+            
+            ciphertext = encryptor.update(plaintext.encode()) + encryptor.finalize()
+            
+            encrypted_blob = iv + ciphertext + encryptor.tag
+            return base64.b64encode(encrypted_blob).decode()
+            
+        except Exception as e:
+            logger.error(f"Encryption error: {e}")
+            raise
+    
+    @staticmethod
+    def decrypt_data(encrypted_blob: str, master_key: str) -> str:
+        """Entschlüsselt Daten mit AES-256-GCM
+        
+        Args:
+            encrypted_blob: Base64-kodiertes Encrypted-Blob
+            master_key: Base64-kodierter Master-Key
+            
+        Returns:
+            Entschlüsselte Daten als String
+        """
+        if not encrypted_blob:
+            return ""
+        
+        try:
+            key = base64.b64decode(master_key)
+            encrypted_bytes = base64.b64decode(encrypted_blob)
+            
+            iv = encrypted_bytes[:12]
+            ciphertext = encrypted_bytes[12:-EncryptionManager.TAG_LENGTH]
+            tag = encrypted_bytes[-EncryptionManager.TAG_LENGTH:]
+            
+            cipher = Cipher(
+                algorithms.AES(key),
+                modes.GCM(iv, tag),
+                backend=default_backend()
+            )
+            decryptor = cipher.decryptor()
+            
+            plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+            return plaintext.decode()
+            
+        except Exception as e:
+            logger.error(f"Decryption error: {e}")
+            raise
+    
+    @staticmethod
+    def generate_dek() -> str:
+        """Generiert einen zufälligen Data Encryption Key (DEK)
+        
+        DEK ist ein 256-Bit zufälliger Schlüssel, der alle E-Mail-Daten verschlüsselt.
+        Wird mit KEK (aus Passwort) verschlüsselt gespeichert.
+        
+        Returns:
+            Base64-kodierter DEK (32 Bytes)
+        """
+        dek = os.urandom(32)  # 256 Bit
+        return base64.b64encode(dek).decode()
+    
+    @staticmethod
+    def encrypt_dek(dek: str, kek: str) -> str:
+        """Verschlüsselt DEK mit KEK (Key Encryption Key)
+        
+        Args:
+            dek: Base64-kodierter Data Encryption Key
+            kek: Base64-kodierter Key Encryption Key (aus Passwort via PBKDF2)
+            
+        Returns:
+            Base64-kodiertes Encrypted-Blob (IV + Ciphertext + Tag)
+        """
+        try:
+            key = base64.b64decode(kek)
+            dek_bytes = base64.b64decode(dek)
+            iv = os.urandom(12)
+            
+            cipher = Cipher(
+                algorithms.AES(key),
+                modes.GCM(iv),
+                backend=default_backend()
+            )
+            encryptor = cipher.encryptor()
+            
+            ciphertext = encryptor.update(dek_bytes) + encryptor.finalize()
+            
+            encrypted_blob = iv + ciphertext + encryptor.tag
+            return base64.b64encode(encrypted_blob).decode()
+            
+        except Exception as e:
+            logger.error(f"DEK encryption error: {e}")
+            raise
+    
+    @staticmethod
+    def decrypt_dek(encrypted_dek: str, kek: str) -> str:
+        """Entschlüsselt DEK mit KEK
+        
+        Args:
+            encrypted_dek: Base64-kodiertes Encrypted-Blob
+            kek: Base64-kodierter Key Encryption Key (aus Passwort via PBKDF2)
+            
+        Returns:
+            Base64-kodierter DEK
+        """
+        try:
+            key = base64.b64decode(kek)
+            encrypted_bytes = base64.b64decode(encrypted_dek)
+            
+            iv = encrypted_bytes[:12]
+            ciphertext = encrypted_bytes[12:-EncryptionManager.TAG_LENGTH]
+            tag = encrypted_bytes[-EncryptionManager.TAG_LENGTH:]
+            
+            cipher = Cipher(
+                algorithms.AES(key),
+                modes.GCM(iv, tag),
+                backend=default_backend()
+            )
+            decryptor = cipher.decryptor()
+            
+            dek_bytes = decryptor.update(ciphertext) + decryptor.finalize()
+            return base64.b64encode(dek_bytes).decode()
+            
+        except Exception as e:
+            logger.error(f"DEK decryption error: {e}")
+            raise
+    
+    @staticmethod
+    def encrypt_master_key(master_key: str, password: str) -> str:
+        """Verschlüsselt den Master-Key mit dem User-Passwort
+        
+        DEPRECATED: Wird durch encrypt_dek() ersetzt.
+        Nur für Migrations-Kompatibilität behalten.
+        
+        Wird verwendet um den Master-Key in der DB zu speichern.
+        Beim Login wird dieser mit dem eingegebenen Passwort entschlüsselt.
+        
+        Args:
+            master_key: Base64-kodierter Master-Key
+            password: User-Passwort
+            
+        Returns:
+            Base64-kodiertes Encrypted Master-Key (Format: salt:iv:ciphertext:tag)
+        """
+        try:
+            # Separate Salt und IV generieren (kryptographisch korrekt)
+            salt = os.urandom(16)  # Salt für PBKDF2
+            iv = os.urandom(12)    # IV für AES-GCM
+            
+            # Key aus Passwort ableiten (mit Salt, NICHT mit IV!)
+            key = hashlib.pbkdf2_hmac(
+                'sha256',
+                password.encode(),
+                salt,
+                EncryptionManager.ITERATIONS
+            )[:32]
+            
+            cipher = Cipher(
+                algorithms.AES(key),
+                modes.GCM(iv),
+                backend=default_backend()
+            )
+            encryptor = cipher.encryptor()
+            
+            ciphertext = encryptor.update(master_key.encode()) + encryptor.finalize()
+            
+            # Format: salt:iv:ciphertext:tag (alle Base64)
+            encrypted_blob = (
+                base64.b64encode(salt).decode() + ':' +
+                base64.b64encode(iv).decode() + ':' +
+                base64.b64encode(ciphertext).decode() + ':' +
+                base64.b64encode(encryptor.tag).decode()
+            )
+            return encrypted_blob
+            
+        except Exception as e:
+            logger.error(f"Master-Key encryption error: {e}")
+            raise
+    
+    @staticmethod
+    def decrypt_master_key(encrypted_master_key: str, password: str) -> str:
+        """Entschlüsselt den Master-Key mit dem User-Passwort
+        
+        Args:
+            encrypted_master_key: Verschlüsselter Master-Key (Format: salt:iv:ciphertext:tag)
+            password: User-Passwort
+            
+        Returns:
+            Base64-kodierter Master-Key
+        """
+        try:
+            # Parse Format: salt:iv:ciphertext:tag
+            parts = encrypted_master_key.split(':')
+            if len(parts) == 4:
+                # Neues Format (mit separatem Salt)
+                salt = base64.b64decode(parts[0])
+                iv = base64.b64decode(parts[1])
+                ciphertext = base64.b64decode(parts[2])
+                tag = base64.b64decode(parts[3])
+            else:
+                # Legacy Format (IV als Salt) - backwards compatibility
+                encrypted_bytes = base64.b64decode(encrypted_master_key)
+                iv = encrypted_bytes[:12]
+                ciphertext = encrypted_bytes[12:-EncryptionManager.TAG_LENGTH]
+                tag = encrypted_bytes[-EncryptionManager.TAG_LENGTH:]
+                salt = iv[:8]  # Legacy: IV als Salt (unsicher, aber kompatibel)
+            
+            # Key aus Passwort ableiten
+            key = hashlib.pbkdf2_hmac(
+                'sha256',
+                password.encode(),
+                salt,
+                100000
+            )[:32]
+            
+            cipher = Cipher(
+                algorithms.AES(key),
+                modes.GCM(iv, tag),
+                backend=default_backend()
+            )
+            decryptor = cipher.decryptor()
+            
+            plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+            return plaintext.decode()
+            
+        except Exception as e:
+            logger.error(f"Master-Key decryption error: {e}")
+            raise
+
+
+class CredentialManager:
+    """Verwaltet Verschlüsslung von Zugangsdaten (IMAP-Passwörter, E-Mail-Adressen)"""
+    
+    @staticmethod
+    def encrypt_imap_password(password: str, master_key: str) -> str:
+        """Verschlüsselt IMAP-Passwort mit Master-Key"""
+        return EncryptionManager.encrypt_data(password, master_key)
+    
+    @staticmethod
+    def decrypt_imap_password(encrypted_password: str, master_key: str) -> str:
+        """Entschlüsselt IMAP-Passwort mit Master-Key"""
+        return EncryptionManager.decrypt_data(encrypted_password, master_key)
+    
+    @staticmethod
+    def encrypt_email_address(email: str, master_key: str) -> str:
+        """Verschlüsselt E-Mail-Adresse mit Master-Key (Zero-Knowledge)"""
+        if not email:
+            return ""
+        return EncryptionManager.encrypt_data(email, master_key)
+    
+    @staticmethod
+    def decrypt_email_address(encrypted_email: str, master_key: str) -> str:
+        """Entschlüsselt E-Mail-Adresse mit Master-Key"""
+        if not encrypted_email:
+            return ""
+        return EncryptionManager.decrypt_data(encrypted_email, master_key)
+    
+    @staticmethod
+    def hash_email_address(email: str) -> str:
+        """Hasht E-Mail-Adresse für Suche (nicht umkehrbar)"""
+        if not email:
+            return ""
+        return hashlib.sha256(email.lower().encode()).hexdigest()
+    
+    @staticmethod
+    def encrypt_server(server: str, master_key: str) -> str:
+        """Verschlüsselt Server-Adresse mit Master-Key"""
+        if not server:
+            return ""
+        return EncryptionManager.encrypt_data(server, master_key)
+    
+    @staticmethod
+    def decrypt_server(encrypted_server: str, master_key: str) -> str:
+        """Entschlüsselt Server-Adresse mit Master-Key"""
+        if not encrypted_server:
+            return ""
+        return EncryptionManager.decrypt_data(encrypted_server, master_key)
+
+
+class EmailDataManager:
+    """Verwaltet Verschlüsslung von Email-Daten (Sender, Subject, Bodies, Summaries)"""
+    
+    @staticmethod
+    def encrypt_email_body(body: str, master_key: str) -> str:
+        """Verschlüsselt E-Mail-Body"""
+        if not body:
+            return ""
+        return EncryptionManager.encrypt_data(body, master_key)
+    
+    @staticmethod
+    def decrypt_email_body(encrypted_body: str, master_key: str) -> str:
+        """Entschlüsselt E-Mail-Body"""
+        if not encrypted_body:
+            return ""
+        return EncryptionManager.decrypt_data(encrypted_body, master_key)
+    
+    @staticmethod
+    def encrypt_email_sender(sender: str, master_key: str) -> str:
+        """Verschlüsselt E-Mail-Sender (Zero-Knowledge)"""
+        if not sender:
+            return ""
+        return EncryptionManager.encrypt_data(sender, master_key)
+    
+    @staticmethod
+    def decrypt_email_sender(encrypted_sender: str, master_key: str) -> str:
+        """Entschlüsselt E-Mail-Sender"""
+        if not encrypted_sender:
+            return ""
+        return EncryptionManager.decrypt_data(encrypted_sender, master_key)
+    
+    @staticmethod
+    def encrypt_email_subject(subject: str, master_key: str) -> str:
+        """Verschlüsselt E-Mail-Subject (Zero-Knowledge)"""
+        if not subject:
+            return ""
+        return EncryptionManager.encrypt_data(subject, master_key)
+    
+    @staticmethod
+    def decrypt_email_subject(encrypted_subject: str, master_key: str) -> str:
+        """Entschlüsselt E-Mail-Subject"""
+        if not encrypted_subject:
+            return ""
+        return EncryptionManager.decrypt_data(encrypted_subject, master_key)
+    
+    @staticmethod
+    def encrypt_summary(summary: str, master_key: str) -> str:
+        """Verschlüsselt E-Mail-Summary"""
+        if not summary:
+            return ""
+        return EncryptionManager.encrypt_data(summary, master_key)
+    
+    @staticmethod
+    def decrypt_summary(encrypted_summary: str, master_key: str) -> str:
+        """Entschlüsselt E-Mail-Summary"""
+        if not encrypted_summary:
+            return ""
+        return EncryptionManager.decrypt_data(encrypted_summary, master_key)
+
+
+####################################################################################################
+# END OF FILE: src/08_encryption.py
+####################################################################################################
+
+
+
+####################################################################################################
+# FILE: src/09_password_validator.py
+# PATH: /home/thomas/projects/KI-Mail-Helper/src/09_password_validator.py
+####################################################################################################
+
+﻿"""
+Mail Helper - Password Validator (Security Hardening Phase 8c)
+OWASP-konforme Password-Policy mit Entropie-Messung + HIBP-Check
+"""
+
+import re
+import logging
+import hashlib
+import requests
+from typing import Tuple, Optional
+
+logger = logging.getLogger(__name__)
+
+# Top 100 häufigste Passwörter (rockyou.txt Auszug)
+COMMON_PASSWORDS = {
+    "123456", "password", "12345678", "qwerty", "123456789", "12345", "1234",
+    "111111", "1234567", "dragon", "123123", "baseball", "iloveyou", "trustno1",
+    "1234567890", "sunshine", "master", "123321", "666666", "photoshop", "1111111",
+    "654321", "football", "987654321", "letmein", "monkey", "shadow", "abc123",
+    "qwertyuiop", "zxcvbnm", "asdfghjkl", "welcome", "admin", "login", "password1",
+    "passw0rd", "qwerty123", "welcome123", "admin123", "root", "toor", "test",
+    "guest", "user", "administrator", "adminadmin", "superman", "batman", "spiderman",
+    "starwars", "pokemon", "computer", "whatever", "love", "hello", "freedom",
+    "internet", "michael", "ashley", "jessica", "jennifer", "daniel", "matthew",
+    "joshua", "andrew", "david", "james", "robert", "john", "william", "richard",
+    "thomas", "charles", "christopher", "joseph", "donald", "george", "kenneth",
+    "steven", "edward", "brian", "ronald", "anthony", "kevin", "jason", "matthew",
+    "gary", "timothy", "jose", "larry", "jeffrey", "frank", "scott", "eric",
+    "stephen", "andrew", "raymond", "gregory", "joshua", "jerry", "dennis", "walter",
+    "patrick", "peter", "harold", "douglas", "henry", "carl", "arthur", "ryan",
+}
+
+
+class PasswordValidator:
+    """OWASP-konforme Password-Validation
+    
+    Requirements:
+    - Mindestlänge: 24 Zeichen (empfohlen für Master-Passwörter)
+    - Komplexität: Groß-, Kleinbuchstaben, Zahlen, Sonderzeichen
+    - Keine häufigen Passwörter (Blacklist)
+    - Entropie-Check (optional mit zxcvbn)
+    """
+    
+    MIN_LENGTH = 24
+    MIN_LOWERCASE = 1
+    MIN_UPPERCASE = 1
+    MIN_DIGITS = 1
+    MIN_SPECIAL = 1
+    
+    @classmethod
+    def validate(cls, password: str) -> Tuple[bool, Optional[str]]:
+        """Validiert ein Passwort
+        
+        Args:
+            password: Zu validierendes Passwort
+            
+        Returns:
+            (is_valid, error_message)
+            - (True, None) wenn valide
+            - (False, "Fehlertext") wenn invalide
+        """
+        if not password:
+            return False, "Passwort ist erforderlich"
+        
+        # 1. Längencheck
+        if len(password) < cls.MIN_LENGTH:
+            return False, f"Passwort muss mindestens {cls.MIN_LENGTH} Zeichen lang sein (aktuell: {len(password)})"
+        
+        # 2. Komplexitäts-Checks
+        has_lowercase = bool(re.search(r'[a-z]', password))
+        has_uppercase = bool(re.search(r'[A-Z]', password))
+        has_digit = bool(re.search(r'\d', password))
+        has_special = bool(re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/~`;\']', password))
+        
+        missing = []
+        if not has_lowercase:
+            missing.append("Kleinbuchstaben")
+        if not has_uppercase:
+            missing.append("Großbuchstaben")
+        if not has_digit:
+            missing.append("Zahlen")
+        if not has_special:
+            missing.append("Sonderzeichen")
+        
+        if missing:
+            return False, f"Passwort muss enthalten: {', '.join(missing)}"
+        
+        # 3. Blacklist-Check (häufige Passwörter)
+        password_lower = password.lower()
+        if password_lower in COMMON_PASSWORDS:
+            return False, "Passwort ist zu häufig/unsicher (in Top-100 Passwortliste)"
+        
+        # 3b. Have I Been Pwned Check (k-Anonymity Model - Zero-Knowledge!)
+        hibp_count = cls._check_hibp(password)
+        if hibp_count is not None and hibp_count > 0:
+            return False, f"⚠️ Passwort wurde {hibp_count:,}x in Datenlecks gefunden (Have I Been Pwned). Bitte anderes Passwort wählen!"
+        
+        # 4. zxcvbn-Check (optional, wenn installiert)
+        try:
+            import zxcvbn
+            result = zxcvbn.zxcvbn(password)
+            score = result['score']  # 0-4 (0=sehr schwach, 4=sehr stark)
+            
+            if score < 3:
+                feedback = result.get('feedback', {})
+                warning = feedback.get('warning', 'Passwort zu schwach')
+                suggestions = feedback.get('suggestions', [])
+                
+                error_msg = f"Passwort-Entropie zu niedrig (Score: {score}/4). {warning}"
+                if suggestions:
+                    error_msg += f" Vorschläge: {', '.join(suggestions)}"
+                
+                return False, error_msg
+            
+            logger.info(f"✅ Password Entropy Score: {score}/4 (zxcvbn)")
+        
+        except ImportError:
+            # zxcvbn nicht installiert - überspringen
+            logger.debug("zxcvbn nicht installiert - überspringe Entropie-Check")
+        
+        # 5. Sequenzen-Check (optional)
+        if cls._has_sequential_chars(password):
+            return False, "Passwort enthält zu viele aufeinanderfolgende Zeichen (z.B. 'abc', '123')"
+        
+        # Alle Checks bestanden
+        return True, None
+    
+    @staticmethod
+    def _check_hibp(password: str) -> Optional[int]:
+        """Prüft Passwort gegen Have I Been Pwned API (k-Anonymity Model - Zero-Knowledge!)
+        
+        Sendet nur erste 5 Zeichen vom SHA-1 Hash an API.
+        API gibt alle Hashes mit gleichem Prefix zurück.
+        Client matched lokal → kein Passwort wird übertragen!
+        
+        Args:
+            password: Zu prüfendes Passwort
+            
+        Returns:
+            Anzahl der Fundstellen in Datenlecks (None bei API-Fehler)
+        """
+        try:
+            # 1. SHA-1 Hash des Passworts berechnen
+            sha1_hash = hashlib.sha1(password.encode('utf-8')).hexdigest().upper()
+            
+            # 2. Erste 5 Zeichen (Prefix) an API senden
+            prefix = sha1_hash[:5]
+            suffix = sha1_hash[5:]
+            
+            # 3. API-Request (k-Anonymity Model)
+            url = f"https://api.pwnedpasswords.com/range/{prefix}"
+            headers = {
+                "User-Agent": "KI-Mail-Helper/1.0 (Security Hardening Phase 8c)",
+                "Add-Padding": "true",  # Privacy-Plus: verhindert Timing-Angriffe
+            }
+            # Separate Timeouts: (connect, read)
+            response = requests.get(url, headers=headers, timeout=(2, 3))
+            
+            if response.status_code == 429:
+                # Rate-Limit Hit - könnte Retry-After Header respektieren
+                # TODO: Für Production mit vielen Users: Retry-After auswerten oder Caching implementieren
+                logger.warning("HIBP API Rate-Limit (429) - überspringe Check")
+                return None
+            
+            if response.status_code != 200:
+                logger.warning(f"HIBP API error: {response.status_code}")
+                return None  # Bei API-Fehler: nicht blockieren
+            
+            # 4. Lokaler Match (Zero-Knowledge!) - Robust Parsing
+            for line in response.text.splitlines():
+                if ':' not in line:
+                    continue  # Ungültige Zeile überspringen
+                
+                parts = line.split(':', 1)
+                if len(parts) != 2:
+                    continue
+                
+                hash_suffix, count = parts
+                if hash_suffix.strip().upper() == suffix:
+                    return int(count.strip())
+            
+            # Passwort nicht in HIBP gefunden ✅
+            return 0
+        
+        except requests.exceptions.Timeout:
+            logger.warning("HIBP API timeout - überspringe Check")
+            return None  # Bei Timeout: nicht blockieren
+        
+        except Exception as e:
+            logger.error(f"HIBP Check fehlgeschlagen: {e}")
+            return None  # Bei Fehler: nicht blockieren
+    
+    @staticmethod
+    def _has_sequential_chars(password: str, min_seq_length: int = 4) -> bool:
+        """Prüft auf aufeinanderfolgende Zeichen (abc, 123, etc.)"""
+        sequences = [
+            "abcdefghijklmnopqrstuvwxyz",
+            "0123456789",
+            "qwertyuiopasdfghjklzxcvbnm",  # Keyboard-Sequenz
+        ]
+        
+        for seq in sequences:
+            for i in range(len(seq) - min_seq_length + 1):
+                substring = seq[i:i + min_seq_length]
+                if substring in password.lower():
+                    return True
+        
+        return False
+    
+    @classmethod
+    def get_strength_label(cls, password: str) -> str:
+        """Gibt ein Label für die Passwort-Stärke zurück (für UI)
+        
+        Returns:
+            "Sehr schwach" | "Schwach" | "Mittel" | "Stark" | "Sehr stark"
+        """
+        try:
+            import zxcvbn
+            result = zxcvbn.zxcvbn(password)
+            score = result['score']
+            
+            labels = [
+                "Sehr schwach",
+                "Schwach",
+                "Mittel",
+                "Stark",
+                "Sehr stark"
+            ]
+            return labels[score]
+        
+        except ImportError:
+            # Fallback ohne zxcvbn (heuristische Stärke)
+            is_valid, _ = cls.validate(password)
+            
+            if not is_valid:
+                return "Schwach"
+            
+            if len(password) >= 32:
+                return "Sehr stark"
+            elif len(password) >= cls.MIN_LENGTH:
+                return "Stark"
+            else:
+                return "Mittel"
+
+
+####################################################################################################
+# END OF FILE: src/09_password_validator.py
+####################################################################################################
+
+

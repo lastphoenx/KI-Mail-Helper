@@ -22,6 +22,7 @@
             </div>
             
             <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <div class="mb-3">
                     <label for="token" class="form-label">Gib den Code aus deiner App ein:</label>
                     <input type="text" class="form-control" id="token" name="token" 
