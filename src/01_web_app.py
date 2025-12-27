@@ -94,6 +94,19 @@ def inject_csrf_token():
 
 logger.info("🛡️  CSRF Protection aktiviert (Flask-WTF)")
 
+# Rate Limiting (Phase 9: Production Hardening)
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,  # Rate limit per IP
+    default_limits=["200 per day", "50 per hour"],  # Global limits
+    storage_uri="memory://",  # In-memory storage (consider Redis for production)
+)
+
+logger.info("🛡️  Rate Limiting aktiviert (Flask-Limiter)")
+
 # HTTPS Enforcement mit Flask-Talisman wird dynamisch in start_server() aktiviert
 talisman = None
 
@@ -223,6 +236,7 @@ def index():
 
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute")  # Rate limit: 5 login attempts per minute per IP
 def login():
     """Login-Seite mit optional 2FA"""
     if current_user.is_authenticated:
@@ -342,6 +356,7 @@ def register():
 
 
 @app.route("/2fa/verify", methods=["GET", "POST"])
+@limiter.limit("5 per minute")  # Rate limit: 5 2FA attempts per minute per IP
 def verify_2fa():
     """2FA-Verifikation"""
     user_id = session.get('pending_user_id')
