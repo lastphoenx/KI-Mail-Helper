@@ -177,7 +177,7 @@ def process_pending_raw_emails(
             )
 
             session.add(processed_email)
-            session.commit()
+            # Transaction Fix: Don't commit inside loop - batch commit at end
             processed_count += 1
 
             logger.info(
@@ -188,16 +188,20 @@ def process_pending_raw_emails(
 
         except IntegrityError:
             session.rollback()
-            logger.warning(
-                "⏭️  Duplikat erkannt (RawEmail %s). Ein Eintrag existiert bereits.",
-                raw_email.id
-            )
-            continue
-        except Exception as exc:  # pragma: no cover - logging side-effect
-            logger.error("❌ Fehler bei Mail-Verarbeitung: %s", exc, exc_info=True)
+            logger.warning("⚠️  Mail bereits verarbeitet (IntegrityError)")
+        except Exception as e:
             session.rollback()
-            continue
-
+            logger.error(f"❌ Fehler bei Verarbeitung: {e}")
+    
+    # Commit all processed emails at once (atomic transaction)
+    try:
+        session.commit()
+        logger.info(f"✅ Batch-Commit: {processed_count} Mails erfolgreich verarbeitet")
+    except Exception as e:
+        session.rollback()
+        logger.error(f"❌ Batch-Commit fehlgeschlagen: {e}")
+        raise
+    
     return processed_count
 
 

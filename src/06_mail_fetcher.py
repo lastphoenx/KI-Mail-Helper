@@ -29,7 +29,17 @@ class MailFetcher:
             password: Passwort
             port: IMAP-Port (Standard: 993 für SSL)
         """
-        self.server = server
+        # Input Validation (Security Fix - Layer 2 Review)
+        if not server or not isinstance(server, str) or not server.strip():
+            raise ValueError("Server must be a non-empty string")
+        if not isinstance(port, int) or not (1 <= port <= 65535):
+            raise ValueError(f"Port must be between 1 and 65535, got: {port}")
+        if not username or not isinstance(username, str):
+            raise ValueError("Username must be a non-empty string")
+        if not password or not isinstance(password, str):
+            raise ValueError("Password must be a non-empty string")
+        
+        self.server = server.strip()
         self.username = username
         self.password = password
         self.port = port
@@ -42,8 +52,10 @@ class MailFetcher:
             self.connection.login(self.username, self.password)
             print(f"✅ Verbunden mit {self.server}")
         except Exception as e:
-            print(f"❌ Verbindungsfehler: {e}")
-            raise
+            # Security Fix: Don't expose credentials in error messages
+            logger.debug(f"Connection error details: {e}")  # Debug only
+            print(f"❌ Verbindungsfehler: Authentifizierung fehlgeschlagen")
+            raise ConnectionError("IMAP connection failed") from None
     
     def disconnect(self):
         """Schließt IMAP-Verbindung"""
@@ -97,7 +109,9 @@ class MailFetcher:
             return emails
             
         except Exception as e:
-            print(f"❌ Fehler beim Abrufen: {e}")
+            # Security Fix: Don't expose sensitive data in error messages
+            logger.debug(f"Fetch error details: {e}")  # Debug only
+            print(f"❌ Fehler beim Abrufen: Operation fehlgeschlagen")
             return []
     
     def _fetch_email_by_id(self, mail_id: bytes, folder: str = "INBOX") -> Optional[Dict]:
@@ -146,7 +160,9 @@ class MailFetcher:
             }
             
         except Exception as e:
-            print(f"⚠️  Fehler bei Mail-ID {mail_id}: {e}")
+            # Security Fix: Don't expose mail content in error messages
+            logger.debug(f"Fetch mail error for ID {mail_id}: {e}")  # Debug only
+            print(f"⚠️  Fehler bei Mail-ID {mail_id}: Abruf fehlgeschlagen")
             return None
     
     def _decode_header(self, header: str) -> str:

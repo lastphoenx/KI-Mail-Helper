@@ -84,7 +84,9 @@ class GoogleOAuthManager:
             return token_data
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Token Exchange Fehler: {e}")
+            # Security Fix: Don't expose auth codes/tokens in logs
+            logger.debug(f"Token exchange error details: {e}")  # Debug only
+            logger.error("❌ Token Exchange fehlgeschlagen (credentials sanitized)")
             return None
     
     @staticmethod
