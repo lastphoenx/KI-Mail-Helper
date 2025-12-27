@@ -153,17 +153,31 @@ class PasswordValidator:
                 "User-Agent": "KI-Mail-Helper/1.0 (Security Hardening Phase 8c)",
                 "Add-Padding": "true",  # Privacy-Plus: verhindert Timing-Angriffe
             }
-            response = requests.get(url, headers=headers, timeout=3)
+            # Separate Timeouts: (connect, read)
+            response = requests.get(url, headers=headers, timeout=(2, 3))
+            
+            if response.status_code == 429:
+                # Rate-Limit Hit - könnte Retry-After Header respektieren
+                # TODO: Für Production mit vielen Users: Retry-After auswerten oder Caching implementieren
+                logger.warning("HIBP API Rate-Limit (429) - überspringe Check")
+                return None
             
             if response.status_code != 200:
                 logger.warning(f"HIBP API error: {response.status_code}")
                 return None  # Bei API-Fehler: nicht blockieren
             
-            # 4. Lokaler Match (Zero-Knowledge!)
+            # 4. Lokaler Match (Zero-Knowledge!) - Robust Parsing
             for line in response.text.splitlines():
-                hash_suffix, count = line.split(':')
-                if hash_suffix == suffix:
-                    return int(count)
+                if ':' not in line:
+                    continue  # Ungültige Zeile überspringen
+                
+                parts = line.split(':', 1)
+                if len(parts) != 2:
+                    continue
+                
+                hash_suffix, count = parts
+                if hash_suffix.strip().upper() == suffix:
+                    return int(count.strip())
             
             # Passwort nicht in HIBP gefunden ✅
             return 0
