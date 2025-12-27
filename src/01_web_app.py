@@ -1976,10 +1976,33 @@ def server_error(e):
     return "500 - Server-Fehler", 500
 
 
-def start_server(host="0.0.0.0", port=5000, debug=True):
-    """Startet den Flask-Server"""
-    print(f"🌐 Dashboard läuft auf http://{host}:{port}")
-    app.run(host=host, port=port, debug=debug)
+def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
+    """Startet den Flask-Server
+    
+    Args:
+        host: Server Host (default: 0.0.0.0)
+        port: Server Port (default: 5000)
+        debug: Debug-Modus (default: True)
+        use_https: HTTPS aktivieren (default: False)
+                   - True: Self-signed Certificate (adhoc)
+                   - ('cert.pem', 'key.pem'): Eigene Zertifikate
+    """
+    ssl_context = None
+    protocol = "http"
+    
+    if use_https:
+        protocol = "https"
+        if use_https is True:
+            # Adhoc Self-signed Certificate (requires pyOpenSSL)
+            ssl_context = 'adhoc'
+            logger.info("🔒 HTTPS aktiviert (Self-signed Certificate)")
+        else:
+            # Custom Certificate
+            ssl_context = use_https
+            logger.info(f"🔒 HTTPS aktiviert (Custom Certificate: {use_https[0]})")
+    
+    print(f"🌐 Dashboard läuft auf {protocol}://{host}:{port}")
+    app.run(host=host, port=port, debug=debug, ssl_context=ssl_context)
 
 
 if __name__ == "__main__":

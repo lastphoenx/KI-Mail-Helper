@@ -316,12 +316,18 @@ def main():
         help="Web-Server Port (default: 5000)"
     )
     
+    parser.add_argument(
+        "--https",
+        action="store_true",
+        help="HTTPS aktivieren (Self-signed Certificate für Development)"
+    )
+    
     args = parser.parse_args()
     
     if args.serve:
         logger.info("🌐 Starte Web-Dashboard...")
         init_db()
-        web_app.start_server(host=args.host, port=args.port, debug=False)
+        web_app.start_server(host=args.host, port=args.port, debug=False, use_https=args.https)
         return 0
         
     elif args.process_once:
