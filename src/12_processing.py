@@ -149,6 +149,44 @@ def process_pending_raw_emails(
                 body=clean_body,
                 sender=decrypted_sender or "",
             )
+            
+            # Phase 11d: Sender-Pattern-Hinweis anwenden (wenn vorhanden)
+            try:
+                sender_patterns_mod = importlib.import_module(".services.sender_patterns", "src")
+                sender_hint = sender_patterns_mod.SenderPatternManager.get_classification_hint(
+                    db=session,
+                    user_id=raw_email.user_id,
+                    sender=decrypted_sender or "",
+                    min_confidence=70,  # Nur bei hoher Konfidenz überschreiben
+                    min_emails=3
+                )
+                if sender_hint:
+                    # Bei hoher Konfidenz: Sender-Pattern überschreibt AI
+                    if sender_hint.get("category"):
+                        ai_result["kategorie_aktion"] = sender_hint["category"]
+                    if sender_hint.get("priority"):
+                        ai_result["dringlichkeit"] = sender_hint["priority"]
+                    if sender_hint.get("is_newsletter") is not None:
+                        ai_result["spam_flag"] = sender_hint["is_newsletter"]
+                    logger.debug(f"📊 Sender-Pattern angewandt (confidence={sender_hint['confidence']})")
+            except Exception as e:
+                # Sender-Patterns sind optional
+                logger.debug(f"Sender-Pattern Lookup übersprungen: {e}")
+            
+            # Sender-Pattern auch für AI-Klassifizierung aktualisieren (niedriges Gewicht)
+            try:
+                sender_patterns_mod = importlib.import_module(".services.sender_patterns", "src")
+                sender_patterns_mod.SenderPatternManager.update_from_classification(
+                    db=session,
+                    user_id=raw_email.user_id,
+                    sender=decrypted_sender or "",
+                    category=ai_result.get("kategorie_aktion"),
+                    priority=ai_result.get("dringlichkeit"),
+                    is_newsletter=ai_result.get("spam_flag"),
+                    is_correction=False  # AI-Klassifizierung hat geringeres Gewicht
+                )
+            except Exception as e:
+                logger.debug(f"Sender-Pattern Update übersprungen: {e}")
 
             priority = scoring.analyze_priority(
                 dringlichkeit=ai_result["dringlichkeit"],

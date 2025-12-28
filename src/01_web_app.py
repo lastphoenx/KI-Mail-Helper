@@ -2116,6 +2116,7 @@ def _trigger_online_learning(email, data: dict):
     """Phase 11b: Online-Learning nach User-Korrektur.
     
     Trainiert SGD-Klassifikatoren inkrementell mit der neuen Korrektur.
+    Aktualisiert auch Sender-Patterns für konsistente Klassifizierung (Phase 11d).
     Läuft async im Hintergrund um Response nicht zu verzögern.
     """
     try:
@@ -2125,9 +2126,14 @@ def _trigger_online_learning(email, data: dict):
         # Hole Original-Mail-Daten
         subject = ""
         body = ""
+        sender = ""
+        user_id = None
+        
         if email.raw_email:
             subject = email.raw_email.subject or ""
             body = email.raw_email.body or ""
+            sender = email.raw_email.sender or ""
+            user_id = email.raw_email.user_id
         
         if not subject and not body:
             logger.debug("Online-Learning übersprungen: Keine Mail-Daten")
@@ -2153,6 +2159,27 @@ def _trigger_online_learning(email, data: dict):
         
         if learned_count > 0:
             logger.info(f"📚 Online-Learning: {learned_count} Klassifikator(en) aktualisiert")
+        
+        # Phase 11d: Sender-Pattern aktualisieren
+        if sender and user_id:
+            try:
+                sender_patterns_mod = importlib.import_module("src.services.sender_patterns")
+                db = get_db_session()
+                try:
+                    sender_patterns_mod.SenderPatternManager.update_from_classification(
+                        db=db,
+                        user_id=user_id,
+                        sender=sender,
+                        category=data.get("kategorie"),
+                        priority=data.get("dringlichkeit"),
+                        is_newsletter=data.get("spam_flag"),
+                        is_correction=True  # User-Korrektur hat höheres Gewicht
+                    )
+                    logger.debug(f"📊 Sender-Pattern aktualisiert für User {user_id}")
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.debug(f"Sender-Pattern Update übersprungen: {e}")
             
     except ImportError:
         logger.debug("Online-Learning nicht verfügbar (scikit-learn nicht installiert)")
