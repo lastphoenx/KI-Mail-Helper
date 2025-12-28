@@ -1889,6 +1889,9 @@ def api_assign_tag_to_email(email_id):
             if not success:
                 return jsonify({"error": "Tag bereits zugewiesen oder nicht gefunden"}), 400
             
+            # Learning: Update user_override_tags für ML-Training
+            _update_user_override_tags(db, email_id, user.id, tag_manager_mod)
+            
             return jsonify({"success": True})
         except ValueError as e:
             return jsonify({"error": str(e)}), 404
@@ -1917,12 +1920,50 @@ def api_remove_tag_from_email(email_id, tag_id):
             if not success:
                 return jsonify({"error": "Tag-Verknüpfung nicht gefunden"}), 404
             
+            # Learning: Update user_override_tags für ML-Training
+            _update_user_override_tags(db, email_id, user.id, tag_manager_mod)
+            
             return jsonify({"success": True})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
     
     finally:
         db.close()
+
+
+def _update_user_override_tags(db, email_id: int, user_id: int, tag_manager_mod):
+    """Helper: Aktualisiert user_override_tags für ML-Training
+    
+    Wenn User Tags manuell ändert, speichern wir die finalen Tag-Namen
+    in user_override_tags (comma-separated) für sklearn-Training.
+    """
+    try:
+        from datetime import datetime, UTC
+        
+        # Hole aktuelle Tags der Email
+        current_tags = tag_manager_mod.TagManager.get_email_tags(db, email_id, user_id)
+        tag_names = [tag.name for tag in current_tags]
+        tag_string = ",".join(tag_names) if tag_names else ""
+        
+        # Update ProcessedEmail
+        processed = (
+            db.query(models.ProcessedEmail)
+            .join(models.RawEmail)
+            .filter(
+                models.ProcessedEmail.id == email_id,
+                models.RawEmail.user_id == user_id
+            )
+            .first()
+        )
+        
+        if processed:
+            processed.user_override_tags = tag_string
+            processed.correction_timestamp = datetime.now(UTC)
+            db.commit()
+            logger.debug(f"📚 user_override_tags updated für Email {email_id}: {tag_string}")
+    except Exception as e:
+        logger.warning(f"⚠️  Fehler beim Update von user_override_tags: {e}")
+        db.rollback()
 
 
 @app.route("/settings/ai", methods=["POST"])
