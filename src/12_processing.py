@@ -202,6 +202,47 @@ def process_pending_raw_emails(
 
             session.add(processed_email)
             # Transaction Fix: Don't commit inside loop - batch commit at end
+            
+            # Phase 10: Auto-assign suggested_tags from AI
+            suggested_tags = ai_result.get("suggested_tags", [])
+            if suggested_tags and isinstance(suggested_tags, list):
+                try:
+                    tag_manager_mod = importlib.import_module(".services.tag_manager", "src")
+                    
+                    # Muss committen damit processed_email.id verfügbar ist
+                    session.flush()
+                    
+                    for tag_name in suggested_tags[:5]:  # Max 5 Tags
+                        if not tag_name or not isinstance(tag_name, str):
+                            continue
+                        
+                        tag_name = tag_name.strip()[:50]  # Max 50 chars
+                        if not tag_name:
+                            continue
+                        
+                        try:
+                            # Get or create tag für diesen User
+                            tag = tag_manager_mod.TagManager.get_or_create_tag(
+                                db=session,
+                                user_id=user.id,
+                                name=tag_name,
+                                color="#3B82F6"  # Default blue
+                            )
+                            
+                            # Assign tag zu email
+                            tag_manager_mod.TagManager.assign_tag(
+                                db=session,
+                                email_id=processed_email.id,
+                                tag_id=tag.id,
+                                user_id=user.id
+                            )
+                            logger.debug(f"📌 Tag '{tag_name}' assigned to email {processed_email.id}")
+                        except Exception as tag_err:
+                            logger.warning(f"⚠️  Tag-Assignment fehlgeschlagen für '{tag_name}': {tag_err}")
+                            
+                except Exception as e:
+                    logger.warning(f"⚠️  Tag-Manager nicht verfügbar oder Fehler: {e}")
+            
             processed_count += 1
 
             logger.info(

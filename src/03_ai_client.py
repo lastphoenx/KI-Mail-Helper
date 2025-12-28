@@ -88,6 +88,7 @@ AUFGABE:
   "wichtigkeit": <Ganzzahl 1-3>,
   "kategorie_aktion": "<aktion_erforderlich|dringend|nur_information>",
   "tags": ["<kurze Tags auf Deutsch>"],
+  "suggested_tags": ["<kontextuelle Tags für Kategorisierung>"],
   "spam_flag": <true|false>,
   "summary_de": "<kurze Zusammenfassung auf Deutsch>",
   "text_de": "<vollständige deutsche Übersetzung des Inhalts>"
@@ -106,6 +107,10 @@ DEFINITIONEN:
   - "aktion_erforderlich" = der Empfänger soll etwas tun (antworten, zahlen, Termin bestätigen, etc.).
   - "dringend" = aktion_erforderlich UND hoher Zeitdruck/Frist.
   - "nur_information" = reine Info, Newsletter, Werbung, Statusupdate.
+- tags: Alte Feld (DEPRECATED), verwende suggested_tags stattdessen
+- suggested_tags: 1-5 semantische Tags für Kategorisierung und Filterung
+  Beispiele: "Rechnung", "Termin", "Bestellung", "Finanzen", "Reise", "Gesundheit", "Arbeit", "Wichtig"
+  Halte sie kurz (1-2 Wörter), konsistent und auf Deutsch
 - summary_de: 1–3 Sätze, kurz und klar.
 - text_de: so vollständig wie nötig, aber in gut lesbarem Deutsch.
 
