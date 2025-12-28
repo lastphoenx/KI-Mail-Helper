@@ -10,12 +10,12 @@ from dataclasses import dataclass, field
 from queue import Empty, Queue
 from typing import Any, Dict, Optional
 
-models = importlib.import_module('.02_models', 'src')
-mail_fetcher_mod = importlib.import_module('.06_mail_fetcher', 'src')
-google_oauth = importlib.import_module('.10_google_oauth', 'src')
-encryption = importlib.import_module('.08_encryption', 'src')
-processing = importlib.import_module('.12_processing', 'src')
-ai_client = importlib.import_module('.03_ai_client', 'src')
+models = importlib.import_module(".02_models", "src")
+mail_fetcher_mod = importlib.import_module(".06_mail_fetcher", "src")
+google_oauth = importlib.import_module(".10_google_oauth", "src")
+encryption = importlib.import_module(".08_encryption", "src")
+processing = importlib.import_module(".12_processing", "src")
+ai_client = importlib.import_module(".03_ai_client", "src")
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,9 @@ class BackgroundJobQueue:
         if self._worker and self._worker.is_alive():
             return
         self._stop_event.clear()
-        self._worker = threading.Thread(target=self._run, name="mail-helper-worker", daemon=True)
+        self._worker = threading.Thread(
+            target=self._run, name="mail-helper-worker", daemon=True
+        )
         self._worker.start()
         logger.info("🧵 Hintergrund-Worker gestartet")
 
@@ -81,8 +83,10 @@ class BackgroundJobQueue:
         meta: Optional[Dict[str, Any]] = None,
     ) -> str:
         if max_mails > MAX_EMAILS_PER_REQUEST:
-            raise ValueError(f"max_mails darf maximal {MAX_EMAILS_PER_REQUEST} sein (gegeben: {max_mails})")
-        
+            raise ValueError(
+                f"max_mails darf maximal {MAX_EMAILS_PER_REQUEST} sein (gegeben: {max_mails})"
+            )
+
         job_id = uuid.uuid4().hex
         job = FetchJob(
             job_id=job_id,
@@ -92,20 +96,27 @@ class BackgroundJobQueue:
             model=model,
             max_mails=max_mails,
             sanitize_level=sanitize_level,
-            meta=meta or {}
+            meta=meta or {},
         )
         try:
             self.queue.put(job, block=False)  # Don't block if queue is full
         except Exception:
-            raise ValueError(f"Job-Queue ist voll ({self.MAX_QUEUE_SIZE} Jobs). Bitte warten...")
-        self._update_status(job_id, {
-            "state": "queued",
-            "user_id": user_id,
-            "account_id": account_id,
-            "provider": provider,
-        })
+            raise ValueError(
+                f"Job-Queue ist voll ({self.MAX_QUEUE_SIZE} Jobs). Bitte warten..."
+            )
+        self._update_status(
+            job_id,
+            {
+                "state": "queued",
+                "user_id": user_id,
+                "account_id": account_id,
+                "provider": provider,
+            },
+        )
         self.ensure_worker()
-        logger.info("📥 Job %s eingereiht (User %s, Account %s)", job_id, user_id, account_id)
+        logger.info(
+            "📥 Job %s eingereiht (User %s, Account %s)", job_id, user_id, account_id
+        )
         return job_id
 
     def get_status(self, job_id: str, user_id: int) -> Optional[Dict[str, Any]]:
@@ -144,38 +155,47 @@ class BackgroundJobQueue:
             if not user:
                 raise ValueError("User nicht gefunden")
 
-            account = session.query(models.MailAccount).filter_by(
-                id=job.account_id,
-                user_id=job.user_id
-            ).first()
+            account = (
+                session.query(models.MailAccount)
+                .filter_by(id=job.account_id, user_id=job.user_id)
+                .first()
+            )
             if not account:
                 raise ValueError("Mail-Account nicht gefunden")
 
             # Security: Lade master_key aus Service-Token statt aus Job-Memory
             # Job speichert keine Secrets im RAM → Memory-Dump-Safe
-            service_token = session.query(models.ServiceToken).filter_by(
-                user_id=job.user_id,
-                is_active=True
-            ).first()
+            service_token = (
+                session.query(models.ServiceToken)
+                .filter_by(user_id=job.user_id, is_active=True)
+                .first()
+            )
             if not service_token:
-                raise ValueError("Service-Token nicht gefunden - Background-Jobs benötigen aktiven Token")
-            
+                raise ValueError(
+                    "Service-Token nicht gefunden - Background-Jobs benötigen aktiven Token"
+                )
+
             master_key = service_token.master_key
             if not master_key:
                 raise ValueError("Master-Key fehlt im Service-Token")
 
             raw_emails = self._fetch_raw_emails(account, master_key, job.max_mails)
             if raw_emails:
-                saved = self._persist_raw_emails(session, user, account, raw_emails, master_key)
+                saved = self._persist_raw_emails(
+                    session, user, account, raw_emails, master_key
+                )
 
             ai_instance = ai_client.build_client(job.provider, model=job.model)
 
             def progress_callback(idx: int, total: int, subject: str) -> None:
-                self._update_status(job.job_id, {
-                    "current_email_index": idx,
-                    "total_emails": total,
-                    "current_subject": subject
-                })
+                self._update_status(
+                    job.job_id,
+                    {
+                        "current_email_index": idx,
+                        "total_emails": total,
+                        "current_subject": subject,
+                    },
+                )
 
             processed = processing.process_pending_raw_emails(
                 session=session,
@@ -185,36 +205,43 @@ class BackgroundJobQueue:
                 limit=job.max_mails,
                 ai=ai_instance,
                 sanitize_level=job.sanitize_level,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
             )
 
-            self._update_status(job.job_id, {
-                "state": "done",
-                "saved": saved,
-                "processed": processed,
-                "account_id": job.account_id,
-            })
+            self._update_status(
+                job.job_id,
+                {
+                    "state": "done",
+                    "saved": saved,
+                    "processed": processed,
+                    "account_id": job.account_id,
+                },
+            )
             logger.info(
                 "✅ Job %s abgeschlossen (saved=%s, processed=%s)",
                 job.job_id,
                 saved,
-                processed
+                processed,
             )
         except Exception as exc:  # pragma: no cover - heavy IO
             session.rollback()
             logger.error("❌ Job %s fehlgeschlagen: %s", job.job_id, exc, exc_info=True)
-            self._update_status(job.job_id, {
-                "state": "error",
-                "message": "Verarbeitung fehlgeschlagen (siehe Server-Logs)",  # Layer 4: Exception Sanitization
-            })
+            self._update_status(
+                job.job_id,
+                {
+                    "state": "error",
+                    "message": "Verarbeitung fehlgeschlagen (siehe Server-Logs)",  # Layer 4: Exception Sanitization
+                },
+            )
         finally:
             session.close()
 
-    def _fetch_raw_emails(self, account, master_key: str, limit: int) -> list[Dict[str, Any]]:
+    def _fetch_raw_emails(
+        self, account, master_key: str, limit: int
+    ) -> list[Dict[str, Any]]:
         if account.oauth_provider == "google":
             decrypted_token = encryption.CredentialManager.decrypt_imap_password(
-                account.encrypted_oauth_token,
-                master_key
+                account.encrypted_oauth_token, master_key
             )
             fetcher = google_oauth.GoogleMailFetcher(access_token=decrypted_token)
             return fetcher.fetch_new_emails(limit=limit)
@@ -224,22 +251,19 @@ class BackgroundJobQueue:
 
         # Zero-Knowledge: Entschlüssele alle IMAP-Credentials
         imap_server = encryption.CredentialManager.decrypt_server(
-            account.encrypted_imap_server,
-            master_key
+            account.encrypted_imap_server, master_key
         )
         imap_username = encryption.CredentialManager.decrypt_email_address(
-            account.encrypted_imap_username,
-            master_key
+            account.encrypted_imap_username, master_key
         )
         imap_password = encryption.CredentialManager.decrypt_imap_password(
-            account.encrypted_imap_password,
-            master_key
+            account.encrypted_imap_password, master_key
         )
         fetcher = mail_fetcher_mod.MailFetcher(
             server=imap_server,
             username=imap_username,
             password=imap_password,
-            port=account.imap_port
+            port=account.imap_port,
         )
         fetcher.connect()
         try:
@@ -247,36 +271,39 @@ class BackgroundJobQueue:
         finally:
             fetcher.disconnect()
 
-    def _persist_raw_emails(self, session, user, account, raw_emails: list[Dict[str, Any]], master_key: str) -> int:
+    def _persist_raw_emails(
+        self, session, user, account, raw_emails: list[Dict[str, Any]], master_key: str
+    ) -> int:
         """Speichert RawEmails verschlüsselt in der Datenbank
-        
+
         Args:
             master_key: Master-Key für Verschlüsselung (Zero-Knowledge!)
         """
         saved = 0
         for raw_email_data in raw_emails:
-            existing = session.query(models.RawEmail).filter_by(
-                user_id=user.id,
-                mail_account_id=account.id,
-                uid=raw_email_data["uid"]
-            ).first()
+            existing = (
+                session.query(models.RawEmail)
+                .filter_by(
+                    user_id=user.id,
+                    mail_account_id=account.id,
+                    uid=raw_email_data["uid"],
+                )
+                .first()
+            )
             if existing:
                 continue
 
             # Zero-Knowledge: Verschlüssele E-Mail-Inhalte
             encrypted_sender = encryption.EmailDataManager.encrypt_email_sender(
-                raw_email_data["sender"],
-                master_key
+                raw_email_data["sender"], master_key
             )
             encrypted_subject = encryption.EmailDataManager.encrypt_email_subject(
-                raw_email_data["subject"],
-                master_key
+                raw_email_data["subject"], master_key
             )
             encrypted_body = encryption.EmailDataManager.encrypt_email_body(
-                raw_email_data["body"],
-                master_key
+                raw_email_data["body"], master_key
             )
-            
+
             raw_email = models.RawEmail(
                 user_id=user.id,
                 mail_account_id=account.id,

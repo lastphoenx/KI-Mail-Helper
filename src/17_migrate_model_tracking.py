@@ -21,13 +21,9 @@ def ensure_model_tracking_columns(db_path: str | None = None) -> None:
         columns = {row[1] for row in cursor.fetchall()}
 
         if "base_model" not in columns:
-            cursor.execute(
-                "ALTER TABLE processed_emails ADD COLUMN base_model TEXT"
-            )
+            cursor.execute("ALTER TABLE processed_emails ADD COLUMN base_model TEXT")
         if "base_provider" not in columns:
-            cursor.execute(
-                "ALTER TABLE processed_emails ADD COLUMN base_provider TEXT"
-            )
+            cursor.execute("ALTER TABLE processed_emails ADD COLUMN base_provider TEXT")
         if "optimize_model" not in columns:
             cursor.execute(
                 "ALTER TABLE processed_emails ADD COLUMN optimize_model TEXT"

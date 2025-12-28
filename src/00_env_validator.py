@@ -11,29 +11,29 @@ class EnvironmentValidator:
     """Validiert Umgebungsvariablen intelligent basierend auf Konfiguration"""
 
     CRITICAL_VARS = {
-        'FLASK_SECRET_KEY': {
-            'description': 'Flask Session-Verschlüsselung (PRODUKTION erforderlich!)',
-            'hint': 'Generiere mit: python -c "import secrets; print(secrets.token_hex(32))"',
-            'required': False
+        "FLASK_SECRET_KEY": {
+            "description": "Flask Session-Verschlüsselung (PRODUKTION erforderlich!)",
+            "hint": 'Generiere mit: python -c "import secrets; print(secrets.token_hex(32))"',
+            "required": False,
         },
     }
 
     AI_BACKEND_VARS = {
-        'ollama': {
-            'OLLAMA_BASE_URL': 'Ollama Server URL (z.B. http://localhost:11434)',
-            'OLLAMA_MODEL': 'Ollama Modell Name (z.B. mistral:7b)',
+        "ollama": {
+            "OLLAMA_BASE_URL": "Ollama Server URL (z.B. http://localhost:11434)",
+            "OLLAMA_MODEL": "Ollama Modell Name (z.B. mistral:7b)",
         },
-        'openai': {
-            'OPENAI_API_KEY': 'OpenAI API Key (sk-...)',
-            'OPENAI_MODEL': 'OpenAI Modell (z.B. gpt-4)',
+        "openai": {
+            "OPENAI_API_KEY": "OpenAI API Key (sk-...)",
+            "OPENAI_MODEL": "OpenAI Modell (z.B. gpt-4)",
         },
-        'mistral': {
-            'MISTRAL_API_KEY': 'Mistral API Key',
-            'MISTRAL_MODEL': 'Mistral Modell',
+        "mistral": {
+            "MISTRAL_API_KEY": "Mistral API Key",
+            "MISTRAL_MODEL": "Mistral Modell",
         },
-        'anthropic': {
-            'ANTHROPIC_API_KEY': 'Anthropic API Key',
-            'ANTHROPIC_MODEL': 'Anthropic Modell',
+        "anthropic": {
+            "ANTHROPIC_API_KEY": "Anthropic API Key",
+            "ANTHROPIC_MODEL": "Anthropic Modell",
         },
     }
 
@@ -63,13 +63,15 @@ class EnvironmentValidator:
 
         for var, info in EnvironmentValidator.CRITICAL_VARS.items():
             value = os.getenv(var)
-            if not value or value.startswith('your-'):
-                errors.append({
-                    'var': var,
-                    'description': info['description'],
-                    'hint': info['hint'],
-                    'severity': 'CRITICAL'
-                })
+            if not value or value.startswith("your-"):
+                errors.append(
+                    {
+                        "var": var,
+                        "description": info["description"],
+                        "hint": info["hint"],
+                        "severity": "CRITICAL",
+                    }
+                )
 
         return errors
 
@@ -78,37 +80,44 @@ class EnvironmentValidator:
         """Prüft AI-Backend basierend auf Konfiguration"""
         errors = []
 
-        ai_backend = os.getenv('AI_BACKEND', 'ollama')
-        use_cloud_ai = os.getenv('USE_CLOUD_AI', 'false').lower() == 'true'
+        ai_backend = os.getenv("AI_BACKEND", "ollama")
+        use_cloud_ai = os.getenv("USE_CLOUD_AI", "false").lower() == "true"
 
         if use_cloud_ai:
             selected_backend = None
-            if os.getenv('OPENAI_API_KEY'):
-                selected_backend = 'openai'
-            elif os.getenv('MISTRAL_API_KEY'):
-                selected_backend = 'mistral'
-            elif os.getenv('ANTHROPIC_API_KEY'):
-                selected_backend = 'anthropic'
+            if os.getenv("OPENAI_API_KEY"):
+                selected_backend = "openai"
+            elif os.getenv("MISTRAL_API_KEY"):
+                selected_backend = "mistral"
+            elif os.getenv("ANTHROPIC_API_KEY"):
+                selected_backend = "anthropic"
 
             if not selected_backend:
-                errors.append({
-                    'var': 'CLOUD AI BACKEND',
-                    'description': 'USE_CLOUD_AI=true aber kein Cloud-API-Key gesetzt',
-                    'hint': 'Setze entweder OPENAI_API_KEY, MISTRAL_API_KEY oder ANTHROPIC_API_KEY',
-                    'severity': 'CRITICAL'
-                })
+                errors.append(
+                    {
+                        "var": "CLOUD AI BACKEND",
+                        "description": "USE_CLOUD_AI=true aber kein Cloud-API-Key gesetzt",
+                        "hint": "Setze entweder OPENAI_API_KEY, MISTRAL_API_KEY oder ANTHROPIC_API_KEY",
+                        "severity": "CRITICAL",
+                    }
+                )
         else:
-            if ai_backend == 'ollama' or ai_backend not in EnvironmentValidator.AI_BACKEND_VARS:
-                required_vars = EnvironmentValidator.AI_BACKEND_VARS.get('ollama', {})
+            if (
+                ai_backend == "ollama"
+                or ai_backend not in EnvironmentValidator.AI_BACKEND_VARS
+            ):
+                required_vars = EnvironmentValidator.AI_BACKEND_VARS.get("ollama", {})
                 for var, description in required_vars.items():
                     value = os.getenv(var)
-                    if not value or value.startswith('your-'):
-                        errors.append({
-                            'var': var,
-                            'description': description,
-                            'hint': f'Setze {var} oder starte Ollama',
-                            'severity': 'CRITICAL'
-                        })
+                    if not value or value.startswith("your-"):
+                        errors.append(
+                            {
+                                "var": var,
+                                "description": description,
+                                "hint": f"Setze {var} oder starte Ollama",
+                                "severity": "CRITICAL",
+                            }
+                        )
 
         return errors
 
@@ -157,5 +166,5 @@ def validate_environment():
     EnvironmentValidator.validate()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     validate_environment()

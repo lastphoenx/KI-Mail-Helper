@@ -1,0 +1,23 @@
+[MASTER]
+disable=
+    C0103,           # invalid-name (module names mit Nummern, CONSTANT_NAMES)
+    C0116,           # missing-function-docstring (nicht critical)
+    C0114,           # missing-module-docstring (nicht critical)
+    W1203,           # logging-fstring-interpolation (f-strings sind modern & lesbar)
+    C0121,           # singleton-comparison (SQLAlchemy uses == None → is_(None))
+    C0301,           # line-too-long (black hat das größtenteils gelöst)
+    C0302,           # too-many-lines (01_web_app.py ist legitim groß)
+    R0911,           # too-many-return-statements (komplexe Logic)
+    R0914,           # too-many-locals (komplexe Logic)
+    R0915,           # too-many-statements (komplexe Logic)
+    R1702,           # too-many-nested-blocks (komplexe Logic)
+    R1705,           # no-else-return (Stil-Präferenz)
+    R1735,           # use-dict-literal (Stil-Präferenz)
+    W0212,           # protected-access (_decrypted_x ist intentional)
+
+# Security-kritisch NICHT ignorieren:
+# W0718 (broad-exception-caught) - aber mit Pragmatismus
+# E0401 (import-error) - sichtbar halten
+# W0702 (bare-except) - sichtbar halten
+
+max-line-length=100
