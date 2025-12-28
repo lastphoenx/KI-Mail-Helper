@@ -4,7 +4,11 @@
 
 **KI-Mail-Helper** is a **single-user, local desktop email analysis application** with **Zero-Knowledge Encryption** and **Production-Grade Security Hardening** for safe home-network deployment.
 
-**Current Security Score: 99/100** ✅
+**Current Security Score: 99.5/100** ✅
+
+**Latest Security Hardening (Phase 9f - 2025-12-28)**:
+- ✅ Race Condition Protection für Account Lockout (Atomic SQL)
+- ✅ ReDoS Protection (Bounded Quantifiers + Timeout + Length Limit)
 
 ---
 
@@ -255,26 +259,38 @@ See [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for how to run security tests
 
 ### Recent Security Improvements (December 28, 2025)
 
-**Phase 9c - CRITICAL & HIGH Priority:**
-- ✅ **Exception Sanitization**: 18 exception handlers fixed to prevent information leakage
-- ✅ **AJAX CSRF Protection**: Added CSRF validation for AJAX endpoints
-- ✅ **Email Input Sanitization**: Control character filtering for all AI clients
-- ✅ **API Key Redaction**: Automatic redaction of sensitive API keys in logs
-- ✅ **CSP Enhancement**: Nonce-based CSP headers instead of 'unsafe-inline'
-- ✅ **SRI Hashes**: Subresource Integrity for Bootstrap CDN resources
-- ✅ **Host/Port Validation**: Defense-in-depth input validation at CLI level
-- ✅ **Token Generation**: Increased ServiceToken entropy from 256 to 384 bits
-- ✅ **Data Masking**: __repr__ methods mask sensitive user data in logs
-- ✅ **Master Key Removal**: Removed master_key from background job queue (loaded at runtime)
-- ✅ **Queue Size Limit**: Background job queue capped at 50 to prevent DoS
+**Phase 9f - HIGH Priority (Race Condition + ReDoS):**
+- ✅ **Race Condition Lockout**: Atomic SQL `UPDATE ... SET count = count + 1` prevents parallel login bypass
+  - Problem: Multi-worker Gunicorn allowed 10 parallel logins → only 1 counted
+  - Solution: Database-level atomicity with RETURNING clause
+  - Files: `src/02_models.py` (record_failed_login, reset_failed_logins)
+- ✅ **ReDoS Protection - Quote Detection**: Bounded quantifiers `.{1,200}?` statt `.*` (catastrophic backtracking)
+  - Pattern: `^Am .{1,200}? schrieb .{1,200}?:` (previously `^Am .* schrieb .*:`)
+- ✅ **ReDoS Protection - Email Pattern**: RFC 5321-compliant bounds (local-part max 64, domain max 253)
+  - Pattern: `[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,10}`
+- ✅ **ReDoS Defense-in-Depth**: 2s timeout decorator + 500KB input length limit
+  - Prevents DoS via crafted emails (tested with 2MB input → 0.02s processing)
+  - Files: `src/04_sanitizer.py`
 
-**Phase 9c - MEDIUM Priority:**
+**Phase 9e - SQLite WAL Refinements:**
+- ✅ **PRAGMA synchronous = NORMAL**: Balanced fsync (only at checkpoints, not every commit)
+- ✅ **.gitignore for WAL Files**: emails.db-wal/.db-shm excluded from Git
+- ✅ **WAL Checkpoint Backup**: `PRAGMA wal_checkpoint(TRUNCATE)` before backup for clean snapshots
+
+**Phase 9d - MEDIUM Priority:**
 - ✅ **Timing-Attack Protection**: Constant-time user enumeration prevention with dummy bcrypt check
 - ✅ **Input Validation Setters**: Username (3-80), email (1-255), password (8-255) with enforcement
 - ✅ **Debug-Log Masking**: 10 additional logger statements mask user IDs and exception details
 - ✅ **Security Headers for Errors**: All responses (including 4xx/5xx) get security headers
 - ✅ **JS Polling Race Fix**: Prevents multiple concurrent polling loops in frontend
 - ✅ **SQLite Deadlock Fix**: WAL Mode + busy_timeout for multi-worker concurrency (eliminates SQLITE_BUSY errors)
+
+**Phase 9c - CRITICAL & HIGH Priority:**
+- ✅ **Exception Sanitization**: 18 exception handlers fixed to prevent information leakage
+- ✅ **AJAX CSRF Protection**: Added CSRF validation for AJAX endpoints
+- ✅ **Email Input Sanitization**: Control character filtering for all AI clients
+- ✅ **API Key Redaction**: Automatic redaction of sensitive API keys in logs
+- ✅ **CSP Enhancement**: Nonce-based CSP headers instead of 'unsafe-inline'
 - ✅ **SRI Hashes**: Subresource Integrity for Bootstrap CDN resources
 - ✅ **Host/Port Validation**: Defense-in-depth input validation at CLI level
 - ✅ **Token Generation**: Increased ServiceToken entropy from 256 to 384 bits

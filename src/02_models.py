@@ -150,20 +150,54 @@ class User(Base):
             return False
         return True
     
-    def record_failed_login(self):
-        """Fehlgeschlagenen Login-Versuch registrieren"""
-        self.failed_login_attempts = (self.failed_login_attempts or 0) + 1
-        self.last_failed_login = datetime.now(UTC)
+    def record_failed_login(self, session):
+        """Fehlgeschlagenen Login-Versuch registrieren (Thread-safe)
+        
+        Phase 9f: Atomic SQL-Update verhindert Race Conditions bei Multi-Worker Setup
+        OHNE session.commit() - Caller entscheidet über Transaction-Boundary
+        """
+        from sqlalchemy import text
+        
+        # Atomic increment direkt in DB (verhindert Read-Modify-Write Race)
+        result = session.execute(
+            text("UPDATE users SET "
+                 "failed_login_attempts = failed_login_attempts + 1, "
+                 "last_failed_login = :now "
+                 "WHERE id = :id "
+                 "RETURNING failed_login_attempts"),
+            {"now": datetime.now(UTC), "id": self.id}
+        )
+        new_count = result.scalar()
         
         # Nach 5 Fehlversuchen: 15 Minuten Sperre
-        if self.failed_login_attempts >= 5:
-            self.locked_until = datetime.now(UTC) + timedelta(minutes=15)
+        if new_count >= 5:
+            session.execute(
+                text("UPDATE users SET locked_until = :locked WHERE id = :id"),
+                {"locked": datetime.now(UTC) + timedelta(minutes=15), "id": self.id}
+            )
+        
+        # Refresh für konsistenten Python-State
+        session.refresh(self)
     
-    def reset_failed_logins(self):
-        """Erfolgreicher Login - Counter zurücksetzen"""
-        self.failed_login_attempts = 0
-        self.last_failed_login = None
-        self.locked_until = None
+    def reset_failed_logins(self, session):
+        """Erfolgreicher Login - Counter zurücksetzen (Thread-safe)
+        
+        Phase 9f: Atomic SQL-Update verhindert Race Conditions
+        """
+        from sqlalchemy import text
+        
+        # Atomic reset direkt in DB
+        session.execute(
+            text("UPDATE users SET "
+                 "failed_login_attempts = 0, "
+                 "last_failed_login = NULL, "
+                 "locked_until = NULL "
+                 "WHERE id = :id"),
+            {"id": self.id}
+        )
+        
+        # Refresh für konsistenten Python-State
+        session.refresh(self)
     
     def __repr__(self):
         # Security: Mask sensitive data in logs

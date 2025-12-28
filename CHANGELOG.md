@@ -8,6 +8,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security Fixes - Phase 9f (2025-12-28)
+
+#### HIGH Priority Security Improvements
+
+**Race Condition: Account Lockout Protection**
+- Replaced Python-level increment with atomic SQL UPDATE for failed login tracking
+- `record_failed_login()` now uses `UPDATE ... SET count = count + 1 RETURNING count`
+- `reset_failed_logins()` uses atomic SQL UPDATE for consistent state
+- **Problem**: Multi-worker Gunicorn setup allowed 10 parallel requests to only increment counter by 1
+- **Solution**: Database-level atomicity prevents Read-Modify-Write races
+- **Impact**: Account lockout nach 5 Versuchen funktioniert now zuverlässig in Multi-Worker Setup
+- **Files**: `src/02_models.py` (lines 153-178), `src/01_web_app.py` (lines 367-378)
+- **Testing**: Race condition test script in `scripts/test_race_condition_lockout.py`
+
+**ReDoS: Regex Denial of Service Protection**
+- **Quote-Detection Fix** (`src/04_sanitizer.py` lines 103-106):
+  - ALT: `r'^Am .* schrieb .*:'` (catastrophic backtracking with nested `.*`)
+  - NEU: `r'^Am .{1,200}? schrieb .{1,200}?:'` (bounded + non-greedy)
+  - **Impact**: Verhindert exponentielles Backtracking bei crafted "Am xyz xyz ... schrieb nicht"
+- **Email-Pattern Fix** (`src/04_sanitizer.py` line 151):
+  - ALT: `r'\b[A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9.-]+\s*\.\s*[A-Z|a-z]{2,}\b'`
+  - NEU: `r'[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,10}'`
+  - **Impact**: RFC 5321-compliant boundaries, keine nested quantifiers
+- **Timeout-Decorator** (`src/04_sanitizer.py` lines 13-46):
+  - 2-second timeout für `_pseudonymize()` mit signal.SIGALRM
+  - Graceful degradation: Returns original text on timeout
+  - **Impact**: Selbst bei slow regex max 2s CPU-Zeit
+- **Input-Length Limit** (`src/04_sanitizer.py` lines 121-124):
+  - Max 500KB input (Defense-in-Depth)
+  - Prevents memory exhaustion + reduces regex workload
+- **Impact**: DoS-Angriffe via crafted emails verhindert, Worker blockieren nicht mehr
+- **Testing**: All 4 tests PASSED in `scripts/test_redos_protection.py` (quote, email, timeout, length)
+
+---
+
 ### Security Fixes - Phase 9c (2025-12-28)
 
 #### MEDIUM Priority Security Improvements

@@ -4,7 +4,41 @@ Datenschutz-Level 1-3 gemäß Konzept
 """
 
 import re
+import signal
+import logging
 from typing import Tuple
+from functools import wraps
+
+logger = logging.getLogger(__name__)
+
+# Phase 9f: ReDoS Protection Timeout-Decorator
+def regex_timeout(seconds=2):
+    """Timeout-Decorator für Regex-Operationen (ReDoS Protection)
+    
+    Bei Timeout: Gibt original Text zurück statt Exception zu werfen
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            def timeout_handler(signum, frame):
+                raise TimeoutError(f"Regex timeout in {func.__name__}")
+            
+            # Set alarm
+            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(seconds)
+            
+            try:
+                return func(*args, **kwargs)
+            except TimeoutError as e:
+                logger.warning(f"ReDoS Protection: {e} - returning original text")
+                # Return first arg (original text) on timeout
+                return args[0] if args else ""
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+        
+        return wrapper
+    return decorator
 
 
 def sanitize_email(text: str, level: int = 2) -> str:
@@ -63,9 +97,12 @@ def _remove_quoted_history(text: str) -> str:
             continue
         
         # "Am XX schrieb Y:" Pattern
-        if re.match(r'^Am .* schrieb .*:', line, re.IGNORECASE):
+        # Phase 9f: Bounded quantifiers (ReDoS Protection)
+        # ALT: r'^Am .* schrieb .*:' (catastrophic backtracking!)
+        # NEU: Non-greedy + max 200 chars (realistische E-Mail Quote-Header)
+        if re.match(r'^Am .{1,200}? schrieb .{1,200}?:', line, re.IGNORECASE):
             break  # Alles danach ist Historie
-        if re.match(r'^On .* wrote:', line, re.IGNORECASE):
+        if re.match(r'^On .{1,200}? wrote:', line, re.IGNORECASE):
             break
         
         cleaned_lines.append(line)
@@ -73,11 +110,19 @@ def _remove_quoted_history(text: str) -> str:
     return '\n'.join(cleaned_lines)
 
 
+@regex_timeout(seconds=2)  # Phase 9f: ReDoS Protection Timeout
 def _pseudonymize(text: str) -> str:
-    """
-    Pseudonymisiert sensible Daten
+    """Pseudonymisiert sensible Daten
     Ersetzt: E-Mails, Telefon, IBAN, URLs, optional Namen/Orte
+    
+    Phase 9f: ReDoS Protection via Timeout + Input-Length Limit
     """
+    # Phase 9f: Input-Length Limit (Defense-in-Depth gegen ReDoS)
+    MAX_LENGTH = 500_000  # 500KB
+    if len(text) > MAX_LENGTH:
+        logger.warning(f"Sanitizer: Input truncated {len(text)} > {MAX_LENGTH}")
+        text = text[:MAX_LENGTH]
+    
     # Zähler für fortlaufende Nummerierung
     counters = {
         'email': 0,
@@ -102,8 +147,12 @@ def _pseudonymize(text: str) -> str:
         return f"[URL_{counters['url']}]"
     
     # E-Mail-Adressen (robuster gegen Spaces: "user @ example.com")
+    # Phase 9f: Simplified Pattern (ReDoS Protection)
+    # ALT: r'\b[A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9.-]+\s*\.\s*[A-Z|a-z]{2,}\b'
+    #      (nested quantifiers + word boundaries = catastrophic backtracking!)
+    # NEU: Bounded lengths (RFC 5321: local-part max 64, domain max 253)
     text = re.sub(
-        r'\b[A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9.-]+\s*\.\s*[A-Z|a-z]{2,}\b',
+        r'[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,10}',
         replace_email,
         text
     )

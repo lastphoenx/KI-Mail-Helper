@@ -363,7 +363,8 @@ def login():
                 return render_template("login.html", error=f"Account gesperrt. Bitte versuche es in {int(remaining)} Minuten erneut."), 403
             
             if not user.check_password(password):
-                user.record_failed_login()
+                # Phase 9f: Atomic SQL-Update (Race Condition Protection)
+                user.record_failed_login(db.session)
                 db.commit()
                 # Audit Log für Fail2Ban
                 logger.warning(
@@ -373,7 +374,8 @@ def login():
                 return render_template("login.html", error="Ungültige Anmeldedaten"), 401
             
             # Erfolgreicher Login - Failed Counter zurücksetzen
-            user.reset_failed_logins()
+            # Phase 9f: Atomic SQL-Update (Race Condition Protection)
+            user.reset_failed_logins(db.session)
             db.commit()
             
             # Phase 8: DEK/KEK Pattern - DEK entschlüsseln
