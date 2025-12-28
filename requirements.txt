@@ -19,7 +19,7 @@ anthropic==0.7.7           # Optional: Claude API
 mistralai==0.0.8           # Optional: Mistral API
 
 # Security & Authentication
-cryptography==41.0.7       # AES-256 encryption (Phase 3)
+cryptography==44.0.1       # AES-256 encryption (Phase 3)
 bcrypt==4.1.1              # Password hashing
 pyotp==2.9.0               # TOTP 2FA (Google Authenticator)
 qrcode==7.4.2              # QR-Code generation for 2FA
