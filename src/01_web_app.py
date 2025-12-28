@@ -818,16 +818,25 @@ def list_view():
             return redirect(url_for("login"))
 
         filter_color = request.args.get("farbe") or None
-        filter_done = (request.args.get("done", "false") or "").lower()
+        filter_done = (request.args.get("done") or "").lower()
         search_term = (request.args.get("search", "") or "").strip()
+        
+        # Account-Filter
+        filter_account_id = None
+        account_id_str = request.args.get("mail_account")
+        if account_id_str:
+            try:
+                filter_account_id = int(account_id_str)
+            except (ValueError, TypeError):
+                filter_account_id = None
         
         # Phase 10: Tag-Filter
         filter_tag_ids = []
-        tag_ids_str = request.args.getlist("tags")
-        if tag_ids_str:
+        tag_id_str = request.args.get("tags")
+        if tag_id_str:
             try:
-                filter_tag_ids = [int(tid) for tid in tag_ids_str if tid]
-            except ValueError:
+                filter_tag_ids = [int(tag_id_str)]
+            except (ValueError, TypeError):
                 filter_tag_ids = []
 
         query = (
@@ -846,6 +855,9 @@ def list_view():
         if filter_color:
             query = query.filter(models.ProcessedEmail.farbe == filter_color)
         
+        if filter_account_id:
+            query = query.filter(models.RawEmail.mail_account_id == filter_account_id)
+        
         # Phase 10: Filter nach Tags
         if filter_tag_ids:
             query = (
@@ -855,6 +867,11 @@ def list_view():
 
         # Alle E-Mails abrufen (Search auf verschlüsselten Feldern muss in Python passieren)
         mails = query.order_by(models.ProcessedEmail.score.desc()).all()
+        
+        # Lade alle User-Accounts für Filter-Dropdown
+        user_accounts = db.query(models.MailAccount).filter(
+            models.MailAccount.user_id == user.id
+        ).all()
         
         # Phase 10: Lade alle User-Tags für Filter-Dropdown
         all_tags = []
@@ -892,6 +909,18 @@ def list_view():
         # Zero-Knowledge: Entschlüsselung für Anzeige und Suche
         master_key = session.get("master_key")
         decrypted_mails = []
+        
+        # Dekryptiere Mail-Adressen der Accounts für Dropdown
+        if master_key and user_accounts:
+            for account in user_accounts:
+                if account.auth_type == "imap" and account.encrypted_imap_username:
+                    try:
+                        account.decrypted_imap_username = encryption.EmailDataManager.decrypt_email_sender(
+                            account.encrypted_imap_username, master_key
+                        )
+                    except Exception as e:
+                        logger.warning(f"Fehler beim Entschlüsseln der Account-Email: {e}")
+                        account.decrypted_imap_username = None
 
         if master_key:
             for mail in mails:
@@ -949,6 +978,8 @@ def list_view():
             filter_color=filter_color,
             filter_done=filter_done,
             search_term=search_term,
+            user_accounts=user_accounts,
+            filter_account_id=filter_account_id,
             all_tags=all_tags,
             filter_tag_ids=filter_tag_ids,
         )
