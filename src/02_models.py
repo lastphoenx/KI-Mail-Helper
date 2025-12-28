@@ -169,15 +169,18 @@ class User(Base):
         )
         new_count = result.scalar()
         
+        # Sync Python-Object mit DB-State (statt refresh!)
+        self.failed_login_attempts = new_count
+        self.last_failed_login = datetime.now(UTC)
+        
         # Nach 5 Fehlversuchen: 15 Minuten Sperre
         if new_count >= 5:
+            lockout_time = datetime.now(UTC) + timedelta(minutes=15)
             session.execute(
                 text("UPDATE users SET locked_until = :locked WHERE id = :id"),
-                {"locked": datetime.now(UTC) + timedelta(minutes=15), "id": self.id}
+                {"locked": lockout_time, "id": self.id}
             )
-        
-        # Refresh für konsistenten Python-State
-        session.refresh(self)
+            self.locked_until = lockout_time
     
     def reset_failed_logins(self, session):
         """Erfolgreicher Login - Counter zurücksetzen (Thread-safe)
@@ -196,8 +199,10 @@ class User(Base):
             {"id": self.id}
         )
         
-        # Refresh für konsistenten Python-State
-        session.refresh(self)
+        # Sync Python-Object mit DB-State
+        self.failed_login_attempts = 0
+        self.last_failed_login = None
+        self.locked_until = None
     
     def __repr__(self):
         # Security: Mask sensitive data in logs
