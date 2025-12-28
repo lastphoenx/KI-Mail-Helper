@@ -359,7 +359,10 @@ class LocalOllamaClient(AIClient):
         return False
 
     def _load_classifiers(self) -> None:
-        """Lädt trainierte sklearn-Klassifikatoren aus src/classifiers/*.pkl (optional)."""
+        """Lädt trainierte sklearn-Klassifikatoren aus src/classifiers/*.pkl (optional).
+        
+        Phase 11b: Priorisiert SGD-Klassifikatoren (Online-Learning) vor RandomForest.
+        """
         if not joblib:
             logger.debug(
                 "joblib nicht verfügbar - Klassifikatoren können nicht geladen werden"
@@ -369,7 +372,25 @@ class LocalOllamaClient(AIClient):
         classifier_dir = Path(__file__).resolve().parent / "classifiers"
         self._classifiers = {}
         self._label_encoders = {}
+        self._sgd_classifiers = {}
+        self._sgd_scalers = {}
 
+        # Phase 11b: Lade SGD-Klassifikatoren (Online-Learning, priorisiert)
+        sgd_types = ["dringlichkeit", "wichtigkeit", "spam"]
+        for clf_type in sgd_types:
+            sgd_path = classifier_dir / f"{clf_type}_sgd.pkl"
+            scaler_path = classifier_dir / f"{clf_type}_scaler.pkl"
+            
+            if sgd_path.exists():
+                try:
+                    self._sgd_classifiers[clf_type] = self._load_classifier_safely(sgd_path)
+                    if scaler_path.exists():
+                        self._sgd_scalers[clf_type] = self._load_classifier_safely(scaler_path)
+                    logger.debug(f"✅ SGD-Klassifikator geladen: {clf_type} (Online-Learning)")
+                except Exception as e:
+                    logger.warning(f"Fehler beim Laden von SGD {clf_type}: {e}")
+
+        # Fallback: RandomForest Klassifikatoren (Batch-Training)
         classifier_files = {
             "dringlichkeit": "dringlichkeit_clf.pkl",
             "wichtigkeit": "wichtigkeit_clf.pkl",
@@ -378,6 +399,10 @@ class LocalOllamaClient(AIClient):
         }
 
         for key, filename in classifier_files.items():
+            # Überspringe wenn bereits SGD-Klassifikator geladen
+            if key in self._sgd_classifiers:
+                continue
+                
             clf_path = classifier_dir / filename
             encoder_path = classifier_dir / f"{key}_encoder.pkl"
 
@@ -635,6 +660,43 @@ class LocalOllamaClient(AIClient):
                     spam_flag = bool(pred)
                 except Exception as e:
                     logger.debug(f"Fehler bei spam-Klassifikation: {e}")
+
+        # Phase 11b: SGD-Klassifikatoren (Online-Learning) haben Priorität
+        if embedding and hasattr(self, '_sgd_classifiers') and self._sgd_classifiers:
+            import numpy as np
+            
+            embedding_array = np.array(embedding).reshape(1, -1)
+            
+            for clf_type in ["dringlichkeit", "wichtigkeit", "spam"]:
+                if clf_type not in self._sgd_classifiers:
+                    continue
+                    
+                clf = self._sgd_classifiers[clf_type]
+                scaler = self._sgd_scalers.get(clf_type)
+                
+                # Prüfen ob Modell trainiert wurde
+                if not hasattr(clf, 'classes_') or clf.classes_ is None:
+                    continue
+                
+                try:
+                    X = embedding_array.copy()
+                    if scaler and hasattr(scaler, 'mean_') and scaler.mean_ is not None:
+                        X = scaler.transform(X)
+                    
+                    pred = clf.predict(X)[0]
+                    
+                    if clf_type == "dringlichkeit":
+                        dringlichkeit = _clamp(int(pred), 1, 3)
+                        logger.debug(f"🧠 SGD Dringlichkeit: {dringlichkeit}")
+                    elif clf_type == "wichtigkeit":
+                        wichtigkeit = _clamp(int(pred), 1, 3)
+                        logger.debug(f"🧠 SGD Wichtigkeit: {wichtigkeit}")
+                    elif clf_type == "spam":
+                        spam_flag = bool(pred)
+                        logger.debug(f"🧠 SGD Spam: {spam_flag}")
+                        
+                except Exception as e:
+                    logger.debug(f"SGD {clf_type} Fehler: {e}")
 
         if not self._classifiers or not embedding:
             keywords_spam_high = [

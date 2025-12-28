@@ -1524,6 +1524,9 @@ def correct_email(email_id: int):
         db.commit()
 
         logger.info(f"✅ Mail {email_id} korrigiert durch User {user.id}")
+        
+        # Phase 11b: Online-Learning - Inkrementelles Lernen aus Korrektur
+        _trigger_online_learning(email, data)
 
         return jsonify(
             {
@@ -2074,6 +2077,55 @@ def _update_user_override_tags(db, email_id: int, user_id: int, tag_manager_mod)
     except Exception as e:
         logger.warning(f"⚠️  Fehler beim Update von user_override_tags: {e}")
         db.rollback()
+
+
+def _trigger_online_learning(email, data: dict):
+    """Phase 11b: Online-Learning nach User-Korrektur.
+    
+    Trainiert SGD-Klassifikatoren inkrementell mit der neuen Korrektur.
+    Läuft async im Hintergrund um Response nicht zu verzögern.
+    """
+    try:
+        # Import hier um circular imports zu vermeiden
+        train_mod = importlib.import_module("src.train_classifier")
+        
+        # Hole Original-Mail-Daten
+        subject = ""
+        body = ""
+        if email.raw_email:
+            subject = email.raw_email.subject or ""
+            body = email.raw_email.body or ""
+        
+        if not subject and not body:
+            logger.debug("Online-Learning übersprungen: Keine Mail-Daten")
+            return
+        
+        # Initialisiere OnlineLearner
+        learner = train_mod.OnlineLearner()
+        
+        # Lerne aus jeder Korrektur
+        learned_count = 0
+        
+        if data.get("dringlichkeit") is not None:
+            if learner.learn_from_correction(subject, body, "dringlichkeit", data["dringlichkeit"]):
+                learned_count += 1
+        
+        if data.get("wichtigkeit") is not None:
+            if learner.learn_from_correction(subject, body, "wichtigkeit", data["wichtigkeit"]):
+                learned_count += 1
+        
+        if data.get("spam_flag") is not None:
+            if learner.learn_from_correction(subject, body, "spam", data["spam_flag"]):
+                learned_count += 1
+        
+        if learned_count > 0:
+            logger.info(f"📚 Online-Learning: {learned_count} Klassifikator(en) aktualisiert")
+            
+    except ImportError:
+        logger.debug("Online-Learning nicht verfügbar (scikit-learn nicht installiert)")
+    except Exception as e:
+        # Online-Learning ist optional - Fehler sollten Korrektur nicht blockieren
+        logger.warning(f"Online-Learning Fehler (nicht kritisch): {e}")
 
 
 @app.route("/settings/ai", methods=["POST"])
