@@ -497,8 +497,32 @@ def init_db(db_path="emails.db"):
     if engine.url.drivername.startswith("sqlite"):
         @event.listens_for(engine, "connect")
         def set_sqlite_pragma(dbapi_conn, connection_record):
+            """Set SQLite pragmas for production use.
+            
+            - foreign_keys: Enable FK constraints (Phase 4)
+            - journal_mode=WAL: Write-Ahead Logging für concurrent reads (Phase 9d)
+            - busy_timeout: Retry statt sofort fail bei Lock-Conflicts (Phase 9d)
+            - wal_autocheckpoint: Verhindert unbegrenzte .wal File-Größe
+            
+            Impact: Löst SQLite Deadlocks bei Multi-Worker + Background-Jobs
+            """
             cursor = dbapi_conn.cursor()
+            
+            # Phase 4: Foreign Key Enforcement
             cursor.execute("PRAGMA foreign_keys=ON")
+            
+            # Phase 9d: WAL Mode für Multi-Worker Concurrency
+            # Erlaubt parallele Reads während Write läuft (Writer blockiert Reader nicht!)
+            cursor.execute("PRAGMA journal_mode=WAL")
+            
+            # Phase 9d: Retry statt sofort fail bei SQLITE_BUSY
+            # 5 Sekunden reichen (WAL reduziert Lock-Zeit drastisch)
+            cursor.execute("PRAGMA busy_timeout = 5000")
+            
+            # Phase 9d: WAL Checkpoint (verhindert unbegrenzte .wal File-Größe)
+            # Checkpoint alle 1000 Pages (~4MB)
+            cursor.execute("PRAGMA wal_autocheckpoint = 1000")
+            
             cursor.close()
     
     Base.metadata.create_all(engine)

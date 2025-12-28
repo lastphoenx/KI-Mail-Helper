@@ -424,13 +424,22 @@
   - Reset bei allen Exit-Punkten (done, error, timeout, fetch-error)
   - Verhindert mehrfache API-Calls und Rate-Limit-Triggers
 
+#### **Batch 3: Database Concurrency (🔨 60 min)**
+- [x] **SQLite Deadlock Multi-Worker Fix** - `src/02_models.py:500-527`
+  - WAL Mode (Write-Ahead Logging) für concurrent reads
+  - busy_timeout=5000ms für automatische Retry bei Lock-Conflicts
+  - wal_autocheckpoint=1000 verhindert unbegrenzte .wal File-Größe
+  - Backup-Script WAL-aware gemacht: `scripts/backup_database.sh`
+  - Verification & Testing: `scripts/verify_wal_mode.py`, `scripts/test_concurrent_access.py`
+  - **Impact:** Eliminiert SQLITE_BUSY Errors, Reader blockieren nicht während Write
+
 **Commits:** [pending]
 
 ---
 
 ## 🚀 **Ausstehende Aufgaben (Priorität)**
 
-### **🟡 Phase 9d: HIGH-Priority Remaining Fixes**
+### **🟡 Phase 9e: HIGH-Priority Remaining Fixes**
 **Ziel:** System-weite Sicherheitshärtung nach OWASP-Standards
 
 #### **Prio 1: Password Policy (30 min) ✅**

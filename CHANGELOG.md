@@ -45,6 +45,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Impact**: Prevents UI inconsistencies, multiple API calls, and rate limit triggers
 - **Files**: `templates/settings.html` (lines 285-291, 337, 355, 373, 402)
 
+**SQLite Deadlock Multi-Worker Fix**
+- Enabled WAL Mode (Write-Ahead Logging) for concurrent read access
+- Added busy_timeout=5000ms for automatic retry on lock conflicts
+- WAL autocheckpoint every 1000 pages to prevent unbounded .wal file growth
+- Updated backup script to use WAL-aware `.backup` command
+- **Impact**: Eliminates SQLITE_BUSY errors in multi-worker setup, readers don't block during writes
+- **Files**: `src/02_models.py` (lines 500-527), `scripts/backup_database.sh` (line 56)
+- **Testing**: `scripts/verify_wal_mode.py`, `scripts/test_concurrent_access.py`
+
 ---
 
 ### Security Fixes - Phase 9b (2025-12-28)

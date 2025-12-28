@@ -53,6 +53,7 @@ fi
 log "Starting backup: $BACKUP_FILE"
 
 # Create backup using SQLite .backup command (safe for hot backups)
+# WAL-aware: Automatisch kopiert .db + .wal + .shm Files atomic (Phase 9d)
 sqlite3 "$DB_FILE" ".backup '$BACKUP_FILE'" || error_exit "Backup failed"
 
 # Verify backup integrity

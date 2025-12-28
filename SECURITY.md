@@ -122,6 +122,7 @@ Layer 3: Fail2Ban (Network)
 - **Service Hardening**: systemd with ProtectSystem=strict, PrivateTmp
 - **Audit Logging**: Structured SECURITY[] logs for monitoring
 - **Rate Limiting**: Redis auto-detection with in-memory fallback
+- **Database Concurrency**: SQLite WAL Mode + busy_timeout for multi-worker deployments
 
 ---
 
@@ -273,6 +274,7 @@ See [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for how to run security tests
 - ✅ **Debug-Log Masking**: 10 additional logger statements mask user IDs and exception details
 - ✅ **Security Headers for Errors**: All responses (including 4xx/5xx) get security headers
 - ✅ **JS Polling Race Fix**: Prevents multiple concurrent polling loops in frontend
+- ✅ **SQLite Deadlock Fix**: WAL Mode + busy_timeout for multi-worker concurrency (eliminates SQLITE_BUSY errors)
 - ✅ **SRI Hashes**: Subresource Integrity for Bootstrap CDN resources
 - ✅ **Host/Port Validation**: Defense-in-depth input validation at CLI level
 - ✅ **Token Generation**: Increased ServiceToken entropy from 256 to 384 bits
