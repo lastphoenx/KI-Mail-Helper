@@ -180,8 +180,15 @@ def set_security_headers(response):
 
     CSP uses nonce for inline scripts (no 'unsafe-inline' needed).
     Security headers are set for ALL responses (including errors).
+    
+    Exception: /email/<id>/render-html endpoint has relaxed CSP for email content.
     """
-    # Security Headers für ALLE Responses (inkl. Errors) - Defense-in-Depth
+    # Exception: Email rendering endpoint needs to be embeddable in iframe
+    if request.path and '/render-html' in request.path:
+        # Headers already set in render_email_html() endpoint
+        return response
+    
+    # Security Headers für ALLE anderen Responses (inkl. Errors) - Defense-in-Depth
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
