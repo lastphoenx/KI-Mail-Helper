@@ -2703,23 +2703,24 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
                 content_security_policy_nonce_in=[
                     "script-src"
                 ],  # Nonce-basierte CSP für inline-scripts
-                # Exempt email rendering endpoint from Talisman's CSP override
-                # (endpoint sets its own relaxed CSP for external fonts/images)
                 content_security_policy_report_only=False,
             )
             
             # Per-endpoint CSP override für Email-Rendering
-            # Talisman respektiert den override_csp Marker
-            @app.before_request
-            def talisman_email_render_exception():
-                if request.endpoint == 'render_email_html':
-                    g.talisman_override_csp = {
-                        'default-src': "'none'",
-                        'style-src': "'unsafe-inline'",
-                        'img-src': 'https: data:',
-                        'font-src': 'https: data:',
-                        'script-src': "'none'",
-                    }
+            # Muss NACH Talisman registriert werden, damit Hook nach Talisman läuft
+            @app.after_request
+            def override_email_render_csp(response):
+                """Überschreibt CSP für Email-Rendering nach Talisman's Hook"""
+                if request.endpoint == 'render_email_html' and response.status_code == 200:
+                    # Lockere CSP für Email-Content: externe Fonts/Bilder erlaubt, Scripts blockiert
+                    response.headers['Content-Security-Policy'] = (
+                        "default-src 'none'; "
+                        "style-src 'unsafe-inline'; "
+                        "img-src https: data:; "
+                        "font-src https: data:; "
+                        "script-src 'none'"
+                    )
+                return response
             
             logger.info("🔒 Flask-Talisman aktiviert - Security Headers + CSP + Nonce")
 
