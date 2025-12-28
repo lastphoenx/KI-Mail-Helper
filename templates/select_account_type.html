@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Konto-Typ wählen - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-7">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">📧 Neuer Mail-Account - Konto-Typ wählen</h4>
+            </div>
+            <div class="card-body p-5">
+                <p class="text-center text-muted mb-5">
+                    Wähle eine Authentifizierungsmethode für deinen Mail-Account.
+                </p>
+                
+                <!-- Google Option -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <a href="/settings/mail-account/google-setup" class="text-decoration-none">
+                            <div class="card border-light h-100 hover-shadow" style="cursor:pointer;">
+                                <div class="card-body text-center">
+                                    <div style="font-size:3rem; margin-bottom:15px;">
+                                        🔐
+                                    </div>
+                                    <h5 class="card-title text-dark">Google OAuth</h5>
+                                    <p class="card-text text-muted small">
+                                        Sicherer & einfacher
+                                    </p>
+                                    <div class="mt-3">
+                                        <small class="d-block text-muted">✓ Kein Passwort nötig</small>
+                                        <small class="d-block text-muted">✓ 2FA automatisch</small>
+                                        <small class="d-block text-muted">✓ Tokens verschlüsselt</small>
+                                    </div>
+                                </div>
+                                <div class="card-footer bg-primary text-white text-center border-primary">
+                                    <small>Empfohlen für Gmail</small>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                    
+                    <!-- Manuell Option -->
+                    <div class="col-md-6">
+                        <a href="/settings/mail-account/add" class="text-decoration-none">
+                            <div class="card border-light h-100 hover-shadow" style="cursor:pointer;">
+                                <div class="card-body text-center">
+                                    <div style="font-size:3rem; margin-bottom:15px;">
+                                        ⚙️
+                                    </div>
+                                    <h5 class="card-title text-dark">Manuell (IMAP/POP3)</h5>
+                                    <p class="card-text text-muted small">
+                                        Universell einsetzbar
+                                    </p>
+                                    <div class="mt-3">
+                                        <small class="d-block text-muted">✓ Alle Provider</small>
+                                        <small class="d-block text-muted">✓ App-Passwort</small>
+                                        <small class="d-block text-muted">✓ Offline-Mail</small>
+                                    </div>
+                                </div>
+                                <div class="card-footer bg-secondary text-white text-center border-secondary">
+                                    <small>Für Outlook, Yahoo, etc.</small>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <a href="/settings" class="btn btn-outline-secondary w-100">
+                    ← Zurück zu Einstellungen
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.hover-shadow:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+    transform: translateY(-2px);
+    transition: all 0.3s ease;
+}
+</style>
+{% endblock %}

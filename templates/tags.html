@@ -1,0 +1,320 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Tag-Verwaltung - Mail Helper{% endblock %}
+
+{% block content %}
+<style>
+    .tag-item {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+        transition: all 0.2s;
+    }
+    
+    .tag-item:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+    }
+    
+    .tag-badge {
+        display: inline-block;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: 500;
+        color: white;
+    }
+    
+    .color-picker-option {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: 3px solid transparent;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-block;
+        margin: 5px;
+    }
+    
+    .color-picker-option:hover,
+    .color-picker-option.selected {
+        border-color: #333;
+        transform: scale(1.1);
+    }
+    
+    .email-count-badge {
+        background: #f8f9fa;
+        padding: 5px 12px;
+        border-radius: 12px;
+        font-size: 13px;
+        color: #666;
+    }
+</style>
+
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2>🏷️ Tag-Verwaltung</h2>
+            <p class="text-muted">Verwalte deine E-Mail-Tags für bessere Organisation</p>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTagModal">
+                ➕ Neuer Tag
+            </button>
+        </div>
+    </div>
+    
+    {% if tags %}
+    <div class="row">
+        {% for tag in tags %}
+        <div class="col-md-6 col-lg-4">
+            <div class="tag-item">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="tag-badge" style="background-color: {{ tag.color }};">
+                        {{ tag.name }}
+                    </span>
+                    <span class="email-count-badge">
+                        {{ tag.email_count }} E-Mails
+                    </span>
+                </div>
+                
+                <div class="d-flex gap-2 mt-3">
+                    <button class="btn btn-sm btn-outline-primary flex-fill edit-tag-btn" 
+                            data-tag-id="{{ tag.id }}" 
+                            data-tag-name="{{ tag.name }}" 
+                            data-tag-color="{{ tag.color }}">
+                        ✏️ Bearbeiten
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger delete-tag-btn" 
+                            data-tag-id="{{ tag.id }}" 
+                            data-tag-name="{{ tag.name }}">
+                        🗑️ Löschen
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        <h5>Keine Tags vorhanden</h5>
+        <p class="mb-0">Erstelle deinen ersten Tag, um E-Mails zu kategorisieren. Tags werden auch automatisch von der KI vorgeschlagen.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal: Tag erstellen -->
+<div class="modal fade" id="createTagModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Neuer Tag</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="createTagForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Tag-Name</label>
+                        <input type="text" class="form-control" id="createTagName" 
+                               placeholder="z.B. Wichtig, Rechnung, Termin" 
+                               maxlength="50" required>
+                        <small class="text-muted">Max. 50 Zeichen</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Farbe</label>
+                        <div id="createColorPicker">
+                            <span class="color-picker-option selected" data-color="#3B82F6" style="background-color: #3B82F6;" title="Blau"></span>
+                            <span class="color-picker-option" data-color="#10B981" style="background-color: #10B981;" title="Grün"></span>
+                            <span class="color-picker-option" data-color="#F59E0B" style="background-color: #F59E0B;" title="Orange"></span>
+                            <span class="color-picker-option" data-color="#EF4444" style="background-color: #EF4444;" title="Rot"></span>
+                            <span class="color-picker-option" data-color="#8B5CF6" style="background-color: #8B5CF6;" title="Lila"></span>
+                            <span class="color-picker-option" data-color="#EC4899" style="background-color: #EC4899;" title="Pink"></span>
+                            <span class="color-picker-option" data-color="#6B7280" style="background-color: #6B7280;" title="Grau"></span>
+                        </div>
+                        <input type="hidden" id="createTagColor" value="#3B82F6">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Tag erstellen</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Tag bearbeiten -->
+<div class="modal fade" id="editTagModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Tag bearbeiten</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editTagForm">
+                <input type="hidden" id="editTagId">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Tag-Name</label>
+                        <input type="text" class="form-control" id="editTagName" 
+                               maxlength="50" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Farbe</label>
+                        <div id="editColorPicker">
+                            <span class="color-picker-option" data-color="#3B82F6" style="background-color: #3B82F6;"></span>
+                            <span class="color-picker-option" data-color="#10B981" style="background-color: #10B981;"></span>
+                            <span class="color-picker-option" data-color="#F59E0B" style="background-color: #F59E0B;"></span>
+                            <span class="color-picker-option" data-color="#EF4444" style="background-color: #EF4444;"></span>
+                            <span class="color-picker-option" data-color="#8B5CF6" style="background-color: #8B5CF6;"></span>
+                            <span class="color-picker-option" data-color="#EC4899" style="background-color: #EC4899;"></span>
+                            <span class="color-picker-option" data-color="#6B7280" style="background-color: #6B7280;"></span>
+                        </div>
+                        <input type="hidden" id="editTagColor">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+// CSRF Token Helper
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+}
+
+// Color Picker Handler
+document.querySelectorAll('.color-picker-option').forEach(option => {
+    option.addEventListener('click', function() {
+        const parent = this.parentElement;
+        parent.querySelectorAll('.color-picker-option').forEach(o => o.classList.remove('selected'));
+        this.classList.add('selected');
+        
+        const hiddenInput = parent.nextElementSibling;
+        hiddenInput.value = this.dataset.color;
+    });
+});
+
+// Tag erstellen
+document.getElementById('createTagForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const name = document.getElementById('createTagName').value.trim();
+    const color = document.getElementById('createTagColor').value;
+    
+    if (!name) {
+        alert('Bitte einen Tag-Namen eingeben');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/tags', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({ name, color })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            window.location.reload();
+        } else {
+            alert('Fehler: ' + (data.error || 'Tag konnte nicht erstellt werden'));
+        }
+    } catch (error) {
+        alert('Fehler beim Erstellen: ' + error.message);
+    }
+});
+
+// Tag bearbeiten - Event Listener
+document.querySelectorAll('.edit-tag-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const tagId = this.dataset.tagId;
+        const tagName = this.dataset.tagName;
+        const tagColor = this.dataset.tagColor;
+        
+        document.getElementById('editTagId').value = tagId;
+        document.getElementById('editTagName').value = tagName;
+        document.getElementById('editTagColor').value = tagColor;
+        
+        const picker = document.getElementById('editColorPicker');
+        picker.querySelectorAll('.color-picker-option').forEach(o => {
+            o.classList.toggle('selected', o.dataset.color === tagColor);
+        });
+        
+        new bootstrap.Modal(document.getElementById('editTagModal')).show();
+    });
+});
+
+// Tag bearbeiten (Submit)
+document.getElementById('editTagForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const tagId = document.getElementById('editTagId').value;
+    const name = document.getElementById('editTagName').value.trim();
+    const color = document.getElementById('editTagColor').value;
+    
+    try {
+        const response = await fetch(`/api/tags/${tagId}`, {
+            method: 'PUT',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({ name, color })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            window.location.reload();
+        } else {
+            alert('Fehler: ' + (data.error || 'Tag konnte nicht aktualisiert werden'));
+        }
+    } catch (error) {
+        alert('Fehler beim Aktualisieren: ' + error.message);
+    }
+});
+
+// Tag löschen - Event Listener
+document.querySelectorAll('.delete-tag-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const tagId = this.dataset.tagId;
+        const tagName = this.dataset.tagName;
+        
+        if (!confirm(`Tag "${tagName}" wirklich löschen?\n\nDie Verknüpfungen zu E-Mails werden ebenfalls entfernt.`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/tags/${tagId}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': getCsrfToken()
+                }
+            });
+            
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                const data = await response.json();
+                alert('Fehler: ' + (data.error || 'Tag konnte nicht gelöscht werden'));
+            }
+        } catch (error) {
+            alert('Fehler beim Löschen: ' + error.message);
+        }
+    });
+});
+</script>
+{% endblock %}

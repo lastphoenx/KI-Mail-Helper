@@ -1,0 +1,28 @@
+﻿[flake8]
+# Zeilenlänge: 100 (wie Black)
+max-line-length = 100
+
+# Ignoriere Style-Noise (nicht sicherheitskritisch)
+extend-ignore = 
+    E203,  # whitespace before ':' (Type Hints)
+    E402,  # module level import not at top (conditional imports legit)
+    E501,  # line too long (Black handled mit 100)
+    E711,  # comparison to None (SQLAlchemy braucht == None für IS NULL)
+    E712,  # comparison to True/False (SQLAlchemy operator overloading)
+    W503,  # line break before binary operator (alte PEP8)
+
+# Ausschlüsse
+exclude = 
+    venv,
+    __pycache__,
+    .git,
+    migrations,
+    cache,
+    output,
+    logs
+
+# Zeige nur echte Probleme:
+# F = pyflakes (undefined names, unused imports, etc.)
+# E9 = runtime errors (SyntaxError, IndentationError)
+# W6 = deprecated features
+select = F,E9,W6
