@@ -1035,6 +1035,9 @@ def render_email_html(email_id: int):
             logger.error(f"render_email_html: Entschlüsselung fehlgeschlagen für Email {email_id}: {type(e).__name__}: {e}")
             return "Decryption failed", 500
         
+        # Marker für after_request Hook: Überschreibe Headers nicht (MUSS VOR make_response!)
+        g.skip_security_headers = True
+        
         # Response mit lockerer CSP nur für E-Mail-Content
         response = make_response(decrypted_body)
         response.headers['Content-Type'] = 'text/html; charset=utf-8'
@@ -1052,13 +1055,6 @@ def render_email_html(email_id: int):
         # Security Headers (ohne X-Frame-Options für iframe embedding)
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-        
-        # Marker für after_request Hook: Überschreibe Headers nicht
-        g.skip_security_headers = True
-        
-        # Marker für Talisman: Überschreibe CSP nicht
-        # Flask-Talisman prüft g.talisman_skip_csp in seinem After-Request-Hook
-        g.talisman_skip_csp = True
         
         return response
         
