@@ -37,10 +37,10 @@
 ```bash
 # Neue DB anlegen
 mv emails.db emails.db.backup
-python src/00_main.py  # Init DB
+python -m src.00_main --init
 
 # Web-App starten
-python src/01_web_app.py
+python -m src.01_web_app
 
 # Registrieren → Mail-Account → Mails abrufen
 # Prüfe DB:
