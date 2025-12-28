@@ -350,9 +350,9 @@ def load_project_context(file_size_chars=0):
     else:
         context_files = {
             'README.md': 'Projekt-Übersicht, Features, Tech Stack',
-            'SECURITY.md': 'Security Model, Known Limitations, Threat Analysis',
-            'DEPLOYMENT.md': 'Production Setup, Security Architecture',
-            'Instruction_&_goal.md': 'Detaillierte Architektur, Phase 0-9'
+            'docs/SECURITY.md': 'Security Model, Known Limitations, Threat Analysis',
+            'docs/DEPLOYMENT.md': 'Production Setup, Security Architecture',
+            'Instruction_&_goal.md': 'Detaillierte Architektur, Phase 0-10'
         }
         mode = "FULL"
     

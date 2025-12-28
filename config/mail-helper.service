@@ -22,7 +22,7 @@ Environment="FORCE_HTTPS=true"
 # Gunicorn Command
 # WICHTIG: Pfade anpassen!
 ExecStart=/opt/KI-Mail-Helper/venv/bin/gunicorn \
-    --config /opt/KI-Mail-Helper/gunicorn.conf.py \
+    --config /opt/KI-Mail-Helper/config/gunicorn.conf.py \
     --bind 0.0.0.0:5001 \
     src.01_web_app:app
 

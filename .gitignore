@@ -40,7 +40,7 @@ emails.db-shm
 *.sqlite
 *.sqlite3
 emails.db
-*.db.backup
+*.db.backup*
 *.db-wal
 *.db-shm
 
@@ -63,5 +63,26 @@ temp/
 # Database backups and recovery logs
 # (covered by *.db.backup above)
 
+# Backups and Archives
+backups/
+backup_*/
+*.db.gz
+
+# Archive/Historical scripts
+_archive/
+archive/
+
 # Project-specific maintenance scripts (user-specific, veraltet)
 # scripts/fix_master_key.py  # ← Wenn noch gebraucht, auskommentieren
+
+# Linter/Tool Configurations (local development only)
+.flake8
+.pylintrc
+
+# Project Documentation & Reports (development/planning, not for VCS)
+REORGANIZATION_REPORT.md
+AUDIT_REPORT.md
+Instruction_&_goal.md
+
+# Code Templates (reference/snippet files)
+change_password_route.txt

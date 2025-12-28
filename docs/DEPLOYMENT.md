@@ -63,7 +63,7 @@ This adds the `master_key` column required for background job authentication (st
 
 ```bash
 # Copy service file
-sudo cp mail-helper.service /etc/systemd/system/
+sudo cp config/mail-helper.service /etc/systemd/system/
 
 # Edit service file with your paths and SECRET_KEY
 sudo nano /etc/systemd/system/mail-helper.service
@@ -169,7 +169,7 @@ sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
 
 ```bash
 # Log Rotation Config kopieren
-sudo cp logrotate.conf /etc/logrotate.d/mail-helper
+sudo cp config/logrotate.conf /etc/logrotate.d/mail-helper
 
 # Config anpassen (User, Group, Pfade)
 sudo nano /etc/logrotate.d/mail-helper
@@ -212,7 +212,7 @@ sudo apt install fail2ban
 sudo nano /etc/fail2ban/filter.d/mail-helper.conf
 ```
 
-Inhalt von `fail2ban-filter.conf` kopieren (im Projekt-Root):
+Inhalt von `config/fail2ban-filter.conf` kopieren:
 
 ```ini
 [Definition]
@@ -235,7 +235,7 @@ datepattern = {^LN-BEG}%%Y-%%m-%%d %%H:%%M:%%S
 sudo nano /etc/fail2ban/jail.d/mail-helper.conf
 ```
 
-Inhalt von `fail2ban-jail.conf` kopieren:
+Inhalt von `config/fail2ban-jail.conf` kopieren:
 
 ```ini
 [mail-helper]

@@ -77,7 +77,7 @@ Email Data ─→ AES-256-GCM Encrypt ─→ encrypted_email (stored in DB)
 - **Multi-User Ready**: Each user has own DEK/KEK pair (technically supported, see Limitations)
 - **Learning System (Phase 10)**: Manual tag changes tracked in `user_override_tags` (plaintext) + `correction_timestamp` for ML training
 
-**See [docs/ZERO_KNOWLEDGE_COMPLETE.md](docs/ZERO_KNOWLEDGE_COMPLETE.md) for full cryptographic details.**
+**See [ZERO_KNOWLEDGE_COMPLETE.md](ZERO_KNOWLEDGE_COMPLETE.md) for full cryptographic details.**
 
 ---
 
@@ -246,7 +246,7 @@ We regularly review security with:
 - ✅ SQLAlchemy ORM SQL injection testing
 - ✅ XSS payload testing in sanitizer
 
-See [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for how to run security tests.
+See [TESTING_GUIDE.md](TESTING_GUIDE.md) for how to run security tests.
 
 ---
 

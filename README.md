@@ -57,7 +57,7 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
   - DEK (Data Encryption Key) nur in Server-RAM (Flask Server-Side Sessions)
   - Server kann niemals auf Klartext-Daten zugreifen
   - Session Security: Auto-Logout bei DEK-Loss, keine Passwörter in Session
-- **🔒 Production Security (Phase 9)** – Enterprise-Grade Hardening (siehe [DEPLOYMENT.md](DEPLOYMENT.md))
+- **🔒 Production Security (Phase 9)** – Enterprise-Grade Hardening (siehe [DEPLOYMENT.md](docs/DEPLOYMENT.md))
   - **Flask-Limiter**: Rate Limiting (5 requests/min Login/2FA)
   - **Account Lockout**: 5 Failed → 15min Ban
   - **Session Timeout**: 30min Inaktivität → Auto-Logout
@@ -130,17 +130,26 @@ mail-helper/
 │   ├── encrypt_db_verification.py
 │   └── ... (9+ Helper-Scripts)
 ├── migrations/                 # Alembic DB-Migrationen
-├── mail-helper-processor.service  # Systemd Service
-├── mail-helper-processor.timer    # Cron Timer (15 min)
+├── config/                     # Konfigurationsdateien
+│   ├── mail-helper.service     # Systemd Service (Web-App)
+│   ├── mail-helper-processor.service  # Systemd Service (Cron)
+│   ├── mail-helper-processor.timer    # Cron Timer (15 min)
+│   ├── gunicorn.conf.py        # Gunicorn WSGI Config
+│   ├── fail2ban-filter.conf    # Fail2Ban Filter Rules
+│   ├── fail2ban-jail.conf      # Fail2Ban Jail Config
+│   └── logrotate.conf          # Log Rotation Config
+├── docs/                       # Dokumentation
+│   ├── INSTALLATION.md         # Komplette Installationsanleitung
+│   ├── DEPLOYMENT.md           # Production Deployment Guide
+│   ├── MAINTENANCE.md          # Maintenance & Helper-Skripte
+│   ├── SECURITY.md             # Security Model & Threat Analysis
+│   ├── OAUTH_AND_IMAP_SETUP.md # OAuth & IMAP Konfiguration
+│   ├── TESTING_GUIDE.md        # Kompletter Testing-Workflow
+│   ├── SETUP_VENV.md           # Virtual Environment Setup
+│   ├── CHANGELOG.md            # Version History
+│   └── ZERO_KNOWLEDGE_COMPLETE.md  # Zero-Knowledge Implementierung
 ├── emails.db                   # SQLite Datenbank
-├── docs/
-│   ├── ZERO_KNOWLEDGE_COMPLETE.md  # Zero-Knowledge Implementierung (100/100 Score)
-│   ├── TESTING_GUIDE.md            # Kompletter Testing-Workflow
-│   └── ...                         # Weitere Dokumentation
-├── Instruction_&_goal.md       # Projekt-Spezifikation (Phase 0-7)
-├── INSTALLATION.md             # Komplette Installationsanleitung
-├── MAINTENANCE.md              # Maintenance & Helper-Skripte
-├── OAUTH_AND_IMAP_SETUP.md     # OAuth & IMAP Konfiguration
+├── Instruction_&_goal.md       # Projekt-Spezifikation (Phase 0-10)
 └── README.md                   # Dieses Dokument
 ```
 
@@ -219,9 +228,9 @@ python3 -m src.00_main --serve --https
 ## 📚 Documentation
 
 **Before you deploy to production, read:**
-- **[SECURITY.md](./SECURITY.md)** – Threat Model, Security Features, Known Limitations
-- **[DEPLOYMENT.md](./DEPLOYMENT.md)** – Production Setup (Gunicorn, Systemd, Fail2Ban, Backups)
-- **[INSTALLATION.md](./INSTALLATION.md)** – Detailed step-by-step installation guide
+- **[SECURITY.md](./docs/SECURITY.md)** – Threat Model, Security Features, Known Limitations
+- **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** – Production Setup (Gunicorn, Systemd, Fail2Ban, Backups)
+- **[INSTALLATION.md](./docs/INSTALLATION.md)** – Detailed step-by-step installation guide
 - **[docs/ZERO_KNOWLEDGE_COMPLETE.md](./docs/ZERO_KNOWLEDGE_COMPLETE.md)** – Cryptography & Encryption Details
 
 ---
@@ -669,7 +678,7 @@ python3 scripts/reset_base_pass.py --force
 python3 scripts/reset_base_pass.py --account=1 --force
 ```
 
-Weitere Maintenance-Befehle: siehe **[MAINTENANCE.md](./MAINTENANCE.md)**
+Weitere Maintenance-Befehle: siehe **[MAINTENANCE.md](./docs/MAINTENANCE.md)**
 
 ---
 
@@ -925,10 +934,10 @@ sudo systemctl start mail-helper-processor.service
 ## 📚 Dokumentation
 
 - **[Instruction_&_goal.md](Instruction_&_goal.md)** – Vollständige Projekt-Spezifikation (Phase 0-9)
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** – Production Deployment Guide (Gunicorn, Nginx, Fail2Ban)
-- **[INSTALLATION.md](INSTALLATION.md)** – Schritt-für-Schritt Installation
-- **[MAINTENANCE.md](MAINTENANCE.md)** – Maintenance & Helper-Skripte
-- **[OAUTH_AND_IMAP_SETUP.md](OAUTH_AND_IMAP_SETUP.md)** – OAuth & IMAP Konfiguration
+- **[DEPLOYMENT.md](docs/DEPLOYMENT.md)** – Production Deployment Guide (Gunicorn, Nginx, Fail2Ban)
+- **[INSTALLATION.md](docs/INSTALLATION.md)** – Schritt-für-Schritt Installation
+- **[MAINTENANCE.md](docs/MAINTENANCE.md)** – Maintenance & Helper-Skripte
+- **[OAUTH_AND_IMAP_SETUP.md](docs/OAUTH_AND_IMAP_SETUP.md)** – OAuth & IMAP Konfiguration
 - **[TESTING_GUIDE.md](docs/TESTING_GUIDE.md)** – Testing-Workflow
 - **[ZERO_KNOWLEDGE_COMPLETE.md](docs/ZERO_KNOWLEDGE_COMPLETE.md)** – Zero-Knowledge Implementierung
 
@@ -990,7 +999,7 @@ ollama pull mistral  # 4GB, schneller
 
 Konstruktive Contributions sind sehr willkommen – einschließlich kritischer Gedanken und neuer Perspektiven.
 
-Bitte lies [SECURITY.md](./SECURITY.md) für Sicherheitsfragen und öffne GitHub Issues für Bugs und Diskussionen.
+Bitte lies [SECURITY.md](./docs/SECURITY.md) für Sicherheitsfragen und öffne GitHub Issues für Bugs und Diskussionen.
 
 ---
 

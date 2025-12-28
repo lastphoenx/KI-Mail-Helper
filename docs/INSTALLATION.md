@@ -318,8 +318,8 @@ Siehe: [OAUTH_AND_IMAP_SETUP.md](OAUTH_AND_IMAP_SETUP.md)
 
 ```bash
 # Kopiere Service-Dateien
-sudo cp mail-helper-processor.service /etc/systemd/system/
-sudo cp mail-helper-processor.timer /etc/systemd/system/
+sudo cp config/mail-helper-processor.service /etc/systemd/system/
+sudo cp config/mail-helper-processor.timer /etc/systemd/system/
 
 # Editiere Pfade in Service-Datei
 sudo nano /etc/systemd/system/mail-helper-processor.service
@@ -497,12 +497,12 @@ sudo systemctl restart caddy
 
 ## �📚 Weiterführende Dokumentation
 
-- [README.md](README.md) - Projekt-Übersicht & Quick Start
+- [README.md](../README.md) - Projekt-Übersicht & Quick Start
 - [OAUTH_AND_IMAP_SETUP.md](OAUTH_AND_IMAP_SETUP.md) - OAuth & IMAP Konfiguration
 - [MAINTENANCE.md](MAINTENANCE.md) - Wartung & Helper-Scripts
 - [TESTING_GUIDE.md](TESTING_GUIDE.md) - Test-Anleitung
 - [CRON_SETUP.md](CRON_SETUP.md) - Systemd Timer Setup
-- [docs/MULTI_AUTH_ARCHITECTURE.md](docs/MULTI_AUTH_ARCHITECTURE.md) - Multi-Auth Architektur
+- [MULTI_AUTH_ARCHITECTURE.md](MULTI_AUTH_ARCHITECTURE.md) - Multi-Auth Architektur
 
 ---
 
@@ -519,4 +519,4 @@ sudo systemctl restart caddy
 
 **Viel Erfolg mit KI-Mail-Helper! 🎉**
 
-Bei Fragen: Siehe [MAINTENANCE.md](MAINTENANCE.md) oder öffne ein Issue.
+Bei Fragen: Siehe [MAINTENANCE.md](MAINTENANCE.md) oder öffne ein Issue im GitHub Repository.

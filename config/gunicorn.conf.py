@@ -3,7 +3,7 @@ Gunicorn Configuration für KI-Mail-Helper
 Production WSGI Server Setup
 
 Usage:
-    gunicorn -c gunicorn.conf.py src.01_web_app:app
+    gunicorn -c config/gunicorn.conf.py src.01_web_app:app
 """
 
 import multiprocessing
