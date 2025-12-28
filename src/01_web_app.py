@@ -1976,6 +1976,39 @@ def api_get_email_tags(email_id):
         db.close()
 
 
+@app.route("/api/emails/<int:email_id>/tag-suggestions", methods=["GET"])
+@login_required
+def api_get_tag_suggestions(email_id):
+    """
+    API: Tag-Vorschläge für eine E-Mail abrufen (Phase 11c).
+    
+    Verwendet Embeddings um semantisch ähnliche Tags vorzuschlagen.
+    """
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        try:
+            tag_manager_mod = importlib.import_module("src.services.tag_manager")
+            suggestions = tag_manager_mod.TagManager.get_tag_suggestions_for_email(
+                db, email_id, user.id, top_k=5
+            )
+            
+            return jsonify({
+                "suggestions": suggestions,
+                "email_id": email_id
+            }), 200
+        except Exception as e:
+            logger.error(f"Fehler beim Abrufen der Tag-Vorschläge: {e}")
+            return jsonify({"suggestions": [], "email_id": email_id}), 200
+    
+    finally:
+        db.close()
+
+
 @app.route("/api/emails/<int:email_id>/tags", methods=["POST"])
 @login_required
 def api_assign_tag_to_email(email_id):
