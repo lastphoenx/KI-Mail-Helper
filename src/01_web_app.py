@@ -820,6 +820,15 @@ def list_view():
         filter_color = request.args.get("farbe") or None
         filter_done = (request.args.get("done", "false") or "").lower()
         search_term = (request.args.get("search", "") or "").strip()
+        
+        # Phase 10: Tag-Filter
+        filter_tag_ids = []
+        tag_ids_str = request.args.getlist("tags")
+        if tag_ids_str:
+            try:
+                filter_tag_ids = [int(tid) for tid in tag_ids_str if tid]
+            except ValueError:
+                filter_tag_ids = []
 
         query = (
             db.query(models.ProcessedEmail)
@@ -836,9 +845,24 @@ def list_view():
 
         if filter_color:
             query = query.filter(models.ProcessedEmail.farbe == filter_color)
+        
+        # Phase 10: Filter nach Tags
+        if filter_tag_ids:
+            query = (
+                query.join(models.EmailTagAssignment)
+                .filter(models.EmailTagAssignment.tag_id.in_(filter_tag_ids))
+            )
 
         # Alle E-Mails abrufen (Search auf verschlüsselten Feldern muss in Python passieren)
         mails = query.order_by(models.ProcessedEmail.score.desc()).all()
+        
+        # Phase 10: Lade alle User-Tags für Filter-Dropdown
+        all_tags = []
+        try:
+            tag_manager_mod = importlib.import_module("src.services.tag_manager")
+            all_tags = tag_manager_mod.TagManager.get_user_tags(db, user.id)
+        except ImportError:
+            logger.warning("TagManager nicht verfügbar")
 
         # Zero-Knowledge: Entschlüsselung für Anzeige und Suche
         master_key = session.get("master_key")
@@ -878,6 +902,13 @@ def list_view():
                     mail._decrypted_sender = decrypted_sender
                     mail._decrypted_summary_de = decrypted_summary_de
                     mail._decrypted_tags = decrypted_tags
+                    
+                    # Phase 10: Lade Email-Tags
+                    try:
+                        mail.email_tags = tag_manager_mod.TagManager.get_email_tags(db, mail.id, user.id)
+                    except:
+                        mail.email_tags = []
+                    
                     decrypted_mails.append(mail)
 
                 except (ValueError, KeyError, Exception) as e:
@@ -896,6 +927,8 @@ def list_view():
             filter_color=filter_color,
             filter_done=filter_done,
             search_term=search_term,
+            all_tags=all_tags,
+            filter_tag_ids=filter_tag_ids,
         )
 
     finally:

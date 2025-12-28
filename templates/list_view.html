@@ -9,16 +9,16 @@
 <div class="card mb-4">
     <div class="card-body">
         <form method="get" class="row g-3">
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label">Priorität</label>
                 <select name="farbe" class="form-select">
                     <option value="" {% if not filter_color %}selected{% endif %}>Alle</option>
-                    <option value="rot" {% if filter_color == 'rot' %}selected{% endif %}>🔴 Rot (Hoch)</option>
-                    <option value="gelb" {% if filter_color == 'gelb' %}selected{% endif %}>🟡 Gelb (Mittel)</option>
-                    <option value="grün" {% if filter_color == 'grün' %}selected{% endif %}>🟢 Grün (Niedrig)</option>
+                    <option value="rot" {% if filter_color == 'rot' %}selected{% endif %}>🔴 Rot</option>
+                    <option value="gelb" {% if filter_color == 'gelb' %}selected{% endif %}>🟡 Gelb</option>
+                    <option value="grün" {% if filter_color == 'grün' %}selected{% endif %}>🟢 Grün</option>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label">Status</label>
                 <select name="done" class="form-select">
                     <option value="" {% if filter_done not in ['true','false'] %}selected{% endif %}>Alle</option>
@@ -26,7 +26,22 @@
                     <option value="true" {% if filter_done == 'true' %}selected{% endif %}>Erledigt</option>
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
+                <label class="form-label">Tags</label>
+                <select name="tags" class="form-select" multiple size="1" id="tagFilter">
+                    {% if all_tags %}
+                        {% for tag in all_tags %}
+                        <option value="{{ tag.id }}" {% if tag.id in filter_tag_ids %}selected{% endif %}>
+                            {{ tag.name }}
+                        </option>
+                        {% endfor %}
+                    {% else %}
+                        <option disabled>Keine Tags vorhanden</option>
+                    {% endif %}
+                </select>
+                <small class="text-muted">Mehrfachauswahl mit Strg/Cmd</small>
+            </div>
+            <div class="col-md-3">
                 <label class="form-label">Suche</label>
                 <input type="text" name="search" class="form-control" placeholder="Betreff, Absender..." value="{{ search_term }}">
             </div>
@@ -69,8 +84,15 @@
                         Dringlichkeit: {{ email.dringlichkeit }} | Wichtigkeit: {{ email.wichtigkeit }} |
                         Aktion: {{ email.kategorie_aktion|replace('_',' ') }} | Spam: {{ 'Ja' if email.spam_flag else 'Nein' }}
                     </div>
-                    {% if tag_list %}
+                    {% if email.email_tags %}
                     <div class="mt-2">
+                        {% for tag in email.email_tags %}
+                        <span class="badge me-1" style="background-color: {{ tag.color }};">{{ tag.name }}</span>
+                        {% endfor %}
+                    </div>
+                    {% elif tag_list %}
+                    <div class="mt-2">
+                        <small class="text-muted">Legacy:</small>
                         {% for tag in tag_list if tag %}
                         <span class="badge bg-secondary">{{ tag.strip() }}</span>
                         {% endfor %}
