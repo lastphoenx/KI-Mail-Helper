@@ -32,7 +32,7 @@ pyOpenSSL==24.0.0          # HTTPS support (self-signed certificates for develop
 
 # Utils
 python-dotenv==1.0.0       # .env-Datei Support
-requests==2.32.3           # HTTP-Requests - Security update
+requests==2.32.5           # HTTP-Requests - Security update
 
 # Testing
 pytest==7.4.3
