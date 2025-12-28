@@ -4,6 +4,36 @@
 > Datenschutzfreundlich • End-to-End verschlüsselt • Automatische Übersetzung • 3×3-Prioritäten-Dashboard  
 > Security Score: **98/100** 🔒 | Phase: **9 (Production Ready)** ✅
 
+---
+
+## ⚠️ Haftungsausschluss / Disclaimer (AI-Generated Code)
+
+### 🇩🇪 Deutsch
+
+**Hinweis: KI-generierter Code**
+
+Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher **vollständig von KI erzeugt**; keine Zeile wurde manuell von einem Menschen geschrieben. Die gesamte Entwicklung erfolgte in **Microsoft Visual Studio Code (VS Code)**.
+
+- Ein **KI-Provider + Modell** war der primäre „Entwickler" und hat den Großteil der Implementierung erstellt.
+- Ein weiterer **KI-Provider + Modell** war hauptsächlich für Review, kritisches Gegenprüfen und das Vorschlagen von Fixes zuständig und hat nur wenige Änderungen selbst implementiert.
+- Ein dritter **KI-Provider + ausgewähltes Modell** wurde per API für ein Deep-Review eingesetzt – unterstützt durch ein eigenes Python-Review-Skript mit ca. 1.000 Zeilen (ausschließlich für Review-Zwecke).
+
+**Trotz größter Sorgfalt beim Prompting, kritischem Hinterfragen und wiederholten Reviews erfolgt die Verwendung auf eigenes Risiko.** Die Software wird „wie gesehen" (as is) bereitgestellt – ohne Gewährleistung und ohne Zusicherung hinsichtlich Korrektheit, Sicherheit oder Eignung. Wenn du das Tool mit echten Mail-Accounts oder sensiblen Daten nutzen willst, führe bitte eigene Tests, Threat-Modeling und ein unabhängiges Security-Review durch.
+
+### 🇬🇧 English
+
+**Notice: AI-generated code**
+
+This repository was created with multiple AI systems. So far, the codebase has been generated **entirely by AI** — not a single line was written manually by a human. All development work was performed in **Microsoft Visual Studio Code (VS Code)**.
+
+- One **AI provider + model** acted as the primary "developer" and produced most of the implementation.
+- Another **AI provider + model** was mainly responsible for review, critical verification, and proposing fixes, contributing only minor code changes.
+- A third **AI provider + selected model** was used via API for an in-depth review, supported by a dedicated Python review harness of about 1,000 lines (built solely for review purposes).
+
+**Despite careful prompting, critical challenge/verification, and repeated reviews, use is at your own risk.** The software is provided "as is", without warranty, and with no guarantee of correctness, security, or fitness for a particular purpose. If you plan to use it with real email accounts or sensitive data, please conduct your own testing, threat modeling, and an independent security review first.
+
+---
+
 ## 🎯 Was ist Mail Helper?
 
 Ein lokaler Mail-Assistent, der E-Mails automatisch:
