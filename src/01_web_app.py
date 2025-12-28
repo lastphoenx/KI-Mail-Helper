@@ -1034,7 +1034,6 @@ def render_email_html(email_id: int):
         # Response mit lockerer CSP nur für E-Mail-Content
         response = make_response(decrypted_body)
         response.headers['Content-Type'] = 'text/html; charset=utf-8'
-        response.headers['X-Content-Type-Options'] = 'nosniff'
         
         # CSP für E-Mail-Rendering: Erlaube externe Fonts/Bilder (PayPal, etc.)
         # WICHTIG: Scripts IMMER blockiert (XSS-Schutz)
@@ -1046,8 +1045,16 @@ def render_email_html(email_id: int):
             "script-src 'none'"
         )
         
+        # Security Headers (ohne X-Frame-Options für iframe embedding)
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        
         # Marker für after_request Hook: Überschreibe Headers nicht
         g.skip_security_headers = True
+        
+        # Marker für Talisman: Überschreibe CSP nicht
+        # Flask-Talisman prüft g.talisman_skip_csp in seinem After-Request-Hook
+        g.talisman_skip_csp = True
         
         return response
         
@@ -2696,7 +2703,24 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
                 content_security_policy_nonce_in=[
                     "script-src"
                 ],  # Nonce-basierte CSP für inline-scripts
+                # Exempt email rendering endpoint from Talisman's CSP override
+                # (endpoint sets its own relaxed CSP for external fonts/images)
+                content_security_policy_report_only=False,
             )
+            
+            # Per-endpoint CSP override für Email-Rendering
+            # Talisman respektiert den override_csp Marker
+            @app.before_request
+            def talisman_email_render_exception():
+                if request.endpoint == 'render_email_html':
+                    g.talisman_override_csp = {
+                        'default-src': "'none'",
+                        'style-src': "'unsafe-inline'",
+                        'img-src': 'https: data:',
+                        'font-src': 'https: data:',
+                        'script-src': "'none'",
+                    }
+            
             logger.info("🔒 Flask-Talisman aktiviert - Security Headers + CSP + Nonce")
 
         print(f"🌐 Dashboard läuft auf https://{host}:{https_port}")
