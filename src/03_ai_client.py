@@ -628,6 +628,7 @@ class LocalOllamaClient(AIClient):
                 "wichtigkeit": _clamp(wichtigkeit, 1, 3),
                 "kategorie_aktion": kategorie_aktion,
                 "tags": tags,
+                "suggested_tags": tags,  # Phase 11: Auch suggested_tags für Embedding-Analyse
                 "spam_flag": spam_flag,
                 "summary_de": subject[:100] if subject else "Keine Zusammenfassung",
                 "text_de": body[:500] if body else "",
@@ -785,6 +786,7 @@ class LocalOllamaClient(AIClient):
             "wichtigkeit": _clamp(wichtigkeit, 1, 3),
             "kategorie_aktion": kategorie_aktion,
             "tags": tags,
+            "suggested_tags": tags,  # Phase 11: Auch suggested_tags für Embedding-Analyse
             "spam_flag": spam_flag,
             "summary_de": subject[:100] if subject else "Keine Zusammenfassung",
             "text_de": body[:500] if body else "",

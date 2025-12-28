@@ -496,9 +496,9 @@ class TagManager:
         Returns:
             Liste von Tag-Vorschlägen mit id, name, color, similarity
         """
-        # E-Mail holen
-        email = db.query(models.Email).filter(
-            models.Email.id == email_id
+        # E-Mail holen (ProcessedEmail für subject/body_preview)
+        email = db.query(models.ProcessedEmail).filter(
+            models.ProcessedEmail.id == email_id
         ).first()
         
         if not email:
@@ -507,13 +507,16 @@ class TagManager:
         # Bereits zugewiesene Tags ausschließen
         assigned_tag_ids = {
             assignment.tag_id 
-            for assignment in db.query(models.TagAssignment).filter(
-                models.TagAssignment.email_id == email_id
+            for assignment in db.query(models.EmailTagAssignment).filter(
+                models.EmailTagAssignment.email_id == email_id
             ).all()
         }
         
-        # Text für Similarity
-        text = f"{email.subject or ''} {email.body_preview or ''}"
+        # Text für Similarity - encrypted fields müssen entschlüsselt werden
+        # Fallback auf leeren String wenn nicht verfügbar
+        subject = getattr(email, 'decrypted_subject', '') or ''
+        body = getattr(email, 'decrypted_body', '') or getattr(email, 'body_preview', '') or ''
+        text = f"{subject} {body}"[:512]  # Limit für Embedding
         
         # Vorschläge holen
         suggestions = TagManager.suggest_similar_tags(db, user_id, text, top_k=top_k + len(assigned_tag_ids))
