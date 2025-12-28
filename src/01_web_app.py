@@ -992,7 +992,28 @@ def render_email_html(email_id: int):
     Dieser Endpoint wird von <iframe> in email_detail.html verwendet.
     CSP erlaubt externe Ressourcen für korrektes E-Mail-Rendering,
     blockiert aber alle Scripts (XSS-Schutz).
+    
+    Talisman CSP wird für diesen Endpoint mit custom CSP überschrieben.
     """
+    # Override Talisman CSP for this endpoint
+    if talisman:
+        # Set custom CSP via talisman's mechanism
+        return talisman(
+            content_security_policy={
+                'default-src': "'none'",
+                'style-src': "'unsafe-inline'",
+                'img-src': 'https: data:',
+                'font-src': 'https: data:',
+                'script-src': "'none'",
+            },
+            force_https=False,
+        )(render_email_html_impl)(email_id)
+    else:
+        return render_email_html_impl(email_id)
+
+
+def render_email_html_impl(email_id: int):
+    """Implementation of render_email_html (called by wrapper above)"""
     db = get_db_session()
     
     try:
@@ -2673,6 +2694,7 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
         logger.info(f"🔒 HTTPS aktiviert (Port {https_port}, Self-signed Certificate)")
 
         # Flask-Talisman für zusätzliche Security Headers
+        talisman_instance = None
         if TALISMAN_AVAILABLE and os.getenv("FORCE_HTTPS", "false").lower() == "true":
             # CSP Policy: Erlaubt Bootstrap CDN, inline-styles/-scripts für bestehende App
             csp = {
@@ -2694,7 +2716,7 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
                 "object-src": "'none'",  # Kein Flash/Java
             }
 
-            talisman = Talisman(
+            talisman_instance = Talisman(
                 app,
                 force_https=False,  # Redirector übernimmt das
                 strict_transport_security=True,
@@ -2706,23 +2728,11 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
                 content_security_policy_report_only=False,
             )
             
-            # Per-endpoint CSP override für Email-Rendering
-            # Muss NACH Talisman registriert werden, damit Hook nach Talisman läuft
-            @app.after_request
-            def override_email_render_csp(response):
-                """Überschreibt CSP für Email-Rendering nach Talisman's Hook"""
-                if request.endpoint == 'render_email_html' and response.status_code == 200:
-                    # Lockere CSP für Email-Content: externe Fonts/Bilder erlaubt, Scripts blockiert
-                    response.headers['Content-Security-Policy'] = (
-                        "default-src 'none'; "
-                        "style-src 'unsafe-inline'; "
-                        "img-src https: data:; "
-                        "font-src https: data:; "
-                        "script-src 'none'"
-                    )
-                return response
-            
             logger.info("🔒 Flask-Talisman aktiviert - Security Headers + CSP + Nonce")
+        
+        # Store talisman instance globally for decorator usage
+        global talisman
+        talisman = talisman_instance
 
         print(f"🌐 Dashboard läuft auf https://{host}:{https_port}")
         print(
