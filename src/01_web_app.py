@@ -435,7 +435,7 @@ def login():
 
             if not user.check_password(password):
                 # Phase 9f: Atomic SQL-Update (Race Condition Protection)
-                user.record_failed_login(db.session)
+                user.record_failed_login(db)
                 db.commit()
                 # Audit Log für Fail2Ban
                 logger.warning(
@@ -449,7 +449,7 @@ def login():
 
             # Erfolgreicher Login - Failed Counter zurücksetzen
             # Phase 9f: Atomic SQL-Update (Race Condition Protection)
-            user.reset_failed_logins(db.session)
+            user.reset_failed_logins(db)
             db.commit()
 
             # Phase 8: DEK/KEK Pattern - DEK entschlüsseln
