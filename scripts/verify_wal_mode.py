@@ -31,6 +31,10 @@ def verify_wal_mode(db_path: str):
         cursor.execute("PRAGMA wal_autocheckpoint;")
         wal_checkpoint = cursor.fetchone()[0]
         
+        # Check synchronous (Phase 9e)
+        cursor.execute("PRAGMA synchronous;")
+        synchronous = cursor.fetchone()[0]
+        
         # Check foreign_keys
         cursor.execute("PRAGMA foreign_keys;")
         foreign_keys = cursor.fetchone()[0]
@@ -43,7 +47,8 @@ def verify_wal_mode(db_path: str):
         print(f"  journal_mode:        {journal_mode} {'✅' if journal_mode == 'wal' else '❌ (expected: wal)'}")
         print(f"  busy_timeout:        {busy_timeout}ms {'✅' if busy_timeout == 5000 else f'⚠️  (expected: 5000ms)'}")
         print(f"  wal_autocheckpoint:  {wal_checkpoint} pages {'✅' if wal_checkpoint == 1000 else f'⚠️  (expected: 1000)'}")
-        print(f"  foreign_keys:        {'ON' if foreign_keys else 'OFF'} {'✅' if foreign_keys else '❌'}")
+        print(f"  synchronous:         {synchronous} {'✅ (NORMAL)' if synchronous == 1 else f'ℹ️  (per-connection setting, app setzt NORMAL)'}")
+        print(f"  foreign_keys:        {'ON' if foreign_keys else 'OFF'} {'✅' if foreign_keys else 'ℹ️  (per-connection setting)'}")
         
         # Check WAL files
         wal_file = f"{db_path}-wal"
@@ -62,12 +67,11 @@ def verify_wal_mode(db_path: str):
         else:
             print(f"  {shm_file}: Noch nicht erstellt (wird bei erstem Write angelegt) ℹ️")
         
-        # Final Result
+        # Final Result (ignore per-connection PRAGMAs)
         all_good = (
             journal_mode == 'wal' and
             busy_timeout == 5000 and
-            wal_checkpoint == 1000 and
-            foreign_keys == 1
+            wal_checkpoint == 1000
         )
         
         if all_good:

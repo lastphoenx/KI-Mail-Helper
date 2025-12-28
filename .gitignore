@@ -33,6 +33,10 @@ env/
 
 # Datenbank
 *.db
+
+# SQLite WAL Files (temporary, recreated per session)
+emails.db-wal
+emails.db-shm
 *.sqlite
 *.sqlite3
 emails.db

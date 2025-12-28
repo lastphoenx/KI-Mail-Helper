@@ -515,6 +515,11 @@ def init_db(db_path="emails.db"):
             # Erlaubt parallele Reads während Write läuft (Writer blockiert Reader nicht!)
             cursor.execute("PRAGMA journal_mode=WAL")
             
+            # Phase 9e: Synchronous NORMAL (balanced für WAL - schützt vor Datenverlust)
+            # WICHTIG: NACH journal_mode setzen (WAL ändert default auf FULL)
+            # FULL = jeder Commit fsync (langsam), NORMAL = nur Checkpoint fsync (optimal)
+            cursor.execute("PRAGMA synchronous = NORMAL")
+            
             # Phase 9d: Retry statt sofort fail bei SQLITE_BUSY
             # 5 Sekunden reichen (WAL reduziert Lock-Zeit drastisch)
             cursor.execute("PRAGMA busy_timeout = 5000")

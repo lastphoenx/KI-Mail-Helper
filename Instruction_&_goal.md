@@ -439,7 +439,30 @@
 
 ## 🚀 **Ausstehende Aufgaben (Priorität)**
 
-### **🟡 Phase 9e: HIGH-Priority Remaining Fixes**
+### **� Phase 9e: SQLite WAL Refinements (COMPLETED)** ✅
+**Ziel:** Datenverlust-Protection und optimiertes Backup-Handling
+
+- [x] **PRAGMA synchronous = NORMAL** (`src/02_models.py` lines 520-523)
+  - WAL-optimiert: Nur bei Checkpoint fsync (nicht bei jedem Commit)
+  - Balanciert Geschwindigkeit + Datensicherheit
+  - Muss NACH `journal_mode=WAL` gesetzt werden (WAL ändert default auf FULL)
+- [x] **.gitignore für WAL Files** (`.gitignore` lines 32-34)
+  - `emails.db-wal` und `emails.db-shm` hinzugefügt
+  - Temporäre Files sollten nicht in Git-Repo
+- [x] **Backup-Script Enhancement** (`scripts/backup_database.sh` line 57)
+  - `PRAGMA wal_checkpoint(TRUNCATE);` vor Backup
+  - Merged .wal ins .db für sauberere Backups
+  - Graceful degradation bei Fehler
+- [x] **Verify-Script Update** (`scripts/verify_wal_mode.py`)
+  - Prüft nun auch `synchronous` Setting
+  - Per-connection PRAGMAs korrekt erklärt (synchronous, foreign_keys)
+
+**Aufwand:** ~20 Minuten ✅  
+**Commit:** Phase 9e - SQLite WAL Refinements (synchronous, .gitignore, backup checkpoint)
+
+---
+
+### **🟡 Phase 9f: HIGH-Priority Remaining Fixes**
 **Ziel:** System-weite Sicherheitshärtung nach OWASP-Standards
 
 #### **Prio 1: Password Policy (30 min) ✅**

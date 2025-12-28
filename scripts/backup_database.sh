@@ -52,6 +52,10 @@ fi
 
 log "Starting backup: $BACKUP_FILE"
 
+# Optional: Checkpoint WAL vor Backup (merged .wal ins .db für sauberere Backups)
+# Phase 9e: TRUNCATE deleted .wal/.shm nach Checkpoint
+sqlite3 "$DB_FILE" "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true
+
 # Create backup using SQLite .backup command (safe for hot backups)
 # WAL-aware: Automatisch kopiert .db + .wal + .shm Files atomic (Phase 9d)
 sqlite3 "$DB_FILE" ".backup '$BACKUP_FILE'" || error_exit "Backup failed"
