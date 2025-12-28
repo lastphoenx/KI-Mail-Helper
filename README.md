@@ -208,68 +208,377 @@ python3 -m src.00_main --serve --https
 
 ### Tag-System (Phase 10)
 
-#### Auto-Tagging
-Das KI-System schlägt automatisch 1-5 semantische Tags pro Email vor:
+> **Verwirrung vermeiden:** Das System hat **zwei verschiedene Bewertungstypen**:
+> - **Tags** = Freie Kategorisierung (beliebig viele, user-definiert)
+> - **Kategorie/Dringlichkeit/Wichtigkeit** = Scoring-System (fixe Werte, KI-gesteuert)
 
-```json
-{
-  "suggested_tags": ["Rechnung", "Finanzen", "Wichtig"]
-}
+---
+
+## 🏷️ Tag-System - Vollständige Dokumentation
+
+### Architektur-Überblick
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  KI-ANALYSE (all-minilm:22m / llama3.2)                     │
+│  ├─ Dringlichkeit (1-3)        ← System-Feld für Scoring   │
+│  ├─ Wichtigkeit (1-3)          ← System-Feld für Scoring   │
+│  ├─ Kategorie/Aktion (3 Werte) ← System-Feld für Workflow  │
+│  └─ suggested_tags (1-5 Tags)  ← Freie Kategorisierung     │
+└─────────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────────┐
+│  DATENBANK-LAYER                                             │
+│  ├─ ProcessedEmail                                           │
+│  │  ├─ dringlichkeit, wichtigkeit, kategorie_aktion         │
+│  │  ├─ user_override_dringlichkeit, _wichtigkeit, _kategorie│
+│  │  └─ user_override_tags (String, comma-separated)         │
+│  ├─ EmailTag (id, name, color, user_id)                     │
+│  └─ EmailTagAssignment (email_id, tag_id)                   │
+└─────────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────────┐
+│  USER-INTERFACE                                              │
+│  ├─ Dashboard: Filter nach Tags (Multi-Select)              │
+│  ├─ Email-Detail: Tag-Badges + Add/Remove                   │
+│  ├─ /tags: Tag-Management (CRUD)                            │
+│  └─ Learning-Modal: "Bewertung korrigieren"                 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**Tags werden automatisch:**
-- ✅ Erstellt (wenn nicht existent)
-- ✅ Zugewiesen (EmailTagAssignment)
-- ✅ Angezeigt (Liste + Detail)
+---
 
-#### Tag-Management UI (`/tags`)
+### 1️⃣ System-Felder (KI-gesteuert, nicht erweiterbar)
 
-**Features:**
-- **Create Tag**: Name (1-50 Zeichen) + 7 Farben (Blue/Green/Orange/Red/Purple/Pink/Gray)
-- **Edit Tag**: Name/Farbe ändern (constraint: unique pro User)
-- **Delete Tag**: CASCADE löscht alle Assignments
-- **Statistics**: Anzahl E-Mails pro Tag
+#### **Dringlichkeit (1-3)**
+```python
+1 = kann warten             # Trigger: "Info", "Newsletter", "optional"
+2 = sollte bald erledigt    # Trigger: "nächste Woche", "bald"
+3 = sehr dringend           # Trigger: "heute", "morgen", "sofort", "Frist"
+```
+
+#### **Wichtigkeit (1-3)**
+```python
+1 = eher unwichtig          # Trigger: "Werbung", "Promotion", "Angebot"
+2 = wichtig                 # Trigger: "Termin", "Meeting", "Aufgabe"
+3 = sehr wichtig            # Trigger: "Rechnung", "Vertrag", "Kündigung", "Bank"
+```
+
+#### **Kategorie/Aktion (3 fixe Werte)**
+```python
+"nur_information"           # Newsletter, Info, Status-Update
+                           # Trigger: "Newsletter", "Abmelden", "Blog", "Update"
+
+"aktion_erforderlich"      # User muss etwas tun
+                           # Trigger: "bitte antworten", "zahlen", "bestätigen"
+
+"dringend"                 # Aktion + Zeitdruck
+                           # Trigger: "sofort", "umgehend", "bis Montag"
+```
+
+**Zweck:** Bestimmt **Farbe** (Rot/Gelb/Grün) und **Score-Berechnung**  
+**Erweiterbar:** ❌ Nein - fixe Werte für Priorisierungs-Logik
+
+---
+
+### 2️⃣ Tag-System (User-definiert, erweiterbar)
+
+#### **Was sind Tags?**
+- Freie, semantische Kategorisierung ("Rechnung", "Finanzen", "Wichtig")
+- Beliebig viele Tags pro Email
+- User kann eigene Tags erstellen
+- KI schlägt 1-5 Tags vor (`suggested_tags`)
+
+#### **Datenmodell**
+```sql
+-- Tag-Definition
+EmailTag:
+  - id (PK)
+  - name (String, unique per user)
+  - color (Hex, #RRGGBB)
+  - user_id (FK, CASCADE DELETE)
+
+-- Tag-Zuweisung
+EmailTagAssignment:
+  - email_id (FK)
+  - tag_id (FK)
+  - assigned_at (Timestamp)
+  - UNIQUE(email_id, tag_id)  -- Kein Duplikat
+  - CASCADE DELETE bei Tag-Löschung
+```
+
+---
+
+### 3️⃣ Workflow: KI → Auto-Assignment → User-Korrektur
+
+#### **Schritt 1: Email-Verarbeitung (Base-Pass)**
+```python
+# src/12_processing.py:206-245
+1. KI analysiert Email → generiert JSON:
+   {
+     "dringlichkeit": 2,
+     "wichtigkeit": 3,
+     "kategorie_aktion": "aktion_erforderlich",
+     "suggested_tags": ["Rechnung", "Finanzen", "Wichtig"]
+   }
+
+2. _validate_ai_payload() extrahiert suggested_tags
+
+3. process_pending_raw_emails():
+   FOR EACH tag_name IN suggested_tags[:5]:  # Max 5
+     tag = TagManager.get_or_create_tag(name=tag_name, color="#3B82F6")
+     TagManager.assign_tag(email_id, tag.id, user.id)
+```
+
+**Ergebnis:** Email hat automatisch Tags aus KI-Vorschlägen
+
+---
+
+#### **Schritt 2: User-Interaktion (Email-Detail)**
+
+**A) Tag hinzufügen/entfernen:**
+```
+Email-Detail → Tag-Bereich
+├─ "Tag hinzufügen" Button → Modal mit allen User-Tags
+│  └─ Click "Zuweisen" → POST /api/emails/<id>/tags
+│     ├─ TagManager.assign_tag()
+│     └─ _update_user_override_tags()  ← WICHTIG für ML!
+│
+└─ Tag-Badge (X) → removeTag()
+   └─ DELETE /api/emails/<id>/tags/<tag_id>
+      ├─ TagManager.remove_tag()
+      └─ _update_user_override_tags()  ← WICHTIG für ML!
+```
+
+**B) Learning-Modal ("Bewertung korrigieren"):**
+```
+Email-Detail → "✏️ Bewertung korrigieren"
+├─ Öffnet Modal (base.html:124-210)
+│  ├─ Zeigt aktuelle Tags als Badges
+│  └─ Multi-Select Dropdown (alle User-Tags)
+│
+└─ Submit "💾 Speichern & als Training markieren"
+   ├─ POST /email/<id>/correct → Speichert Dringlichkeit/Wichtigkeit/Kategorie
+   │  └─ Setzt user_override_* Felder + correction_timestamp
+   │
+   └─ Tag-Updates via API:
+      ├─ GET /api/emails/<id>/tags (aktuelle Tags)
+      ├─ Berechne Diff (zu entfernen, hinzuzufügen)
+      ├─ DELETE /api/emails/<id>/tags/<tag_id> (für entfernte)
+      └─ POST /api/emails/<id>/tags (für neue)
+         → Jede Änderung ruft _update_user_override_tags() auf!
+```
+
+---
+
+#### **Schritt 3: ML-Training (zukünftig)**
+```python
+# _update_user_override_tags() (01_web_app.py:1970-2003)
+def _update_user_override_tags(email_id, user_id):
+    current_tags = TagManager.get_email_tags(db, email_id, user_id)
+    tag_string = ",".join([tag.name for tag in current_tags])
+    
+    processed.user_override_tags = tag_string  # "Rechnung,Finanzen"
+    processed.correction_timestamp = datetime.now(UTC)
+```
+
+**ML kann damit:**
+- Vergleichen: KI-Vorschlag vs. User-Korrektur
+- Trainieren: "Bei ähnlichen Emails diese Tags verwenden"
+- Verbessern: suggested_tags werden mit der Zeit genauer
+
+---
+
+### 4️⃣ API-Referenz
+
+#### **Tag-Management**
+```python
+GET    /api/tags                    # Liste aller User-Tags
+POST   /api/tags                    # Tag erstellen (name, color)
+PUT    /api/tags/<tag_id>           # Tag bearbeiten
+DELETE /api/tags/<tag_id>           # Tag löschen (CASCADE)
+
+GET    /api/emails/<id>/tags        # Tags einer Email
+POST   /api/emails/<id>/tags        # Tag zuweisen (tag_id)
+DELETE /api/emails/<id>/tags/<tag_id>  # Tag entfernen
+```
+
+#### **CSRF-Schutz (WICHTIG!)**
+```javascript
+// Alle AJAX-Requests brauchen CSRF-Token
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+}
+
+fetch('/api/tags', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCsrfToken()  // ← PFLICHT!
+    },
+    body: JSON.stringify({ name: 'Rechnung', color: '#3B82F6' })
+});
+```
+
+---
+
+### 5️⃣ UI-Komponenten
+
+#### **A) Tag-Management (`/tags`)**
+```
+Navigation → 🏷️ Tags
+├─ Tag-Liste mit Email-Count
+├─ "Neuer Tag" Button → Modal
+│  ├─ Name-Input (1-50 Zeichen)
+│  └─ 7-Color-Picker (#3B82F6, #10B981, #F59E0B, #EF4444, ...)
+├─ Edit-Button (Stift-Icon)
+└─ Delete-Button (Papierkorb-Icon) → Confirmation
+```
 
 **Constraints:**
 - ✅ Unique(user_id, name) - keine Duplikate
-- ✅ Max 50 Zeichen pro Tag-Name
-- ✅ Hex-Color-Validation (#RRGGBB)
+- ✅ Max 50 Zeichen
+- ✅ Color als Hex (#RRGGBB)
 
-#### Tag-Filter & Search
+---
 
-**Dashboard Filter:**
+#### **B) Email-Detail Tag-Bereich**
 ```
-Filter:
-  ☐ Rechnung (3)
-  ☐ Termin (7)
-  ☐ Finanzen (12)
-  
-+ Farbe: [Alle] [Rot] [Gelb] [Grün]
-+ Done: [Alle] [Erledigt] [Offen]
-+ Suche: [           ]
+Email-Detail → oben unter Zusammenfassung
+├─ 🏷️ Tags: [Badge1] [Badge2] [Badge3] [+ Tag hinzufügen]
+│  └─ Badge (farbig, mit X) → Click X → removeTag()
+│
+└─ Modal: "Tag hinzufügen"
+   ├─ Liste aller User-Tags (mit Farbe)
+   ├─ "Zuweisen" Button pro Tag
+   └─ Link: "Tag-Verwaltung" → /tags
 ```
 
-**Multi-Select:** Strg/Cmd + Mehrere Tags → kombinierte Filterung
+---
 
-**Performance:** Eager Loading - 100 Emails = nur 2 SQL Queries (nicht 101)
+#### **C) Dashboard Filter**
+```
+Dashboard → Filter-Bereich (links oder oben)
+├─ Tags: [Multi-Select Dropdown]
+│  ├─ Rechnung (3 Emails)
+│  ├─ Finanzen (12 Emails)
+│  └─ Wichtig (5 Emails)
+│  → Strg/Cmd + Click für Mehrfachauswahl
+│
+├─ Kombinierbar mit:
+│  ├─ Farbe (Rot/Gelb/Grün)
+│  ├─ Done (Erledigt/Offen)
+│  └─ Suche (Freitext)
+```
 
-#### Learning System
-
-Manuelle Tag-Änderungen (Add/Remove) werden getrackt:
-
+**Performance-Optimierung:**
 ```python
-# ProcessedEmail.user_override_tags
-"Rechnung,Finanzen,Wichtig"  # Komma-separiert
+# src/01_web_app.py:858-895
+# Eager Loading: Alle Tags für alle Emails in EINER Query
+email_ids = [mail.id for mail in mails]
+tag_assignments = (
+    db.query(EmailTagAssignment, EmailTag)
+    .join(EmailTag)
+    .filter(EmailTagAssignment.email_id.in_(email_ids))
+    .all()
+)
 
-# ProcessedEmail.correction_timestamp
-"2025-12-28 15:30:45"  # Zeitstempel der Änderung
+# Resultat: 100 Emails = 2 Queries (statt 101)
 ```
 
-**ML-Training Flow:**
-1. KI schlägt `suggested_tags` vor → Auto-Assignment
-2. User ändert Tags manuell → `user_override_tags` gesetzt
-3. `train_classifier.py` nutzt Korrekturen
-4. KI-Vorschläge werden besser
+---
+
+### 6️⃣ Wichtige Code-Stellen
+
+| Komponente | Datei | Zeilen | Beschreibung |
+|------------|-------|--------|--------------|
+| **KI-Prompt** | `src/03_ai_client.py` | 78-130 | OLLAMA_SYSTEM_PROMPT mit suggested_tags |
+| **Validation** | `src/03_ai_client.py` | 276-287 | _validate_ai_payload() extrahiert suggested_tags |
+| **Auto-Assignment** | `src/12_processing.py` | 206-245 | KI-Tags → EmailTag + Assignment |
+| **Tag-Manager** | `src/services/tag_manager.py` | 1-332 | 8 Methoden für CRUD + Assignment |
+| **Models** | `src/02_models.py` | 87-125 | EmailTag + EmailTagAssignment |
+| **Migration** | `migrations/versions/ph10_email_tags.py` | - | Alembic Migration |
+| **API Routes** | `src/01_web_app.py` | 1763-2003 | 7 REST Endpoints |
+| **Tag-UI** | `templates/tags.html` | 1-302 | Tag-Management Seite |
+| **Email-Detail** | `templates/email_detail.html` | 90-787 | Tag-Badges + Modal |
+| **Learning-Modal** | `templates/base.html` | 124-210 | "Bewertung korrigieren" |
+| **Filter** | `templates/list_view.html` | 8-88 | Multi-Select Tag-Filter |
+| **Learning Helper** | `src/01_web_app.py` | 1970-2003 | _update_user_override_tags() |
+
+---
+
+### 7️⃣ Häufige Fehler & Lösungen
+
+#### **Problem: "CSRF token missing" (400 BAD REQUEST)**
+```javascript
+// ❌ Falsch:
+fetch('/api/tags', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+});
+
+// ✅ Richtig:
+fetch('/api/tags', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCsrfToken()  // ← Hinzufügen!
+    }
+});
+```
+
+#### **Problem: Tags werden nicht auto-assigned**
+```python
+# Check 1: _validate_ai_payload() extrahiert suggested_tags?
+# src/03_ai_client.py:276-287
+validated = {
+    "suggested_tags": parsed.get("suggested_tags", [])  # ← Muss vorhanden sein
+}
+
+# Check 2: process_pending_raw_emails() verarbeitet Tags?
+# src/12_processing.py:207
+suggested_tags = ai_result.get("suggested_tags", [])  # ← Muss gefüllt sein
+```
+
+#### **Problem: user_override_tags nicht gesetzt**
+```python
+# _update_user_override_tags() muss nach JEDEM Tag-Add/Remove aufgerufen werden!
+# src/01_web_app.py:1990-2003
+
+# Prüfen:
+sqlite3 emails.db "SELECT id, user_override_tags FROM processed_emails WHERE user_override_tags IS NOT NULL;"
+```
+
+---
+
+### 8️⃣ Testing-Workflow
+
+```bash
+# 1. Neue DB mit Tag-System
+alembic upgrade head
+
+# 2. Re-process Emails (testet Auto-Assignment)
+python3 scripts/reset_base_pass.py
+# → Dashboard → "Jetzt verarbeiten"
+
+# 3. Prüfe Tags in DB
+sqlite3 emails.db "
+SELECT 
+    e.id,
+    GROUP_CONCAT(t.name, ', ') as tags
+FROM processed_emails e
+LEFT JOIN email_tag_assignments a ON e.id = a.email_id
+LEFT JOIN email_tags t ON a.tag_id = t.id
+GROUP BY e.id
+LIMIT 10;
+"
+
+# 4. Teste UI
+# - /tags: Tag erstellen/bearbeiten/löschen
+# - Email-Detail: Tag hinzufügen/entfernen
+# - Dashboard: Filter nach Tags
+# - Learning-Modal: Tags ändern → Check user_override_tags
+```
 
 ---
 
