@@ -461,17 +461,72 @@ class LocalOllamaClient(AIClient):
 
     def _get_embedding(self, text: str) -> list[float] | None:
         """Ruft /api/embeddings auf und gibt den Vektor zurück.
-        Kürzt Text auf max. 512 Zeichen um Kontext-Limits zu respektieren.
+        
+        Phase 11a: Nutzt Chunking + Mean-Pooling für lange Texte.
+        Statt 512 Zeichen Limit werden längere Mails in Chunks verarbeitet
+        und die Embeddings gemittelt.
         """
         if not text or not text.strip():
             return None
 
-        truncated = text.strip()[:512]
-
+        clean_text = text.strip()
+        
+        # Chunking für lange Texte (>512 Zeichen)
+        chunks = self._chunk_text(clean_text, chunk_size=512, overlap=50)
+        
+        if len(chunks) == 1:
+            # Kurzer Text: Direkt verarbeiten
+            return self._get_single_embedding(chunks[0])
+        else:
+            # Langer Text: Mean-Pooling über alle Chunks
+            return self._get_chunked_embedding(chunks)
+    
+    def _chunk_text(self, text: str, chunk_size: int = 512, overlap: int = 50) -> list[str]:
+        """Teilt Text in überlappende Chunks für bessere Embedding-Qualität.
+        
+        Args:
+            text: Eingabetext
+            chunk_size: Maximale Chunk-Größe in Zeichen
+            overlap: Überlappung zwischen Chunks für Kontexterhalt
+            
+        Returns:
+            Liste von Text-Chunks
+        """
+        if len(text) <= chunk_size:
+            return [text]
+        
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = start + chunk_size
+            chunk = text[start:end]
+            
+            # Versuche am Satzende oder Wortende zu schneiden
+            if end < len(text):
+                # Suche letztes Satzende im Chunk
+                for sep in ['. ', '! ', '? ', '\n', ' ']:
+                    last_sep = chunk.rfind(sep)
+                    if last_sep > chunk_size // 2:  # Mindestens halber Chunk
+                        chunk = chunk[:last_sep + 1]
+                        end = start + last_sep + 1
+                        break
+            
+            chunks.append(chunk.strip())
+            start = end - overlap  # Überlappung für Kontext
+            
+            # Sicherheit: Maximal 20 Chunks (ca. 10KB Text)
+            if len(chunks) >= 20:
+                logger.debug(f"Chunking abgebrochen nach 20 Chunks ({len(text)} Zeichen)")
+                break
+        
+        return chunks
+    
+    def _get_single_embedding(self, text: str) -> list[float] | None:
+        """Holt ein einzelnes Embedding vom Ollama-Server."""
         try:
             response = requests.post(
                 self.embeddings_url,
-                json={"model": self.model, "prompt": truncated},
+                json={"model": self.model, "prompt": text},
                 timeout=30,
             )
             if response.status_code != 200:
@@ -488,6 +543,32 @@ class LocalOllamaClient(AIClient):
         except Exception as e:
             logger.debug("Fehler beim Embedding: %s", e)
         return None
+    
+    def _get_chunked_embedding(self, chunks: list[str]) -> list[float] | None:
+        """Mean-Pooling: Mittelt Embeddings aller Chunks.
+        
+        Dies ermöglicht die Verarbeitung langer E-Mails,
+        ohne Informationsverlust durch Truncation.
+        """
+        import numpy as np
+        
+        embeddings = []
+        for i, chunk in enumerate(chunks):
+            emb = self._get_single_embedding(chunk)
+            if emb:
+                embeddings.append(emb)
+            else:
+                logger.debug(f"Chunk {i+1}/{len(chunks)} Embedding fehlgeschlagen")
+        
+        if not embeddings:
+            return None
+        
+        # Mean-Pooling: Durchschnitt aller Chunk-Embeddings
+        embedding_array = np.array(embeddings)
+        mean_embedding = np.mean(embedding_array, axis=0)
+        
+        logger.debug(f"📊 Chunked Embedding: {len(chunks)} Chunks → {len(mean_embedding)}D Vektor")
+        return mean_embedding.tolist()
 
     def _analyze_with_embeddings(
         self, subject: str, body: str, sender: str = ""
