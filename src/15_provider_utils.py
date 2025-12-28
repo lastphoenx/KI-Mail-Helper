@@ -24,7 +24,7 @@ def get_ollama_models() -> List[Dict[str, str]]:
                     'icon': '🔍' if model_type == 'embedding' else '💬'
                 })
             return models
-    except Exception:
+    except requests.RequestException:
         pass
     return []
 
@@ -44,7 +44,7 @@ def _detect_ollama_model_type(model_name: str) -> str:
             if family == 'bert' or 'embedding' in family:
                 return 'embedding'
             return 'chat'
-    except Exception:
+    except requests.RequestException:
         pass
     return 'unknown'
 
@@ -60,7 +60,7 @@ def get_openai_models() -> List[str]:
         cfg = registry.get('openai', {})
         models = cfg.get('models', [])
         return [m for m in models if isinstance(m, str) and m.strip()]
-    except Exception:
+    except (ImportError, AttributeError):
         return [
             "gpt-4o-mini",
             "gpt-4o",
@@ -131,7 +131,7 @@ def get_available_models(provider: str, kind: Optional[str] = None) -> List:
                 return [m for m in models if m.get('name') in filtered]
             else:
                 return [m for m in models if m in filtered]
-        except Exception:
+        except (ImportError, AttributeError):
             pass
     
     return models

@@ -38,8 +38,8 @@ def migrate():
         print("\n✅ Migrationen abgeschlossen!")
         return True
     
-    except Exception as e:
-        print(f"❌ Fehler: {e}")
+    except sqlite3.Error as e:
+        print(f"❌ Datenbankfehler: {type(e).__name__}")
         return False
     
     finally:
