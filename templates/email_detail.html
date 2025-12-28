@@ -130,9 +130,12 @@
             <div class="tab-content" id="emailTabContent">
                 <!-- Rendered Tab -->
                 <div class="tab-pane fade show active" id="renderedContent" role="tabpanel" aria-labelledby="renderedTab">
-                    <div class="border mt-3 bg-white">
+                    <div class="alert alert-info alert-sm mt-3">
+                        <small>ℹ️ Diese E-Mail lädt externe Bilder und Schriftarten (z.B. PayPal Tracking). Scripts sind blockiert.</small>
+                    </div>
+                    <div class="border bg-white">
                         <iframe 
-                            id="emailFrame" 
+                            src="/email/{{ email.id }}/render-html" 
                             style="width: 100%; height: 600px; border: none;" 
                             sandbox="allow-same-origin"
                             title="E-Mail Vorschau">
@@ -537,13 +540,8 @@ function copyRawHtml() {
     });
 }
 
-function initializeEmailFrame() {
-    const rawHtmlCode = document.getElementById('rawHtmlCode');
-    const htmlContent = rawHtmlCode.textContent;
-    const emailFrame = document.getElementById('emailFrame');
-    
-    emailFrame.srcdoc = htmlContent;
-}
+// Email frame now uses src="/email/{{ email.id }}/render-html" instead of srcdoc
+// No need to populate iframe manually
 
 function highlightRawHtml() {
     const codeElement = document.getElementById('rawHtmlCode');
@@ -615,7 +613,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const emailId = window.location.pathname.split('/').pop();
     initCorrectionModal(emailId);
     
-    initializeEmailFrame();
     highlightRawHtml();
     fetchCurrentFlags(emailId);
     

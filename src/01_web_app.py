@@ -977,6 +977,71 @@ def email_detail(email_id):
         db.close()
 
 
+@app.route("/email/<int:email_id>/render-html")
+@login_required
+def render_email_html(email_id: int):
+    """Rendert E-Mail-HTML mit lockerer CSP (Fonts/Bilder erlaubt, Scripts blockiert)
+    
+    Dieser Endpoint wird von <iframe> in email_detail.html verwendet.
+    CSP erlaubt externe Ressourcen für korrektes E-Mail-Rendering,
+    blockiert aber alle Scripts (XSS-Schutz).
+    """
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return "Unauthorized", 403
+        
+        processed = (
+            db.query(models.ProcessedEmail)
+            .join(models.RawEmail)
+            .filter(
+                models.ProcessedEmail.id == email_id,
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.deleted_at == None,
+                models.ProcessedEmail.deleted_at == None,
+            )
+            .first()
+        )
+        
+        if not processed:
+            return "Email not found", 404
+        
+        # Zero-Knowledge: Entschlüssele E-Mail-Body
+        master_key = session.get("master_key")
+        if not master_key:
+            return "Session expired", 401
+        
+        try:
+            decrypted_body = encryption.EmailDataManager.decrypt_email_body(
+                processed.raw_email.encrypted_body or "", master_key
+            )
+        except Exception as e:
+            logger.error(f"Entschlüsselung fehlgeschlagen: {type(e).__name__}")
+            return "Decryption failed", 500
+        
+        # Response mit lockerer CSP nur für E-Mail-Content
+        response = make_response(decrypted_body)
+        response.headers['Content-Type'] = 'text/html; charset=utf-8'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        
+        # CSP für E-Mail-Rendering: Erlaube externe Fonts/Bilder (PayPal, etc.)
+        # WICHTIG: Scripts IMMER blockiert (XSS-Schutz)
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'none'; "
+            "style-src 'unsafe-inline'; "
+            "img-src https: data:; "
+            "font-src https: data:; "
+            "script-src 'none'"
+        )
+        
+        return response
+        
+    finally:
+        db.close()
+
+
 @app.route("/email/<int:email_id>/done", methods=["POST"])
 @login_required
 def mark_done(email_id):
