@@ -192,6 +192,8 @@ def set_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
     # CSP nur bei erfolgreichen Responses (< 400) - benötigt Nonce aus g
     if response.status_code < 400:
@@ -993,27 +995,8 @@ def render_email_html(email_id: int):
     CSP erlaubt externe Ressourcen für korrektes E-Mail-Rendering,
     blockiert aber alle Scripts (XSS-Schutz).
     
-    Talisman CSP wird für diesen Endpoint mit custom CSP überschrieben.
+    Setzt eigene CSP-Header (g.skip_security_headers umgeht globalen Hook).
     """
-    # Override Talisman CSP for this endpoint
-    if talisman:
-        # Set custom CSP via talisman's mechanism
-        return talisman(
-            content_security_policy={
-                'default-src': "'none'",
-                'style-src': "'unsafe-inline'",
-                'img-src': 'https: data:',
-                'font-src': 'https: data:',
-                'script-src': "'none'",
-            },
-            force_https=False,
-        )(render_email_html_impl)(email_id)
-    else:
-        return render_email_html_impl(email_id)
-
-
-def render_email_html_impl(email_id: int):
-    """Implementation of render_email_html (called by wrapper above)"""
     db = get_db_session()
     
     try:
