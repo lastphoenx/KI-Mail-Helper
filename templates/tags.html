@@ -183,6 +183,11 @@
 </div>
 
 <script nonce="{{ csp_nonce }}">
+// CSRF Token Helper
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+}
+
 // Color Picker Handler
 document.querySelectorAll('.color-picker-option').forEach(option => {
     option.addEventListener('click', function() {
@@ -210,7 +215,10 @@ document.getElementById('createTagForm').addEventListener('submit', async functi
     try {
         const response = await fetch('/api/tags', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
             body: JSON.stringify({ name, color })
         });
         
@@ -252,7 +260,10 @@ document.getElementById('editTagForm').addEventListener('submit', async function
     try {
         const response = await fetch(`/api/tags/${tagId}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
             body: JSON.stringify({ name, color })
         });
         
@@ -276,6 +287,11 @@ async function deleteTag(tagId, tagName) {
     
     try {
         const response = await fetch(`/api/tags/${tagId}`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCsrfToken()
+            }
+        });
             method: 'DELETE'
         });
         

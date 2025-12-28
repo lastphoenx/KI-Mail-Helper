@@ -55,6 +55,7 @@ All sensitive data is encrypted with **AES-256-GCM** before storage:
 - ✅ **Mail Credentials** – IMAP/SMTP passwords
 - ✅ **OAuth Tokens** – Gmail/Outlook tokens
 - ✅ **Master Keys** – Encrypted with KEK (Key Encryption Key)
+- ⚠️ **Tags** – Tag-Namen in Klartext (für Suche/Filter), aber user-scoped (kein Cross-User-Access)
 
 ### How It Works
 ```
@@ -74,6 +75,7 @@ Email Data ─→ AES-256-GCM Encrypt ─→ encrypted_email (stored in DB)
 - **Session-Based Decryption**: DEK only loaded into Flask session RAM after login
 - **Background Job Authentication**: ServiceToken stores encrypted DEK for mail fetching (7-day expiry)
 - **Multi-User Ready**: Each user has own DEK/KEK pair (technically supported, see Limitations)
+- **Learning System (Phase 10)**: Manual tag changes tracked in `user_override_tags` (plaintext) + `correction_timestamp` for ML training
 
 **See [docs/ZERO_KNOWLEDGE_COMPLETE.md](docs/ZERO_KNOWLEDGE_COMPLETE.md) for full cryptographic details.**
 

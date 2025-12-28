@@ -492,52 +492,157 @@ function initCorrectionModal(emailId) {
     const saveCorrectionBtn = document.getElementById('saveCorrectionBtn');
     if (!saveCorrectionBtn) return;
     
-    saveCorrectionBtn.onclick = function() {
+    // Modal-Open Event: Lade Tags
+    const modal = document.getElementById('correctionModal');
+    if (modal) {
+        modal.addEventListener('show.bs.modal', async function() {
+            // Reset Form
+            document.querySelectorAll('input[name="dringlichkeit"], input[name="wichtigkeit"]').forEach(el => el.checked = false);
+            document.getElementById('kategorie').value = 'nur_information';
+            document.getElementById('spamFlag').checked = false;
+            document.getElementById('noteInput').value = '';
+            
+            // Lade alle User-Tags
+            try {
+                const tagsResponse = await fetch('/api/tags');
+                const allTags = await tagsResponse.json();
+                
+                const tagsSelect = document.getElementById('tagsSelect');
+                tagsSelect.innerHTML = '';
+                
+                if (allTags && allTags.length > 0) {
+                    allTags.forEach(tag => {
+                        const option = document.createElement('option');
+                        option.value = tag.id;
+                        option.textContent = tag.name;
+                        option.style.backgroundColor = tag.color + '22'; // 22 = 13% opacity
+                        tagsSelect.appendChild(option);
+                    });
+                } else {
+                    tagsSelect.innerHTML = '<option disabled>Keine Tags vorhanden - <a href="/tags">erstellen</a></option>';
+                }
+                
+                // Lade aktuelle Tags für diese Email
+                const emailTagsResponse = await fetch(`/api/emails/${emailId}/tags`);
+                const currentTags = await emailTagsResponse.json();
+                
+                // Zeige aktuelle Tags als Badges
+                const container = document.getElementById('correctionTagsContainer');
+                if (currentTags && currentTags.length > 0) {
+                    container.innerHTML = '<div class="mb-2"><small class="text-muted">Aktuell:</small></div>';
+                    currentTags.forEach(tag => {
+                        const badge = document.createElement('span');
+                        badge.className = 'badge me-1';
+                        badge.style.backgroundColor = tag.color;
+                        badge.textContent = tag.name;
+                        container.appendChild(badge);
+                    });
+                    
+                    // Pre-select in dropdown
+                    currentTags.forEach(tag => {
+                        const option = tagsSelect.querySelector(`option[value="${tag.id}"]`);
+                        if (option) option.selected = true;
+                    });
+                } else {
+                    container.innerHTML = '<small class="text-muted">Keine Tags</small>';
+                }
+            } catch (error) {
+                console.error('Fehler beim Laden der Tags:', error);
+                document.getElementById('tagsSelect').innerHTML = '<option disabled>❌ Fehler beim Laden</option>';
+            }
+        });
+    }
+    
+    saveCorrectionBtn.onclick = async function() {
         const dringlichkeit = document.querySelector('input[name="dringlichkeit"]:checked')?.value;
         const wichtigkeit = document.querySelector('input[name="wichtigkeit"]:checked')?.value;
         const kategorie = document.getElementById('kategorie').value;
         const spamFlag = document.getElementById('spamFlag').checked;
-        const tagsInput = document.getElementById('tagsInput').value;
         const note = document.getElementById('noteInput').value;
         
-        const tags = tagsInput.split(',').map(t => t.trim()).filter(t => t);
+        // Sammle ausgewählte Tag-IDs
+        const tagsSelect = document.getElementById('tagsSelect');
+        const selectedTagIds = Array.from(tagsSelect.selectedOptions).map(opt => parseInt(opt.value));
         
-        fetch(`/email/${emailId}/correct`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
-            },
-            body: JSON.stringify({
-                dringlichkeit: dringlichkeit ? parseInt(dringlichkeit) : null,
-                wichtigkeit: wichtigkeit ? parseInt(wichtigkeit) : null,
-                kategorie: kategorie,
-                spam_flag: spamFlag,
-                tags: tags,
-                note: note || null
-            })
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.status === 'success') {
-                const modal = bootstrap.Modal.getInstance(document.getElementById('correctionModal'));
-                modal.hide();
-                
-                document.getElementById('wichtigkeitValue').textContent = wichtigkeit + '/3';
-                document.getElementById('wichtigkeitSource').textContent = 'vom User';
-                document.getElementById('wichtigkeitSource').className = 'badge bg-success';
-                
+        try {
+            // 1. Speichere Bewertungs-Korrekturen
+            const correctionResponse = await fetch(`/email/${emailId}/correct`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    dringlichkeit: dringlichkeit ? parseInt(dringlichkeit) : null,
+                    wichtigkeit: wichtigkeit ? parseInt(wichtigkeit) : null,
+                    kategorie: kategorie,
+                    spam_flag: spamFlag,
+                    note: note || null
+                })
+            });
+            
+            const correctionData = await correctionResponse.json();
+            if (correctionData.status !== 'success') {
+                throw new Error(correctionData.message || 'Fehler beim Speichern der Bewertung');
+            }
+            
+            // 2. Update Tags: Hole aktuelle Tags
+            const currentTagsResponse = await fetch(`/api/emails/${emailId}/tags`);
+            const currentTags = await currentTagsResponse.json();
+            const currentTagIds = currentTags.map(t => t.id);
+            
+            // Tags zum Entfernen (in current, nicht in selected)
+            const tagsToRemove = currentTagIds.filter(id => !selectedTagIds.includes(id));
+            // Tags zum Hinzufügen (in selected, nicht in current)
+            const tagsToAdd = selectedTagIds.filter(id => !currentTagIds.includes(id));
+            
+            // 3. Führe Tag-Updates durch
+            for (const tagId of tagsToRemove) {
+                await fetch(`/api/emails/${emailId}/tags/${tagId}`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': getCsrfToken() }
+                });
+            }
+            
+            for (const tagId of tagsToAdd) {
+                await fetch(`/api/emails/${emailId}/tags`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({ tag_id: tagId })
+                });
+            }
+            
+            // 4. Erfolg - Update UI
+            const modalInstance = bootstrap.Modal.getInstance(document.getElementById('correctionModal'));
+            modalInstance.hide();
+            
+            if (dringlichkeit) {
                 document.getElementById('dringlichkeitValue').textContent = dringlichkeit + '/3';
                 document.getElementById('dringlichkeitSource').textContent = 'vom User';
                 document.getElementById('dringlichkeitSource').className = 'badge bg-success';
-                
-                document.getElementById('kategorieValue').textContent = kategorie;
-                document.getElementById('kategorieSource').textContent = 'vom User';
-                document.getElementById('kategorieSource').className = 'badge bg-success';
-                
-                alert('✅ ' + data.message);
-            } else {
-                alert('❌ Fehler: ' + (data.message || 'Unbekannter Fehler'));
+            }
+            
+            if (wichtigkeit) {
+                document.getElementById('wichtigkeitValue').textContent = wichtigkeit + '/3';
+                document.getElementById('wichtigkeitSource').textContent = 'vom User';
+                document.getElementById('wichtigkeitSource').className = 'badge bg-success';
+            }
+            
+            document.getElementById('kategorieValue').textContent = kategorie;
+            document.getElementById('kategorieSource').textContent = 'vom User';
+            document.getElementById('kategorieSource').className = 'badge bg-success';
+            
+            alert('✅ Bewertung gespeichert! Tags aktualisiert.');
+            location.reload(); // Reload um neue Tags anzuzeigen
+            
+        } catch (error) {
+            alert('❌ Fehler: ' + error.message);
+        }
+    };
+}
             }
         })
         .catch(err => {
@@ -637,17 +742,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     highlightRawHtml();
     fetchCurrentFlags(emailId);
-    
-    const modal = document.getElementById('correctionModal');
-    if (modal) {
-        modal.addEventListener('show.bs.modal', function() {
-            document.querySelectorAll('input[name="dringlichkeit"], input[name="wichtigkeit"]').forEach(el => {
-                el.checked = false;
-            });
-            document.getElementById('kategorie').value = 'nur_information';
-            document.getElementById('spamFlag').checked = false;
-            document.getElementById('tagsInput').value = '';
-            document.getElementById('noteInput').value = '';
+});
         });
     }
     
@@ -726,12 +821,20 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <script nonce="{{ csp_nonce() }}">
+// CSRF Token Helper
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+}
+
 // Tag zu Email zuweisen
 async function assignTag(emailId, tagId, tagName) {
     try {
         const response = await fetch(`/api/emails/${emailId}/tags`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
             body: JSON.stringify({ tag_id: tagId })
         });
         
@@ -754,7 +857,10 @@ async function removeTag(emailId, tagId, tagName) {
     
     try {
         const response = await fetch(`/api/emails/${emailId}/tags/${tagId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCsrfToken()
+            }
         });
         
         if (response.ok) {

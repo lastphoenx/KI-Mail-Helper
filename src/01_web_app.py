@@ -858,11 +858,36 @@ def list_view():
         
         # Phase 10: Lade alle User-Tags für Filter-Dropdown
         all_tags = []
+        tag_manager_mod = None
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             all_tags = tag_manager_mod.TagManager.get_user_tags(db, user.id)
         except ImportError:
             logger.warning("TagManager nicht verfügbar")
+        
+        # Phase 10 Fix: Eager load alle Tags für alle Emails (verhindert n+1)
+        email_ids = [mail.id for mail in mails]
+        email_tags_map = {}
+        if email_ids and tag_manager_mod:
+            try:
+                # Single query für alle Email-Tag-Assignments
+                tag_assignments = (
+                    db.query(models.EmailTagAssignment, models.EmailTag)
+                    .join(models.EmailTag, models.EmailTagAssignment.tag_id == models.EmailTag.id)
+                    .filter(
+                        models.EmailTagAssignment.email_id.in_(email_ids),
+                        models.EmailTag.user_id == user.id
+                    )
+                    .all()
+                )
+                
+                # Group by email_id
+                for assignment, tag in tag_assignments:
+                    if assignment.email_id not in email_tags_map:
+                        email_tags_map[assignment.email_id] = []
+                    email_tags_map[assignment.email_id].append(tag)
+            except Exception as e:
+                logger.warning(f"Tag eager loading fehlgeschlagen: {e}")
 
         # Zero-Knowledge: Entschlüsselung für Anzeige und Suche
         master_key = session.get("master_key")
@@ -903,11 +928,8 @@ def list_view():
                     mail._decrypted_summary_de = decrypted_summary_de
                     mail._decrypted_tags = decrypted_tags
                     
-                    # Phase 10: Lade Email-Tags
-                    try:
-                        mail.email_tags = tag_manager_mod.TagManager.get_email_tags(db, mail.id, user.id)
-                    except:
-                        mail.email_tags = []
+                    # Phase 10 Fix: Tags aus pre-loaded map holen (kein n+1)
+                    mail.email_tags = email_tags_map.get(mail.id, [])
                     
                     decrypted_mails.append(mail)
 
@@ -1761,7 +1783,36 @@ def tags_view():
                 'email_count': email_count
             })
         
-        return render_template("tags.html", user=user, tags=tags_with_counts)
+        return render_template("tags.html", user=user, tags=tags_with_counts, csp_nonce=g.csp_nonce)
+    
+    finally:
+        db.close()
+
+
+@app.route("/api/tags", methods=["GET"])
+@login_required
+def api_get_tags():
+    """API: Alle User-Tags abrufen (für Learning-Modal)"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        try:
+            tag_manager_mod = importlib.import_module("src.services.tag_manager")
+            TagManager = tag_manager_mod.TagManager
+        except ImportError:
+            return jsonify([]), 200
+        
+        tags = TagManager.get_user_tags(db, user.id)
+        
+        return jsonify([{
+            "id": tag.id,
+            "name": tag.name,
+            "color": tag.color
+        } for tag in tags]), 200
     
     finally:
         db.close()
@@ -1858,6 +1909,34 @@ def api_delete_tag(tag_id):
             return jsonify({"success": True})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+    
+    finally:
+        db.close()
+
+
+@app.route("/api/emails/<int:email_id>/tags", methods=["GET"])
+@login_required
+def api_get_email_tags(email_id):
+    """API: Tags einer E-Mail abrufen (für Learning-Modal)"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        try:
+            tag_manager_mod = importlib.import_module("src.services.tag_manager")
+            tags = tag_manager_mod.TagManager.get_email_tags(db, email_id, user.id)
+            
+            return jsonify([{
+                "id": tag.id,
+                "name": tag.name,
+                "color": tag.color
+            } for tag in tags]), 200
+        except Exception as e:
+            logger.error(f"Fehler beim Abrufen der Email-Tags: {e}")
+            return jsonify([]), 200
     
     finally:
         db.close()

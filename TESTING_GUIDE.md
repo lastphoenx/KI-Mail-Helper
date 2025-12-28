@@ -160,6 +160,68 @@ Refresh: **http://localhost:5000/dashboard**
 ✅ Rote/Gelbe/Grüne Farben  
 ✅ Listenansicht mit Scores
 
+### Phase 8: Tag-System testen (Phase 10)
+
+#### Auto-Tagging
+```bash
+# Re-process Emails mit Tag-Code
+python3 scripts/reset_base_pass.py
+# → Dashboard → "Jetzt verarbeiten"
+```
+
+**Erwartetes Verhalten:**
+- ✅ KI schlägt 1-5 Tags vor (suggested_tags)
+- ✅ Tags werden automatisch erstellt (EmailTag)
+- ✅ Tags werden automatisch zugewiesen (EmailTagAssignment)
+- ✅ Tags erscheinen in Liste + Detail
+
+#### Tag-Management UI
+```
+Navigiere zu: http://localhost:5000/tags
+```
+
+**Teste:**
+1. ✅ **Create Tag**: Name + Farbe wählen → Tag erstellt
+2. ✅ **Edit Tag**: Name/Farbe ändern → gespeichert
+3. ✅ **Delete Tag**: Tag löschen → EmailTagAssignments CASCADE gelöscht
+4. ✅ **Email Count**: Anzahl E-Mails pro Tag korrekt
+
+#### Tag-Assignment (Email Detail)
+```
+# Mail öffnen → Tag-Bereich
+```
+
+**Teste:**
+1. ✅ **Add Tag**: "Tag hinzufügen" → Dropdown → Zuweisen
+2. ✅ **Remove Tag**: X-Button auf Badge → Bestätigen → entfernt
+3. ✅ **Duplicate Prevention**: Gleichen Tag 2x zuweisen → Fehler
+4. ✅ **Learning Integration**: Manuelles Add/Remove → `user_override_tags` gesetzt
+
+#### Tag-Filter (Dashboard)
+```
+# Dashboard → Filter-Bereich
+```
+
+**Teste:**
+1. ✅ **Single Tag**: 1 Tag wählen → nur Mails mit diesem Tag
+2. ✅ **Multi-Tag**: Strg/Cmd + Mehrere Tags → Mails mit diesen Tags
+3. ✅ **Kombination**: Tag + Farbe + Done + Suche → korrekte Filterung
+4. ✅ **Performance**: 100 Emails = 2 Queries (nicht 101)
+
+#### Learning System
+```bash
+# DB prüfen nach manueller Tag-Änderung
+sqlite3 emails.db "SELECT id, user_override_tags, correction_timestamp FROM processed_emails WHERE user_override_tags IS NOT NULL;"
+```
+
+**Erwartetes Output:**
+```
+12|Rechnung,Finanzen,Wichtig|2025-12-28 15:30:45
+```
+
+✅ `user_override_tags`: Komma-separierte Tag-Namen  
+✅ `correction_timestamp`: Zeitstempel der Änderung
+
 ---
 
 ## 🔄 Automation testen

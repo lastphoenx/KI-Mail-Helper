@@ -43,6 +43,12 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
 - **Dynamic Provider-Dropdowns** – Auto-Erkennung verfügbarer KI-Modelle basierend auf API-Keys
 - **Flexible Modellauswahl** – Keine Hardcodierung! llama3.2, all-minilm:22m (46MB, ~100x schneller), oder beliebige Ollama-Modelle
 - **Learning System (Phase 9 ML)** – Human-in-the-Loop Training mit User-Korrektionen
+- **🏷️ Smart Tag-System (Phase 10)** – KI-gestützte Tag-Vorschläge & Filter (siehe [Features](#tag-system-phase-10))
+  - **Auto-Tagging**: KI schlägt 1-5 semantische Tags vor (suggested_tags)
+  - **Tag-Management**: Create/Edit/Delete mit 7 Farben + Email-Count
+  - **Multi-Tag-Filter**: Kombiniere Tags mit Farbe/Done/Suche
+  - **Learning-Integration**: Manuelle Tag-Änderungen → ML-Training (user_override_tags)
+  - **Performance**: Eager Loading verhindert n+1 Queries (2 Queries für 100 Emails)
 - **Datenschutz-Sanitizer** – 3 Level (Volltext → Pseudonymisierung)
 - **Multi-Provider KI-Analyse** – Lokal (Ollama) oder Cloud (OpenAI, Anthropic, Mistral)
 - **Intelligentes Scoring** – 3×3-Matrix + Ampelfarben (Rot/Gelb/Grün)
@@ -55,8 +61,9 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
 ### Ansichten
 1. **3×3-Matrix** – Wichtigkeit (x) × Dringlichkeit (y) mit Farbcodierung
 2. **Ampel-Ansicht** – Rot (hoch) / Gelb (mittel) / Grün (niedrig)
-3. **Listen-View** – Sortiert nach Score mit Filtern
-4. **Detail-Ansicht** – Vollständige Mail-Info + Aktionen
+3. **Listen-View** – Sortiert nach Score mit Filtern + Tag-Filter (Multi-Select)
+4. **Detail-Ansicht** – Vollständige Mail-Info + Aktionen + Tag-Management
+5. **Tag-Management** – `/tags` Route für CRUD-Operationen + Statistiken
 
 ---
 
@@ -79,6 +86,8 @@ mail-helper/
 │   ├── 12_processing.py        # Email-Verarbeitungs-Workflow
 │   ├── 14_background_jobs.py   # Job Queue für Hintergrund-Verarbeitung
 │   ├── 15_provider_utils.py    # Dynamic Provider/Model Discovery
+│   ├── services/
+│   │   └── tag_manager.py      # Tag CRUD + Assignment Logic (Phase 10)
 │   └── ...
 ├── templates/                  # HTML-Templates (20+)
 ├── tests/                      # Unit Tests (pytest)
@@ -188,6 +197,83 @@ python3 -m src.00_main --serve --https
 ---
 
 ## 📋 Verwendung
+
+### Erste Schritte
+
+1. **Account erstellen** → `/register`
+2. **2FA einrichten** → Dashboard → 2FA-Setup
+3. **Mail-Account hinzufügen** → Settings → Add IMAP or Gmail OAuth
+4. **Mails abrufen** → Dashboard → "Jetzt verarbeiten"
+5. **Tags verwalten** → Navigation → "🏷️ Tags"
+
+### Tag-System (Phase 10)
+
+#### Auto-Tagging
+Das KI-System schlägt automatisch 1-5 semantische Tags pro Email vor:
+
+```json
+{
+  "suggested_tags": ["Rechnung", "Finanzen", "Wichtig"]
+}
+```
+
+**Tags werden automatisch:**
+- ✅ Erstellt (wenn nicht existent)
+- ✅ Zugewiesen (EmailTagAssignment)
+- ✅ Angezeigt (Liste + Detail)
+
+#### Tag-Management UI (`/tags`)
+
+**Features:**
+- **Create Tag**: Name (1-50 Zeichen) + 7 Farben (Blue/Green/Orange/Red/Purple/Pink/Gray)
+- **Edit Tag**: Name/Farbe ändern (constraint: unique pro User)
+- **Delete Tag**: CASCADE löscht alle Assignments
+- **Statistics**: Anzahl E-Mails pro Tag
+
+**Constraints:**
+- ✅ Unique(user_id, name) - keine Duplikate
+- ✅ Max 50 Zeichen pro Tag-Name
+- ✅ Hex-Color-Validation (#RRGGBB)
+
+#### Tag-Filter & Search
+
+**Dashboard Filter:**
+```
+Filter:
+  ☐ Rechnung (3)
+  ☐ Termin (7)
+  ☐ Finanzen (12)
+  
++ Farbe: [Alle] [Rot] [Gelb] [Grün]
++ Done: [Alle] [Erledigt] [Offen]
++ Suche: [           ]
+```
+
+**Multi-Select:** Strg/Cmd + Mehrere Tags → kombinierte Filterung
+
+**Performance:** Eager Loading - 100 Emails = nur 2 SQL Queries (nicht 101)
+
+#### Learning System
+
+Manuelle Tag-Änderungen (Add/Remove) werden getrackt:
+
+```python
+# ProcessedEmail.user_override_tags
+"Rechnung,Finanzen,Wichtig"  # Komma-separiert
+
+# ProcessedEmail.correction_timestamp
+"2025-12-28 15:30:45"  # Zeitstempel der Änderung
+```
+
+**ML-Training Flow:**
+1. KI schlägt `suggested_tags` vor → Auto-Assignment
+2. User ändert Tags manuell → `user_override_tags` gesetzt
+3. `train_classifier.py` nutzt Korrekturen
+4. KI-Vorschläge werden besser
+
+---
+
+## 📋 Verwendung (Allgemein)
 
 ### **Befehls-Referenz**
 

@@ -172,8 +172,14 @@
                     </div>
                     
                     <div class="mb-4">
-                        <label for="tagsInput" class="form-label"><strong>Tags</strong></label>
-                        <input type="text" id="tagsInput" class="form-control" placeholder="z.B. Rechnung, Dringend, Sicherheit (kommagetrennt)">
+                        <label for="tagsSelect" class="form-label"><strong>Tags</strong></label>
+                        <div id="correctionTagsContainer" class="mb-2">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                        <select id="tagsSelect" class="form-select" size="5" multiple>
+                            <option disabled>⏳ Wird geladen...</option>
+                        </select>
+                        <small class="text-muted">Strg/Cmd + Klick für Mehrfachauswahl. <a href="/tags" target="_blank">Tags verwalten</a></small>
                     </div>
                     
                     <div class="mb-3">
