@@ -138,8 +138,15 @@ def set_security_headers(response):
     """Sets CSP and other security headers for all responses.
     
     CSP uses nonce for inline scripts (no 'unsafe-inline' needed).
+    Security headers are set for ALL responses (including errors).
     """
-    if response.status_code < 400:  # Only for successful responses
+    # Security Headers für ALLE Responses (inkl. Errors) - Defense-in-Depth
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    
+    # CSP nur bei erfolgreichen Responses (< 400) - benötigt Nonce aus g
+    if response.status_code < 400:
         nonce = g.get('csp_nonce', '')
         # Content Security Policy (strict, with nonce for inline scripts)
         csp = (
@@ -154,11 +161,6 @@ def set_security_headers(response):
             "form-action 'self';"
         )
         response.headers['Content-Security-Policy'] = csp
-        
-        # Additional Security Headers
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['X-Frame-Options'] = 'DENY'
-        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     
     return response
 
@@ -336,8 +338,22 @@ def login():
             
             user = db.query(models.User).filter_by(username=username).first()
             
+            # Timing-Attack Protection: Dummy password check für constant-time behavior
+            if not user:
+                # Dummy bcrypt check to normalize timing (prevent user enumeration)
+                dummy_hash = "$2b$12$" + "0" * 53  # Valid bcrypt format
+                try:
+                    check_password_hash(dummy_hash, password)
+                except:
+                    pass
+                logger.warning(
+                    f"SECURITY[LOGIN_FAILED]: user={username} ip={request.remote_addr} "
+                    f"reason=user_not_found"
+                )
+                return render_template("login.html", error="Ungültige Anmeldedaten"), 401
+            
             # Account Lockout Check (Phase 9)
-            if user and user.is_locked():
+            if user.is_locked():
                 remaining = (user.locked_until - datetime.now(UTC)).total_seconds() / 60
                 # Audit Log für Fail2Ban
                 logger.warning(
@@ -346,21 +362,14 @@ def login():
                 )
                 return render_template("login.html", error=f"Account gesperrt. Bitte versuche es in {int(remaining)} Minuten erneut."), 403
             
-            if not user or not user.check_password(password):
-                if user:
-                    user.record_failed_login()
-                    db.commit()
-                    # Audit Log für Fail2Ban
-                    logger.warning(
-                        f"SECURITY[LOGIN_FAILED]: user={username} ip={request.remote_addr} "
-                        f"attempts={user.failed_login_attempts}/5 reason=invalid_credentials"
-                    )
-                else:
-                    # Unknown user - auch loggen für Fail2Ban
-                    logger.warning(
-                        f"SECURITY[LOGIN_FAILED]: user={username} ip={request.remote_addr} "
-                        f"reason=user_not_found"
-                    )
+            if not user.check_password(password):
+                user.record_failed_login()
+                db.commit()
+                # Audit Log für Fail2Ban
+                logger.warning(
+                    f"SECURITY[LOGIN_FAILED]: user={username} ip={request.remote_addr} "
+                    f"attempts={user.failed_login_attempts}/5 reason=invalid_credentials"
+                )
                 return render_template("login.html", error="Ungültige Anmeldedaten"), 401
             
             # Erfolgreicher Login - Failed Counter zurücksetzen
@@ -453,7 +462,9 @@ def register():
                     username=username
                 ), 400
             
-            user = models.User(username=username, email=email)
+            user = models.User()
+            user.set_username(username)
+            user.set_email(email)
             user.set_password(password)
             
             db.add(user)

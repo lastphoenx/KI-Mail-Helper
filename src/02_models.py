@@ -110,8 +110,30 @@ class User(Base):
     recovery_codes = relationship("RecoveryCode", back_populates="user", cascade="all, delete-orphan")
     
     def set_password(self, password: str):
-        """Hasht das Passwort"""
+        """Hasht das Passwort (mit Längen-Validierung)"""
+        if not password:
+            raise ValueError("Passwort darf nicht leer sein")
+        if len(password) < 8:
+            raise ValueError("Passwort zu kurz (mind. 8 Zeichen)")
+        if len(password) > 255:
+            raise ValueError("Passwort zu lang (max. 255 Zeichen)")
         self.password_hash = generate_password_hash(password)
+    
+    def set_username(self, username: str):
+        """Setzt Username mit Validierung"""
+        if not username or len(username) < 3:
+            raise ValueError("Username muss 3-80 Zeichen sein")
+        if len(username) > 80:
+            raise ValueError("Username zu lang (max. 80 Zeichen)")
+        self.username = username
+    
+    def set_email(self, email: str):
+        """Setzt Email mit Validierung"""
+        if not email:
+            raise ValueError("Email darf nicht leer sein")
+        if len(email) > 255:
+            raise ValueError("Email zu lang (max. 255 Zeichen)")
+        self.email = email
     
     def check_password(self, password: str) -> bool:
         """Überprüft das Passwort"""

@@ -278,7 +278,19 @@ function getAnalysisModal() {
     return analysisModal;
 }
 
+// Race Condition Protection: Verhindere mehrfache parallele Polling-Loops
+let pollingActive = false;
+
 function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, startTime = Date.now(), emailStartTime = null, lastEmailIndex = null) {
+    // Verhindere Race Condition bei schnellen Button-Clicks
+    if (attempt === 0) {
+        if (pollingActive) {
+            console.warn('Polling bereits aktiv, ignoriere doppelten Start');
+            return;
+        }
+        pollingActive = true;
+    }
+    
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
     const modal = getAnalysisModal();
     if (attempt === 0) modal.show();
@@ -323,6 +335,7 @@ function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, star
                 document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
                     const modal = getAnalysisModal();
                     modal.hide();
+                    pollingActive = false;  // Reset polling flag
                     if (btn) {
                         btn.disabled = false;
                         btn.textContent = originalLabel || 'Abrufen';
@@ -343,6 +356,7 @@ function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, star
                 document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
                     const modal = getAnalysisModal();
                     modal.hide();
+                    pollingActive = false;  // Reset polling flag
                     if (btn) {
                         btn.disabled = false;
                         btn.textContent = originalLabel || 'Abrufen';
@@ -368,6 +382,7 @@ function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, star
                 document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
                     const modal = getAnalysisModal();
                     modal.hide();
+                    pollingActive = false;  // Reset polling flag
                     if (btn) {
                         btn.disabled = false;
                         btn.textContent = originalLabel || 'Abrufen';
@@ -386,6 +401,7 @@ function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, star
         })
         .catch(err => {
             modal.hide();
+            pollingActive = false;  // Reset polling flag bei Error
             alert(`❌ Status-Check fehlgeschlagen: ${err}`);
             if (btn) {
                 btn.disabled = false;

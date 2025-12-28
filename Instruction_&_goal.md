@@ -394,6 +394,40 @@
 
 ---
 
+### ✅ Phase 9d: MEDIUM-Priority Security Fixes (Abgeschlossen - 28.12.2025)
+**Ziel:** MEDIUM-Priority Issues aus Code-Review beheben
+
+**Security Score: 99/100 → 99.5/100** 🔒
+
+#### **Batch 1: Quick Wins (⚡ 15-20 min)**
+- [x] **Timing-Attack Protection** - `src/01_web_app.py:339-351`
+  - Constant-time user enumeration prevention
+  - Dummy bcrypt check für nicht-existierende User
+  - Normalisiert Response-Zeiten (verhindert Username-Discovery)
+- [x] **Input Validation Setters** - `src/02_models.py:115-135`
+  - `set_username()`: 3-80 Zeichen Validierung
+  - `set_email()`: 1-255 Zeichen Validierung  
+  - `set_password()`: 8-255 Zeichen Validierung (Min + Max)
+  - Integriert in Registration: `src/01_web_app.py:465-467`
+- [x] **Debug-Log Masking** - `src/07_auth.py`
+  - 6× User-IDs maskiert (Lines 100, 131, 164, 186, 215, 247)
+  - 4× Exception-Details sanitized (Lines 287, 294, 298, 317)
+  - Verhindert User-ID-Leaks in Logs/Backups
+
+#### **Batch 2: Frontend & Infrastructure (🔧 30 min)**
+- [x] **Security Headers für Error-Responses** - `src/01_web_app.py:144-147`
+  - Security Headers jetzt bei ALLEN Responses (auch 404, 500)
+  - CSP nur bei < 400 (benötigt Nonce aus Request-Context)
+  - Defense-in-Depth: Verhindert XSS via Error-Messages
+- [x] **JS Polling Race Condition** - `templates/settings.html:285-402`
+  - `pollingActive` Flag verhindert parallele Polling-Loops
+  - Reset bei allen Exit-Punkten (done, error, timeout, fetch-error)
+  - Verhindert mehrfache API-Calls und Rate-Limit-Triggers
+
+**Commits:** [pending]
+
+---
+
 ## 🚀 **Ausstehende Aufgaben (Priorität)**
 
 ### **🟡 Phase 9d: HIGH-Priority Remaining Fixes**

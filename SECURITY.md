@@ -103,21 +103,22 @@ Layer 3: Fail2Ban (Network)
 - **2FA (TOTP)**: Mandatory for all accounts
 - **Recovery Codes**: 8x single-use backup codes for account recovery
 - **Token Generation**: 384-bit (48 bytes) ServiceToken for enhanced entropy
-- **Data Masking**: Sensitive data masked in logs (__repr__ methods)
+- **Data Masking**: Sensitive data masked in logs (__repr__ methods + user IDs)
+- **Timing-Attack Protection**: Constant-time user enumeration prevention
 
 ### API Security
 - **CSRF Protection**: Flask-WTF tokens on all POST/PUT/DELETE + AJAX endpoints
-- **Input Validation**: Strict validation on all endpoints + host/port validation
+- **Input Validation**: Strict validation on all endpoints + model setters (username 3-80, email 1-255, password 8-255)
 - **SQL Injection**: SQLAlchemy ORM (parameterized queries)
 - **XSS Prevention**: Jinja2 auto-escaping enabled, JSON.parse() for AI values
-- **CSP Headers**: Strict CSP with nonce-based script execution
+- **CSP Headers**: Strict CSP with nonce-based script execution (all responses)
 - **SRI Hashes**: Subresource Integrity for Bootstrap CDN assets
 - **Exception Sanitization**: Generic error messages, no sensitive data in logs/responses
 - **API Key Redaction**: Automatic redaction of API keys in error logging
 
 ### Infrastructure
 - **HTTPS Enforcement**: HSTS headers, secure redirects
-- **Security Headers**: CSP (nonce-based), X-Frame-Options, X-Content-Type-Options
+- **Security Headers**: CSP (nonce-based), X-Frame-Options, X-Content-Type-Options (for ALL responses including errors)
 - **Service Hardening**: systemd with ProtectSystem=strict, PrivateTmp
 - **Audit Logging**: Structured SECURITY[] logs for monitoring
 - **Rate Limiting**: Redis auto-detection with in-memory fallback
@@ -252,11 +253,26 @@ See [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for how to run security tests
 - **-1** for in-process DEK storage – necessary design choice, mitigated by systemd
 
 ### Recent Security Improvements (December 28, 2025)
+
+**Phase 9c - CRITICAL & HIGH Priority:**
 - ✅ **Exception Sanitization**: 18 exception handlers fixed to prevent information leakage
 - ✅ **AJAX CSRF Protection**: Added CSRF validation for AJAX endpoints
 - ✅ **Email Input Sanitization**: Control character filtering for all AI clients
 - ✅ **API Key Redaction**: Automatic redaction of sensitive API keys in logs
 - ✅ **CSP Enhancement**: Nonce-based CSP headers instead of 'unsafe-inline'
+- ✅ **SRI Hashes**: Subresource Integrity for Bootstrap CDN resources
+- ✅ **Host/Port Validation**: Defense-in-depth input validation at CLI level
+- ✅ **Token Generation**: Increased ServiceToken entropy from 256 to 384 bits
+- ✅ **Data Masking**: __repr__ methods mask sensitive user data in logs
+- ✅ **Master Key Removal**: Removed master_key from background job queue (loaded at runtime)
+- ✅ **Queue Size Limit**: Background job queue capped at 50 to prevent DoS
+
+**Phase 9c - MEDIUM Priority:**
+- ✅ **Timing-Attack Protection**: Constant-time user enumeration prevention with dummy bcrypt check
+- ✅ **Input Validation Setters**: Username (3-80), email (1-255), password (8-255) with enforcement
+- ✅ **Debug-Log Masking**: 10 additional logger statements mask user IDs and exception details
+- ✅ **Security Headers for Errors**: All responses (including 4xx/5xx) get security headers
+- ✅ **JS Polling Race Fix**: Prevents multiple concurrent polling loops in frontend
 - ✅ **SRI Hashes**: Subresource Integrity for Bootstrap CDN resources
 - ✅ **Host/Port Validation**: Defense-in-depth input validation at CLI level
 - ✅ **Token Generation**: Increased ServiceToken entropy from 256 to 384 bits

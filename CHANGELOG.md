@@ -8,6 +8,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security Fixes - Phase 9c (2025-12-28)
+
+#### MEDIUM Priority Security Improvements
+
+**Timing-Attack Protection**
+- Added constant-time user enumeration protection in login flow
+- Dummy bcrypt check for non-existent users normalizes response timing
+- **Impact**: Prevents attacker from determining valid usernames via timing analysis
+- **Files**: `src/01_web_app.py` (lines 339-351)
+
+**Input Validation Setters**
+- Added validation setters for User model fields
+- `set_username()`: 3-80 characters, `set_email()`: 1-255 characters, `set_password()`: 8-255 characters
+- Integrated into registration flow to enforce validation
+- **Impact**: Prevents memory exhaustion attacks and enforces data quality
+- **Files**: `src/02_models.py` (lines 115-135), `src/01_web_app.py` (lines 465-467)
+
+**Debug-Log Masking**
+- Masked user IDs in auth.py logger statements (6 locations)
+- Changed exception logging to use `type(e).__name__` instead of full details (2 additional locations)
+- **Impact**: Prevents user ID and exception detail leaks in logs/backups
+- **Files**: `src/07_auth.py` (lines 100, 131, 164, 186, 215, 247, 287, 294, 298, 317)
+
+**Security Headers for Error Responses**
+- Security headers now applied to ALL responses (including 4xx/5xx errors)
+- Moved X-Content-Type-Options, X-Frame-Options, Referrer-Policy outside status check
+- CSP only for successful responses (requires nonce from request context)
+- **Impact**: Prevents XSS via error messages, defense-in-depth for all response types
+- **Files**: `src/01_web_app.py` (lines 144-147)
+
+**JS Polling Race Condition**
+- Added `pollingActive` flag to prevent multiple concurrent polling loops
+- Race condition protection for rapid button clicks
+- Reset flag on all exit paths (done, error, timeout, fetch-error)
+- **Impact**: Prevents UI inconsistencies, multiple API calls, and rate limit triggers
+- **Files**: `templates/settings.html` (lines 285-291, 337, 355, 373, 402)
+
+---
+
 ### Security Fixes - Phase 9b (2025-12-28)
 
 #### HIGH Priority Security Improvements

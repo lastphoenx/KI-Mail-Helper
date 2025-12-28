@@ -97,7 +97,7 @@ class ServiceTokenManager:
         session.add(service_token)
         session.commit()
         
-        logger.info(f"✅ Service-Token erstellt für User {user_id}")
+        logger.info("✅ Service-Token erstellt für User ***")
         return token, service_token
     
     @staticmethod
@@ -128,7 +128,7 @@ class ServiceTokenManager:
         if token:
             session.delete(token)
             session.commit()
-            logger.info(f"🔒 Token {token_id} gesperrt")
+            logger.info("🔒 Token *** gesperrt")
 
 
 class RecoveryCodeManager:
@@ -161,7 +161,7 @@ class RecoveryCodeManager:
             code_objects.append(recovery)
         
         session.commit()
-        logger.info(f"✅ {count} Recovery-Codes erstellt für User {user_id}")
+        logger.info(f"✅ {count} Recovery-Codes erstellt für User ***")
         
         return codes
     
@@ -183,7 +183,7 @@ class RecoveryCodeManager:
             if rc.is_unused() and models.RecoveryCode.verify_code(code, rc.code_hash):
                 rc.mark_used()
                 session.commit()
-                logger.info(f"✅ Recovery-Code verwendet für User {user_id}")
+                logger.info("✅ Recovery-Code verwendet für User ***")
                 return True
         
         return False
@@ -212,7 +212,7 @@ class RecoveryCodeManager:
         ).delete()
         
         session.commit()
-        logger.info(f"🗑️ {deleted} Recovery-Codes invalidiert für User {user_id}")
+        logger.info(f"🗑️ {deleted} Recovery-Codes invalidiert für User ***")
 
 
 class MasterKeyManager:
@@ -244,7 +244,7 @@ class MasterKeyManager:
             user.salt = salt
             user.encrypted_dek = encrypted_dek
             session.commit()
-            logger.info(f"✅ DEK erstellt für User {user_id} (Zero-Knowledge DEK/KEK)")
+            logger.info("✅ DEK erstellt für User *** (Zero-Knowledge DEK/KEK)")
         
         return salt, encrypted_dek, dek
     
@@ -284,18 +284,18 @@ class MasterKeyManager:
                 return dek
             elif user.encrypted_master_key:
                 # DEPRECATED: Alte User ohne DEK
-                logger.warning(f"User {user.id} nutzt altes encrypted_master_key Format")
+                logger.warning("User *** nutzt altes encrypted_master_key Format")
                 master_key = encryption.EncryptionManager.decrypt_master_key(
                     user.encrypted_master_key,
                     password
                 )
                 return master_key
             else:
-                logger.error(f"User {user.id} hat weder encrypted_dek noch encrypted_master_key")
+                logger.error("User *** hat weder encrypted_dek noch encrypted_master_key")
                 return None
                 
         except Exception as e:
-            logger.error(f"❌ DEK Entschlüsselung fehlgeschlagen: {e}")
+            logger.error(f"❌ DEK Entschlüsselung fehlgeschlagen: {type(e).__name__}")
             return None
     
     @staticmethod
@@ -314,7 +314,7 @@ class MasterKeyManager:
             logger.info("✅ Master-Key erfolgreich entschlüsselt")
             return master_key
         except Exception as e:
-            logger.error(f"❌ Master-Key Entschlüsselung fehlgeschlagen: {e}")
+            logger.error(f"❌ Master-Key Entschlüsselung fehlgeschlagen: {type(e).__name__}")
             return None
     
 
