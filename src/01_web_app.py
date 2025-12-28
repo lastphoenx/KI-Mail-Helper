@@ -15,6 +15,7 @@ from flask import (
     jsonify,
     session,
     flash,
+    make_response,
 )
 from flask_login import (
     LoginManager,
@@ -183,9 +184,8 @@ def set_security_headers(response):
     
     Exception: /email/<id>/render-html endpoint has relaxed CSP for email content.
     """
-    # Exception: Email rendering endpoint needs to be embeddable in iframe
-    if request.path and '/render-html' in request.path:
-        # Headers already set in render_email_html() endpoint
+    # Exception: Email rendering endpoint sets its own headers
+    if g.get('skip_security_headers', False):
         return response
     
     # Security Headers für ALLE anderen Responses (inkl. Errors) - Defense-in-Depth
@@ -998,6 +998,7 @@ def render_email_html(email_id: int):
     try:
         user = get_current_user_model(db)
         if not user:
+            logger.error(f"render_email_html: User not found (email_id={email_id})")
             return "Unauthorized", 403
         
         processed = (
@@ -1013,11 +1014,13 @@ def render_email_html(email_id: int):
         )
         
         if not processed:
+            logger.error(f"render_email_html: Email {email_id} not found for user {user.id}")
             return "Email not found", 404
         
         # Zero-Knowledge: Entschlüssele E-Mail-Body
         master_key = session.get("master_key")
         if not master_key:
+            logger.error(f"render_email_html: master_key missing in session")
             return "Session expired", 401
         
         try:
@@ -1025,7 +1028,7 @@ def render_email_html(email_id: int):
                 processed.raw_email.encrypted_body or "", master_key
             )
         except Exception as e:
-            logger.error(f"Entschlüsselung fehlgeschlagen: {type(e).__name__}")
+            logger.error(f"render_email_html: Entschlüsselung fehlgeschlagen für Email {email_id}: {type(e).__name__}: {e}")
             return "Decryption failed", 500
         
         # Response mit lockerer CSP nur für E-Mail-Content
@@ -1043,7 +1046,16 @@ def render_email_html(email_id: int):
             "script-src 'none'"
         )
         
+        # Marker für after_request Hook: Überschreibe Headers nicht
+        g.skip_security_headers = True
+        
         return response
+        
+    except Exception as e:
+        logger.error(f"render_email_html: Unhandled exception: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return "Internal Server Error", 500
         
     finally:
         db.close()
