@@ -24,7 +24,7 @@ bcrypt==4.1.1              # Password hashing
 pyotp==2.9.0               # TOTP 2FA (Google Authenticator)
 qrcode==7.4.2              # QR-Code generation for 2FA
 zxcvbn==4.4.28             # Password strength estimation (Phase 8c)
-pyOpenSSL==24.0.0          # HTTPS support (self-signed certificates for development)
+pyOpenSSL==25.0.0          # HTTPS support - Updated for cryptography 44.x compatibility
 
 # NLP & Text Processing (optional für bessere Pseudonymisierung)
 # spacy==3.7.2
