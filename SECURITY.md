@@ -6,9 +6,12 @@
 
 **Current Security Score: 99.5/100** ✅
 
-**Latest Security Hardening (Phase 9f - 2025-12-28)**:
+**Latest Security Hardening (Phase 9g - 2025-12-28)**:
 - ✅ Race Condition Protection für Account Lockout (Atomic SQL)
 - ✅ ReDoS Protection (Bounded Quantifiers + Timeout + Length Limit)
+- ✅ Content Security Policy (CSP) Compliance – All inline event handlers removed
+- ✅ ServiceToken Architecture – Background jobs use encrypted DEK (7-day expiry)
+- ✅ Event Delegation Pattern – CSP-compliant JavaScript without `onclick`/`onchange`
 
 ---
 
@@ -23,6 +26,7 @@
 | **Email Data Exposure** | AES-256-GCM End-to-End Encryption (DEK/KEK Pattern) | ⭐⭐⭐⭐⭐ |
 | **Credential Theft** | Master Key never leaves memory, encrypted in DB | ⭐⭐⭐⭐⭐ |
 | **CSRF Attacks** | Flask-WTF CSRF tokens on all state-changing operations | ⭐⭐⭐⭐⭐ |
+| **XSS via Inline Scripts** | Content Security Policy (CSP) blocks inline handlers, nonce-based execution | ⭐⭐⭐⭐⭐ |
 | **Network Eavesdropping** | HTTPS enforced (self-signed local, Let's Encrypt recommended) | ⭐⭐⭐⭐⭐ |
 | **Unauthorized Access** | 2FA (TOTP) mandatory for all accounts | ⭐⭐⭐⭐⭐ |
 | **Privilege Escalation** | systemd ProtectSystem=strict, PrivateTmp, NoNewPrivileges | ⭐⭐⭐⭐ |
@@ -68,6 +72,7 @@ Email Data ─→ AES-256-GCM Encrypt ─→ encrypted_email (stored in DB)
 - **No Plaintext Storage**: Server never stores unencrypted email data
 - **Password Change Safe**: DEK/KEK separation allows password changes without re-encrypting all emails
 - **Session-Based Decryption**: DEK only loaded into Flask session RAM after login
+- **Background Job Authentication**: ServiceToken stores encrypted DEK for mail fetching (7-day expiry)
 - **Multi-User Ready**: Each user has own DEK/KEK pair (technically supported, see Limitations)
 
 **See [docs/ZERO_KNOWLEDGE_COMPLETE.md](docs/ZERO_KNOWLEDGE_COMPLETE.md) for full cryptographic details.**

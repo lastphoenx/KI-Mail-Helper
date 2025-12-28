@@ -49,6 +49,16 @@ python3 -m src.00_main --register
 # Follow prompts for username/password
 ```
 
+**Important for Upgrades (2025-12-28+):**
+
+If upgrading from a version before 2025-12-28, run this migration:
+
+```bash
+sqlite3 emails.db "ALTER TABLE service_tokens ADD COLUMN master_key TEXT;"
+```
+
+This adds the `master_key` column required for background job authentication (stores encrypted DEK for mail fetching).
+
 ### 5. Setup Systemd Service
 
 ```bash

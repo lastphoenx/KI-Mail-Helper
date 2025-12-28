@@ -479,6 +479,19 @@ def login():
             ] = dek  # Session-Key heißt "master_key" aus Kompatibilität
             logger.info("✅ DEK erfolgreich in Session geladen")
 
+            # Service-Token für Background-Jobs erstellen (mit master_key)
+            # Lösche alte Tokens für diesen User
+            db.query(models.ServiceToken).filter_by(user_id=user.id).delete()
+            service_token = models.ServiceToken(
+                user_id=user.id,
+                token_hash=models.ServiceToken.hash_token(models.ServiceToken.generate_token()),
+                master_key=dek,  # DEK für Background-Jobs
+                expires_at=__import__('datetime').datetime.now(__import__('datetime').UTC) + __import__('datetime').timedelta(days=7)
+            )
+            db.add(service_token)
+            db.commit()
+            logger.info("✅ Service-Token für Background-Jobs erstellt")
+
             # Zero-Knowledge: Disable remember-me (verhindert DEK-Loss nach Session-Expire)
             login_user(UserWrapper(user), remember=False)
             # Audit Log für erfolgreichen Login
@@ -644,6 +657,19 @@ def verify_2fa():
 
                 session["master_key"] = dek
                 logger.info("✅ DEK nach 2FA in Session geladen")
+
+                # Service-Token für Background-Jobs erstellen (mit master_key)
+                # Lösche alte Tokens für diesen User
+                db.query(models.ServiceToken).filter_by(user_id=user.id).delete()
+                service_token = models.ServiceToken(
+                    user_id=user.id,
+                    token_hash=models.ServiceToken.hash_token(models.ServiceToken.generate_token()),
+                    master_key=dek,  # DEK für Background-Jobs
+                    expires_at=__import__('datetime').datetime.now(__import__('datetime').UTC) + __import__('datetime').timedelta(days=7)
+                )
+                db.add(service_token)
+                db.commit()
+                logger.info("✅ Service-Token für Background-Jobs erstellt")
 
                 login_user(UserWrapper(user), remember=remember)
                 # Audit Log für erfolgreichen Login mit 2FA

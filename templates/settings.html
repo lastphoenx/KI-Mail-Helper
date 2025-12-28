@@ -34,7 +34,7 @@
                         </div>
                         <div class="col-md-6">
                             <label for="aiProviderSelectBase" class="form-label">Provider</label>
-                            <select class="form-select" id="aiProviderSelectBase" name="ai_provider_base" required onchange="updateModels('Base')">
+                            <select class="form-select" id="aiProviderSelectBase" name="ai_provider_base" required>
                                 <option value="">-- Wird geladen --</option>
                             </select>
                         </div>
@@ -51,7 +51,7 @@
                         </div>
                         <div class="col-md-6">
                             <label for="aiProviderSelectOptimize" class="form-label">Provider</label>
-                            <select class="form-select" id="aiProviderSelectOptimize" name="ai_provider_optimize" required onchange="updateModels('Optimize')">
+                            <select class="form-select" id="aiProviderSelectOptimize" name="ai_provider_optimize" required>
                                 <option value="">-- Wird geladen --</option>
                             </select>
                         </div>
@@ -112,7 +112,7 @@
                             </div>
                         </div>
                         <div class="col-12 d-flex justify-content-end gap-2">
-                            <button id="retrainBtn" class="btn btn-primary" onclick="triggerRetraining()">
+                            <button id="retrainBtn" class="btn btn-primary">
                                 🚀 Neue Modelle trainieren
                             </button>
                         </div>
@@ -152,11 +152,11 @@
                             <td>
                                 <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Mail-Aktionen" style="gap:0.25rem;">
                                     <a href="/settings/mail-account/{{ account.id }}/edit" class="btn btn-info">Bearbeiten</a>
-                                    <button type="button" class="btn btn-success" onclick='fetchMails(event, {{ account.id }}, {{ account.name|tojson }})'>Abrufen</button>
-                                    <button type="button" class="btn btn-outline-danger" onclick='purgeMails(event, {{ account.id }}, {{ account.name|tojson }})'>Daten löschen</button>
-                                    <form method="POST" action="/settings/mail-account/{{ account.id }}/delete" style="display: inline;">
+                                    <button type="button" class="btn btn-success fetch-mails-btn" data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">Abrufen</button>
+                                    <button type="button" class="btn btn-outline-danger purge-mails-btn" data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">Daten löschen</button>
+                                    <form method="POST" action="/settings/mail-account/{{ account.id }}/delete" style="display: inline;" class="delete-account-form">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                                        <button type="submit" class="btn btn-danger" onclick="return confirm('Wirklich löschen?')">Löschen</button>
+                                        <button type="submit" class="btn btn-danger">Löschen</button>
                                     </form>
                                 </div>
                             </td>
@@ -189,7 +189,7 @@
             {% if totp_enabled %}
             <div class="alert alert-success">✓ 2FA ist aktiviert</div>
             <p>Dein Account ist mit TOTP geschützt.</p>
-            <form method="POST" action="/settings/2fa/recovery-codes/regenerate" class="mt-3" onsubmit="return confirmRegenerate()">
+            <form method="POST" action="/settings/2fa/recovery-codes/regenerate" class="mt-3" id="regenerateRecoveryForm">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <button type="submit" class="btn btn-outline-warning">
                     <i class="fas fa-sync"></i> Recovery-Codes regenerieren
@@ -644,19 +644,65 @@ async function triggerRetraining() {
 document.addEventListener('DOMContentLoaded', () => {
     // Security: Parse JSON safely to prevent XSS via provider/model names
     try {
-        window.savedAIValues = JSON.parse({{ {
+        window.savedAIValues = {{ {
             'Base': {'provider': ai_selected_provider_base, 'model': ai_selected_model_base},
             'Optimize': {'provider': ai_selected_provider_optimize, 'model': ai_selected_model_optimize}
-        }|tojson }});
+        }|tojson|safe }};
     } catch(e) {
         console.error('Failed to parse AI values:', e);
         window.savedAIValues = {
-            Base: {provider: 'ollama', model: 'llama3.2:3b'},
-            Optimize: {provider: 'ollama', model: 'llama3.2:3b'}
+            Base: {provider: 'ollama', model: 'all-minilm:22m'},
+            Optimize: {provider: 'ollama', model: 'llama3.2:1b'}
         };
     }
     initializeProviders();
     loadTrainingStats();
+    
+    // CSP-compliant event listeners (no inline handlers)
+    const providerBaseSelect = document.getElementById('aiProviderSelectBase');
+    const providerOptimizeSelect = document.getElementById('aiProviderSelectOptimize');
+    const retrainBtn = document.getElementById('retrainBtn');
+    const regenerateForm = document.getElementById('regenerateRecoveryForm');
+    
+    if (providerBaseSelect) {
+        providerBaseSelect.addEventListener('change', () => updateModels('Base'));
+    }
+    if (providerOptimizeSelect) {
+        providerOptimizeSelect.addEventListener('change', () => updateModels('Optimize'));
+    }
+    if (retrainBtn) {
+        retrainBtn.addEventListener('click', triggerRetraining);
+    }
+    if (regenerateForm) {
+        regenerateForm.addEventListener('submit', (e) => {
+            if (!confirmRegenerate()) {
+                e.preventDefault();
+            }
+        });
+    }
+    
+    // Event delegation for dynamic buttons (fetchMails, purgeMails, delete)
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('fetch-mails-btn')) {
+            const accountId = parseInt(e.target.dataset.accountId);
+            const accountName = e.target.dataset.accountName;
+            fetchMails(e, accountId, accountName);
+        }
+        if (e.target.classList.contains('purge-mails-btn')) {
+            const accountId = parseInt(e.target.dataset.accountId);
+            const accountName = e.target.dataset.accountName;
+            purgeMails(e, accountId, accountName);
+        }
+    });
+    
+    // Delete form confirmation
+    document.querySelectorAll('.delete-account-form').forEach(form => {
+        form.addEventListener('submit', (e) => {
+            if (!confirm('Wirklich löschen?')) {
+                e.preventDefault();
+            }
+        });
+    });
 });
 </script>
 {% endblock %}

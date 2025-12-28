@@ -42,9 +42,30 @@ python3 scripts/reset_base_pass.py --user=1 --force
 
 ---
 
-## 🔧 Alembic – Datenbankmigrationen
+## 🔧 Datenbankmigrationen
 
-Die Datenbank-Schema-Versionen werden mit **Alembic** verwaltet.
+### Manuelle Migrationen (SQLite Limitations)
+
+**ServiceToken master_key (2025-12-28):**
+
+```bash
+cd /home/thomas/projects/KI-Mail-Helper
+sqlite3 emails.db "ALTER TABLE service_tokens ADD COLUMN master_key TEXT;"
+```
+
+Diese Spalte speichert den verschlüsselten DEK für Background-Jobs (Mail-Abruf ohne aktive User-Session).
+
+**Hinweis:** SQLite unterstützt nicht alle ALTER TABLE Operationen. Bei komplexen Schema-Änderungen:
+1. Backup der DB erstellen
+2. Neue Tabelle mit korrektem Schema erstellen
+3. Daten migrieren
+4. Alte Tabelle löschen
+
+---
+
+## 🔧 Alembic – Datenbankmigrationen (Legacy)
+
+Die Datenbank-Schema-Versionen wurden früher mit **Alembic** verwaltet.
 
 ### Aktuelle Versionen
 

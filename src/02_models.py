@@ -361,6 +361,7 @@ class ServiceToken(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     token_hash = Column(String(255), unique=True, nullable=False)
+    master_key = Column(String(255), nullable=True)  # Encrypted DEK für Background-Jobs
     expires_at = Column(DateTime, nullable=False)
 
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))

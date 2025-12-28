@@ -580,16 +580,24 @@ class LocalOllamaClient(AIClient):
                 1 for kw in NEWSLETTER_KEYWORDS if kw in text
             )
             has_unsubscribe = "unsubscribe" in text or "abmelden" in text
+            has_spam_keywords = any(kw in text for kw in keywords_spam_high)
 
-            if any(kw in text for kw in keywords_spam_high) or has_unsubscribe:
-                spam_flag = True
+            # Newsletter (mit Unsubscribe) = legitim, KEIN Spam
+            if has_unsubscribe:
                 tags.append("Newsletter/Promotion")
                 dringlichkeit = 1
                 wichtigkeit = 1
                 kategorie_aktion = "nur_information"
-            elif newsletter_keyword_count >= 2 or has_unsubscribe:
-                spam_flag = True
+                # spam_flag bleibt False - Newsletter sind kein Spam!
+            elif newsletter_keyword_count >= 2:
                 tags.append("Newsletter/Promotion")
+                dringlichkeit = 1
+                wichtigkeit = 1
+                kategorie_aktion = "nur_information"
+            # Echter Spam (ohne Unsubscribe-Option)
+            elif has_spam_keywords:
+                spam_flag = True
+                tags.append("Spam")
                 dringlichkeit = 1
                 wichtigkeit = 1
                 kategorie_aktion = "nur_information"

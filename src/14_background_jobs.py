@@ -9,6 +9,7 @@ import uuid
 from dataclasses import dataclass, field
 from queue import Empty, Queue
 from typing import Any, Dict, Optional
+from datetime import datetime, UTC
 
 models = importlib.import_module(".02_models", "src")
 mail_fetcher_mod = importlib.import_module(".06_mail_fetcher", "src")
@@ -167,12 +168,13 @@ class BackgroundJobQueue:
             # Job speichert keine Secrets im RAM → Memory-Dump-Safe
             service_token = (
                 session.query(models.ServiceToken)
-                .filter_by(user_id=job.user_id, is_active=True)
+                .filter_by(user_id=job.user_id)
+                .filter(models.ServiceToken.expires_at > datetime.now(UTC))
                 .first()
             )
             if not service_token:
                 raise ValueError(
-                    "Service-Token nicht gefunden - Background-Jobs benötigen aktiven Token"
+                    "Service-Token nicht gefunden oder abgelaufen - Background-Jobs benötigen gültigen Token"
                 )
 
             master_key = service_token.master_key
