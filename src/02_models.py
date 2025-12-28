@@ -86,6 +86,43 @@ class OptimizationStatus(str, Enum):
     FAILED = "failed"
 
 
+class EmailTag(Base):
+    """User-definierte Tags für Emails (Phase 10)"""
+
+    __tablename__ = "email_tags"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50), nullable=False)
+    color = Column(String(20), nullable=False, default="#3B82F6")  # Tailwind blue-500
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    # Relationships
+    user = relationship("User", back_populates="email_tags")
+    assignments = relationship("EmailTagAssignment", back_populates="tag", cascade="all, delete-orphan")
+
+    # Constraints
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_user_tag_name"),)
+
+
+class EmailTagAssignment(Base):
+    """Verknüpfung zwischen Emails und Tags (Phase 10)"""
+
+    __tablename__ = "email_tag_assignments"
+
+    id = Column(Integer, primary_key=True)
+    email_id = Column(Integer, ForeignKey("processed_emails.id", ondelete="CASCADE"), nullable=False)
+    tag_id = Column(Integer, ForeignKey("email_tags.id", ondelete="CASCADE"), nullable=False)
+    assigned_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    # Relationships
+    email = relationship("ProcessedEmail", back_populates="tag_assignments")
+    tag = relationship("EmailTag", back_populates="assignments")
+
+    # Constraints
+    __table_args__ = (UniqueConstraint("email_id", "tag_id", name="uq_email_tag"),)
+
+
 class User(Base):
     """Benutzer des Systems (Phase 2)"""
 
@@ -144,6 +181,9 @@ class User(Base):
     )
     recovery_codes = relationship(
         "RecoveryCode", back_populates="user", cascade="all, delete-orphan"
+    )
+    email_tags = relationship(
+        "EmailTag", back_populates="user", cascade="all, delete-orphan"
     )
 
     def set_password(self, password: str):
@@ -560,6 +600,9 @@ class ProcessedEmail(Base):
 
     # Relationships
     raw_email = relationship("RawEmail", back_populates="processed")
+    tag_assignments = relationship(
+        "EmailTagAssignment", back_populates="email", cascade="all, delete-orphan"
+    )
 
     @property
     def is_deleted(self) -> bool:
