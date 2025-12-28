@@ -6,36 +6,61 @@ Datenschutz-Level 1-3 gemäß Konzept
 import re
 import signal
 import logging
+import sys
+import threading
 from typing import Tuple
 from functools import wraps
 
 logger = logging.getLogger(__name__)
 
-# Phase 9f: ReDoS Protection Timeout-Decorator
+# Phase 9f: ReDoS Protection Timeout-Decorator (WSL2-compatible)
 def regex_timeout(seconds=2):
     """Timeout-Decorator für Regex-Operationen (ReDoS Protection)
     
     Bei Timeout: Gibt original Text zurück statt Exception zu werfen
+    WSL2-Compatible: Nutzt threading.Timer statt signal.SIGALRM
     """
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            def timeout_handler(signum, frame):
-                raise TimeoutError(f"Regex timeout in {func.__name__}")
-            
-            # Set alarm
-            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(seconds)
-            
-            try:
-                return func(*args, **kwargs)
-            except TimeoutError as e:
-                logger.warning(f"ReDoS Protection: {e} - returning original text")
-                # Return first arg (original text) on timeout
-                return args[0] if args else ""
-            finally:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
+            # WSL2/Windows Kompatibilität: signal.SIGALRM funktioniert nicht
+            if sys.platform == 'win32' or 'microsoft' in sys.platform.lower():
+                result = [None]
+                exception = [None]
+                
+                def run_func():
+                    try:
+                        result[0] = func(*args, **kwargs)
+                    except Exception as e:
+                        exception[0] = e
+                
+                thread = threading.Thread(target=run_func, daemon=True)
+                thread.start()
+                thread.join(timeout=seconds)
+                
+                if thread.is_alive():
+                    logger.warning(f"ReDoS Protection: Regex timeout ({seconds}s) - returning original text")
+                    return args[0] if args else ""
+                
+                if exception[0]:
+                    raise exception[0]
+                return result[0]
+            else:
+                # Unix/Linux: Nutze signal.SIGALRM für präzisere Timeouts
+                def timeout_handler(signum, frame):
+                    raise TimeoutError(f"Regex timeout in {func.__name__}")
+                
+                old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(seconds)
+                
+                try:
+                    return func(*args, **kwargs)
+                except TimeoutError as e:
+                    logger.warning(f"ReDoS Protection: {e} - returning original text")
+                    return args[0] if args else ""
+                finally:
+                    signal.alarm(0)
+                    signal.signal(signal.SIGALRM, old_handler)
         
         return wrapper
     return decorator
@@ -180,9 +205,11 @@ def _pseudonymize(text: str) -> str:
         text
     )
     
-    # URLs
+    # URLs (Phase 9f: Bounded Pattern - max 2000 Zeichen)
+    # ALT: r'https?://[^\s]+' (unbounded - ReDoS anfällig!)
+    # NEU: Max 2000 chars (realistische URL-Länge)
     text = re.sub(
-        r'https?://[^\s]+',
+        r'https?://[^\s]{1,2000}',
         replace_url,
         text
     )
