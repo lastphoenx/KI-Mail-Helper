@@ -4,28 +4,24 @@ Nutzt user_override_* Spalten aus der Datenbank zur Verbesserung der Base-Pass H
 """
 
 import logging
-import os
 from pathlib import Path
 from typing import Optional, Tuple, List
 import numpy as np
 from datetime import datetime, UTC
+import os
 
 try:
     from sklearn.ensemble import RandomForestClassifier
-    from sklearn.preprocessing import LabelEncoder
     import joblib
-
     HAS_SKLEARN = True
 except ImportError:
     HAS_SKLEARN = False
+    joblib = None
 
 from sqlalchemy.orm import Session
-import sys
 import importlib.util
-from pathlib import Path
 
 src_dir = Path(__file__).parent
-sys.path.insert(0, str(src_dir))
 
 spec_models = importlib.util.spec_from_file_location("models", src_dir / "02_models.py")
 models = importlib.util.module_from_spec(spec_models)
@@ -199,22 +195,28 @@ class MLTrainer:
         trained_count = 0
 
         clf_dr = self.train_classifier(embeddings_dr, labels_dr, "Dringlichkeit")
-        if clf_dr:
+        if clf_dr and joblib:
             joblib.dump(clf_dr, self.classifier_dir / "dringlichkeit_clf.pkl")
             self._log("💾 dringlichkeit_clf.pkl gespeichert")
             trained_count += 1
+        elif clf_dr:
+            self._log("⚠️  joblib nicht verfügbar, dringlichkeit_clf nicht gespeichert")
 
         clf_w = self.train_classifier(embeddings_w, labels_w, "Wichtigkeit")
-        if clf_w:
+        if clf_w and joblib:
             joblib.dump(clf_w, self.classifier_dir / "wichtigkeit_clf.pkl")
             self._log("💾 wichtigkeit_clf.pkl gespeichert")
             trained_count += 1
+        elif clf_w:
+            self._log("⚠️  joblib nicht verfügbar, wichtigkeit_clf nicht gespeichert")
 
         clf_spam = self.train_classifier(embeddings_spam, labels_spam, "Spam")
-        if clf_spam:
+        if clf_spam and joblib:
             joblib.dump(clf_spam, self.classifier_dir / "spam_clf.pkl")
             self._log("💾 spam_clf.pkl gespeichert")
             trained_count += 1
+        elif clf_spam:
+            self._log("⚠️  joblib nicht verfügbar, spam_clf nicht gespeichert")
 
         self._log(f"\n{'='*60}")
         self._log(

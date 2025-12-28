@@ -3,14 +3,12 @@ Mail Helper - Authentication & 2FA
 Handles Login, Register, TOTP 2FA
 """
 
-from datetime import datetime, timedelta
 import pyotp
 import qrcode
 from io import BytesIO
 import base64
 import logging
 import importlib
-import os
 
 logger = logging.getLogger(__name__)
 

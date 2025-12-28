@@ -18,7 +18,6 @@ except ImportError:
     joblib = None
 
 from .known_newsletters import (
-    is_known_newsletter_sender,
     classify_newsletter_confidence,
 )
 

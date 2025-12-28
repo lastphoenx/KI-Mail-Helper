@@ -4,8 +4,6 @@ Run with: python -m src.18_migrate_ml_columns
 """
 
 import sqlite3
-import os
-from datetime import datetime
 
 DB_PATH = "emails.db"
 

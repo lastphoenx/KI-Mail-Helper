@@ -54,7 +54,7 @@ class MailFetcher:
         except Exception as e:
             # Security Fix: Don't expose credentials in error messages
             logger.debug(f"Connection error details: {e}")  # Debug only
-            print(f"❌ Verbindungsfehler: Authentifizierung fehlgeschlagen")
+            print("❌ Verbindungsfehler: Authentifizierung fehlgeschlagen")
             raise ConnectionError("IMAP connection failed") from None
 
     def disconnect(self):
@@ -114,7 +114,7 @@ class MailFetcher:
         except Exception as e:
             # Security Fix: Don't expose sensitive data in error messages
             logger.debug(f"Fetch error details: {e}")  # Debug only
-            print(f"❌ Fehler beim Abrufen: Operation fehlgeschlagen")
+            print("❌ Fehler beim Abrufen: Operation fehlgeschlagen")
             return []
 
     def _fetch_email_by_id(

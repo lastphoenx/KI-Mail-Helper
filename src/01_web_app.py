@@ -21,8 +21,9 @@ from flask_login import (
     login_required,
     current_user,
 )
+from werkzeug.security import check_password_hash
 from flask_session import Session
-from sqlalchemy import create_engine, or_
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime, timedelta, UTC
 import logging
@@ -1457,7 +1458,6 @@ def get_training_stats():
         if last_correction and last_correction.correction_timestamp:
             last_correction_date = last_correction.correction_timestamp.isoformat()
 
-        import os
         from pathlib import Path
 
         classifier_dir = Path(__file__).resolve().parent / "classifiers"

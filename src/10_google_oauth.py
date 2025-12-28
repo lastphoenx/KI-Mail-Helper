@@ -4,7 +4,7 @@ Handles Google OAuth 2.0 flow for Gmail access
 
 import requests
 import logging
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, UTC
 from typing import Optional, Dict
 import importlib
 
