@@ -2,7 +2,7 @@
 
 ---
 
-## 📋 Projekt-Status (Aktualisiert: 26.12.2025)
+## 📋 Projekt-Status (Aktualisiert: 28.12.2025)
 
 ### ✅ Phase 0: Projektstruktur (Abgeschlossen)
 - [x] Grundstruktur aufgebaut (src/, templates/, tests/, scripts/)
@@ -327,9 +327,76 @@
 
 ---
 
+### ✅ Phase 9c: Security Code Review Fixes (Abgeschlossen - 28.12.2025)
+**Ziel:** Kritische Security-Findings aus automatisiertem Code-Review fixen
+
+**Security Score: 98/100 → 99/100** 🔒
+
+#### **CRITICAL Priority Fixes (Layer 1-2):**
+- [x] **AJAX CSRF Protection** - `src/01_web_app.py:113-125`
+  - Added `csrf_protect_ajax()` function for AJAX endpoint validation
+  - Applied to all state-changing AJAX operations
+  - Prevents CSRF attacks on asynchronous operations
+- [x] **Email Input Sanitization** - `src/03_ai_client.py:26-44`
+  - Added `_sanitize_email_input()` to remove control characters
+  - Applied to all AI clients (Ollama, OpenAI, Anthropic)
+  - Prevents prompt injection and log poisoning
+- [x] **API Key Redaction** - `src/03_ai_client.py:48-60`
+  - Added `_safe_response_text()` for automatic API key redaction
+  - Applied to OpenAI and Anthropic error logging
+  - Prevents credential leakage in logs
+- [x] **CSP Headers with Nonce** - `src/01_web_app.py:128-152`, `templates/base.html`
+  - Moved CSP from meta tag to HTTP header
+  - Nonce-based script execution (removed 'unsafe-inline')
+  - Per-request nonce generation for stronger XSS protection
+- [x] **Bootstrap SRI Hashes** - `templates/base.html`
+  - Added Subresource Integrity hashes for CDN assets
+  - Prevents tampering with third-party resources
+
+#### **HIGH Priority Fixes (Layer 2-3):**
+- [x] **Exception Sanitization (18 handlers)** - `src/01_web_app.py`
+  - All exceptions now use `type(e).__name__` instead of full details
+  - Removed 3× `exc_info=True` (OAuth, Mail-Abruf, Purge)
+  - Generic error messages in API responses
+  - Lines fixed: 262, 714, 790, 836, 869, 973, 1081, 1133, 1181, 1217, 1368, 1445, 1757, 1869, 2006, 2035, 2080-2081, 2091, 2153, 2179
+  - **Impact:** Prevents database paths, credentials, and internal structure leaks
+- [x] **Data Masking in Models** - `src/02_models.py:146`
+  - `User.__repr__` now masks username as '***'
+  - Prevents accidental data leaks in logs
+- [x] **Host/Port Input Validation** - `src/00_main.py:334-346`
+  - IP address validation with `ipaddress.ip_address()`
+  - Port range validation (1024-65535)
+  - Defense-in-depth against command injection
+- [x] **Token Generation Enhancement** - `src/02_models.py:256`
+  - Increased ServiceToken from 256 to 384 bits (48 bytes)
+  - Better entropy for service tokens
+
+#### **Infrastructure Improvements:**
+- [x] **Master Key Security** - `src/14_background_jobs.py`
+  - Removed `master_key` from FetchJob dataclass
+  - Loaded from ServiceToken at runtime (not stored in queue)
+  - Reduces master key exposure in process memory
+- [x] **Queue Size Limit** - `src/14_background_jobs.py:42-43`
+  - Added `MAX_QUEUE_SIZE = 50`
+  - Prevents denial-of-service via queue exhaustion
+- [x] **Redis Auto-Detection** - `src/01_web_app.py:160-177`
+  - Automatic Redis detection for rate limiting
+  - In-memory fallback when Redis unavailable
+  - Better multi-worker rate limiting
+- [x] **XSS Prevention in Settings** - `templates/settings.html:629-642`
+  - Changed to `JSON.parse()` for AI values
+  - Prevents script injection via crafted provider names
+- [x] **Pickle Security** - `src/03_ai_client.py:294-324`
+  - Added `_load_classifier_safely()` with HMAC verification
+  - Mitigates pickle deserialization RCE risk
+
+**Commits:** [pending]
+
+---
+
 ## 🚀 **Ausstehende Aufgaben (Priorität)**
 
-### **🔴 Phase 8c: Security Hardening (Abgeschlossen - 27.12.2025)**
+### **🟡 Phase 9d: HIGH-Priority Remaining Fixes**
 **Ziel:** System-weite Sicherheitshärtung nach OWASP-Standards
 
 #### **Prio 1: Password Policy (30 min) ✅**

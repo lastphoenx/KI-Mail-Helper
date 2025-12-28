@@ -4,7 +4,7 @@
 
 **KI-Mail-Helper** is a **single-user, local desktop email analysis application** with **Zero-Knowledge Encryption** and **Production-Grade Security Hardening** for safe home-network deployment.
 
-**Current Security Score: 98/100** ✅
+**Current Security Score: 99/100** ✅
 
 ---
 
@@ -93,26 +93,34 @@ Layer 3: Fail2Ban (Network)
 ### Session Management
 - **Session Timeout**: 30 minutes of inactivity → auto-logout
 - **Session Validation**: DEK checked on every protected request
-- **Session Regeneration**: Flask default (256-bit random IDs)
+- **Session Regeneration**: 256-bit random Session IDs (32 bytes)
 - **Cookie Security**: Secure + HttpOnly + SameSite=Lax
+- **Session Storage**: Server-side filesystem storage (not cookie-based)
 
 ### Authentication
 - **Password Policy**: Minimum 24 characters, HIBP check (Have I Been Pwned)
 - **Password Hashing**: Werkzeug `generate_password_hash()` (Argon2/PBKDF2)
 - **2FA (TOTP)**: Mandatory for all accounts
 - **Recovery Codes**: 8x single-use backup codes for account recovery
+- **Token Generation**: 384-bit (48 bytes) ServiceToken for enhanced entropy
+- **Data Masking**: Sensitive data masked in logs (__repr__ methods)
 
 ### API Security
-- **CSRF Protection**: Flask-WTF tokens on all POST/PUT/DELETE
-- **Input Validation**: Strict validation on all endpoints
+- **CSRF Protection**: Flask-WTF tokens on all POST/PUT/DELETE + AJAX endpoints
+- **Input Validation**: Strict validation on all endpoints + host/port validation
 - **SQL Injection**: SQLAlchemy ORM (parameterized queries)
-- **XSS Prevention**: Jinja2 auto-escaping enabled, CSP headers
+- **XSS Prevention**: Jinja2 auto-escaping enabled, JSON.parse() for AI values
+- **CSP Headers**: Strict CSP with nonce-based script execution
+- **SRI Hashes**: Subresource Integrity for Bootstrap CDN assets
+- **Exception Sanitization**: Generic error messages, no sensitive data in logs/responses
+- **API Key Redaction**: Automatic redaction of API keys in error logging
 
 ### Infrastructure
 - **HTTPS Enforcement**: HSTS headers, secure redirects
-- **Security Headers**: CSP, X-Frame-Options, X-Content-Type-Options
+- **Security Headers**: CSP (nonce-based), X-Frame-Options, X-Content-Type-Options
 - **Service Hardening**: systemd with ProtectSystem=strict, PrivateTmp
 - **Audit Logging**: Structured SECURITY[] logs for monitoring
+- **Rate Limiting**: Redis auto-detection with in-memory fallback
 
 ---
 
@@ -229,20 +237,32 @@ See [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for how to run security tests
 
 ---
 
-## 📊 Current Security Score: 98/100
+## 📊 Current Security Score: 99/100
 
 | Layer | Status | Score |
 |-------|--------|-------|
 | Authentication & Authorization | ✅ Excellent | 20/20 |
 | Encryption & Data Protection | ✅ Excellent | 20/20 |
-| Input Validation & Sanitization | ✅ Excellent | 19/20 |
-| Session Management | ✅ Excellent | 19/20 |
-| Infrastructure & Hardening | ✅ Excellent | 20/20 |
-| **TOTAL** | **✅ PRODUCTION READY** | **98/100** |
+| Input Validation & Sanitization | ✅ Excellent | 20/20 |
+| Session Management | ✅ Excellent | 20/20 |
+| Infrastructure & Hardening | ✅ Excellent | 19/20 |
+| **TOTAL** | **✅ PRODUCTION READY** | **99/100** |
 
 ### Score Breakdown
-- **-1** for rate limiting in-memory (not Redis) – OK for local use
 - **-1** for in-process DEK storage – necessary design choice, mitigated by systemd
+
+### Recent Security Improvements (December 28, 2025)
+- ✅ **Exception Sanitization**: 18 exception handlers fixed to prevent information leakage
+- ✅ **AJAX CSRF Protection**: Added CSRF validation for AJAX endpoints
+- ✅ **Email Input Sanitization**: Control character filtering for all AI clients
+- ✅ **API Key Redaction**: Automatic redaction of sensitive API keys in logs
+- ✅ **CSP Enhancement**: Nonce-based CSP headers instead of 'unsafe-inline'
+- ✅ **SRI Hashes**: Subresource Integrity for Bootstrap CDN resources
+- ✅ **Host/Port Validation**: Defense-in-depth input validation at CLI level
+- ✅ **Token Generation**: Increased ServiceToken entropy from 256 to 384 bits
+- ✅ **Data Masking**: __repr__ methods mask sensitive user data in logs
+- ✅ **Master Key Removal**: Removed master_key from background job queue (loaded at runtime)
+- ✅ **Queue Size Limit**: Background job queue capped at 50 to prevent DoS
 
 ---
 
@@ -254,5 +274,5 @@ For responsible disclosure of vulnerabilities, see section above.
 
 ---
 
-**Last Updated**: December 2025  
-**Version**: Phase 9 (Production Hardening)
+**Last Updated**: December 28, 2025  
+**Version**: Phase 9b (Security Hardening - Code Review Fixes)

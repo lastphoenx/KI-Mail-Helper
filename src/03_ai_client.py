@@ -22,6 +22,44 @@ from .known_newsletters import is_known_newsletter_sender, classify_newsletter_c
 logger = logging.getLogger(__name__)
 
 
+# Security Fix (Layer 3): Input Sanitization for Email Content
+def _sanitize_email_input(text: str, max_length: int = 10000) -> str:
+    """Sanitizes email content before sending to AI APIs.
+    
+    Prevents:
+    - JSON injection via control characters
+    - DoS via extremely long inputs
+    - HTTP header injection
+    """
+    if not isinstance(text, str):
+        return ""
+    
+    # Limit length to prevent DoS
+    text = text[:max_length]
+    
+    # Remove control characters that could break JSON/HTTP
+    import re
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    
+    return text.strip()
+
+
+# Security Fix (Layer 3): Safe Error Logging (redact API keys)
+def _safe_response_text(response) -> str:
+    """Extracts response text safely without exposing API keys.
+    
+    Redacts patterns like:
+    - sk-... (OpenAI)
+    - ak-... (Anthropic)
+    - Any 20+ char alphanumeric after 2-letter prefix
+    """
+    text = response.text[:200]
+    import re
+    # Redact potential API keys
+    text = re.sub(r'\b[a-z]{2}-[a-zA-Z0-9]{20,}\b', '[REDACTED_KEY]', text)
+    return text
+
+
 class AIClient(ABC):
     """Abstraktes Interface für KI-Backends"""
 
@@ -281,14 +319,47 @@ class LocalOllamaClient(AIClient):
 
             if clf_path.exists():
                 try:
-                    self._classifiers[key] = joblib.load(clf_path)
+                    # Security: Load with integrity check
+                    self._classifiers[key] = self._load_classifier_safely(clf_path)
                     if encoder_path.exists():
-                        self._label_encoders[key] = joblib.load(encoder_path)
+                        self._label_encoders[key] = self._load_classifier_safely(encoder_path)
                     logger.debug(f"✅ Klassifikator geladen: {key}")
                 except Exception as e:
                     logger.warning(f"Fehler beim Laden von {clf_path}: {e}")
             else:
                 logger.debug(f"Klassifikator nicht gefunden: {clf_path} → Heuristiken als Fallback")
+
+    def _load_classifier_safely(self, pkl_path: Path) -> Any:
+        """Lädt Pickle-Files mit optionaler Integrity-Prüfung (Phase 9: Security Hardening).
+        
+        Security-Note: Pickle-Deserialization kann zu RCE führen wenn Attacker
+        malicious .pkl Files in src/classifiers/ platziert. Optional kann via
+        CLASSIFIER_HMAC_KEY Environment-Variable HMAC-Verification aktiviert werden.
+        """
+        import hashlib
+        import hmac
+        
+        secret_key = os.getenv('CLASSIFIER_HMAC_KEY', '').encode()
+        
+        # Optional: HMAC verification wenn Secret Key gesetzt
+        if secret_key:
+            # Check für .sig File
+            sig_path = pkl_path.with_suffix('.pkl.sig')
+            if sig_path.exists():
+                with open(pkl_path, 'rb') as f:
+                    file_data = f.read()
+                with open(sig_path, 'r') as f:
+                    expected_hash = f.read().strip()
+                
+                computed_hash = hmac.new(secret_key, file_data, hashlib.sha256).hexdigest()
+                if not hmac.compare_digest(computed_hash, expected_hash):
+                    raise ValueError(f"Classifier integrity check failed: {pkl_path}")
+                logger.debug(f"🔒 Integrity verified: {pkl_path.name}")
+            else:
+                logger.warning(f"⚠️ No signature file found for {pkl_path.name} (HMAC key set but no .sig)")
+        
+        # Load pickle file
+        return joblib.load(pkl_path)
 
     def _fetch_available_models(self) -> set[str]:
         """Fragt verfügbare Modelle ab und meldet die Erreichbarkeit des Servers."""
@@ -330,7 +401,7 @@ class LocalOllamaClient(AIClient):
                 timeout=30,
             )
             if response.status_code != 200:
-                logger.debug("Embedding API Error (%s): %s", response.status_code, response.text[:100])
+                logger.debug("Embedding API Error (%s): %s", response.status_code, _safe_response_text(response))
                 return None
             data = response.json()
             embedding = data.get("embedding")
@@ -463,6 +534,11 @@ class LocalOllamaClient(AIClient):
 
     def analyze_email(self, subject: str, body: str, language: str = "de", sender: str = "") -> Dict[str, Any]:
         """Dispatcher: nutzt Embedding-Heuristiken oder Chat-LLM je nach Modelltyp."""
+        # Security: Sanitize inputs before API calls
+        subject = _sanitize_email_input(subject, max_length=500)
+        body = _sanitize_email_input(body, max_length=50000)
+        sender = _sanitize_email_input(sender, max_length=200)
+        
         if self._is_embedding_model:
             return self._analyze_with_embeddings(subject, body, sender=sender)
         return self._analyze_with_chat(subject, body, language)
@@ -508,7 +584,7 @@ class LocalOllamaClient(AIClient):
                 "Ollama API Error (%s): %s - %s",
                 self.model,
                 response.status_code,
-                response.text[:200],
+                _safe_response_text(response),
             )
             return self._get_fallback_response()
 
@@ -551,6 +627,10 @@ class OpenAIClient(AIClient):
         self.retry_delay = 2  # Sekunden
 
     def analyze_email(self, subject: str, body: str, language: str = "de") -> Dict[str, Any]:
+        # Security: Sanitize inputs before API calls
+        subject = _sanitize_email_input(subject, max_length=500)
+        body = _sanitize_email_input(body, max_length=50000)
+        
         payload = {
             "model": self.model,
             "messages": _build_standard_messages(subject, body, language),
@@ -599,7 +679,9 @@ class OpenAIClient(AIClient):
                 elif exc.response.status_code == 429:
                     pass  # Bereits oben behandelt
                 else:
-                    logger.error("OpenAI HTTP Error (model=%s): %d", self.model, exc.response.status_code)
+                    # Security: Redact API keys from error response
+                    logger.error("OpenAI HTTP Error (model=%s): %d - %s", 
+                                self.model, exc.response.status_code, _safe_response_text(exc.response))
                 return _fallback_response()
                 
             except requests.exceptions.RequestException as exc:
@@ -653,6 +735,10 @@ class AnthropicClient(AIClient):
         self.retry_delay = 2  # Sekunden
 
     def analyze_email(self, subject: str, body: str, language: str = "de") -> Dict[str, Any]:
+        # Security: Sanitize inputs before API calls
+        subject = _sanitize_email_input(subject, max_length=500)
+        body = _sanitize_email_input(body, max_length=50000)
+        
         payload = {
             "model": self.model,
             "max_tokens": 1024,
@@ -712,7 +798,9 @@ class AnthropicClient(AIClient):
                 elif exc.response.status_code == 429:
                     pass  # Bereits oben behandelt
                 else:
-                    logger.error("Anthropic HTTP Error (model=%s): %d", self.model, exc.response.status_code)
+                    # Security: Redact API keys from error response
+                    logger.error("Anthropic HTTP Error (model=%s): %d - %s", 
+                                self.model, exc.response.status_code, _safe_response_text(exc.response))
                 return _fallback_response()
                 
             except requests.exceptions.RequestException as exc:

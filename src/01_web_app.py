@@ -83,6 +83,12 @@ app.config['SESSION_FILE_DIR'] = session_dir
 app.config['SESSION_PERMANENT'] = True  # Enable permanent sessions with timeout
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)  # 30min inactivity timeout
 app.config['SESSION_USE_SIGNER'] = False  # EMPFOHLEN: Deprecated seit Flask-Session 0.7.0 (server-side irrelevant, 256-bit Session-ID = ausreichend)
+
+# Security Note: Session files contain DEK/Master-Keys. Ensure:
+# - Restrictive file permissions (0o700 above)
+# - Regular cleanup of expired sessions
+# - Backup software excludes .flask_sessions/
+# - For high-security: Consider encrypted filesystem or Redis with TLS
 app.config['SESSION_KEY_PREFIX'] = 'mail_helper_'
 app.config['SESSION_ID_LENGTH'] = 32  # 256-bit Entropie für Session-ID (default, explizit dokumentiert)
 
@@ -94,25 +100,93 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF-Schutz
 Session(app)
 
 # CSRF Protection mit Flask-WTF (Phase 8d: Security Hardening)
-from flask_wtf.csrf import CSRFProtect, generate_csrf
+from flask_wtf.csrf import CSRFProtect, generate_csrf, validate_csrf
+from werkzeug.exceptions import BadRequest
 csrf = CSRFProtect(app)
 
-# Make csrf_token available in all templates
+import secrets
+from flask import g
+
+# Generate CSP nonce for this request
+@app.before_request
+def generate_csp_nonce():
+    g.csp_nonce = secrets.token_urlsafe(16)
+
+# Make csrf_token and csp_nonce available in all templates
 @app.context_processor
 def inject_csrf_token():
-    return dict(csrf_token=generate_csrf)
+    return dict(csrf_token=generate_csrf, csp_nonce=lambda: g.get('csp_nonce', ''))
 
-logger.info("🛡️  CSRF Protection aktiviert (Flask-WTF)")
+# Security Fix (Layer 1): CSRF Protection for AJAX Endpoints
+@app.before_request
+def csrf_protect_ajax():
+    """Validates CSRF tokens for all POST/PUT/DELETE AJAX requests."""
+    if request.method in ['POST', 'PUT', 'DELETE'] and request.is_json:
+        token = request.headers.get('X-CSRFToken')
+        if not token:
+            logger.warning("⚠️ CSRF token missing in AJAX request from %s", request.remote_addr)
+            return jsonify({"error": "CSRF token missing"}), 403
+        try:
+            validate_csrf(token)
+        except BadRequest:
+            logger.warning("⚠️ CSRF token invalid in AJAX request from %s", request.remote_addr)
+            return jsonify({"error": "CSRF token invalid"}), 403
+
+# Security Fix (Layer 5): Content Security Policy via HTTP Header (not meta tag)
+@app.after_request
+def set_security_headers(response):
+    """Sets CSP and other security headers for all responses.
+    
+    CSP uses nonce for inline scripts (no 'unsafe-inline' needed).
+    """
+    if response.status_code < 400:  # Only for successful responses
+        nonce = g.get('csp_nonce', '')
+        # Content Security Policy (strict, with nonce for inline scripts)
+        csp = (
+            "default-src 'self'; "
+            f"script-src 'self' https://cdn.jsdelivr.net 'nonce-{nonce}'; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "img-src 'self' data:; "
+            "font-src 'self' https://cdn.jsdelivr.net; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self';"
+        )
+        response.headers['Content-Security-Policy'] = csp
+        
+        # Additional Security Headers
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    
+    return response
+
+logger.info("🛡️  CSRF Protection aktiviert (Flask-WTF + AJAX)")
+logger.info("🔒 Security Headers aktiviert (CSP + X-Frame-Options + Referrer-Policy)")
 
 # Rate Limiting (Phase 9: Production Hardening)
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
+# Auto-detect Redis availability for multi-worker setups
+RATE_LIMIT_STORAGE = os.getenv('RATE_LIMIT_STORAGE', 'memory://')
+if RATE_LIMIT_STORAGE == 'auto':
+    try:
+        import redis
+        r = redis.Redis(host='localhost', port=6379, db=1, socket_connect_timeout=1)
+        r.ping()
+        RATE_LIMIT_STORAGE = 'redis://localhost:6379/1'
+        logger.info("🟢 Redis detected - using for rate limiting (multi-worker safe)")
+    except Exception:
+        RATE_LIMIT_STORAGE = 'memory://'
+        logger.warning("🟡 Redis not available - using memory storage (single-worker only)")
+
 limiter = Limiter(
     app=app,
-    key_func=get_remote_address,  # Rate limit per IP
-    default_limits=["200 per day", "50 per hour"],  # Global limits
-    storage_uri="memory://",  # In-memory storage (consider Redis for production)
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri=RATE_LIMIT_STORAGE,
 )
 
 logger.info("🛡️  Rate Limiting aktiviert (Flask-Limiter)")
@@ -184,7 +258,8 @@ def decrypt_raw_email(raw_email, master_key):
             ) if raw_email.encrypted_body else ""
         }
     except Exception as e:
-        logger.error(f"Entschlüsselung fehlgeschlagen für RawEmail {raw_email.id}: {e}")
+        # Security: Log details internally, show generic message to user
+        logger.error(f"Entschlüsselung fehlgeschlagen für RawEmail {raw_email.id}: {type(e).__name__}")
         return {
             "sender": "***Entschlüsselung fehlgeschlagen***",
             "subject": "***Entschlüsselung fehlgeschlagen***",
@@ -636,7 +711,7 @@ def list_view():
                     decrypted_mails.append(mail)
                     
                 except Exception as e:
-                    logger.error(f"Entschlüsselung fehlgeschlagen für RawEmail {mail.raw_email.id}: {e}")
+                    logger.error(f"Entschlüsselung fehlgeschlagen für RawEmail {mail.raw_email.id}: {type(e).__name__}")
                     continue
         else:
             # Ohne master_key können wir nichts anzeigen
@@ -712,7 +787,7 @@ def email_detail(email_id):
                     processed.encrypted_tags or "", master_key
                 )
             except Exception as e:
-                logger.error(f"Entschlüsselung fehlgeschlagen für RawEmail {raw.id}: {e}")
+                logger.error(f"Entschlüsselung fehlgeschlagen für RawEmail {raw.id}: {type(e).__name__}")
         
         return render_template(
             "email_detail.html",
@@ -757,7 +832,9 @@ def mark_done(email_id):
         return redirect(request.referrer or url_for("list_view"))
     
     except Exception as e:
-        logger.error(f"Fehler bei mark_done: {e}")
+        # Security: Log details internally, show generic message to user
+        logger.error(f"Fehler bei mark_done: {type(e).__name__}")
+        flash("Fehler beim Markieren der E-Mail. Bitte versuche es erneut.", "error")
         return redirect(url_for("list_view"))
     
     finally:
@@ -789,7 +866,7 @@ def mark_undone(email_id):
         return redirect(request.referrer or url_for("list_view"))
     
     except Exception as e:
-        logger.error(f"Fehler bei mark_undone: {e}")
+        logger.error(f"Fehler bei mark_undone: {type(e).__name__}")
         return redirect(url_for("list_view"))
     
     finally:
@@ -893,8 +970,8 @@ def reprocess_email(email_id):
             }), 500
     
     except Exception as e:
-        logger.error(f"Fehler bei reprocess_email: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Fehler bei reprocess_email: {type(e).__name__}")
+        return jsonify({"error": "Verarbeitung fehlgeschlagen"}), 500
     
     finally:
         db.close()
@@ -1001,8 +1078,8 @@ def optimize_email(email_id):
             }), 500
     
     except Exception as e:
-        logger.error(f"Fehler bei optimize_email: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Fehler bei optimize_email: {type(e).__name__}")
+        return jsonify({"error": "Optimierung fehlgeschlagen"}), 500
     
     finally:
         db.close()
@@ -1053,8 +1130,8 @@ def correct_email(email_id: int):
         })
         
     except Exception as e:
-        logger.error(f"Fehler beim Speichern der Korrektur: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Fehler beim Speichern der Korrektur: {type(e).__name__}")
+        return jsonify({"error": "Speichern fehlgeschlagen"}), 500
     finally:
         db.close()
 
@@ -1101,8 +1178,8 @@ def get_email_flags(email_id):
         })
         
     except Exception as e:
-        logger.error(f"Fehler beim Abrufen der Flags: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Fehler beim Abrufen der Flags: {type(e).__name__}")
+        return jsonify({"error": "Abrufen fehlgeschlagen"}), 500
     finally:
         db.close()
 
@@ -1137,9 +1214,9 @@ def retrain_models():
         }), 500
     
     except Exception as e:
-        logger.error(f"Fehler beim Retraining: {e}")
+        logger.error(f"Fehler beim Retraining: {type(e).__name__}")
         return jsonify({
-            "error": f"Retraining fehlgeschlagen: {str(e)}"
+            "error": "Retraining fehlgeschlagen"
         }), 500
 
 
@@ -1288,7 +1365,7 @@ def save_ai_preferences():
         flash("KI-Präferenzen gespeichert (Base + Optimize).", "success")
     except Exception as exc:
         db.rollback()
-        logger.error("Fehler beim Speichern der KI-Präferenz: %s", exc, exc_info=True)
+        logger.error(f"Fehler beim Speichern der KI-Präferenz: {type(exc).__name__}")
         flash("Speichern fehlgeschlagen. Bitte Log prüfen.", "danger")
     finally:
         db.close()
@@ -1365,7 +1442,7 @@ def change_password():
                 
             except Exception as e:
                 db.rollback()
-                logger.error(f"❌ Fehler bei Passwort-Änderung: {e}")
+                logger.error(f"❌ Fehler bei Passwort-Änderung: {type(e).__name__}")
                 flash("Passwort-Änderung fehlgeschlagen. Bitte erneut versuchen.", "danger")
                 return render_template("change_password.html")
         
@@ -1677,11 +1754,11 @@ def google_oauth_callback():
         return redirect(url_for("settings"))
     
     except Exception as e:
-        logger.error(f"OAuth Callback Fehler: {e}", exc_info=True)
+        logger.error(f"OAuth Callback Fehler: {type(e).__name__}")
         return render_template(
             "google_oauth_setup.html",
             step=1,
-            error=f"Fehler: {str(e)}"
+            error="OAuth-Authentifizierung fehlgeschlagen"
         ), 500
     
     finally:
@@ -1789,7 +1866,7 @@ def add_mail_account():
         return render_template("add_mail_account.html")
     
     except Exception as e:
-        logger.error(f"Fehler beim Hinzufügen von Mail-Account: {e}")
+        logger.error(f"Fehler beim Hinzufügen von Mail-Account: {type(e).__name__}")
         return render_template(
             "add_mail_account.html",
             error="Fehler beim Speichern"
@@ -1926,7 +2003,7 @@ def edit_mail_account(account_id):
         )
     
     except Exception as e:
-        logger.error(f"Fehler beim Bearbeiten von Mail-Account: {e}")
+        logger.error(f"Fehler beim Bearbeiten von Mail-Account: {type(e).__name__}")
         return redirect(url_for("settings"))
     
     finally:
@@ -1955,7 +2032,7 @@ def delete_mail_account(account_id):
         return redirect(url_for("settings"))
     
     except Exception as e:
-        logger.error(f"Fehler beim Löschen von Mail-Account: {e}")
+        logger.error(f"Fehler beim Löschen von Mail-Account: {type(e).__name__}")
         return redirect(url_for("settings"))
     
     finally:
@@ -1993,7 +2070,6 @@ def fetch_mails(account_id):
             job_id = job_queue.enqueue_fetch_job(
                 user_id=user.id,
                 account_id=account.id,
-                master_key=master_key,
                 provider=provider,
                 model=resolved_model,
                 max_mails=fetch_limit,
@@ -2001,8 +2077,8 @@ def fetch_mails(account_id):
                 meta={"trigger": "settings"}
             )
         except Exception as exc:
-            logger.error("Konnte Hintergrundjob nicht anlegen: %s", exc, exc_info=True)
-            return jsonify({"error": str(exc)}), 500
+            logger.error(f"Konnte Hintergrundjob nicht anlegen: {type(exc).__name__}")
+            return jsonify({"error": "Hintergrundjob fehlgeschlagen"}), 500
 
         return jsonify({
             "status": "queued",
@@ -2012,8 +2088,8 @@ def fetch_mails(account_id):
         })
     
     except Exception as e:
-        logger.error(f"Fehler beim Mail-Abruf: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Fehler beim Mail-Abruf: {type(e).__name__}")
+        return jsonify({"error": "Mail-Abruf fehlgeschlagen"}), 500
     
     finally:
         db.close()
@@ -2074,8 +2150,8 @@ def purge_mail_account(account_id):
 
     except Exception as e:
         db.rollback()
-        logger.error(f"Fehler beim Purge: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Fehler beim Purge: {type(e).__name__}")
+        return jsonify({"error": "Purge fehlgeschlagen"}), 500
 
     finally:
         db.close()
@@ -2100,7 +2176,7 @@ def not_found(e):
 @app.errorhandler(500)
 def server_error(e):
     """500-Handler"""
-    logger.error(f"Server-Fehler: {e}")
+    logger.error(f"Server-Fehler: {type(e).__name__}")
     return "500 - Server-Fehler", 500
 
 

@@ -309,6 +309,7 @@ def main():
     
     parser.add_argument(
         "--host",
+        type=str,
         default="0.0.0.0",
         help="Web-Server Host (default: 0.0.0.0)"
     )
@@ -327,6 +328,22 @@ def main():
     )
     
     args = parser.parse_args()
+    
+    # Security: Validate host/port arguments (Defense-in-Depth)
+    # Flask validates internally, but explicit check prevents potential issues
+    if args.serve:
+        import ipaddress
+        try:
+            # Allow localhost, 0.0.0.0, or valid IP addresses
+            if args.host not in ['localhost', '0.0.0.0']:
+                ipaddress.ip_address(args.host)
+        except ValueError:
+            logger.error(f"❌ Ungültiger Host: {args.host} (muss IP-Adresse, 'localhost' oder '0.0.0.0' sein)")
+            sys.exit(1)
+        
+        if not (1024 <= args.port <= 65535):
+            logger.error(f"❌ Ungültiger Port: {args.port} (muss zwischen 1024 und 65535 liegen)")
+            sys.exit(1)
     
     if args.serve:
         logger.info("🌐 Starte Web-Dashboard...")

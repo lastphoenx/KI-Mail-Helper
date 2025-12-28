@@ -144,7 +144,8 @@ class User(Base):
         self.locked_until = None
     
     def __repr__(self):
-        return f"<User(id={self.id}, username='{self.username}')>"
+        # Security: Mask sensitive data in logs
+        return f"<User(id={self.id}, username='***')>"
 
 
 class MailAccount(Base):
@@ -251,8 +252,8 @@ class ServiceToken(Base):
     
     @staticmethod
     def generate_token() -> str:
-        """Generiert einen neuen Token"""
-        return secrets.token_urlsafe(32)
+        """Generiert einen neuen Token mit 384 Bit Entropie (Phase 9: Security Hardening)"""
+        return secrets.token_urlsafe(48)  # 48 bytes = 384 bit
     
     @staticmethod
     def hash_token(token: str) -> str:

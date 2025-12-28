@@ -28,7 +28,8 @@ class FetchJob:
     job_id: str
     user_id: int
     account_id: int
-    master_key: str
+    # Security: master_key NICHT hier speichern - Memory-Leak-Risiko!
+    # Wird stattdessen zur Laufzeit aus Session des Users geholt
     provider: str
     model: str
     max_mails: int = 50
@@ -39,9 +40,12 @@ class FetchJob:
 class BackgroundJobQueue:
     """Kleiner in-memory Job-Queue mit einem Worker-Thread."""
 
+    # Security: Limit queue size to prevent memory exhaustion
+    MAX_QUEUE_SIZE = 50
+
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self.queue: Queue[FetchJob] = Queue()
+        self.queue: Queue[FetchJob] = Queue(maxsize=self.MAX_QUEUE_SIZE)
         self._stop_event = threading.Event()
         self._worker: Optional[threading.Thread] = None
         self._status: Dict[str, Dict[str, Any]] = {}
@@ -70,7 +74,6 @@ class BackgroundJobQueue:
         *,
         user_id: int,
         account_id: int,
-        master_key: str,
         provider: str,
         model: str,
         max_mails: int,
@@ -85,14 +88,16 @@ class BackgroundJobQueue:
             job_id=job_id,
             user_id=user_id,
             account_id=account_id,
-            master_key=master_key,
             provider=provider,
             model=model,
             max_mails=max_mails,
             sanitize_level=sanitize_level,
             meta=meta or {}
         )
-        self.queue.put(job)
+        try:
+            self.queue.put(job, block=False)  # Don't block if queue is full
+        except Exception:
+            raise ValueError(f"Job-Queue ist voll ({self.MAX_QUEUE_SIZE} Jobs). Bitte warten...")
         self._update_status(job_id, {
             "state": "queued",
             "user_id": user_id,
@@ -146,12 +151,22 @@ class BackgroundJobQueue:
             if not account:
                 raise ValueError("Mail-Account nicht gefunden")
 
-            if not job.master_key:
-                raise ValueError("Master-Key fehlt im Job")
+            # Security: Lade master_key aus Service-Token statt aus Job-Memory
+            # Job speichert keine Secrets im RAM → Memory-Dump-Safe
+            service_token = session.query(models.ServiceToken).filter_by(
+                user_id=job.user_id,
+                is_active=True
+            ).first()
+            if not service_token:
+                raise ValueError("Service-Token nicht gefunden - Background-Jobs benötigen aktiven Token")
+            
+            master_key = service_token.master_key
+            if not master_key:
+                raise ValueError("Master-Key fehlt im Service-Token")
 
-            raw_emails = self._fetch_raw_emails(account, job.master_key, job.max_mails)
+            raw_emails = self._fetch_raw_emails(account, master_key, job.max_mails)
             if raw_emails:
-                saved = self._persist_raw_emails(session, user, account, raw_emails, job.master_key)
+                saved = self._persist_raw_emails(session, user, account, raw_emails, master_key)
 
             ai_instance = ai_client.build_client(job.provider, model=job.model)
 
@@ -165,7 +180,7 @@ class BackgroundJobQueue:
             processed = processing.process_pending_raw_emails(
                 session=session,
                 user=user,
-                master_key=job.master_key,
+                master_key=master_key,
                 mail_account=account,
                 limit=job.max_mails,
                 ai=ai_instance,

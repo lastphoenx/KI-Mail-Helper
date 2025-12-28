@@ -626,16 +626,19 @@ async function triggerRetraining() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    window.savedAIValues = {
-        Base: {
-            provider: {{ ai_selected_provider_base|tojson }},
-            model: {{ ai_selected_model_base|tojson }}
-        },
-        Optimize: {
-            provider: {{ ai_selected_provider_optimize|tojson }},
-            model: {{ ai_selected_model_optimize|tojson }}
-        }
-    };
+    // Security: Parse JSON safely to prevent XSS via provider/model names
+    try {
+        window.savedAIValues = JSON.parse({{ {
+            'Base': {'provider': ai_selected_provider_base, 'model': ai_selected_model_base},
+            'Optimize': {'provider': ai_selected_provider_optimize, 'model': ai_selected_model_optimize}
+        }|tojson }});
+    } catch(e) {
+        console.error('Failed to parse AI values:', e);
+        window.savedAIValues = {
+            Base: {provider: 'ollama', model: 'llama3.2:3b'},
+            Optimize: {provider: 'ollama', model: 'llama3.2:3b'}
+        };
+    }
     initializeProviders();
     loadTrainingStats();
 });
