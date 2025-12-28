@@ -967,6 +967,16 @@ def email_detail(email_id):
                 logger.error(
                     f"Entschlüsselung fehlgeschlagen für RawEmail {raw.id}: {type(e).__name__}"
                 )
+        
+        # Phase 10: Lade Email-Tags
+        email_tags = []
+        all_user_tags = []
+        try:
+            tag_manager_mod = importlib.import_module("src.services.tag_manager")
+            email_tags = tag_manager_mod.TagManager.get_email_tags(db, email_id, user.id)
+            all_user_tags = tag_manager_mod.TagManager.get_user_tags(db, user.id)
+        except ImportError:
+            logger.warning("TagManager nicht verfügbar")
 
         return render_template(
             "email_detail.html",
@@ -980,6 +990,8 @@ def email_detail(email_id):
             decrypted_text_de=decrypted_text_de,
             decrypted_tags=decrypted_tags,
             priority_label=priority_label,
+            email_tags=email_tags,
+            all_user_tags=all_user_tags,
         )
 
     finally:
@@ -1675,6 +1687,207 @@ def settings():
             ai_selected_model_optimize=selected_model_optimize,
         )
 
+    finally:
+        db.close()
+
+
+@app.route("/tags")
+@login_required
+def tags_view():
+    """Tag-Management-Seite"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect(url_for("login"))
+        
+        # Lade TagManager dynamisch
+        try:
+            tag_manager_mod = importlib.import_module("src.services.tag_manager")
+            TagManager = tag_manager_mod.TagManager
+        except ImportError as e:
+            logger.error(f"TagManager konnte nicht geladen werden: {e}")
+            return render_template("tags.html", user=user, tags=[])
+        
+        # Hole alle Tags des Users
+        tags = TagManager.get_user_tags(db, user.id)
+        
+        # Zähle E-Mails pro Tag
+        tags_with_counts = []
+        for tag in tags:
+            email_count = (
+                db.query(models.EmailTagAssignment)
+                .filter(models.EmailTagAssignment.tag_id == tag.id)
+                .count()
+            )
+            tags_with_counts.append({
+                'id': tag.id,
+                'name': tag.name,
+                'color': tag.color,
+                'email_count': email_count
+            })
+        
+        return render_template("tags.html", user=user, tags=tags_with_counts)
+    
+    finally:
+        db.close()
+
+
+@app.route("/api/tags", methods=["POST"])
+@login_required
+def api_create_tag():
+    """API: Tag erstellen"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        data = request.get_json()
+        name = data.get("name", "").strip()
+        color = data.get("color", "#3B82F6")
+        
+        if not name:
+            return jsonify({"error": "Tag-Name erforderlich"}), 400
+        
+        try:
+            tag_manager_mod = importlib.import_module("src.services.tag_manager")
+            tag = tag_manager_mod.TagManager.create_tag(db, user.id, name, color)
+            
+            return jsonify({
+                "id": tag.id,
+                "name": tag.name,
+                "color": tag.color
+            }), 201
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+    
+    finally:
+        db.close()
+
+
+@app.route("/api/tags/<int:tag_id>", methods=["PUT"])
+@login_required
+def api_update_tag(tag_id):
+    """API: Tag aktualisieren"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        data = request.get_json()
+        name = data.get("name")
+        color = data.get("color")
+        
+        try:
+            tag_manager_mod = importlib.import_module("src.services.tag_manager")
+            tag = tag_manager_mod.TagManager.update_tag(
+                db, tag_id, user.id, name=name, color=color
+            )
+            
+            if not tag:
+                return jsonify({"error": "Tag nicht gefunden"}), 404
+            
+            return jsonify({
+                "id": tag.id,
+                "name": tag.name,
+                "color": tag.color
+            })
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+    
+    finally:
+        db.close()
+
+
+@app.route("/api/tags/<int:tag_id>", methods=["DELETE"])
+@login_required
+def api_delete_tag(tag_id):
+    """API: Tag löschen"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        try:
+            tag_manager_mod = importlib.import_module("src.services.tag_manager")
+            success = tag_manager_mod.TagManager.delete_tag(db, tag_id, user.id)
+            
+            if not success:
+                return jsonify({"error": "Tag nicht gefunden"}), 404
+            
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    
+    finally:
+        db.close()
+
+
+@app.route("/api/emails/<int:email_id>/tags", methods=["POST"])
+@login_required
+def api_assign_tag_to_email(email_id):
+    """API: Tag zu E-Mail zuweisen"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        data = request.get_json()
+        tag_id = data.get("tag_id")
+        
+        if not tag_id:
+            return jsonify({"error": "tag_id erforderlich"}), 400
+        
+        try:
+            tag_manager_mod = importlib.import_module("src.services.tag_manager")
+            success = tag_manager_mod.TagManager.assign_tag(
+                db, email_id, tag_id, user.id
+            )
+            
+            if not success:
+                return jsonify({"error": "Tag bereits zugewiesen oder nicht gefunden"}), 400
+            
+            return jsonify({"success": True})
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 404
+    
+    finally:
+        db.close()
+
+
+@app.route("/api/emails/<int:email_id>/tags/<int:tag_id>", methods=["DELETE"])
+@login_required
+def api_remove_tag_from_email(email_id, tag_id):
+    """API: Tag von E-Mail entfernen"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        try:
+            tag_manager_mod = importlib.import_module("src.services.tag_manager")
+            success = tag_manager_mod.TagManager.remove_tag(
+                db, email_id, tag_id, user.id
+            )
+            
+            if not success:
+                return jsonify({"error": "Tag-Verknüpfung nicht gefunden"}), 404
+            
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    
     finally:
         db.close()
 
