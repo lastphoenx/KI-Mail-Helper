@@ -3,6 +3,9 @@ Mail Helper - Web-App (Flask) mit Multi-User & 2FA
 Phase 2: Login, Register, 2FA Setup, Mail-Accounts
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import (
     Flask,
     render_template,
