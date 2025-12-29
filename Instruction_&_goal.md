@@ -167,6 +167,69 @@
 - [x] **Fresh DB Setup:** DB-Reset + Neuregistrierung getestet
 - [x] **19 Test-Emails:** Analyse erfolgreich (martina: Fertig! ~10m 0s, 19/19)
 
+### ✅ Phase 11.5a-11.5f: IMAP Connection Diagnostics (Abgeschlossen - 29.12.2025)
+**Ziel:** Vollständige IMAP-Diagnose-Suite mit 11 Tests für Troubleshooting
+
+#### Phase 11.5a: Basic Diagnostics (Tests 1-8)
+- [x] **IMAP-Diagnostics Modul** (`src/imap_diagnostics.py`)
+  - Test 1: Connection & Authentication (SSL, Login, Welcome-Message)
+  - Test 2: Server Capabilities (IDLE, NAMESPACE, UIDPLUS, MOVE, ID, etc.)
+  - Test 3: Namespace & Delimiter (Personal/Other/Shared, Folder-Separator)
+  - Test 4: INBOX Access (EXISTS, RECENT, UNSEEN, UIDVALIDITY, Flags)
+  - Test 5: Folder Listing (All/Subscribed, Special-Folders: Sent/Trash/Drafts)
+  - Test 6: Flag Detection (\Seen, \Flagged, \Answered, Custom-Flags)
+  - Test 7: Server ID & Provider Detection (GMX, Gmail, Outlook via RFC 2971)
+  - Test 8: Extensions Support (CONDSTORE, UTF8, ENABLE, COMPRESS, STARTTLS)
+- [x] **UI Dashboard** (`templates/imap_diagnostics.html`)
+  - Account-Dropdown für alle IMAP-Accounts des Users
+  - Test-Button startet diagnostics via `/api/imap-diagnostics/<id>`
+  - Live-Results mit farbcodierten Karten (✅❌⚠️)
+  - Collapsible Details für jede Test-Sektion
+  - Toggle "Alle Ordner" ↔️ "Nur abonnierte"
+- [x] **Input Validation** (Hostname, Port, Timeout Injection-Schutz)
+- [x] **Provider Detection** (GMX, Gmail, Outlook, Yahoo, ProtonMail, T-Online)
+- [x] **Error Handling** (Graceful degradation, Timeout-Management)
+
+#### Phase 11.5b-11.5e: Enhanced Features
+- [x] **Subscribed-Only Toggle**: LSUB vs LIST Command
+- [x] **Folder Statistics**: Total count, delimiter, special folder icons
+- [x] **Flag Statistics**: Sample messages (last 10), seen/unseen/flagged counts
+- [x] **Server ID Parsing**: Robust RFC 2971 parsing (dict/list/tuple formats)
+- [x] **Timeout Handling**: 90s timeout für Server mit vielen Ordnern
+- [x] **Single Connection**: Alle Tests nutzen eine IMAP-Verbindung
+
+#### Phase 11.5f: Advanced Extensions (Tests 9-11)
+- [x] **Test 9: THREAD Support** (RFC 5256 Conversation Threading)
+  - Algorithmen: REFERENCES, ORDEREDSUBJECT
+  - Statistiken: Thread-Count, Messages/Thread, Largest Thread
+  - Sample-Threads mit Betreff/Datum/UIDs
+  - Timeline: Oldest→Newest Date
+  - UI: Collapsible Thread-Details
+- [x] **Test 10: SORT Support** (RFC 5256 Server-Side Sorting)
+  - Kriterien: ARRIVAL, DATE, FROM, SUBJECT, SIZE
+  - Charset-Support: UTF-8, US-ASCII
+  - Working-Criteria Counter
+- [x] **Test 11: Envelope Parsing** (RFC 822 Header Analysis)
+  - From/To/Cc/Bcc/Reply-To Parsing
+  - Message-ID, In-Reply-To (Thread-Detection)
+  - Subject mit RFC 2047 Decoding (=?UTF-8?Q?...?=)
+  - Reply-Detection: ↩️ Antwort vs 📨 Root-Message
+  - Position-Tracking: "Email 1/3"
+- [x] **CAPABILITY Server-Antworten** (29.12.2025)
+  - Zeigt CAPABILITY-Check-Responses für Extensions
+  - Blauer Debug-Kasten mit ✅/❌ Status
+  - Verhindert IllegalStateError durch ENABLE im falschen State
+
+#### Deployment Ready
+- ✅ Production-tested (GMX, Gmail, Outlook)
+- ✅ Input Validation (Injection-Schutz)
+- ✅ Session-based Encryption (Credentials)
+- ✅ CSRF-Protection (POST-Endpoints)
+- ✅ Mobile-responsive UI (Bootstrap 5)
+- ✅ 11 Tests complete (771 lines Python, 449 lines HTML)
+
+---
+
 ### ✅ Phase 9: Learning System & Newsletter-Detection (Abgeschlossen - 25.12.2025)
 **Ziel:** Human-in-the-Loop ML: User-Korrektionen trainieren neue Modelle, bessere Newsletter-Erkennung
 

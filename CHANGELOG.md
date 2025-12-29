@@ -26,6 +26,86 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+### Phase 11.5a-11.5f: IMAP Connection Diagnostics (2025-12-29)
+
+**Vollständige IMAP-Diagnose-Suite mit 11 Tests**
+
+#### Phase 11.5a: Basic Diagnostics (8 Tests)
+- **Problem**: Bei IMAP-Problemen keine strukturierte Fehleranalyse möglich
+- **Lösung**: Umfassende IMAP-Diagnostics mit Test-First Development
+- **Implementierung**:
+  1. **Connection Test**: Login, SSL, Timeout-Handling
+  2. **Capabilities Test**: Server-Features erkennen (IDLE, NAMESPACE, UIDPLUS, etc.)
+  3. **Namespace Test**: Ordner-Delimiter und Personal/Other/Shared Namespaces
+  4. **INBOX Access**: Folder-Zugriff, EXISTS/RECENT/UNSEEN Counts
+  5. **Folder Listing**: Alle Ordner mit Flags und Special-Folder-Detection (Sent/Trash/Drafts)
+  6. **Flag Detection**: Message-Flags (\Seen, \Flagged, \Answered) analysieren
+  7. **Server ID**: Provider-Erkennung (GMX, Gmail, Outlook, etc.) via ID Extension
+  8. **Extensions Support**: CONDSTORE, UTF8, COMPRESS, STARTTLS Verfügbarkeit
+- **UI Dashboard**: `/imap-diagnostics` mit Live-Tests pro Mail-Account
+  - Account-Dropdown mit allen IMAP-Accounts
+  - Test-Button startet 8 Tests sequenziell
+  - Farbcodierte Karten: ✅ Erfolg, ❌ Fehler, ⚠️ Optional
+  - Collapsible Details mit allen Server-Responses
+  - Toggle Button: "Alle Ordner" ↔️ "Nur abonnierte"
+- **Input Validation**: Hostname/Port/Timeout Injection-Schutz
+- **Provider Detection**: Erkennt GMX, Gmail, Outlook, Yahoo, ProtonMail, FastMail, T-Online
+- **Files**: 
+  - `src/imap_diagnostics.py` (771 lines, 8 test methods)
+  - `templates/imap_diagnostics.html` (449 lines)
+  - `src/01_web_app.py` (2 Routes: `/imap-diagnostics`, `/api/imap-diagnostics/<id>`)
+
+#### Phase 11.5b-11.5e: Enhanced Features
+- **Subscribed-Only Toggle**: LSUB vs LIST command switching
+- **Folder Statistics**: Total folders, delimiter detection, special folder icons
+- **Flag Statistics**: Sample messages, seen/unseen/flagged/answered counts
+- **Robust Parsing**: RFC 2971 server ID parsing (dict/list/tuple formats)
+- **Error Handling**: Graceful degradation bei fehlenden Extensions
+- **Timeout Handling**: 90s timeout für langsame Server mit vielen Ordnern
+
+#### Phase 11.5f: Advanced IMAP Extensions (Tests 9-11)
+- **THREAD Support Test**: 
+  - RFC 5256 conversation threading
+  - Algorithmen: REFERENCES, ORDEREDSUBJECT
+  - Statistiken: Thread-Count, Messages/Thread, Timeline
+  - Sample-Threads mit collapsible Details (Betreff, Datum, UIDs)
+- **SORT Support Test**:
+  - RFC 5256 server-side sorting  
+  - Kriterien: ARRIVAL, DATE, FROM, SUBJECT, SIZE
+  - Charset-Support (UTF-8, US-ASCII)
+  - Working-Criteria Counter
+- **Envelope Parsing Test**:
+  - RFC 822 strukturierte Header-Analyse
+  - From/To/Cc/Bcc/Reply-To Adressen
+  - Message-ID, In-Reply-To (Thread-Erkennung)
+  - Subject mit RFC 2047 Decoding (=?UTF-8?Q?...?=)
+  - Reply-Detection: ↩️ für Antworten, 📨 für Root-Messages
+  - Position-Tracking: "Email 1/3" Display
+- **Encoding Support**: UTF-8 Header-Decoding via `email.header.decode_header`
+- **Sample Limits**: Letzte 3 Nachrichten für Performance
+- **UI Enhancements**:
+  - Thread-Details mit Bootstrap Collapse
+  - Envelope-Cards mit Message-ID/In-Reply-To
+  - Farbcodierte Border für Reply-Status
+  - Timeline-Anzeige für Threads (oldest→newest)
+
+#### Technische Details
+- **Single Connection**: Alle 11 Tests nutzen eine IMAP-Verbindung (Performance)
+- **Test-First Development**: Tests VOR Implementation geschrieben
+- **Type Hints**: Vollständige Typing für alle Methoden
+- **Logging**: Strukturiertes Logging für jeden Test-Step
+- **Error Recovery**: Tests laufen weiter trotz einzelner Fehler
+- **Summary**: Aggregierte Success-Rate über alle Tests
+
+#### Deployment Ready
+- ✅ Production-tested mit GMX/Gmail/Outlook
+- ✅ Input Validation gegen Injection
+- ✅ Session-based Encryption für Credentials
+- ✅ CSRF-Protection auf allen POST-Endpoints
+- ✅ Mobile-responsive UI (Bootstrap 5)
+
+---
+
 ### Security Fixes - Phase 9f (2025-12-28)
 
 #### HIGH Priority Security Improvements
