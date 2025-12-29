@@ -1,24 +1,79 @@
 # Testing Guide - Kompletter Workflow
 
-**Letzte Aktualisierung:** 26. Dezember 2025  
-**Status:** Zero-Knowledge Production Ready (Score: 100/100)
+**Letzte Aktualisierung:** 27. Dezember 2025  
+**Status:** DEK/KEK Pattern Complete (Phase 8b)
 
 ---
 
-## 🔐 Zero-Knowledge Testing
+## 🔐 Zero-Knowledge Testing (DEK/KEK Pattern)
 
-**Wichtig:** Das System verwendet Zero-Knowledge Encryption. Alle sensiblen Daten sind verschlüsselt, der Master-Key existiert nur im RAM.
+**Wichtig:** Das System verwendet Zero-Knowledge Encryption mit DEK/KEK Pattern. Alle sensiblen Daten sind verschlüsselt, der DEK existiert nur im RAM.
+
+### DEK/KEK Architektur:
+- **DEK (Data Encryption Key):** Zufällige 32 Bytes, verschlüsselt alle E-Mails
+- **KEK (Key Encryption Key):** Aus Passwort abgeleitet (PBKDF2-600k), verschlüsselt DEK
+- **Vorteil:** Passwort ändern = nur DEK re-encrypten (nicht alle E-Mails!)
 
 ### Was zu testen ist:
-- ✅ Master-Key wird bei Login erstellt (aus Passwort)
-- ✅ Master-Key wird bei Logout gelöscht
+- ✅ DEK wird bei Registrierung generiert (zufällig)
+- ✅ KEK wird bei Login abgeleitet (aus Passwort)
+- ✅ DEK wird in Session geladen (nur RAM, nicht DB)
+- ✅ DEK wird bei Logout gelöscht (session.clear())
+- ✅ Session-Expire Detection (@app.before_request)
 - ✅ Alle E-Mail-Inhalte verschlüsselt gespeichert
 - ✅ Alle Credentials verschlüsselt gespeichert
 - ✅ Server kann niemals auf Klartext zugreifen
 - ✅ IMAP-Metadaten (UID, Folder, Flags) gespeichert
 - ✅ Beide Mail-Fetcher (IMAP + Gmail OAuth)
+- ✅ 2FA ohne Passwort in Session (nur pending_dek)
 
-**📖 Details:** [docs/ZERO_KNOWLEDGE_COMPLETE.md](docs/ZERO_KNOWLEDGE_COMPLETE.md)
+**📖 Details:** [ZERO_KNOWLEDGE_COMPLETE.md](ZERO_KNOWLEDGE_COMPLETE.md)
+
+---
+
+## 🧪 DEK/KEK Migration Testing (Phase 8b)
+
+### Test 1: Neuer User (Clean DEK/KEK)
+```bash
+# Neue DB anlegen
+mv emails.db emails.db.backup
+python -m src.00_main --init
+
+# Web-App starten
+python -m src.01_web_app
+
+# Registrieren → Mail-Account → Mails abrufen
+# Prüfe DB:
+sqlite3 emails.db "SELECT id, LENGTH(salt), LENGTH(encrypted_dek), encrypted_master_key FROM users;"
+# Output: 1|44|<number>|NULL  ✅ (kein encrypted_master_key!)
+```
+
+### Test 2: Alter User Migration (encrypted_master_key → encrypted_dek)
+```bash
+# Restore alte DB
+mv emails.db.backup emails.db
+
+# Migration ausführen
+python scripts/migrate_to_dek_kek.py
+# → Passwort eingeben
+
+# Prüfe DB:
+sqlite3 emails.db "SELECT id, LENGTH(encrypted_dek), LENGTH(encrypted_master_key) FROM users;"
+# Output: 1|<number>|<number>  ✅ (beide vorhanden)
+
+# Login testen → Mails sollten lesbar sein
+```
+
+### Test 3: Session Security
+```bash
+# Login → Dashboard
+# Session-File prüfen:
+ls -lah .flask_sessions/
+# DEK ist dort (verschlüsselt mit Flask SECRET_KEY)
+
+# Logout → Session sollte gelöscht sein
+# .flask_sessions/ File weg oder leer
+```
 
 ---
 
@@ -47,7 +102,7 @@ python3 -m src.00_main --serve
    - Email: `thomas@example.com`
    - Passwort: `TestPassword123!`
    
-   ✅ Master-Key wird automatisch erstellt!
+   ✅ DEK + KEK werden automatisch erstellt!
 
 ### Phase 3: Login
 - Benutzername: `thomas`
@@ -104,6 +159,68 @@ Refresh: **http://localhost:5000/dashboard**
 ✅ 3×3-Matrix mit Mails  
 ✅ Rote/Gelbe/Grüne Farben  
 ✅ Listenansicht mit Scores
+
+### Phase 8: Tag-System testen (Phase 10)
+
+#### Auto-Tagging
+```bash
+# Re-process Emails mit Tag-Code
+python3 scripts/reset_base_pass.py
+# → Dashboard → "Jetzt verarbeiten"
+```
+
+**Erwartetes Verhalten:**
+- ✅ KI schlägt 1-5 Tags vor (suggested_tags)
+- ✅ Tags werden automatisch erstellt (EmailTag)
+- ✅ Tags werden automatisch zugewiesen (EmailTagAssignment)
+- ✅ Tags erscheinen in Liste + Detail
+
+#### Tag-Management UI
+```
+Navigiere zu: http://localhost:5000/tags
+```
+
+**Teste:**
+1. ✅ **Create Tag**: Name + Farbe wählen → Tag erstellt
+2. ✅ **Edit Tag**: Name/Farbe ändern → gespeichert
+3. ✅ **Delete Tag**: Tag löschen → EmailTagAssignments CASCADE gelöscht
+4. ✅ **Email Count**: Anzahl E-Mails pro Tag korrekt
+
+#### Tag-Assignment (Email Detail)
+```
+# Mail öffnen → Tag-Bereich
+```
+
+**Teste:**
+1. ✅ **Add Tag**: "Tag hinzufügen" → Dropdown → Zuweisen
+2. ✅ **Remove Tag**: X-Button auf Badge → Bestätigen → entfernt
+3. ✅ **Duplicate Prevention**: Gleichen Tag 2x zuweisen → Fehler
+4. ✅ **Learning Integration**: Manuelles Add/Remove → `user_override_tags` gesetzt
+
+#### Tag-Filter (Dashboard)
+```
+# Dashboard → Filter-Bereich
+```
+
+**Teste:**
+1. ✅ **Single Tag**: 1 Tag wählen → nur Mails mit diesem Tag
+2. ✅ **Multi-Tag**: Strg/Cmd + Mehrere Tags → Mails mit diesen Tags
+3. ✅ **Kombination**: Tag + Farbe + Done + Suche → korrekte Filterung
+4. ✅ **Performance**: 100 Emails = 2 Queries (nicht 101)
+
+#### Learning System
+```bash
+# DB prüfen nach manueller Tag-Änderung
+sqlite3 emails.db "SELECT id, user_override_tags, correction_timestamp FROM processed_emails WHERE user_override_tags IS NOT NULL;"
+```
+
+**Erwartetes Output:**
+```
+12|Rechnung,Finanzen,Wichtig|2025-12-28 15:30:45
+```
+
+✅ `user_override_tags`: Komma-separierte Tag-Namen  
+✅ `correction_timestamp`: Zeitstempel der Änderung
 
 ---
 

@@ -1,0 +1,51 @@
+﻿[Unit]
+Description=KI Mail Helper - Zero-Knowledge Email Manager
+Documentation=https://github.com/lastphoenx/KI-Mail-Helper
+After=network.target
+
+[Service]
+Type=notify
+# WICHTIG: User/Group anpassen!
+User=YOUR_USERNAME
+Group=YOUR_USERNAME
+# WICHTIG: WorkingDirectory anpassen!
+WorkingDirectory=/opt/KI-Mail-Helper
+
+# Environment Variables
+Environment="FLASK_SECRET_KEY=CHANGE_ME_TO_RANDOM_64_CHAR_STRING"
+Environment="FLASK_ENV=production"
+Environment="FLASK_DEBUG=False"
+Environment="SESSION_COOKIE_SECURE=true"
+Environment="BEHIND_REVERSE_PROXY=true"
+Environment="FORCE_HTTPS=true"
+
+# Gunicorn Command
+# WICHTIG: Pfade anpassen!
+ExecStart=/opt/KI-Mail-Helper/venv/bin/gunicorn \
+    --config /opt/KI-Mail-Helper/config/gunicorn.conf.py \
+    --bind 0.0.0.0:5001 \
+    src.01_web_app:app
+
+# Restart Policy
+Restart=always
+RestartSec=5
+# WICHTIG: Log-Pfade anpassen!
+StandardOutput=append:/opt/KI-Mail-Helper/logs/systemd_output.log
+StandardError=append:/opt/KI-Mail-Helper/logs/systemd_error.log
+
+# Security Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/thomas/projects/KI-Mail-Helper
+ReadWritePaths=/home/thomas/projects/KI-Mail-Helper/logs
+ReadWritePaths=/home/thomas/projects/KI-Mail-Helper/.flask_sessions
+ReadWritePaths=/home/thomas/projects/KI-Mail-Helper/emails.db
+
+# Resource Limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target
