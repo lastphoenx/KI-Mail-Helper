@@ -138,6 +138,36 @@
                         </div>
                     </div>
 
+                    <!-- THREAD Support Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="threadStatus">9️⃣ THREAD Support</strong>
+                        </div>
+                        <div class="card-body" id="threadDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- SORT Support Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="sortStatus">🔟 SORT Support</strong>
+                        </div>
+                        <div class="card-body" id="sortDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- Envelope Parsing Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="envelopeStatus">1️⃣1️⃣ Envelope Parsing</strong>
+                        </div>
+                        <div class="card-body" id="envelopeDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
                     <!-- Summary -->
                     <div class="alert" id="summaryAlert" role="alert">
                         <strong id="summaryTitle">Zusammenfassung</strong>
@@ -280,7 +310,22 @@
         // 8. Extensions
         displayExtensionsTest(diagnostics.extensions);
 
-        // 9. Summary
+        // 9. THREAD Support
+        if (diagnostics.thread) {
+            displayThreadTest(diagnostics.thread);
+        }
+
+        // 10. SORT Support
+        if (diagnostics.sort) {
+            displaySortTest(diagnostics.sort);
+        }
+
+        // 11. Envelope Parsing
+        if (diagnostics.envelope) {
+            displayEnvelopeTest(diagnostics.envelope);
+        }
+
+        // Summary
         displaySummary(diagnostics);
     }
 
@@ -569,6 +614,122 @@
             detailsEl.innerHTML = html;
         } else {
             statusEl.innerHTML = '8️⃣ Extensions Support ❌';
+            detailsEl.innerHTML = `<p class="text-danger mb-0"><strong>Fehler:</strong> ${data.error || 'Unbekannter Fehler'}</p>`;
+        }
+    }
+
+    function displayThreadTest(data) {
+        const statusEl = document.getElementById('threadStatus');
+        const detailsEl = document.getElementById('threadDetails');
+
+        if (data.supported) {
+            statusEl.innerHTML = `9️⃣ THREAD Support ${data.supported ? '✅' : '⚠️'}`;
+            let html = `<p class="text-success mb-2"><strong>THREAD Extension unterstützt</strong></p>`;
+            html += `<ul>`;
+            
+            if (data.algorithms && data.algorithms.length > 0) {
+                html += `<li><strong>Unterstützte Algorithmen:</strong> ${data.algorithms.join(', ')}</li>`;
+            }
+            
+            if (data.thread_results && data.thread_results.thread_count !== undefined) {
+                html += `<li><strong>Threads gefunden:</strong> ${data.thread_results.thread_count}</li>`;
+                html += `<li><strong>Nachrichten in Threads:</strong> ${data.thread_results.total_messages_in_threads}</li>`;
+                html += `<li><strong>Größter Thread:</strong> ${data.thread_results.largest_thread} Nachrichten</li>`;
+            }
+            
+            html += `</ul>`;
+            detailsEl.innerHTML = html;
+        } else {
+            statusEl.innerHTML = '9️⃣ THREAD Support ⚠️';
+            detailsEl.innerHTML = `<p class="text-warning mb-0"><strong>Nicht unterstützt:</strong> Server unterstützt THREAD Extension nicht (optional)</p>`;
+        }
+    }
+
+    function displaySortTest(data) {
+        const statusEl = document.getElementById('sortStatus');
+        const detailsEl = document.getElementById('sortDetails');
+
+        if (data.supported) {
+            statusEl.innerHTML = `🔟 SORT Support ${data.working_criteria > 0 ? '✅' : '⚠️'}`;
+            let html = `<p class="text-success mb-2"><strong>SORT Extension unterstützt</strong></p>`;
+            html += `<ul>`;
+            
+            if (data.charsets && data.charsets.length > 0) {
+                html += `<li><strong>Unterstützte Zeichensätze:</strong> ${data.charsets.join(', ')}</li>`;
+            }
+            
+            html += `<li><strong>Funktionsfähige Sortierkriterien:</strong> ${data.working_criteria}/${Object.keys(data.sort_results || {}).length}</li>`;
+            
+            if (data.sort_results) {
+                html += `<li><strong>Getestete Kriterien:</strong>`;
+                html += `<ul style="margin-top: 8px;">`;
+                
+                Object.entries(data.sort_results).forEach(([criteria, result]) => {
+                    const icon = result.success ? '✅' : '❌';
+                    html += `<li>${icon} ${result.label} (${criteria})</li>`;
+                });
+                
+                html += `</ul></li>`;
+            }
+            
+            html += `</ul>`;
+            detailsEl.innerHTML = html;
+        } else {
+            statusEl.innerHTML = '🔟 SORT Support ⚠️';
+            detailsEl.innerHTML = `<p class="text-warning mb-0"><strong>Nicht unterstützt:</strong> Server unterstützt SORT Extension nicht (optional)</p>`;
+        }
+    }
+
+    function displayEnvelopeTest(data) {
+        const statusEl = document.getElementById('envelopeStatus');
+        const detailsEl = document.getElementById('envelopeDetails');
+
+        if (data.success && data.sample_count > 0) {
+            statusEl.innerHTML = '1️⃣1️⃣ Envelope Parsing ✅';
+            let html = `<p class="text-success mb-2"><strong>Envelope Parsing erfolgreich</strong></p>`;
+            html += `<p class="mb-3"><strong>📊 ${data.sample_count} Nachrichten analysiert (von ${data.total_messages} gesamt):</strong></p>`;
+            
+            if (data.envelopes && data.envelopes.length > 0) {
+                html += `<div style="max-height: 400px; overflow-y: auto;">`;
+                
+                data.envelopes.forEach((env, idx) => {
+                    html += `<div style="border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; border-radius: 4px;">`;
+                    html += `<p class="mb-2"><strong>Email ${idx + 1}</strong> (UID: ${env.uid})</p>`;
+                    
+                    if (env.date) {
+                        html += `<p class="mb-1"><strong>📅 Datum:</strong> ${env.date}</p>`;
+                    }
+                    
+                    html += `<p class="mb-1"><strong>📝 Betreff:</strong> ${env.subject}</p>`;
+                    
+                    if (env.from && env.from.length > 0) {
+                        html += `<p class="mb-1"><strong>👤 Von:</strong> ${env.from.join(', ')}</p>`;
+                    }
+                    
+                    if (env.to && env.to.length > 0) {
+                        html += `<p class="mb-1"><strong>📮 An:</strong> ${env.to.join(', ')}</p>`;
+                    }
+                    
+                    if (env.cc && env.cc.length > 0) {
+                        html += `<p class="mb-1"><strong>📋 CC:</strong> ${env.cc.join(', ')}</p>`;
+                    }
+                    
+                    if (env.message_id) {
+                        html += `<p class="mb-0" style="font-size: 0.85em; color: #666;"><strong>Message-ID:</strong> ${env.message_id.substring(0, 50)}...</p>`;
+                    }
+                    
+                    html += `</div>`;
+                });
+                
+                html += `</div>`;
+            }
+            
+            detailsEl.innerHTML = html;
+        } else if (data.success) {
+            statusEl.innerHTML = '1️⃣1️⃣ Envelope Parsing ⚠️';
+            detailsEl.innerHTML = `<p class="text-warning mb-0"><strong>Keine Mails gefunden:</strong> INBOX ist leer oder nicht zugänglich</p>`;
+        } else {
+            statusEl.innerHTML = '1️⃣1️⃣ Envelope Parsing ❌';
             detailsEl.innerHTML = `<p class="text-danger mb-0"><strong>Fehler:</strong> ${data.error || 'Unbekannter Fehler'}</p>`;
         }
     }

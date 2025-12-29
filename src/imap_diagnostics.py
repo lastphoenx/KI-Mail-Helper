@@ -695,6 +695,292 @@ class IMAPDiagnostics:
                 except:
                     pass
     
+    def test_thread_support(self, client=None) -> Dict[str, Any]:
+        """
+        Test THREAD extension support (conversation threading)
+        
+        THREAD groups messages by conversation using RFC or ORDEREDSUBJECT algorithm.
+        Optional extension - many servers don't support it.
+        
+        Args:
+            client: Optional pre-existing IMAPClient connection
+        
+        Returns:
+            Dict with THREAD support info
+        """
+        should_close = False
+        try:
+            if client is None:
+                client = self._get_connection(timeout=90.0)
+                client.login(self.username, self.password)
+                should_close = True
+            
+            # Check if THREAD capability exists
+            caps = client.capabilities()
+            caps_str = {cap.decode('ascii') if isinstance(cap, bytes) else cap 
+                       for cap in caps}
+            
+            # THREAD shows supported algorithms (e.g., "THREAD=REFERENCES")
+            thread_support = None
+            algorithms = []
+            
+            for cap in caps_str:
+                if 'THREAD' in cap:
+                    thread_support = cap
+                    # Extract algorithm (THREAD=REFERENCES, THREAD=ORDEREDSUBJECT)
+                    if '=' in cap:
+                        algo = cap.split('=')[1]
+                        algorithms.append(algo)
+            
+            # Try to get thread results if supported
+            thread_results = {}
+            if thread_support and algorithms:
+                try:
+                    # Use first supported algorithm
+                    algo = algorithms[0].lower()
+                    threads = client.thread(algorithm=algo, criteria=['ALL'])
+                    
+                    thread_results = {
+                        'algorithm_used': algo,
+                        'thread_count': len(threads),
+                        'total_messages_in_threads': sum(len(t) for t in threads) if threads else 0,
+                        'largest_thread': max(len(t) for t in threads) if threads else 0,
+                        'sample_threads': [list(t)[:5] for t in threads[:3]] if threads else []
+                    }
+                except Exception as e:
+                    logger.debug(f"Could not retrieve threads: {e}")
+                    thread_results = {'error': str(e)}
+            
+            return {
+                'success': bool(thread_support),
+                'supported': bool(thread_support),
+                'capability': thread_support or None,
+                'algorithms': algorithms,
+                'thread_results': thread_results if thread_support else {},
+                'message': f'THREAD {thread_support.split("=")[1] if thread_support and "=" in thread_support else "not supported"}'
+            }
+        
+        except Exception as e:
+            logger.warning(f"Failed to test THREAD support: {type(e).__name__}: {e}")
+            return {
+                'success': False,
+                'supported': False,
+                'error': str(e),
+                'algorithms': []
+            }
+        
+        finally:
+            if should_close and client:
+                try:
+                    client.logout()
+                except:
+                    pass
+    
+    def test_sort_support(self, client=None) -> Dict[str, Any]:
+        """
+        Test SORT extension support (server-side sorting)
+        
+        SORT enables client to request pre-sorted message UIDs by various criteria.
+        Optional extension - many servers don't support it.
+        
+        Args:
+            client: Optional pre-existing IMAPClient connection
+        
+        Returns:
+            Dict with SORT support info
+        """
+        should_close = False
+        try:
+            if client is None:
+                client = self._get_connection(timeout=90.0)
+                client.login(self.username, self.password)
+                should_close = True
+            
+            # Check if SORT capability exists
+            caps = client.capabilities()
+            caps_str = {cap.decode('ascii') if isinstance(cap, bytes) else cap 
+                       for cap in caps}
+            
+            sort_support = any('SORT' in cap for cap in caps_str)
+            sort_charsets = []
+            
+            if sort_support:
+                # Try to extract supported charsets
+                for cap in caps_str:
+                    if cap.startswith('SORT='):
+                        charsets = cap.split('=')[1].split()
+                        sort_charsets = charsets
+                        break
+            
+            # Test various sort criteria
+            sort_results = {}
+            if sort_support:
+                test_criteria = [
+                    ('DATE', 'Datum'),
+                    ('FROM', 'Absender'),
+                    ('SUBJECT', 'Betreff'),
+                    ('SIZE', 'Größe'),
+                    ('ARRIVAL', 'Ankunftszeit')
+                ]
+                
+                for criteria, label in test_criteria:
+                    try:
+                        result = client.sort(criteria)
+                        sort_results[criteria] = {
+                            'label': label,
+                            'success': bool(result),
+                            'message_count': len(result) if result else 0
+                        }
+                    except Exception as e:
+                        sort_results[criteria] = {
+                            'label': label,
+                            'success': False,
+                            'error': str(e)
+                        }
+            
+            working_criteria = sum(1 for r in sort_results.values() if r.get('success'))
+            
+            return {
+                'success': sort_support,
+                'supported': sort_support,
+                'charsets': sort_charsets,
+                'working_criteria': working_criteria,
+                'sort_results': sort_results,
+                'message': f'SORT supported: {working_criteria}/{len(sort_results)} criteria working'
+            }
+        
+        except Exception as e:
+            logger.warning(f"Failed to test SORT support: {type(e).__name__}: {e}")
+            return {
+                'success': False,
+                'supported': False,
+                'error': str(e),
+                'sort_results': {}
+            }
+        
+        finally:
+            if should_close and client:
+                try:
+                    client.logout()
+                except:
+                    pass
+    
+    def test_envelope_parsing(self, client=None) -> Dict[str, Any]:
+        """
+        Test envelope parsing (structured RFC 822 header analysis)
+        
+        ENVELOPE provides structured header information:
+        - From, To, Cc, Bcc addresses
+        - Date, Subject
+        - Message-ID, In-Reply-To
+        - Content-Type information
+        
+        Args:
+            client: Optional pre-existing IMAPClient connection
+        
+        Returns:
+            Dict with envelope parsing results
+        """
+        should_close = False
+        try:
+            if client is None:
+                client = self._get_connection(timeout=90.0)
+                client.login(self.username, self.password)
+                should_close = True
+            
+            # Select INBOX to get sample emails
+            client.select_folder('INBOX', readonly=True)
+            
+            # Get a few recent messages
+            messages = client.search()
+            if not messages:
+                return {
+                    'success': False,
+                    'error': 'No messages in INBOX',
+                    'sample_count': 0
+                }
+            
+            # Take last 3 messages (most recent)
+            sample_ids = messages[-3:] if len(messages) >= 3 else messages
+            
+            # Fetch envelopes
+            results = client.fetch(sample_ids, ['ENVELOPE'])
+            
+            envelopes = []
+            for msg_id in sample_ids:
+                if msg_id not in results:
+                    continue
+                
+                envelope = results[msg_id].get(b'ENVELOPE')
+                if not envelope:
+                    continue
+                
+                # Parse envelope data
+                parsed = {
+                    'uid': msg_id,
+                    'date': str(envelope.date) if envelope.date else None,
+                    'subject': envelope.subject.decode('utf-8', errors='ignore') if envelope.subject else '(no subject)',
+                    'from': self._parse_address_list(envelope.from_),
+                    'to': self._parse_address_list(envelope.to),
+                    'cc': self._parse_address_list(envelope.cc),
+                    'bcc': self._parse_address_list(envelope.bcc),
+                    'reply_to': self._parse_address_list(envelope.reply_to),
+                    'message_id': envelope.message_id.decode('ascii', errors='ignore') if envelope.message_id else None,
+                    'in_reply_to': envelope.in_reply_to.decode('ascii', errors='ignore') if envelope.in_reply_to else None,
+                    'sender': self._parse_address_list(envelope.sender)
+                }
+                envelopes.append(parsed)
+            
+            return {
+                'success': True,
+                'sample_count': len(envelopes),
+                'total_messages': len(messages),
+                'envelopes': envelopes,
+                'message': f'Envelope parsing successful ({len(envelopes)} samples)'
+            }
+        
+        except Exception as e:
+            logger.warning(f"Failed to test envelope parsing: {type(e).__name__}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'sample_count': 0
+            }
+        
+        finally:
+            if should_close and client:
+                try:
+                    client.logout()
+                except:
+                    pass
+    
+    def _parse_address_list(self, addr_list) -> List[str]:
+        """
+        Parse IMAP address list to strings
+        
+        Args:
+            addr_list: Tuple of Address namedtuples or None
+        
+        Returns:
+            List of email addresses as strings
+        """
+        if not addr_list:
+            return []
+        
+        addresses = []
+        for addr in addr_list:
+            try:
+                if hasattr(addr, 'mailbox') and hasattr(addr, 'host'):
+                    mailbox = addr.mailbox.decode('ascii', errors='ignore') if isinstance(addr.mailbox, bytes) else addr.mailbox
+                    host = addr.host.decode('ascii', errors='ignore') if isinstance(addr.host, bytes) else addr.host
+                    addresses.append(f"{mailbox}@{host}")
+                else:
+                    addresses.append(str(addr))
+            except Exception as e:
+                logger.debug(f"Could not parse address: {e}")
+        
+        return addresses
+    
     def run_diagnostics(self, subscribed_only: bool = False) -> Dict[str, Any]:
         """
         Run complete diagnostics suite using a single connection
@@ -740,20 +1026,32 @@ class IMAPDiagnostics:
             results['inbox_access'] = self.test_folder_access('INBOX', client)
             
             # Test 5: Folder listing
-            logger.info("Test 5/8: Listing all folders...")
+            logger.info("Test 5/11: Listing all folders...")
             results['folders'] = self.list_all_folders(client, subscribed_only=subscribed_only)
             
             # Test 6: Flag detection
-            logger.info("Test 6/8: Testing flag detection...")
+            logger.info("Test 6/11: Testing flag detection...")
             results['flags'] = self.test_flags(client)
             
             # Test 7: Server ID & Provider Detection
-            logger.info("Test 7/8: Getting server ID and detecting provider...")
+            logger.info("Test 7/11: Getting server ID and detecting provider...")
             results['server_id'] = self.get_server_id(client)
             
             # Test 8: Extensions Support
-            logger.info("Test 8/8: Testing extension support...")
+            logger.info("Test 8/11: Testing extension support...")
             results['extensions'] = self.test_enable_extensions(client)
+            
+            # Test 9: THREAD Support (optional)
+            logger.info("Test 9/11: Testing THREAD support...")
+            results['thread'] = self.test_thread_support(client)
+            
+            # Test 10: SORT Support (optional)
+            logger.info("Test 10/11: Testing SORT support...")
+            results['sort'] = self.test_sort_support(client)
+            
+            # Test 11: Envelope Parsing
+            logger.info("Test 11/11: Testing envelope parsing...")
+            results['envelope'] = self.test_envelope_parsing(client)
             
             # Summary (server_id is optional, so always count as ok)
             all_success = all([
@@ -762,7 +1060,8 @@ class IMAPDiagnostics:
                 results['inbox_access']['success'],
                 results['folders']['success'],
                 results['flags']['success'],
-                results['extensions']['success']
+                results['extensions']['success'],
+                results['envelope']['success']
             ])
             
             results['summary'] = 'All tests passed' if all_success else 'Some tests failed'
@@ -782,7 +1081,10 @@ class IMAPDiagnostics:
                 'folders': {'success': False},
                 'flags': {'success': False},
                 'server_id': {'success': False},
-                'extensions': {'success': False}
+                'extensions': {'success': False},
+                'thread': {'success': False},
+                'sort': {'success': False},
+                'envelope': {'success': False}
             }
         
         except Exception as e:
@@ -797,7 +1099,10 @@ class IMAPDiagnostics:
                 'folders': {'success': False},
                 'flags': {'success': False},
                 'server_id': {'success': False},
-                'extensions': {'success': False}
+                'extensions': {'success': False},
+                'thread': {'success': False},
+                'sort': {'success': False},
+                'envelope': {'success': False}
             }
         
         finally:
