@@ -3058,7 +3058,7 @@ def api_imap_diagnostics(account_id):
             imap_username = encryption.CredentialManager.decrypt_email_address(
                 account.encrypted_imap_username, master_key
             )
-            imap_password = encryption.CredentialManager.decrypt_credential(
+            imap_password = encryption.CredentialManager.decrypt_imap_password(
                 account.encrypted_imap_password, master_key
             )
         except Exception as e:
