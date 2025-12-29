@@ -14,7 +14,7 @@ Phase 11c: Tag-Embeddings für semantische Ähnlichkeit
 """
 
 from datetime import datetime, UTC
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import numpy as np
@@ -483,7 +483,7 @@ class TagManager:
         email_id: int,
         user_id: int,
         top_k: int = 3
-    ) -> List[Dict[str, any]]:
+    ) -> List[Dict[str, Any]]:
         """
         Holt Tag-Vorschläge für eine spezifische E-Mail.
         
