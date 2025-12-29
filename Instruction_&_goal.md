@@ -2,7 +2,7 @@
 
 ---
 
-## 📋 Projekt-Status (Aktualisiert: 28.12.2025)
+## 📋 Projekt-Status (Aktualisiert: 29.12.2025)
 
 ### ✅ Phase 0: Projektstruktur (Abgeschlossen)
 - [x] Grundstruktur aufgebaut (src/, templates/, tests/, scripts/)
@@ -548,6 +548,17 @@
 
 ---
 
+### ✅ Phase 11.5: IMAP Diagnostics & Folder Toggle (Abgeschlossen - 29.12.2025)
+**Ziel:** Umfassende IMAP-Diagnose-Tools mit 8 Tests + Subscribe/All-Folders Toggle
+
+- [x] **Test 1–4:** Connection, Capabilities, Namespace, INBOX Access
+- [x] **Test 5:** Folder-Listing mit RFC 3501 Flag-Dekodierung + Toggle
+- [x] **Test 6–8:** Flag-Detection, Server-ID, Extensions-Support
+- [x] **UI Toggle:** "📌 Nur abonniert" ↔ "📭 Alle anzeigen" (<500ms switching)
+- [x] **Bug Fixes:** Logger numbering, client.id_() tuple handling, IMAPClient API resolution
+
+---
+
 ### ✅ Phase 11: Full ML-Learning System (Abgeschlossen - 29.12.2025)
 **Ziel:** Vollständiges Machine-Learning mit Embeddings, Online-Learning, Tag-Semantik & Sender-Patterns
 
@@ -612,6 +623,81 @@
 ---
 
 ## 🚀 **Ausstehende Aufgaben (Priorität)**
+
+### **✅ Phase 11.5: IMAP Diagnostics & Folder Toggle (Abgeschlossen - 29.12.2025)**
+**Ziel:** Umfassende IMAP-Diagnose-Tools mit Subscribe/All-Folders Toggle
+
+#### **Phase 11.5a: 4-Test Core Diagnostics ✅**
+- [x] **Test 1: Connection & Authentication** - Verbindung, SSL, Authentifizierung
+- [x] **Test 2: Server Capabilities** - 18 IMAP-Capabilities (IDLE, NAMESPACE, UIDPLUS, etc.)
+- [x] **Test 3: Namespace & Delimiter** - Personal/Shared Namespaces
+- [x] **Test 4: INBOX Access** - Folder-Zugriff, Email-Count, Flags
+
+#### **Phase 11.5b: Folder Listing with RFC 3501 Compliance ✅**
+- [x] **RFC 3501 Flag Decoding** - `\Drafts`, `\Sent`, `\Trash`, `\Junk`, `\Archive`, `\HasChildren`, etc.
+- [x] **Flag Byte-String Handling** - korrekte Konvertierung bytes ↔ ASCII
+- [x] **60s Timeout Handling** - Large Folder-Lists graceful degradation
+- [x] **7-Folder Display** - Folder-Hierarchie mit Special-Markers
+
+#### **Phase 11.5c: Flag Detection & Statistics ✅**
+- [x] **Sample-Based Analysis** - 10 von 19 Emails getestet
+- [x] **Flag Statistics** - Gelesen (Seen), Ungelesen, Flagged, Answered, Deleted
+- [x] **Custom Flag Detection** - `\Seen` + Custom Flags
+- [x] **Statistical Aggregation** - Count-basierte Auswertung
+
+#### **Phase 11.5d: Server-ID & Provider Detection ✅**
+- [x] **ID Command** - Server-Info (name, version, vendor, support-email)
+- [x] **Dual-Strategy Provider Matching** - Domain + Server-String Detection
+- [x] **Provider Library** - 12 Providers (GMX/Dovecot, Gmail, Outlook, etc.)
+- [x] **5-Extension Support Testing** - COMPRESS, CONDSTORE, ENABLE, STARTTLS, UTF8
+
+#### **Phase 11.5e: Subscribed vs. All Folders Toggle ✅**
+- [x] **IMAPClient API Resolution** - `list_folders()` vs. `list_sub_folders()`
+- [x] **Backend Infrastructure** - `subscribed_only` Parameter in `list_all_folders()`
+- [x] **API Endpoint** - `/api/imap-diagnostics/<id>` with query string + JSON body support
+- [x] **UI Toggle Button** - "📌 Nur abonniert" ↔ "📭 Alle anzeigen"
+- [x] **Fast Switching** - <500ms response time, visual feedback
+- [x] **Results Display** - 5 subscribed vs. 7 total folders (GMX example)
+
+#### **Test Results (Final):**
+✅ **8/8 Tests bestanden** (All tests passed)
+- Test 1-4, 6-8: Consistent Pass Rate
+- Test 5: Folder-Listing ✅ mit Toggle-Support
+- Response Time: <1s per diagnostic run
+- Toggle Switching: <500ms per toggle
+
+**Aufwand:** ~8 Commits (Phase 11.5a→11.5e + Fix)  
+**Bug Fixes:** Logger numbering, client.id_() tuple handling, SSL timeout, toggle CSS, request body, parameter parsing, IMAPClient API resolution
+
+---
+
+### **⏳ Phase 11.5f: THREAD/SORT & Envelope Parsing (Geplant)**
+**Ziel:** Erweiterte IMAP-Funktionen für Conversation Threading und strukturierte Email-Header
+
+#### **Planned Features:**
+- [ ] **THREAD Support Testing** - IMAP THREAD-Capabilities (optional, viele Server unterstützen nicht)
+- [ ] **SORT Support Testing** - IMAP SORT-Optionen (DATE, SIZE, FROM, SUBJECT, etc.)
+- [ ] **Envelope Parsing** - Strukturierte RFC 822 Header-Analyse
+  - From, To, Cc, Bcc, Date, Subject
+  - Content-Type, Content-Transfer-Encoding
+- [ ] **Test Results Integration** - Ergebnisse im Diagnostics-Dashboard anzeigen
+
+**Aufwand:** ~30% von Phase 11.5a–11.5e (ca. 2–3 Tests statt 8)
+
+---
+
+### **⏳ Phase 11.6: Sync Engine (Geplant)**
+**Ziel:** UIDVALIDITY-Tracking und inkrementelle Email-Synchronisation
+
+#### **Planned Features:**
+- [ ] **UIDVALIDITY Tracking** - Änderungserkennung bei Folder-Reorganisation
+- [ ] **Incremental Sync** - Nur neue/geänderte Emails abrufen (nicht alle)
+- [ ] **Flag Change Propagation** - User-Änderungen zurück zum Server
+- [ ] **Sync Status Dashboard** - UI für Sync-Fortschritt und -Fehler
+
+**Aufwand:** Groß (~2 Wochen), Core-Funktionalität für Production-Sync
+
+---
 
 ### **🔴 Phase 0: Clean Rollback (COMPLETED)** ✅
 **Status:** Phase 11.5 IMAP Smart Sync fehlgeschlagen → Rollback zu Phase 10f → Phase 11a-11d wiederhergestellt

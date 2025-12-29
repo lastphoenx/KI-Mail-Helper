@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}IMAP-Diagnostics - Mail Helper{% endblock %}
 
@@ -12,7 +12,7 @@
             <div class="card-body">
                 <p class="text-muted">
                     Teste die IMAP-Verbindung zu deinen Mail-Accounts. Diagnostics prüft:
-                    Verbindung, Authentifizierung, Server-Capabilities, Namespace und Folder-Zugriff.
+                    Verbindung, Authentifizierung, Server-Capabilities, Namespace, Folder-Zugriff, Folder-Listing, Flag-Detection, Server-ID und Extensions.
                 </p>
 
                 <!-- Account Selection -->
@@ -91,6 +91,53 @@
                         </div>
                     </div>
 
+                    <!-- Folder Listing Test -->
+                    <div class="card mb-3">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong id="foldersListStatus">5️⃣ Folder-Listing</strong>
+                            </div>
+                            <div>
+                                <button id="toggleSubscribedBtn" class="btn btn-sm btn-light text-dark" style="display: none; padding: 4px 10px; font-size: 0.85em; font-weight: 500; border: 1px solid #ddd;">
+                                    📌 Nur abonniert
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body" id="foldersListDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- Flag Detection Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="flagsStatus">6️⃣ Flag-Detection</strong>
+                        </div>
+                        <div class="card-body" id="flagsDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- Server ID & Provider Detection -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="serverIdStatus">7️⃣ Server-ID & Provider</strong>
+                        </div>
+                        <div class="card-body" id="serverIdDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- Extensions Support -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="extensionsStatus">8️⃣ Extensions Support</strong>
+                        </div>
+                        <div class="card-body" id="extensionsDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
                     <!-- Summary -->
                     <div class="alert" id="summaryAlert" role="alert">
                         <strong id="summaryTitle">Zusammenfassung</strong>
@@ -142,7 +189,8 @@
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken
-                }
+                },
+                body: JSON.stringify({})
             });
 
             const result = await response.json();
@@ -158,6 +206,47 @@
         } catch (error) {
             document.getElementById('loadingIndicator').style.display = 'none';
             displayError('Network Error: ' + error.message);
+        } finally {
+            this.disabled = false;
+        }
+    });
+
+    // Toggle Subscribed Folders Button Handler
+    document.getElementById('toggleSubscribedBtn').addEventListener('click', async function() {
+        if (!lastFoldersData) return;
+        
+        const accountId = document.getElementById('accountSelect').value;
+        if (!accountId) return;
+
+        const subscribedOnly = !lastFoldersData.subscribed_only;
+        
+        // Show loading
+        document.getElementById('loadingIndicator').style.display = 'block';
+        this.disabled = true;
+
+        try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+
+            const response = await fetch(`/api/imap-diagnostics/${accountId}?subscribed_only=${subscribedOnly}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ subscribed_only: subscribedOnly })
+            });
+
+            const result = await response.json();
+            document.getElementById('loadingIndicator').style.display = 'none';
+
+            if (response.ok && result.success && result.diagnostics.folders) {
+                displayFoldersList(result.diagnostics.folders);
+            } else {
+                displayFoldersList({ success: false, error: 'Fehler beim Umschalten der Folder-Liste' });
+            }
+        } catch (error) {
+            document.getElementById('loadingIndicator').style.display = 'none';
+            displayFoldersList({ success: false, error: 'Network Error: ' + error.message });
         } finally {
             this.disabled = false;
         }
@@ -179,7 +268,19 @@
         // 4. Folder Access Test
         displayFolderTest(diagnostics.inbox_access);
 
-        // 5. Summary
+        // 5. Folder Listing Test
+        displayFoldersList(diagnostics.folders);
+
+        // 6. Flag Detection Test
+        displayFlagsTest(diagnostics.flags);
+
+        // 7. Server ID & Provider
+        displayServerIdTest(diagnostics.server_id);
+
+        // 8. Extensions
+        displayExtensionsTest(diagnostics.extensions);
+
+        // 9. Summary
         displaySummary(diagnostics);
     }
 
@@ -216,16 +317,17 @@
             const caps = data.capabilities || [];
             const important = ['IDLE', 'NAMESPACE', 'UIDPLUS', 'MOVE', 'ID'];
             
-            let html = '<p class="mb-2"><strong>Unterstützte Features:</strong></p><ul>';
+            let html = '<p class="mb-3"><strong>🔹 Wichtige Features:</strong></p><ul class="mb-3">';
             important.forEach(cap => {
                 const supported = caps.includes(cap);
                 html += `<li>${supported ? '✅' : '❌'} ${cap}</li>`;
             });
             html += '</ul>';
             
-            if (caps.length > important.length) {
-                html += `<p class="mb-0"><small class="text-muted">+ ${caps.length - important.length} weitere Capabilities</small></p>`;
-            }
+            html += `<p class="mb-2"><strong>🔹 Alle Capabilities (${caps.length} total):</strong></p>`;
+            html += '<div style="background-color: #f8f9fa; padding: 12px; border-radius: 4px; font-family: monospace; font-size: 0.9em; line-height: 1.6; word-break: break-word;">';
+            html += caps.join(', ');
+            html += '</div>';
             
             detailsEl.innerHTML = html;
         } else {
@@ -287,6 +389,190 @@
         }
     }
 
+    let lastFoldersData = null;
+    
+    function displayFoldersList(data) {
+        const statusEl = document.getElementById('foldersListStatus');
+        const detailsEl = document.getElementById('foldersListDetails');
+        const toggleBtn = document.getElementById('toggleSubscribedBtn');
+        
+        lastFoldersData = data;
+
+        if (data.success && data.folders && data.folders.length > 0) {
+            statusEl.innerHTML = `5️⃣ Folder-Listing ✅`;
+            
+            const folders = data.folders;
+            const isSubscribedOnly = data.subscribed_only || false;
+            const listType = data.list_type || 'all';
+            
+            let html = `<p class="mb-3"><strong>📁 ${folders.length} Ordner gefunden (${isSubscribedOnly ? 'nur abonniert' : 'alle'}):</strong></p>`;
+            html += '<div style="max-height: 400px; overflow-y: auto;">';
+            html += '<table class="table table-sm table-bordered mb-0">';
+            html += '<thead class="table-light"><tr><th>Ordner</th><th>Flags</th><th>Special</th></tr></thead><tbody>';
+            
+            folders.forEach(folder => {
+                const name = folder.name || '(unbekannt)';
+                const flags = folder.flags && folder.flags.length > 0 ? folder.flags.join(', ') : 'keine';
+                
+                let special = '';
+                if (folder.is_drafts) special += '📝 ';
+                if (folder.is_sent) special += '✉️ ';
+                if (folder.is_trash) special += '🗑️ ';
+                if (folder.is_junk) special += '⚠️ ';
+                if (folder.is_archive) special += '📦 ';
+                special = special.trim() || '-';
+                
+                html += `<tr><td style="font-family: monospace; font-size: 0.9em;">${name}</td><td style="font-size: 0.85em;">${flags}</td><td>${special}</td></tr>`;
+            });
+            
+            html += '</tbody></table>';
+            html += '</div>';
+            
+            detailsEl.innerHTML = html;
+            toggleBtn.style.display = 'block';
+            toggleBtn.textContent = isSubscribedOnly ? '📭 Alle anzeigen' : '📌 Nur abonniert';
+            toggleBtn.className = 'btn btn-sm text-dark ' + (isSubscribedOnly ? 'btn-primary' : 'btn-light');
+            if (isSubscribedOnly) {
+                toggleBtn.style.borderColor = '#0d6efd';
+            } else {
+                toggleBtn.style.borderColor = '#ddd';
+            }
+        } else if (data.success) {
+            statusEl.innerHTML = '5️⃣ Folder-Listing ⚠️';
+            detailsEl.innerHTML = '<p class="text-warning mb-0">Keine Ordner gefunden oder leere Liste</p>';
+            toggleBtn.style.display = 'none';
+        } else {
+            statusEl.innerHTML = '5️⃣ Folder-Listing ❌';
+            detailsEl.innerHTML = `<p class="text-danger mb-0"><strong>Fehler:</strong> ${data.error}</p>`;
+            toggleBtn.style.display = 'none';
+        }
+    }
+
+    function displayFlagsTest(data) {
+        const statusEl = document.getElementById('flagsStatus');
+        const detailsEl = document.getElementById('flagsDetails');
+
+        if (data.success) {
+            statusEl.innerHTML = '6️⃣ Flag-Detection ✅';
+            
+            const stats = data.statistics || {};
+            const total = data.total_messages || 0;
+            const sample = data.sample_count || 0;
+            const flags = data.flags_found || [];
+            
+            let html = `<p class="text-success mb-2"><strong>✅ Flag-Detection erfolgreich</strong></p>`;
+            html += `<div class="row mb-3">`;
+            html += `  <div class="col-md-6"><p class="mb-1"><strong>📊 Statistik (${sample} von ${total} Emails):</strong></p>`;
+            html += `    <ul class="mb-0" style="font-size: 0.95em;">`;
+            html += `      <li>👁️ Gelesen: <strong>${stats.seen || 0}</strong></li>`;
+            html += `      <li>🔵 Ungelesen: <strong>${stats.unseen || 0}</strong></li>`;
+            html += `      <li>⭐ Flagged: <strong>${stats.flagged || 0}</strong></li>`;
+            html += `      <li>✉️ Answered: <strong>${stats.answered || 0}</strong></li>`;
+            html += `      <li>🗑️ Deleted: <strong>${stats.deleted || 0}</strong></li>`;
+            html += `    </ul></div>`;
+            
+            html += `  <div class="col-md-6"><p class="mb-1"><strong>🏷️ Verfügbare Flags (${flags.length}):</strong></p>`;
+            html += `    <div style="background-color: #f8f9fa; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em; max-height: 150px; overflow-y: auto;">`;
+            if (flags.length > 0) {
+                html += flags.join('<br>');
+            } else {
+                html += 'Keine Flags gefunden';
+            }
+            html += `    </div></div>`;
+            html += `</div>`;
+            
+            if (data.sample_messages && data.sample_messages.length > 0) {
+                html += `<p class="mb-2"><strong>📧 Sample-Emails (neueste ${data.sample_messages.length}):</strong></p>`;
+                html += `<div style="max-height: 200px; overflow-y: auto; font-size: 0.9em;">`;
+                html += `<table class="table table-sm mb-0">`;
+                html += `<thead class="table-light"><tr><th>UID</th><th>Seen</th><th>Flagged</th><th>Answered</th></tr></thead><tbody>`;
+                data.sample_messages.forEach(msg => {
+                    html += `<tr>`;
+                    html += `  <td>${msg.uid}</td>`;
+                    html += `  <td>${msg.is_seen ? '✅' : '❌'}</td>`;
+                    html += `  <td>${msg.is_flagged ? '⭐' : '−'}</td>`;
+                    html += `  <td>${msg.is_answered ? '✉️' : '−'}</td>`;
+                    html += `</tr>`;
+                });
+                html += `</tbody></table>`;
+                html += `</div>`;
+            }
+            
+            detailsEl.innerHTML = html;
+        } else if (data.total_messages === 0) {
+            statusEl.innerHTML = '6️⃣ Flag-Detection ⚠️';
+            detailsEl.innerHTML = '<p class="text-warning mb-0">INBOX ist leer - keine Flags zum Testen</p>';
+        } else {
+            statusEl.innerHTML = '6️⃣ Flag-Detection ❌';
+            detailsEl.innerHTML = `<p class="text-danger mb-0"><strong>Fehler:</strong> ${data.error}</p>`;
+        }
+    }
+
+    function displayServerIdTest(data) {
+        const statusEl = document.getElementById('serverIdStatus');
+        const detailsEl = document.getElementById('serverIdDetails');
+
+        if (data.success || data.provider) {
+            statusEl.innerHTML = '7️⃣ Server-ID & Provider ✅';
+            
+            let html = `<p class="text-success mb-2"><strong>✅ Provider erkannt</strong></p>`;
+            html += `<div class="row">`;
+            html += `  <div class="col-md-6">`;
+            html += `    <p class="mb-2"><strong>🌐 Provider:</strong></p>`;
+            html += `    <p style="background-color: #e7f3ff; padding: 10px; border-radius: 4px; margin: 0; font-weight: bold;">${data.provider || 'Unbekannt'}</p>`;
+            html += `  </div>`;
+            
+            if (data.server_info && Object.keys(data.server_info).length > 0) {
+                html += `  <div class="col-md-6">`;
+                html += `    <p class="mb-2"><strong>📋 Server-Info:</strong></p>`;
+                html += `    <ul class="mb-0" style="font-size: 0.9em;">`;
+                Object.entries(data.server_info).forEach(([key, value]) => {
+                    html += `      <li><strong>${key}:</strong> ${value}</li>`;
+                });
+                html += `    </ul>`;
+                html += `  </div>`;
+            }
+            html += `</div>`;
+            
+            detailsEl.innerHTML = html;
+        } else {
+            statusEl.innerHTML = '7️⃣ Server-ID & Provider ⚠️';
+            detailsEl.innerHTML = `<p class="text-warning mb-0">Server unterstützt ID-Extension nicht (nicht kritisch). Provider: ${data.provider || 'Unbekannt'}</p>`;
+        }
+    }
+
+    function displayExtensionsTest(data) {
+        const statusEl = document.getElementById('extensionsStatus');
+        const detailsEl = document.getElementById('extensionsDetails');
+
+        if (data.success && data.supported_extensions) {
+            statusEl.innerHTML = '8️⃣ Extensions Support ✅';
+            
+            const exts = data.supported_extensions || {};
+            const totalAvailable = data.total_available || 0;
+            
+            let html = `<p class="text-success mb-3"><strong>✅ ${totalAvailable} Extensions verfügbar</strong></p>`;
+            html += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">`;
+            
+            Object.entries(exts).forEach(([extName, extInfo]) => {
+                const isAvailable = extInfo.available;
+                const statusIcon = isAvailable ? '✅' : '❌';
+                const bgColor = isAvailable ? '#d4edda' : '#f8d7da';
+                
+                html += `<div style="background-color: ${bgColor}; padding: 10px; border-radius: 4px; font-size: 0.9em;">`;
+                html += `  <p class="mb-1"><strong>${statusIcon} ${extName}</strong></p>`;
+                html += `  <p class="mb-0" style="color: #666;">${extInfo.name}</p>`;
+                html += `</div>`;
+            });
+            
+            html += `</div>`;
+            detailsEl.innerHTML = html;
+        } else {
+            statusEl.innerHTML = '8️⃣ Extensions Support ❌';
+            detailsEl.innerHTML = `<p class="text-danger mb-0"><strong>Fehler:</strong> ${data.error || 'Unbekannter Fehler'}</p>`;
+        }
+    }
+
     function displaySummary(diagnostics) {
         const alertEl = document.getElementById('summaryAlert');
         const titleEl = document.getElementById('summaryTitle');
@@ -296,8 +582,13 @@
             diagnostics.connection?.success,
             diagnostics.capabilities?.success,
             diagnostics.namespace?.success,
-            diagnostics.folder_access?.success
+            diagnostics.inbox_access?.success,
+            diagnostics.folders?.success,
+            diagnostics.flags?.success,
+            diagnostics.extensions?.success
         ];
+        
+        // Server ID is optional, don't count in overall success
 
         const passedCount = tests.filter(t => t === true).length;
         const totalCount = tests.length;

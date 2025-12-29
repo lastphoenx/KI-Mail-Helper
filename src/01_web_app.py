@@ -3067,6 +3067,18 @@ def api_imap_diagnostics(account_id):
         
         # Run Diagnostics
         try:
+            # Check for subscribed_only parameter in query string or request body
+            subscribed_only = False
+            try:
+                if request.args.get('subscribed_only'):
+                    subscribed_only = request.args.get('subscribed_only').lower() in ('true', '1', 'yes')
+                elif request.is_json:
+                    json_data = request.get_json(silent=True) or {}
+                    subscribed_only = json_data.get('subscribed_only', False)
+            except Exception as param_error:
+                logger.debug(f"Parameter parsing error (using default): {param_error}")
+                subscribed_only = False
+            
             imap_diag_mod = importlib.import_module("src.imap_diagnostics")
             
             diagnostics = imap_diag_mod.IMAPDiagnostics(
@@ -3074,11 +3086,11 @@ def api_imap_diagnostics(account_id):
                 port=account.imap_port or 993,
                 username=imap_username,
                 password=imap_password,
-                timeout=10,
+                timeout=30,
                 ssl=(account.imap_encryption == "SSL")
             )
             
-            result = diagnostics.run_diagnostics()
+            result = diagnostics.run_diagnostics(subscribed_only=subscribed_only)
             
             return jsonify({
                 "success": True,
