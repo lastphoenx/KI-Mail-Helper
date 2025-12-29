@@ -870,10 +870,21 @@ class IMAPDiagnostics:
                     algo = algorithms[0].lower()
                     threads = client.thread(algorithm=algo, criteria=['ALL'])
                     
-                    # Calculate statistics
+                    # Helper to flatten nested thread structures
+                    def flatten_thread(thread):
+                        """Recursively flatten thread structure to get all UIDs"""
+                        uids = []
+                        for item in thread:
+                            if isinstance(item, (list, tuple)):
+                                uids.extend(flatten_thread(item))
+                            else:
+                                uids.append(item)
+                        return uids
+                    
+                    # Calculate statistics (threads can be nested tuples)
                     thread_count = len(threads) if threads else 0
-                    total_messages = sum(len(t) for t in threads) if threads else 0
-                    largest_thread = max(len(t) for t in threads) if threads else 0
+                    total_messages = sum(len(flatten_thread(t)) for t in threads) if threads else 0
+                    largest_thread = max(len(flatten_thread(t)) for t in threads) if threads else 0
                     avg_messages_per_thread = total_messages / thread_count if thread_count > 0 else 0
                     
                     # Get dates for timeline
@@ -883,14 +894,31 @@ class IMAPDiagnostics:
                     
                     if threads:
                         # Get envelopes for all thread UIDs to extract dates
+                        # THREAD returns nested tuples like (1, 2, (3, 4)) for threads with replies
+                        # We need to flatten them to get all UIDs
+                        def flatten_thread(thread):
+                            """Recursively flatten thread structure to get all UIDs"""
+                            uids = []
+                            for item in thread:
+                                if isinstance(item, (list, tuple)):
+                                    uids.extend(flatten_thread(item))
+                                else:
+                                    uids.append(item)
+                            return uids
+                        
                         all_uids = []
                         for thread in threads:
-                            all_uids.extend(thread)
+                            all_uids.extend(flatten_thread(thread))
                         
+                        uid_to_envelope = {}
                         try:
-                            envelopes = client.fetch(all_uids, ['ENVELOPE'])
-                            uid_to_envelope = envelopes
-                        except:
+                            if all_uids:
+                                logger.debug(f"Fetching ENVELOPE for {len(all_uids)} UIDs from {len(threads)} threads")
+                                envelopes = client.fetch(all_uids, ['ENVELOPE'])
+                                uid_to_envelope = envelopes
+                                logger.debug(f"Successfully fetched {len(uid_to_envelope)} envelopes")
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch envelopes for threads: {type(e).__name__}: {e}")
                             uid_to_envelope = {}
                         
                         # Sample first 3 threads
@@ -898,28 +926,38 @@ class IMAPDiagnostics:
                             sample_thread = []
                             thread_dates = []
                             
-                            for uid in thread[:3]:  # First 3 messages of each thread
-                                env = uid_to_envelope.get(uid, {}).get(b'ENVELOPE') if uid_to_envelope else None
+                            # Flatten this thread to get UIDs
+                            thread_uids = flatten_thread(thread)
+                            
+                            for uid in thread_uids[:3]:  # First 3 messages of each thread
                                 date_str = '?'
                                 subject = '(keine Details verfügbar)'
                                 
-                                if env:
-                                    try:
-                                        if env.date:
-                                            date_str = str(env.date)
-                                            if len(date_str) > 10:
-                                                date_str = date_str.split()[0] if ' ' in date_str else date_str[:10]
-                                            thread_dates.append(date_str)
-                                        else:
-                                            date_str = '(kein Datum)'
-                                        
-                                        if env.subject:
-                                            subject = self._decode_header(env.subject)
-                                        else:
-                                            subject = '(kein Betreff)'
-                                    except Exception as e:
-                                        logger.debug(f"Error extracting envelope data: {e}")
-                                        subject = '(Fehler beim Laden)'
+                                # Fetch envelope data for this UID
+                                envelope_data = uid_to_envelope.get(uid)
+                                if envelope_data:
+                                    env = envelope_data.get(b'ENVELOPE')
+                                    if env:
+                                        try:
+                                            if env.date:
+                                                date_str = str(env.date)
+                                                if len(date_str) > 10:
+                                                    date_str = date_str.split()[0] if ' ' in date_str else date_str[:10]
+                                                thread_dates.append(date_str)
+                                            else:
+                                                date_str = '(kein Datum)'
+                                            
+                                            if env.subject:
+                                                subject = self._decode_header(env.subject)
+                                            else:
+                                                subject = '(kein Betreff)'
+                                        except Exception as e:
+                                            logger.debug(f"Error extracting envelope data for UID {uid}: {e}")
+                                            subject = '(Fehler beim Laden)'
+                                    else:
+                                        logger.debug(f"No ENVELOPE key for UID {uid}")
+                                else:
+                                    logger.debug(f"UID {uid} not found in envelope_data")
                                 
                                 sample_thread.append({
                                     'uid': uid,
