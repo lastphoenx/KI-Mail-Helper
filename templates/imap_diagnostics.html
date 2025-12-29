@@ -104,7 +104,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script nonce="{{ csp_nonce() }}">
+<script nonce="{{ csp_nonce }}">
     // Account Selection Handler
     document.getElementById('accountSelect').addEventListener('change', function() {
         const testBtn = document.getElementById('testBtn');
@@ -141,7 +141,7 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-Token': csrfToken
+                    'X-CSRFToken': csrfToken
                 }
             });
 
