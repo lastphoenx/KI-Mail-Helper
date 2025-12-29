@@ -80,12 +80,15 @@
                 </div>
                 
                 <div class="d-flex gap-2 mt-3">
-                    <button class="btn btn-sm btn-outline-primary flex-fill" 
-                            onclick="editTag({{ tag.id }}, '{{ tag.name }}', '{{ tag.color }}')">
+                    <button class="btn btn-sm btn-outline-primary flex-fill edit-tag-btn" 
+                            data-tag-id="{{ tag.id }}" 
+                            data-tag-name="{{ tag.name }}" 
+                            data-tag-color="{{ tag.color }}">
                         ✏️ Bearbeiten
                     </button>
-                    <button class="btn btn-sm btn-outline-danger" 
-                            onclick="deleteTag({{ tag.id }}, '{{ tag.name }}')">
+                    <button class="btn btn-sm btn-outline-danger delete-tag-btn" 
+                            data-tag-id="{{ tag.id }}" 
+                            data-tag-name="{{ tag.name }}">
                         🗑️ Löschen
                     </button>
                 </div>
@@ -234,20 +237,25 @@ document.getElementById('createTagForm').addEventListener('submit', async functi
     }
 });
 
-// Tag bearbeiten (Modal öffnen)
-function editTag(tagId, tagName, tagColor) {
-    document.getElementById('editTagId').value = tagId;
-    document.getElementById('editTagName').value = tagName;
-    document.getElementById('editTagColor').value = tagColor;
-    
-    // Farbe im Picker auswählen
-    const picker = document.getElementById('editColorPicker');
-    picker.querySelectorAll('.color-picker-option').forEach(o => {
-        o.classList.toggle('selected', o.dataset.color === tagColor);
+// Tag bearbeiten - Event Listener
+document.querySelectorAll('.edit-tag-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const tagId = this.dataset.tagId;
+        const tagName = this.dataset.tagName;
+        const tagColor = this.dataset.tagColor;
+        
+        document.getElementById('editTagId').value = tagId;
+        document.getElementById('editTagName').value = tagName;
+        document.getElementById('editTagColor').value = tagColor;
+        
+        const picker = document.getElementById('editColorPicker');
+        picker.querySelectorAll('.color-picker-option').forEach(o => {
+            o.classList.toggle('selected', o.dataset.color === tagColor);
+        });
+        
+        new bootstrap.Modal(document.getElementById('editTagModal')).show();
     });
-    
-    new bootstrap.Modal(document.getElementById('editTagModal')).show();
-}
+});
 
 // Tag bearbeiten (Submit)
 document.getElementById('editTagForm').addEventListener('submit', async function(e) {
@@ -279,31 +287,34 @@ document.getElementById('editTagForm').addEventListener('submit', async function
     }
 });
 
-// Tag löschen
-async function deleteTag(tagId, tagName) {
-    if (!confirm(`Tag "${tagName}" wirklich löschen?\n\nDie Verknüpfungen zu E-Mails werden ebenfalls entfernt.`)) {
-        return;
-    }
-    
-    try {
-        const response = await fetch(`/api/tags/${tagId}`, {
-            method: 'DELETE',
-            headers: {
-                'X-CSRFToken': getCsrfToken()
-            }
-        });
-            method: 'DELETE'
-        });
+// Tag löschen - Event Listener
+document.querySelectorAll('.delete-tag-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const tagId = this.dataset.tagId;
+        const tagName = this.dataset.tagName;
         
-        if (response.ok) {
-            window.location.reload();
-        } else {
-            const data = await response.json();
-            alert('Fehler: ' + (data.error || 'Tag konnte nicht gelöscht werden'));
+        if (!confirm(`Tag "${tagName}" wirklich löschen?\n\nDie Verknüpfungen zu E-Mails werden ebenfalls entfernt.`)) {
+            return;
         }
-    } catch (error) {
-        alert('Fehler beim Löschen: ' + error.message);
-    }
-}
+        
+        try {
+            const response = await fetch(`/api/tags/${tagId}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': getCsrfToken()
+                }
+            });
+            
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                const data = await response.json();
+                alert('Fehler: ' + (data.error || 'Tag konnte nicht gelöscht werden'));
+            }
+        } catch (error) {
+            alert('Fehler beim Löschen: ' + error.message);
+        }
+    });
+});
 </script>
 {% endblock %}

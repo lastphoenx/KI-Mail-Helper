@@ -21,17 +21,31 @@
             <div class="col-md-2">
                 <label class="form-label">Status</label>
                 <select name="done" class="form-select">
-                    <option value="" {% if filter_done not in ['true','false'] %}selected{% endif %}>Alle</option>
+                    <option value="" {% if not filter_done %}selected{% endif %}>Alle</option>
                     <option value="false" {% if filter_done == 'false' %}selected{% endif %}>Offen</option>
                     <option value="true" {% if filter_done == 'true' %}selected{% endif %}>Erledigt</option>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
+                <label class="form-label">Mail-Account</label>
+                <select name="mail_account" class="form-select">
+                    <option value="" {% if not filter_account_id %}selected{% endif %}>Alle Accounts</option>
+                    {% if user_accounts %}
+                        {% for account in user_accounts %}
+                        <option value="{{ account.id }}" {% if account.id == filter_account_id %}selected{% endif %}>
+                            {{ account.decrypted_imap_username or account.name }}
+                        </option>
+                        {% endfor %}
+                    {% endif %}
+                </select>
+            </div>
+            <div class="col-md-2">
                 <label class="form-label">Tags</label>
-                <select name="tags" class="form-select" multiple size="1" id="tagFilter">
+                <select name="tags" class="form-select">
+                    <option value="">Alle Tags</option>
                     {% if all_tags %}
                         {% for tag in all_tags %}
-                        <option value="{{ tag.id }}" {% if tag.id in filter_tag_ids %}selected{% endif %}>
+                        <option value="{{ tag.id }}" {% if filter_tag_ids and tag.id == filter_tag_ids[0] %}selected{% endif %}>
                             {{ tag.name }}
                         </option>
                         {% endfor %}
@@ -39,7 +53,6 @@
                         <option disabled>Keine Tags vorhanden</option>
                     {% endif %}
                 </select>
-                <small class="text-muted">Mehrfachauswahl mit Strg/Cmd</small>
             </div>
             <div class="col-md-3">
                 <label class="form-label">Suche</label>
