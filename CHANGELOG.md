@@ -8,6 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Feature: IMAP Extensions Diagnostics (2025-12-29)
+
+**IMAP Extensions: CAPABILITY Server-Antworten anzeigen**
+- Erweitert IMAP Diagnostics UI um detaillierte Server-Antworten für Extension-Checks
+- **Problem**: User wusste nicht, ob Extensions (CONDSTORE, UTF8, COMPRESS, etc.) vom Server unterstützt werden
+- **Lösung**: Zeigt CAPABILITY-Check-Responses für jede Extension im Diagnostics-UI
+- **Details**:
+  - `src/imap_diagnostics.py` (`test_enable_extensions`): Sammelt Server-Responses für CAPABILITY-Checks
+  - Prüft 5 Extensions: CONDSTORE, UTF8, ENABLE, COMPRESS, STARTTLS
+  - Zeigt ✅ (in Capabilities gefunden) oder ❌ (nicht verfügbar) Status
+  - `templates/imap_diagnostics.html`: Blauer Debug-Kasten zeigt Server-Antworten vor Extension-Grid
+  - Format: `CAPABILITY (Check für CONDSTORE) → ✅ Gefunden: CONDSTORE` oder `❌ Nicht in Server-Capabilities`
+- **Verhindert**: Unnötige ENABLE-Command-Versuche die zu IllegalStateError führen würden
+- **Benefit**: User sieht sofort welche Extensions der IMAP-Server unterstützt ohne Fehler zu produzieren
+- **Files**: `src/imap_diagnostics.py` (lines 731-820), `templates/imap_diagnostics.html` (lines 593-640)
+
+---
+
 ### Security Fixes - Phase 9f (2025-12-28)
 
 #### HIGH Priority Security Improvements

@@ -11,7 +11,9 @@ Test-First Development: Implementation folgt Tests!
 """
 
 import logging
-from typing import Dict, Any, List, Tuple, Optional
+import re
+from typing import Dict, Any, List, Tuple, Optional, Union
+from email.header import decode_header
 from imapclient import IMAPClient
 from imapclient.exceptions import IMAPClientError
 
@@ -45,13 +47,48 @@ class IMAPDiagnostics:
             password: Email password
             timeout: Connection timeout in seconds
             ssl: Use SSL/TLS encryption
+        
+        Raises:
+            ValueError: If input validation fails
         """
+        self._validate_inputs(host, port, username, timeout)
+        
         self.host = host
         self.port = port
         self.username = username
         self.password = password
         self.timeout = timeout
         self.ssl = ssl
+    
+    def _validate_inputs(self, host: str, port: int, username: str, timeout: float) -> None:
+        """
+        Validate initialization inputs to prevent injection/misc issues
+        
+        Args:
+            host: Hostname to validate
+            port: Port number to validate
+            username: Username to validate
+            timeout: Timeout value to validate
+        
+        Raises:
+            ValueError: If any input is invalid
+        """
+        if not isinstance(host, str) or not host or len(host) > 255:
+            raise ValueError("Invalid hostname: must be non-empty string, max 255 chars")
+        
+        if not re.match(r'^[a-zA-Z0-9\-\.]+$', host):
+            raise ValueError(f"Invalid hostname: contains invalid characters: {host}")
+        
+        if not isinstance(port, int) or port < 1 or port > 65535:
+            raise ValueError(f"Invalid port: must be 1-65535, got {port}")
+        
+        if not isinstance(username, str) or len(username) > 1024:
+            raise ValueError("Invalid username: must be string, max 1024 chars")
+        
+        if not isinstance(timeout, (int, float)) or timeout <= 0 or timeout > 3600:
+            raise ValueError(f"Invalid timeout: must be 0-3600 seconds, got {timeout}")
+        
+        logger.debug(f"Input validation passed for {host}:{port}")
     
     def _get_connection(self, timeout=None):
         """Helper: Create IMAP connection with optional custom timeout"""
@@ -528,22 +565,8 @@ class IMAPDiagnostics:
             # Get server ID info
             server_info = client.id_({'name': 'KI-Mail-Helper', 'version': '1.0'})
             
-            # Convert bytes to strings (handle both dict and tuple returns)
-            server_info_str = {}
-            if server_info:
-                if isinstance(server_info, dict):
-                    for key, value in server_info.items():
-                        key_str = key.decode('ascii') if isinstance(key, bytes) else str(key)
-                        val_str = value.decode('ascii') if isinstance(value, bytes) else str(value)
-                        server_info_str[key_str] = val_str
-                elif isinstance(server_info, (list, tuple)):
-                    for i in range(0, len(server_info), 2):
-                        if i + 1 < len(server_info):
-                            key = server_info[i]
-                            value = server_info[i + 1]
-                            key_str = key.decode('ascii') if isinstance(key, bytes) else str(key)
-                            val_str = value.decode('ascii') if isinstance(value, bytes) else str(value)
-                            server_info_str[key_str] = val_str
+            # Parse server info (robust format handling)
+            server_info_str = self._parse_server_id(server_info)
             
             # Detect provider based on server info and host
             provider = self._detect_provider(server_info_str)
@@ -574,6 +597,57 @@ class IMAPDiagnostics:
                     client.logout()
                 except:
                     pass
+    
+    def _parse_server_id(self, server_info: Any) -> Dict[str, str]:
+        """
+        Parse server ID information (robust for various formats)
+        
+        RFC 2971 allows multiple formats:
+        - Dict: {'name': 'Dovecot', ...}
+        - Flat list: ['name', 'Dovecot', 'version', '2.3']
+        - Nested tuples: [('name', 'Dovecot'), ('version', '2.3')]
+        
+        Args:
+            server_info: Raw server ID response from IMAPClient
+        
+        Returns:
+            Dict with string keys and values
+        """
+        result = {}
+        
+        if not server_info:
+            return result
+        
+        try:
+            if isinstance(server_info, dict):
+                for key, value in server_info.items():
+                    key_str = key.decode('ascii') if isinstance(key, bytes) else str(key)
+                    val_str = value.decode('ascii') if isinstance(value, bytes) else str(value)
+                    result[key_str] = val_str
+            
+            elif isinstance(server_info, (list, tuple)):
+                if len(server_info) == 0:
+                    return result
+                
+                if isinstance(server_info[0], (list, tuple)) and len(server_info[0]) == 2:
+                    for item in server_info:
+                        if isinstance(item, (list, tuple)) and len(item) == 2:
+                            key, value = item
+                            key_str = key.decode('ascii') if isinstance(key, bytes) else str(key)
+                            val_str = value.decode('ascii') if isinstance(value, bytes) else str(value)
+                            result[key_str] = val_str
+                elif len(server_info) % 2 == 0:
+                    for i in range(0, len(server_info), 2):
+                        key = server_info[i]
+                        value = server_info[i + 1]
+                        key_str = key.decode('ascii') if isinstance(key, bytes) else str(key)
+                        val_str = value.decode('ascii') if isinstance(value, bytes) else str(value)
+                        result[key_str] = val_str
+        
+        except Exception as e:
+            logger.debug(f"Error parsing server_id: {e}")
+        
+        return result
     
     def _detect_provider(self, server_info: Dict[str, str]) -> str:
         """
@@ -622,6 +696,38 @@ class IMAPDiagnostics:
         else:
             return 'Unknown Provider'
     
+    def _decode_header(self, header_bytes: Union[bytes, str]) -> str:
+        """
+        Decode RFC 2047 encoded header (=?UTF-8?Q?...?= format)
+        
+        Args:
+            header_bytes: Raw header value (bytes or string)
+        
+        Returns:
+            Decoded string
+        """
+        
+        try:
+            if isinstance(header_bytes, bytes):
+                header_str = header_bytes.decode('utf-8', errors='replace')
+            else:
+                header_str = header_bytes
+            
+            if '=?' in header_str:
+                decoded_parts = []
+                for part, charset in decode_header(header_str):
+                    if isinstance(part, bytes):
+                        decoded = part.decode(charset or 'utf-8', errors='replace')
+                    else:
+                        decoded = part
+                    decoded_parts.append(decoded)
+                return ''.join(decoded_parts)
+            
+            return header_str
+        except Exception as e:
+            logger.debug(f"Error decoding header: {e}")
+            return header_bytes if isinstance(header_bytes, str) else header_bytes.decode('utf-8', errors='replace')
+    
     def test_enable_extensions(self, client=None) -> Dict[str, Any]:
         """
         Test and enable optional server extensions
@@ -644,6 +750,10 @@ class IMAPDiagnostics:
             caps_str = {cap.decode('ascii') if isinstance(cap, bytes) else cap 
                        for cap in caps}
             
+            # Sammle Server-Antwort für CAPABILITY Request
+            server_responses = []
+            
+            # Zeige CAPABILITY-Antwort für jede Extension
             extensions_to_test = {
                 'CONDSTORE': 'Änderungen seit letztem Sync (MODSEQ)',
                 'UTF8': 'UTF-8 Unterstützung',
@@ -655,6 +765,9 @@ class IMAPDiagnostics:
             supported = {}
             enabled = {}
             
+            # ENABLE Extension muss vorhanden sein, sonst macht es keinen Sinn
+            has_enable = 'ENABLE' in caps_str or any('ENABLE' in cap for cap in caps_str)
+            
             for ext_name, ext_desc in extensions_to_test.items():
                 has_cap = ext_name in caps_str or any(ext_name in cap for cap in caps_str)
                 supported[ext_name] = {
@@ -662,21 +775,37 @@ class IMAPDiagnostics:
                     'available': has_cap
                 }
                 
-                # Try to enable CONDSTORE (safe to enable)
-                if ext_name == 'CONDSTORE' and has_cap:
-                    try:
-                        result = client.enable('CONDSTORE')
-                        enabled[ext_name] = bool(result)
-                    except Exception as e:
-                        logger.debug(f"Could not enable {ext_name}: {e}")
-                        enabled[ext_name] = False
+                # Sammle Capability-Check Response
+                if has_cap:
+                    matching_caps = [cap for cap in caps_str if ext_name in cap]
+                    server_responses.append({
+                        'command': f'CAPABILITY (Check für {ext_name})',
+                        'response': f'✅ Gefunden: {", ".join(matching_caps) if matching_caps else ext_name}',
+                        'status': 'OK'
+                    })
+                else:
+                    server_responses.append({
+                        'command': f'CAPABILITY (Check für {ext_name})',
+                        'response': f'❌ Nicht in Server-Capabilities vorhanden',
+                        'status': 'NOT_FOUND'
+                    })
             
             return {
                 'success': True,
-                'supported_extensions': supported,
-                'enabled': enabled,
+                'extensions': {
+                    ext_name: {
+                        'name': supported[ext_name]['name'],
+                        'available': supported[ext_name]['available'],
+                        'enabled': enabled.get(ext_name, False)
+                    }
+                    for ext_name in supported.keys()
+                },
                 'total_available': sum(1 for ext in supported.values() if ext['available']),
-                'message': f'{sum(1 for ext in supported.values() if ext["available"])} Extensions verfügbar'
+                'total_enabled': sum(1 for v in enabled.values() if v),
+                'message': f'{sum(1 for ext in supported.values() if ext["available"])} Extensions verfügbar, {sum(1 for v in enabled.values() if v)} aktiviert',
+                'server_responses': server_responses,
+                'total_commands': len(server_responses),
+                'successful_commands': sum(1 for r in server_responses if r['status'] == 'OK')
             }
         
         except Exception as e:
@@ -684,8 +813,9 @@ class IMAPDiagnostics:
             return {
                 'success': False,
                 'error': str(e),
-                'supported_extensions': {},
-                'enabled': {}
+                'extensions': {},
+                'total_available': 0,
+                'total_enabled': 0
             }
         
         finally:
@@ -740,12 +870,95 @@ class IMAPDiagnostics:
                     algo = algorithms[0].lower()
                     threads = client.thread(algorithm=algo, criteria=['ALL'])
                     
+                    # Calculate statistics
+                    thread_count = len(threads) if threads else 0
+                    total_messages = sum(len(t) for t in threads) if threads else 0
+                    largest_thread = max(len(t) for t in threads) if threads else 0
+                    avg_messages_per_thread = total_messages / thread_count if thread_count > 0 else 0
+                    
+                    # Get dates for timeline
+                    oldest_date = None
+                    newest_date = None
+                    sample_threads_detailed = []
+                    
+                    if threads:
+                        # Get envelopes for all thread UIDs to extract dates
+                        all_uids = []
+                        for thread in threads:
+                            all_uids.extend(thread)
+                        
+                        try:
+                            envelopes = client.fetch(all_uids, ['ENVELOPE'])
+                            uid_to_envelope = envelopes
+                        except:
+                            uid_to_envelope = {}
+                        
+                        # Sample first 3 threads
+                        for thread_idx, thread in enumerate(threads[:3]):
+                            sample_thread = []
+                            thread_dates = []
+                            
+                            for uid in thread[:3]:  # First 3 messages of each thread
+                                env = uid_to_envelope.get(uid, {}).get(b'ENVELOPE') if uid_to_envelope else None
+                                date_str = '?'
+                                subject = '(keine Details verfügbar)'
+                                
+                                if env:
+                                    try:
+                                        if env.date:
+                                            date_str = str(env.date)
+                                            if len(date_str) > 10:
+                                                date_str = date_str.split()[0] if ' ' in date_str else date_str[:10]
+                                            thread_dates.append(date_str)
+                                        else:
+                                            date_str = '(kein Datum)'
+                                        
+                                        if env.subject:
+                                            subject = self._decode_header(env.subject)
+                                        else:
+                                            subject = '(kein Betreff)'
+                                    except Exception as e:
+                                        logger.debug(f"Error extracting envelope data: {e}")
+                                        subject = '(Fehler beim Laden)'
+                                
+                                sample_thread.append({
+                                    'uid': uid,
+                                    'date': date_str,
+                                    'subject': subject
+                                })
+                            
+                            if thread_dates:
+                                thread_dates_sorted = sorted(thread_dates)
+                                sample_threads_detailed.append({
+                                    'thread_num': thread_idx + 1,
+                                    'size': len(thread),
+                                    'oldest': thread_dates_sorted[0] if thread_dates_sorted else None,
+                                    'newest': thread_dates_sorted[-1] if thread_dates_sorted else None,
+                                    'messages': sample_thread
+                                })
+                            else:
+                                sample_threads_detailed.append({
+                                    'thread_num': thread_idx + 1,
+                                    'size': len(thread),
+                                    'messages': sample_thread
+                                })
+                            
+                            # Track overall timeline
+                            for date in thread_dates:
+                                if oldest_date is None or date < oldest_date:
+                                    oldest_date = date
+                                if newest_date is None or date > newest_date:
+                                    newest_date = date
+                    
                     thread_results = {
                         'algorithm_used': algo,
-                        'thread_count': len(threads),
-                        'total_messages_in_threads': sum(len(t) for t in threads) if threads else 0,
-                        'largest_thread': max(len(t) for t in threads) if threads else 0,
-                        'sample_threads': [list(t)[:5] for t in threads[:3]] if threads else []
+                        'thread_count': thread_count,
+                        'total_messages_in_threads': total_messages,
+                        'largest_thread': largest_thread,
+                        'average_messages_per_thread': round(avg_messages_per_thread, 2),
+                        'oldest_date': oldest_date,
+                        'newest_date': newest_date,
+                        'sample_threads': sample_threads_detailed
                     }
                 except Exception as e:
                     logger.debug(f"Could not retrieve threads: {e}")
@@ -907,7 +1120,7 @@ class IMAPDiagnostics:
             results = client.fetch(sample_ids, ['ENVELOPE'])
             
             envelopes = []
-            for msg_id in sample_ids:
+            for position, msg_id in enumerate(sample_ids):
                 if msg_id not in results:
                     continue
                 
@@ -915,18 +1128,28 @@ class IMAPDiagnostics:
                 if not envelope:
                     continue
                 
+                # Extract IDs
+                message_id = envelope.message_id.decode('ascii', errors='ignore') if envelope.message_id else None
+                in_reply_to = envelope.in_reply_to.decode('ascii', errors='ignore') if envelope.in_reply_to else None
+                
+                # Determine if this is a reply
+                is_reply = in_reply_to is not None and in_reply_to.strip() != ''
+                
                 # Parse envelope data
                 parsed = {
                     'uid': msg_id,
+                    'position': position + 1,
+                    'total_samples': len(sample_ids),
                     'date': str(envelope.date) if envelope.date else None,
-                    'subject': envelope.subject.decode('utf-8', errors='ignore') if envelope.subject else '(no subject)',
+                    'subject': self._decode_header(envelope.subject) if envelope.subject else '(no subject)',
                     'from': self._parse_address_list(envelope.from_),
                     'to': self._parse_address_list(envelope.to),
                     'cc': self._parse_address_list(envelope.cc),
                     'bcc': self._parse_address_list(envelope.bcc),
                     'reply_to': self._parse_address_list(envelope.reply_to),
-                    'message_id': envelope.message_id.decode('ascii', errors='ignore') if envelope.message_id else None,
-                    'in_reply_to': envelope.in_reply_to.decode('ascii', errors='ignore') if envelope.in_reply_to else None,
+                    'message_id': message_id,
+                    'in_reply_to': in_reply_to,
+                    'is_reply': is_reply,
                     'sender': self._parse_address_list(envelope.sender)
                 }
                 envelopes.append(parsed)
@@ -945,6 +1168,134 @@ class IMAPDiagnostics:
                 'success': False,
                 'error': str(e),
                 'sample_count': 0
+            }
+        
+        finally:
+            if should_close and client:
+                try:
+                    client.logout()
+                except:
+                    pass
+    
+    def test_debug_info(self, client=None) -> Dict[str, Any]:
+        """
+        Debug mode: Capture IMAP commands and responses
+        
+        Args:
+            client: Optional IMAP client (creates new if not provided)
+        
+        Returns:
+            Dict with debug information and IMAP interactions
+        """
+        should_close = False
+        try:
+            if not client:
+                should_close = True
+                client = self._get_connection()
+                client.login(self.username, self.password)
+            
+            debug_commands = []
+            
+            try:
+                caps = client.capabilities()
+                debug_commands.append({
+                    'command': 'CAPABILITY',
+                    'response': f'Returned {len(caps)} capabilities',
+                    'status': 'OK'
+                })
+            except Exception as e:
+                debug_commands.append({
+                    'command': 'CAPABILITY',
+                    'response': str(e)[:100],
+                    'status': 'ERROR'
+                })
+            
+            try:
+                namespace = client.namespace()
+                debug_commands.append({
+                    'command': 'NAMESPACE',
+                    'response': f'Personal: {namespace[0]}, Other: {namespace[1]}, Shared: {namespace[2]}',
+                    'status': 'OK'
+                })
+            except Exception as e:
+                debug_commands.append({
+                    'command': 'NAMESPACE',
+                    'response': str(e)[:100],
+                    'status': 'ERROR'
+                })
+            
+            try:
+                folders = client.list_folders()
+                debug_commands.append({
+                    'command': 'LIST "" "*"',
+                    'response': f'Found {len(folders)} folders',
+                    'status': 'OK'
+                })
+            except Exception as e:
+                debug_commands.append({
+                    'command': 'LIST "" "*"',
+                    'response': str(e)[:100],
+                    'status': 'ERROR'
+                })
+            
+            try:
+                client.select_folder('INBOX')
+                debug_commands.append({
+                    'command': 'SELECT INBOX',
+                    'response': 'Folder selected',
+                    'status': 'OK'
+                })
+            except Exception as e:
+                debug_commands.append({
+                    'command': 'SELECT INBOX',
+                    'response': str(e)[:100],
+                    'status': 'ERROR'
+                })
+            
+            try:
+                status = client.folder_status('INBOX', ['MESSAGES', 'UNSEEN', 'RECENT'])
+                debug_commands.append({
+                    'command': 'STATUS INBOX (MESSAGES UNSEEN RECENT)',
+                    'response': f'Messages: {status.get(b"MESSAGES")}, Unseen: {status.get(b"UNSEEN")}, Recent: {status.get(b"RECENT")}',
+                    'status': 'OK'
+                })
+            except Exception as e:
+                debug_commands.append({
+                    'command': 'STATUS INBOX (MESSAGES UNSEEN RECENT)',
+                    'response': str(e)[:100],
+                    'status': 'ERROR'
+                })
+            
+            try:
+                has_id = 'ID' in (client.capabilities() or [])
+                if has_id:
+                    server_id = client.id_()
+                    debug_commands.append({
+                        'command': 'ID NIL',
+                        'response': f'Server ID received ({len(server_id)} pairs)' if server_id else 'No ID info',
+                        'status': 'OK'
+                    })
+            except Exception as e:
+                debug_commands.append({
+                    'command': 'ID NIL',
+                    'response': str(e)[:100],
+                    'status': 'ERROR'
+                })
+            
+            return {
+                'success': True,
+                'debug_commands': debug_commands,
+                'total_commands': len(debug_commands),
+                'successful_commands': sum(1 for cmd in debug_commands if cmd['status'] == 'OK'),
+                'message': f'Debug info collected ({len(debug_commands)} commands)'
+            }
+        
+        except Exception as e:
+            logger.warning(f"Failed to collect debug info: {type(e).__name__}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'debug_commands': []
             }
         
         finally:

@@ -590,23 +590,51 @@
         const statusEl = document.getElementById('extensionsStatus');
         const detailsEl = document.getElementById('extensionsDetails');
 
-        if (data.success && data.supported_extensions) {
+        if (data.success && data.extensions) {
             statusEl.innerHTML = '8️⃣ Extensions Support ✅';
             
-            const exts = data.supported_extensions || {};
-            const totalAvailable = data.total_available || 0;
+            let html = '';
             
-            let html = `<p class="text-success mb-3"><strong>✅ ${totalAvailable} Extensions verfügbar</strong></p>`;
+            // Server-Antworten für ENABLE-Commands anzeigen
+            if (data.server_responses && data.server_responses.length > 0) {
+                html += `<div style="background-color: #f0f8ff; padding: 15px; border-radius: 6px; margin-bottom: 20px; border-left: 4px solid #0066cc;">`;
+                html += `<p class="mb-3" style="font-weight: bold; color: #0066cc;">📡 CAPABILITY Server-Antworten</p>`;
+                html += `<p style="font-size: 0.9em; margin-bottom: 12px;">Prüfung ob Extensions verfügbar sind</p>`;
+                
+                html += `<div style="font-family: monospace; font-size: 0.85em; background-color: #fff; padding: 12px; border-radius: 4px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">`;
+                
+                data.server_responses.forEach((cmd, idx) => {
+                    const statusIcon = cmd.status === 'OK' ? '✅' : (cmd.status === 'NOT_FOUND' ? '❌' : '⚠️');
+                    const statusColor = cmd.status === 'OK' ? '#28a745' : (cmd.status === 'NOT_FOUND' ? '#dc3545' : '#ffc107');
+                    
+                    html += `<div style="margin-bottom: 10px; padding: 8px; background-color: #fafafa; border-left: 3px solid ${statusColor};">`;
+                    html += `<div style="color: ${statusColor}; font-weight: bold; margin-bottom: 4px;">${statusIcon} ${cmd.command}</div>`;
+                    html += `<div style="color: #666; font-size: 0.95em; word-break: break-word;">${cmd.response}</div>`;
+                    html += `</div>`;
+                });
+                
+                html += `</div></div>`;
+            }
+            
+            // Extensions danach
+            const exts = data.extensions || {};
+            const totalAvailable = data.total_available || 0;
+            const totalEnabled = data.total_enabled || 0;
+            
+            html += `<p class="text-success mb-3"><strong>✅ ${data.message}</strong></p>`;
             html += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">`;
             
             Object.entries(exts).forEach(([extName, extInfo]) => {
                 const isAvailable = extInfo.available;
+                const isEnabled = extInfo.enabled;
                 const statusIcon = isAvailable ? '✅' : '❌';
-                const bgColor = isAvailable ? '#d4edda' : '#f8d7da';
+                const enabledIcon = isEnabled ? '✅' : (isAvailable ? '⚪' : '❌');
+                const bgColor = isEnabled ? '#d4edda' : (isAvailable ? '#fff3cd' : '#f8d7da');
                 
-                html += `<div style="background-color: ${bgColor}; padding: 10px; border-radius: 4px; font-size: 0.9em;">`;
-                html += `  <p class="mb-1"><strong>${statusIcon} ${extName}</strong></p>`;
-                html += `  <p class="mb-0" style="color: #666;">${extInfo.name}</p>`;
+                html += `<div style="background-color: ${bgColor}; padding: 10px; border-radius: 4px; font-size: 0.9em; border: 1px solid #ddd;">`;
+                html += `  <p class="mb-1"><strong>${extName}</strong></p>`;
+                html += `  <p class="mb-1" style="font-size: 0.85em;"><span style="color: #666;">Server:</span> ${statusIcon} | <span style="color: #666;">Aktiviert:</span> ${enabledIcon}</p>`;
+                html += `  <p class="mb-0" style="color: #666; font-size: 0.85em;">${extInfo.name}</p>`;
                 html += `</div>`;
             });
             
@@ -635,9 +663,51 @@
                 html += `<li><strong>Threads gefunden:</strong> ${data.thread_results.thread_count}</li>`;
                 html += `<li><strong>Nachrichten in Threads:</strong> ${data.thread_results.total_messages_in_threads}</li>`;
                 html += `<li><strong>Größter Thread:</strong> ${data.thread_results.largest_thread} Nachrichten</li>`;
+                
+                if (data.thread_results.average_messages_per_thread !== undefined) {
+                    html += `<li><strong>⌀ Pro Thread:</strong> ${data.thread_results.average_messages_per_thread} Nachrichten</li>`;
+                }
+                
+                if (data.thread_results.oldest_date && data.thread_results.newest_date) {
+                    html += `<li><strong>📅 Zeitspanne:</strong> ${data.thread_results.oldest_date} bis ${data.thread_results.newest_date}</li>`;
+                }
             }
             
-            html += `</ul>`;
+            // Sample threads with collapsible details
+            if (data.thread_results && data.thread_results.sample_threads && data.thread_results.sample_threads.length > 0) {
+                html += `</ul><p class="mt-3 mb-2"><strong>📦 Sample Threads:</strong></p>`;
+                html += `<div style="margin-left: 15px;">`;
+                
+                data.thread_results.sample_threads.forEach((thread, idx) => {
+                    const id = 'thread-sample-' + idx;
+                    html += `<div style="margin-bottom: 10px; border-left: 2px solid #0066cc; padding-left: 10px;">`;
+                    html += `<button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#${id}" aria-expanded="false">
+                        Thread ${thread.thread_num}: ${thread.size} Nachrichten
+                    </button>`;
+                    html += `<div class="collapse mt-2" id="${id}">`;
+                    
+                    if (thread.messages) {
+                        thread.messages.forEach((msg, msgIdx) => {
+                            html += `<div style="font-size: 0.9em; margin: 5px 0; padding: 5px; background: #f9f9f9; border-radius: 3px;">`;
+                            html += `[${msgIdx + 1}] ${msg.date || '?'}: <em>${msg.subject || '(kein Betreff)'}</em>`;
+                            html += `</div>`;
+                        });
+                    }
+                    
+                    if (thread.oldest && thread.newest) {
+                        html += `<p style="font-size: 0.85em; color: #666; margin-top: 5px; margin-bottom: 0;">
+                            🕐 ${thread.oldest} - ${thread.newest}
+                        </p>`;
+                    }
+                    
+                    html += `</div></div>`;
+                });
+                
+                html += `</div>`;
+            } else {
+                html += `</ul>`;
+            }
+            
             detailsEl.innerHTML = html;
         } else {
             statusEl.innerHTML = '9️⃣ THREAD Support ⚠️';
@@ -693,8 +763,11 @@
                 html += `<div style="max-height: 400px; overflow-y: auto;">`;
                 
                 data.envelopes.forEach((env, idx) => {
+                    const replyIndicator = env.is_reply ? '↩️' : '📨';
+                    const positionStr = env.position ? `${env.position}/${env.total_samples}` : `${idx + 1}`;
+                    
                     html += `<div style="border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; border-radius: 4px;">`;
-                    html += `<p class="mb-2"><strong>Email ${idx + 1}</strong> (UID: ${env.uid})</p>`;
+                    html += `<p class="mb-2"><strong>Email ${idx + 1} ${replyIndicator}</strong> (UID: ${env.uid}, Position: ${positionStr})</p>`;
                     
                     if (env.date) {
                         html += `<p class="mb-1"><strong>📅 Datum:</strong> ${env.date}</p>`;
@@ -715,7 +788,13 @@
                     }
                     
                     if (env.message_id) {
-                        html += `<p class="mb-0" style="font-size: 0.85em; color: #666;"><strong>Message-ID:</strong> ${env.message_id.substring(0, 50)}...</p>`;
+                        html += `<p class="mb-1" style="font-size: 0.85em;"><strong>🔗 Message-ID:</strong> <code>${env.message_id}</code></p>`;
+                    }
+                    
+                    if (env.in_reply_to) {
+                        html += `<p class="mb-1" style="font-size: 0.85em;"><strong>↩️ In-Reply-To:</strong> <code>${env.in_reply_to}</code></p>`;
+                    } else if (env.is_reply === false) {
+                        html += `<p class="mb-1" style="font-size: 0.85em; color: #28a745;"><strong>✉️ Root-Message:</strong> (Keine Antwort auf andere Email)</p>`;
                     }
                     
                     html += `</div>`;
