@@ -528,6 +528,102 @@
 
 ---
 
+### ✅ Phase 10: Tag-Management (Abgeschlossen - 28.12.2025)
+**Ziel:** User-definierte Tags für bessere Email-Organisation
+
+- [x] **EmailTag Model** (`02_models.py`)
+  - user_id, name, color (Tag-System pro User)
+  - Soft-Delete Support
+- [x] **EmailTagAssignment** (Many-to-Many)
+  - Verknüpfung ProcessedEmail ↔ EmailTag
+- [x] **TagManager Service** (`src/services/tag_manager.py`)
+  - create_tag(), delete_tag(), assign_tags()
+  - get_user_tags(), get_email_tags()
+- [x] **Tag-UI & Filters**
+  - Tag-Verwaltung in Settings
+  - Tag-Filter im Dashboard
+  - Tag-Badges bei Emails
+
+**Commit:** Phase 10 - Tag-Management System
+
+---
+
+### ✅ Phase 11: Full ML-Learning System (Abgeschlossen - 29.12.2025)
+**Ziel:** Vollständiges Machine-Learning mit Embeddings, Online-Learning, Tag-Semantik & Sender-Patterns
+
+#### **Phase 11a: Full Mail-Embedding (Chunking + Mean-Pooling) ✅**
+- [x] **Chunking Strategy** (`03_ai_client.py`)
+  - Max 512 tokens per chunk
+  - Overlap 50 tokens für Kontext
+  - Mean-Pooling über alle Chunks
+- [x] **all-minilm:22m Integration**
+  - 384-dimensionale Embeddings
+  - CPU-optimiert, ~100x schneller als llama3.2
+- [x] **Embedding Storage** (`02_models.py`)
+  - embedding_vector (JSON) in ProcessedEmail
+  - Vektorisierung für Similarity-Search
+
+#### **Phase 11b: Online-Learning (SGDClassifier.partial_fit()) ✅**
+- [x] **SGDClassifier Integration** (`train_classifier.py`)
+  - partial_fit() für inkrementelles Learning
+  - 3 Klassifikatoren: dringlichkeit, wichtigkeit, spam
+  - RandomForest als Basis-Modell
+- [x] **Training Pipeline**
+  - Min. 5 Korrektionen für Training
+  - Embeddings als Features
+  - Model Persistence (.pkl Files)
+
+#### **Phase 11c: Tag-Embeddings (Semantische Ähnlichkeit) ✅**
+- [x] **Tag-Embedding-Cache** (`src/services/tag_manager.py`)
+  - Tag-Name → Embedding (all-minilm:22m)
+  - Cosine Similarity für Tag-Vorschläge
+- [x] **Semantic Tag Suggestions**
+  - Ähnliche Tags basierend auf Email-Embedding
+  - Threshold 0.7 für Relevanz
+  - Top-5 Vorschläge im UI
+
+#### **Phase 11d: Sender-Patterns (Absender-Präferenzen) ✅**
+- [x] **SenderPatternManager** (`src/services/sender_patterns.py`)
+  - sender_hash (SHA-256) für Privacy
+  - category, priority, is_newsletter
+  - email_count, correction_count, confidence
+- [x] **Pattern Learning**
+  - User-Korrektionen → Sender-Pattern
+  - Confidence-Score (0-100)
+  - Pattern-Anwendung bei neuen Mails
+- [x] **Database Schema** (`migrations/versions/ph11d_sender_patterns.py`)
+  - sender_patterns Tabelle
+  - user_id + sender_hash UNIQUE Constraint
+  - Cascade Delete bei User-Löschung
+
+#### **Testing & Integration:**
+- [x] **Bugfixes Phase 11 Review** (Commit 1b5c191)
+  - ai_client.py: Newsletter-Detection verbessert
+  - tag_manager.py: Embedding-Cache optimiert
+- [x] **End-to-End Tests**
+  - Embedding-Generierung funktional
+  - Online-Learning mit 5+ Korrektionen
+  - Tag-Suggestions korrekt
+  - Sender-Patterns werden angewendet
+
+**Gesamt-Aufwand:** ~5 Commits (631863f, ad3fd4d, 1918fa2, 04ce808, 1b5c191)  
+**Recovery:** 29.12.2025 - Von main branch (1b5c191) wiederhergestellt nach Phase 11.5 Rollback
+
+---
+
+## 🚀 **Ausstehende Aufgaben (Priorität)**
+
+### **🔴 Phase 0: Clean Rollback (COMPLETED)** ✅
+**Status:** Phase 11.5 IMAP Smart Sync fehlgeschlagen → Rollback zu Phase 10f → Phase 11a-11d wiederhergestellt
+
+- [x] **Phase 11.5 Code archiviert** (232KB in _archive/)
+- [x] **Rollback zu Phase 10f** (Commit 170c942)
+- [x] **Phase 11a-11d Recovery** (8 Files von main/1b5c191)
+- [x] **Alembic Migration** (ph11d_sender_patterns.py erfolgreich)
+- [x] **Lessons Learned** dokumentiert in doc/imap/README.md
+
+---
+
 ### **✅ Phase 8d: HTTPS Support + Reverse Proxy (Abgeschlossen - 27.12.2025)**
 **Ziel:** Production-Ready HTTPS Setup mit Reverse Proxy Support
 

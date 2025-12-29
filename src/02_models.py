@@ -123,6 +123,47 @@ class EmailTagAssignment(Base):
     __table_args__ = (UniqueConstraint("email_id", "tag_id", name="uq_email_tag"),)
 
 
+class SenderPattern(Base):
+    """
+    Gelernte Muster für Absender-basierte Klassifizierung (Phase 11d).
+    
+    Speichert für jeden User, wie E-Mails von bestimmten Absendern
+    typischerweise klassifiziert werden. Dies ermöglicht konsistente
+    Klassifizierung für wiederkehrende Absender.
+    
+    Privacy: sender_hash ist ein SHA-256 Hash des normalisierten Absenders,
+    sodass keine Klartextadressen gespeichert werden.
+    """
+    
+    __tablename__ = "sender_patterns"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # SHA-256 Hash des normalisierten Absenders (lowercase, stripped)
+    sender_hash = Column(String(64), nullable=False, index=True)
+    
+    # Gelernte Klassifizierung
+    category = Column(String(50), nullable=True)  # Häufigste Kategorie
+    priority = Column(Integer, nullable=True)  # Durchschnittliche Priorität (1-10)
+    is_newsletter = Column(Boolean, nullable=True)  # Meist Newsletter?
+    
+    # Statistiken
+    email_count = Column(Integer, default=1)  # Anzahl E-Mails von diesem Sender
+    correction_count = Column(Integer, default=0)  # Anzahl User-Korrekturen
+    confidence = Column(Integer, default=50)  # Konfidenz 0-100
+    
+    # Timestamps
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    
+    # Relationships
+    user = relationship("User", back_populates="sender_patterns")
+    
+    # Constraints: Ein Pattern pro User/Sender-Kombination
+    __table_args__ = (UniqueConstraint("user_id", "sender_hash", name="uq_user_sender_pattern"),)
+
+
 class User(Base):
     """Benutzer des Systems (Phase 2)"""
 
@@ -184,6 +225,9 @@ class User(Base):
     )
     email_tags = relationship(
         "EmailTag", back_populates="user", cascade="all, delete-orphan"
+    )
+    sender_patterns = relationship(
+        "SenderPattern", back_populates="user", cascade="all, delete-orphan"
     )
 
     def set_password(self, password: str):

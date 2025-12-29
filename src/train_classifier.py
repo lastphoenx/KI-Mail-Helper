@@ -1,6 +1,10 @@
 """
 ML Training Pipeline - Trainiert Klassifikatoren aus User-Korrektionen
 Nutzt user_override_* Spalten aus der Datenbank zur Verbesserung der Base-Pass Heuristiken
+
+Phase 11b: Online-Learning mit SGDClassifier.partial_fit()
+- Inkrementelles Lernen nach jeder User-Korrektur
+- 100% lokal mit Ollama Embeddings
 """
 
 import logging
@@ -12,6 +16,8 @@ import os
 
 try:
     from sklearn.ensemble import RandomForestClassifier
+    from sklearn.linear_model import SGDClassifier
+    from sklearn.preprocessing import StandardScaler
     import joblib
     HAS_SKLEARN = True
 except ImportError:
@@ -36,6 +42,176 @@ spec_ai.loader.exec_module(ai_client)
 LocalOllamaClient = ai_client.LocalOllamaClient
 
 logger = logging.getLogger(__name__)
+
+
+class OnlineLearner:
+    """Phase 11b: Online-Learning mit SGDClassifier.partial_fit()
+    
+    Ermöglicht inkrementelles Lernen nach jeder User-Korrektur,
+    ohne komplettes Neutraining aller Daten.
+    """
+    
+    CLASSIFIER_TYPES = ["dringlichkeit", "wichtigkeit", "spam"]
+    
+    def __init__(self, ollama_base_url: str = "http://127.0.0.1:11434"):
+        if not HAS_SKLEARN:
+            raise RuntimeError("scikit-learn nicht installiert")
+        
+        self.classifier_dir = Path(__file__).resolve().parent / "classifiers"
+        self.classifier_dir.mkdir(exist_ok=True)
+        self.ollama_client = LocalOllamaClient(
+            model="all-minilm:22m", base_url=ollama_base_url
+        )
+        
+        # SGD-Klassifikatoren für Online-Learning
+        self._sgd_classifiers = {}
+        self._scalers = {}
+        self._load_or_init_classifiers()
+    
+    def _load_or_init_classifiers(self):
+        """Lädt existierende SGD-Klassifikatoren oder initialisiert neue."""
+        for clf_type in self.CLASSIFIER_TYPES:
+            sgd_path = self.classifier_dir / f"{clf_type}_sgd.pkl"
+            scaler_path = self.classifier_dir / f"{clf_type}_scaler.pkl"
+            
+            if sgd_path.exists() and joblib:
+                try:
+                    self._sgd_classifiers[clf_type] = joblib.load(sgd_path)
+                    if scaler_path.exists():
+                        self._scalers[clf_type] = joblib.load(scaler_path)
+                    else:
+                        self._scalers[clf_type] = StandardScaler()
+                    logger.debug(f"✅ SGD-Klassifikator geladen: {clf_type}")
+                except Exception as e:
+                    logger.warning(f"Fehler beim Laden von {clf_type}: {e}")
+                    self._init_new_classifier(clf_type)
+            else:
+                self._init_new_classifier(clf_type)
+    
+    def _init_new_classifier(self, clf_type: str):
+        """Initialisiert neuen SGDClassifier für Online-Learning."""
+        if clf_type == "spam":
+            # Binary classification für Spam
+            self._sgd_classifiers[clf_type] = SGDClassifier(
+                loss="log_loss",  # Logistische Regression
+                penalty="l2",
+                alpha=0.0001,
+                max_iter=1000,
+                tol=1e-3,
+                random_state=42,
+                warm_start=True,  # Wichtig für partial_fit
+            )
+        else:
+            # Multi-class für Dringlichkeit/Wichtigkeit (1-3)
+            self._sgd_classifiers[clf_type] = SGDClassifier(
+                loss="log_loss",
+                penalty="l2",
+                alpha=0.0001,
+                max_iter=1000,
+                tol=1e-3,
+                random_state=42,
+                warm_start=True,
+            )
+        self._scalers[clf_type] = StandardScaler()
+        logger.debug(f"🆕 Neuer SGD-Klassifikator initialisiert: {clf_type}")
+    
+    def learn_from_correction(
+        self,
+        subject: str,
+        body: str,
+        correction_type: str,
+        correction_value: int | bool,
+    ) -> bool:
+        """Inkrementelles Lernen aus einer einzelnen User-Korrektur.
+        
+        Args:
+            subject: E-Mail Betreff
+            body: E-Mail Body
+            correction_type: "dringlichkeit", "wichtigkeit", oder "spam"
+            correction_value: Korrigierter Wert (1-3 oder True/False)
+            
+        Returns:
+            True wenn erfolgreich gelernt
+        """
+        if correction_type not in self.CLASSIFIER_TYPES:
+            logger.warning(f"Unbekannter Korrekturtyp: {correction_type}")
+            return False
+        
+        # Embedding generieren
+        embedding = self.ollama_client._get_embedding(f"{subject}\n{body}")
+        if not embedding:
+            logger.warning("Embedding-Generierung fehlgeschlagen")
+            return False
+        
+        X = np.array([embedding])
+        
+        # Für Spam: Boolean → int
+        if correction_type == "spam":
+            y = np.array([1 if correction_value else 0])
+            classes = np.array([0, 1])
+        else:
+            y = np.array([int(correction_value)])
+            classes = np.array([1, 2, 3])  # Dringlichkeit/Wichtigkeit 1-3
+        
+        try:
+            clf = self._sgd_classifiers[correction_type]
+            scaler = self._scalers[correction_type]
+            
+            # Feature Scaling (wichtig für SGD)
+            # Beim ersten Sample: fit_transform, danach transform
+            if not hasattr(scaler, 'mean_') or scaler.mean_ is None:
+                X_scaled = scaler.fit_transform(X)
+            else:
+                X_scaled = scaler.transform(X)
+            
+            # Inkrementelles Training mit partial_fit
+            clf.partial_fit(X_scaled, y, classes=classes)
+            
+            # Speichern
+            if joblib:
+                joblib.dump(clf, self.classifier_dir / f"{correction_type}_sgd.pkl")
+                joblib.dump(scaler, self.classifier_dir / f"{correction_type}_scaler.pkl")
+            
+            logger.info(f"📚 Online-Learning: {correction_type}={correction_value} gelernt")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Online-Learning Fehler: {e}")
+            return False
+    
+    def predict(self, subject: str, body: str, clf_type: str) -> Optional[int]:
+        """Prediction mit Online-Learning Modell.
+        
+        Args:
+            subject: E-Mail Betreff
+            body: E-Mail Body
+            clf_type: "dringlichkeit", "wichtigkeit", oder "spam"
+            
+        Returns:
+            Prediction (1-3 oder 0/1) oder None bei Fehler
+        """
+        if clf_type not in self._sgd_classifiers:
+            return None
+        
+        clf = self._sgd_classifiers[clf_type]
+        scaler = self._scalers.get(clf_type)
+        
+        # Prüfen ob Modell trainiert wurde
+        if not hasattr(clf, 'classes_') or clf.classes_ is None:
+            return None
+        
+        embedding = self.ollama_client._get_embedding(f"{subject}\n{body}")
+        if not embedding:
+            return None
+        
+        try:
+            X = np.array([embedding])
+            if scaler and hasattr(scaler, 'mean_') and scaler.mean_ is not None:
+                X = scaler.transform(X)
+            return int(clf.predict(X)[0])
+        except Exception as e:
+            logger.debug(f"Prediction Fehler: {e}")
+            return None
 
 
 class MLTrainer:

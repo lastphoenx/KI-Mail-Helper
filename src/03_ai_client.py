@@ -359,7 +359,10 @@ class LocalOllamaClient(AIClient):
         return False
 
     def _load_classifiers(self) -> None:
-        """Lädt trainierte sklearn-Klassifikatoren aus src/classifiers/*.pkl (optional)."""
+        """Lädt trainierte sklearn-Klassifikatoren aus src/classifiers/*.pkl (optional).
+        
+        Phase 11b: Priorisiert SGD-Klassifikatoren (Online-Learning) vor RandomForest.
+        """
         if not joblib:
             logger.debug(
                 "joblib nicht verfügbar - Klassifikatoren können nicht geladen werden"
@@ -369,7 +372,25 @@ class LocalOllamaClient(AIClient):
         classifier_dir = Path(__file__).resolve().parent / "classifiers"
         self._classifiers = {}
         self._label_encoders = {}
+        self._sgd_classifiers = {}
+        self._sgd_scalers = {}
 
+        # Phase 11b: Lade SGD-Klassifikatoren (Online-Learning, priorisiert)
+        sgd_types = ["dringlichkeit", "wichtigkeit", "spam"]
+        for clf_type in sgd_types:
+            sgd_path = classifier_dir / f"{clf_type}_sgd.pkl"
+            scaler_path = classifier_dir / f"{clf_type}_scaler.pkl"
+            
+            if sgd_path.exists():
+                try:
+                    self._sgd_classifiers[clf_type] = self._load_classifier_safely(sgd_path)
+                    if scaler_path.exists():
+                        self._sgd_scalers[clf_type] = self._load_classifier_safely(scaler_path)
+                    logger.debug(f"✅ SGD-Klassifikator geladen: {clf_type} (Online-Learning)")
+                except Exception as e:
+                    logger.warning(f"Fehler beim Laden von SGD {clf_type}: {e}")
+
+        # Fallback: RandomForest Klassifikatoren (Batch-Training)
         classifier_files = {
             "dringlichkeit": "dringlichkeit_clf.pkl",
             "wichtigkeit": "wichtigkeit_clf.pkl",
@@ -378,6 +399,10 @@ class LocalOllamaClient(AIClient):
         }
 
         for key, filename in classifier_files.items():
+            # Überspringe wenn bereits SGD-Klassifikator geladen
+            if key in self._sgd_classifiers:
+                continue
+                
             clf_path = classifier_dir / filename
             encoder_path = classifier_dir / f"{key}_encoder.pkl"
 
@@ -461,17 +486,72 @@ class LocalOllamaClient(AIClient):
 
     def _get_embedding(self, text: str) -> list[float] | None:
         """Ruft /api/embeddings auf und gibt den Vektor zurück.
-        Kürzt Text auf max. 512 Zeichen um Kontext-Limits zu respektieren.
+        
+        Phase 11a: Nutzt Chunking + Mean-Pooling für lange Texte.
+        Statt 512 Zeichen Limit werden längere Mails in Chunks verarbeitet
+        und die Embeddings gemittelt.
         """
         if not text or not text.strip():
             return None
 
-        truncated = text.strip()[:512]
-
+        clean_text = text.strip()
+        
+        # Chunking für lange Texte (>512 Zeichen)
+        chunks = self._chunk_text(clean_text, chunk_size=512, overlap=50)
+        
+        if len(chunks) == 1:
+            # Kurzer Text: Direkt verarbeiten
+            return self._get_single_embedding(chunks[0])
+        else:
+            # Langer Text: Mean-Pooling über alle Chunks
+            return self._get_chunked_embedding(chunks)
+    
+    def _chunk_text(self, text: str, chunk_size: int = 512, overlap: int = 50) -> list[str]:
+        """Teilt Text in überlappende Chunks für bessere Embedding-Qualität.
+        
+        Args:
+            text: Eingabetext
+            chunk_size: Maximale Chunk-Größe in Zeichen
+            overlap: Überlappung zwischen Chunks für Kontexterhalt
+            
+        Returns:
+            Liste von Text-Chunks
+        """
+        if len(text) <= chunk_size:
+            return [text]
+        
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = start + chunk_size
+            chunk = text[start:end]
+            
+            # Versuche am Satzende oder Wortende zu schneiden
+            if end < len(text):
+                # Suche letztes Satzende im Chunk
+                for sep in ['. ', '! ', '? ', '\n', ' ']:
+                    last_sep = chunk.rfind(sep)
+                    if last_sep > chunk_size // 2:  # Mindestens halber Chunk
+                        chunk = chunk[:last_sep + 1]
+                        end = start + last_sep + 1
+                        break
+            
+            chunks.append(chunk.strip())
+            start = end - overlap  # Überlappung für Kontext
+            
+            # Sicherheit: Maximal 20 Chunks (ca. 10KB Text)
+            if len(chunks) >= 20:
+                logger.debug(f"Chunking abgebrochen nach 20 Chunks ({len(text)} Zeichen)")
+                break
+        
+        return chunks
+    
+    def _get_single_embedding(self, text: str) -> list[float] | None:
+        """Holt ein einzelnes Embedding vom Ollama-Server."""
         try:
             response = requests.post(
                 self.embeddings_url,
-                json={"model": self.model, "prompt": truncated},
+                json={"model": self.model, "prompt": text},
                 timeout=30,
             )
             if response.status_code != 200:
@@ -488,6 +568,32 @@ class LocalOllamaClient(AIClient):
         except Exception as e:
             logger.debug("Fehler beim Embedding: %s", e)
         return None
+    
+    def _get_chunked_embedding(self, chunks: list[str]) -> list[float] | None:
+        """Mean-Pooling: Mittelt Embeddings aller Chunks.
+        
+        Dies ermöglicht die Verarbeitung langer E-Mails,
+        ohne Informationsverlust durch Truncation.
+        """
+        import numpy as np
+        
+        embeddings = []
+        for i, chunk in enumerate(chunks):
+            emb = self._get_single_embedding(chunk)
+            if emb:
+                embeddings.append(emb)
+            else:
+                logger.debug(f"Chunk {i+1}/{len(chunks)} Embedding fehlgeschlagen")
+        
+        if not embeddings:
+            return None
+        
+        # Mean-Pooling: Durchschnitt aller Chunk-Embeddings
+        embedding_array = np.array(embeddings)
+        mean_embedding = np.mean(embedding_array, axis=0)
+        
+        logger.debug(f"📊 Chunked Embedding: {len(chunks)} Chunks → {len(mean_embedding)}D Vektor")
+        return mean_embedding.tolist()
 
     def _analyze_with_embeddings(
         self, subject: str, body: str, sender: str = ""
@@ -522,6 +628,7 @@ class LocalOllamaClient(AIClient):
                 "wichtigkeit": _clamp(wichtigkeit, 1, 3),
                 "kategorie_aktion": kategorie_aktion,
                 "tags": tags,
+                "suggested_tags": tags,  # Phase 11: Auch suggested_tags für Embedding-Analyse
                 "spam_flag": spam_flag,
                 "summary_de": subject[:100] if subject else "Keine Zusammenfassung",
                 "text_de": body[:500] if body else "",
@@ -554,6 +661,43 @@ class LocalOllamaClient(AIClient):
                     spam_flag = bool(pred)
                 except Exception as e:
                     logger.debug(f"Fehler bei spam-Klassifikation: {e}")
+
+        # Phase 11b: SGD-Klassifikatoren (Online-Learning) haben Priorität
+        if embedding and hasattr(self, '_sgd_classifiers') and self._sgd_classifiers:
+            import numpy as np
+            
+            embedding_array = np.array(embedding).reshape(1, -1)
+            
+            for clf_type in ["dringlichkeit", "wichtigkeit", "spam"]:
+                if clf_type not in self._sgd_classifiers:
+                    continue
+                    
+                clf = self._sgd_classifiers[clf_type]
+                scaler = self._sgd_scalers.get(clf_type)
+                
+                # Prüfen ob Modell trainiert wurde
+                if not hasattr(clf, 'classes_') or clf.classes_ is None:
+                    continue
+                
+                try:
+                    X = embedding_array.copy()
+                    if scaler and hasattr(scaler, 'mean_') and scaler.mean_ is not None:
+                        X = scaler.transform(X)
+                    
+                    pred = clf.predict(X)[0]
+                    
+                    if clf_type == "dringlichkeit":
+                        dringlichkeit = _clamp(int(pred), 1, 3)
+                        logger.debug(f"🧠 SGD Dringlichkeit: {dringlichkeit}")
+                    elif clf_type == "wichtigkeit":
+                        wichtigkeit = _clamp(int(pred), 1, 3)
+                        logger.debug(f"🧠 SGD Wichtigkeit: {wichtigkeit}")
+                    elif clf_type == "spam":
+                        spam_flag = bool(pred)
+                        logger.debug(f"🧠 SGD Spam: {spam_flag}")
+                        
+                except Exception as e:
+                    logger.debug(f"SGD {clf_type} Fehler: {e}")
 
         if not self._classifiers or not embedding:
             keywords_spam_high = [
@@ -642,6 +786,7 @@ class LocalOllamaClient(AIClient):
             "wichtigkeit": _clamp(wichtigkeit, 1, 3),
             "kategorie_aktion": kategorie_aktion,
             "tags": tags,
+            "suggested_tags": tags,  # Phase 11: Auch suggested_tags für Embedding-Analyse
             "spam_flag": spam_flag,
             "summary_de": subject[:100] if subject else "Keine Zusammenfassung",
             "text_de": body[:500] if body else "",
