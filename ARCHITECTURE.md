@@ -7,11 +7,12 @@
 
 ## 🎯 Kern-Prinzipien
 
-### 1. **UI-First Development**
-- ✅ **Alle Tests laufen im UI** (Web-Interface)
-- ❌ **KEINE CLI-Tests für Produktions-Features**
-- 🧪 **Unit-Tests (`/tests/`):** Nur für isolierte Funktionen (mit Mocks)
-- 🌐 **Integration-Tests:** Im laufenden UI mit echten Daten
+### 1. **UI-First Development & CLI-Testing**
+- ✅ **CLI-Tests:** Unit-Tests mit Mocks (`pytest tests/`)
+- ✅ **CLI-Tests:** Skripte ohne Credentials (Datenbank-Checks, Migrations)
+- ❌ **KEINE CLI-Tests mit echten Credentials** (Mail-Account-Passwörter)
+- 🔐 **Master-Password nur im UI:** Login → Entschlüsselung → Flask-Session
+- 🌐 **Integration-Tests:** Im laufenden UI mit echten Daten (Master-Password geschützt)
 
 ### 2. **Zero-Knowledge Verschlüsselung**
 - 🔐 **Alle sensiblen Daten verschlüsselt in DB**
@@ -80,26 +81,42 @@ Login-Flow: Username → Master-Password → 2FA → UI-Zugriff
 
 ## 🧪 Test-Strategie
 
-### **Unit-Tests (`/tests/`):**
+### **Unit-Tests (`/tests/`) - CLI OK:**
 - **Zweck:** Isolierte Funktionen testen (z.B. `IMAPDiagnostics.test_connection()`)
 - **Mocks:** Vollständig gemockt (keine echten IMAP-Calls, keine DB-Zugriffe)
-- **Ausführung:** `pytest tests/ -v`
+- **Ausführung:** `pytest tests/ -v` ✅ (CLI erlaubt)
 - **Beispiel:** `test_imap_diagnostics.py` (10 Tests, 100% gemockt)
+- **Keine Credentials benötigt:** Nur Mock-Objekte
 
-### **Integration-Tests (UI-basiert):**
-- **Zweck:** End-to-End-Tests mit echten Daten
+### **Wartungs-Skripte (`/scripts/`) - CLI OK:**
+- **Zweck:** Datenbank-Checks, Migrationen, Cleanup
+- **Beispiele:**
+  - `check_accounts.py`: Liste Mail-Accounts (ohne Passwörter)
+  - `cleanup_old_emails.py`: Alte Emails löschen
+- **Keine Credentials benötigt:** Nur Lese-Zugriffe oder Metadaten
+- **Ausführung:** `python scripts/check_accounts.py` ✅ (CLI erlaubt)
+
+### **Integration-Tests (UI-basiert) - NUR UI:**
+- **Zweck:** End-to-End-Tests mit echten Credentials
+- **Warum nur UI?**
+  - ✅ Master-Password wird im UI eingegeben (Login)
+  - ✅ Flask-Session speichert DEK (entschlüsselter Data Encryption Key)
+  - ✅ Während Session: Credentials entschlüsselbar
+  - ❌ CLI hat kein Master-Password → Credentials nicht entschlüsselbar
 - **Ablauf:**
   1. Login im UI (Username + Master-Password + 2FA)
   2. Navigation zu Test-Feature (z.B. IMAP-Diagnostics-Dashboard)
-  3. Test-Button klicken → Backend-Modul wird aufgerufen
-  4. Ergebnis im UI validieren
-- **Daten:** Echte Credentials aus DB (verschlüsselt, im UI entschlüsselt)
+  3. Test-Button klicken → Backend lädt verschlüsselte Credentials aus DB
+  4. Backend entschlüsselt mit DEK aus Flask-Session
+  5. Echter IMAP-Call mit entschlüsselten Credentials
+  6. Ergebnis im UI anzeigen
 - **Beispiel:** Phase 11.5 IMAP-Test-Dashboard
 
 ### **NIEMALS:**
-- ❌ CLI-Tests mit echten Credentials in `.env`
-- ❌ Klartext-Passwörter in Skripten/Config-Files
-- ❌ Integration-Tests in pytest (nur Mock-Tests erlaubt)
+- ❌ CLI-Tests/Skripte mit echten Mail-Credentials
+- ❌ Master-Password in CLI/Skripten/`.env`-Files
+- ❌ Klartext-Passwörter irgendwo speichern
+- ❌ `TEST_IMAP_PASSWORD=klartext` in `.env` (Zero-Knowledge-Verletzung!)
 
 ---
 
@@ -168,11 +185,19 @@ Encrypted Data in DB
 
 ### **Entschlüsselung im UI:**
 
-1. **Login:** User gibt Master-Password ein
+1. **Login:** User gibt Master-Password ein (nur im UI!)
 2. **KEK ableiten:** PBKDF2(Master-Password, salt)
 3. **DEK entschlüsseln:** AES-Decrypt(encrypted_dek, KEK)
-4. **Session:** DEK in Flask-Session speichern (verschlüsselt)
-5. **Daten entschlüsseln:** AES-Decrypt(encrypted_data, DEK)
+4. **Flask-Session:** DEK im Session-Cookie speichern (server-side, verschlüsselt)
+5. **Session-Lebensdauer:** DEK verfügbar während aktiver Session
+6. **Daten entschlüsseln:** AES-Decrypt(encrypted_data, DEK) - im Request-Context
+7. **Logout/Timeout:** Session beenden → DEK gelöscht
+
+**Warum nur im UI?**
+- 🔐 **Master-Password nie in CLI:** Kein Input-Mechanismus für sichere Passwort-Eingabe
+- 🔒 **Flask-Session schützt DEK:** Server-side Sessions (`.flask_sessions/` Directory)
+- ⏱️ **Session-Timeout:** Automatisches Logout nach Inaktivität
+- 🚪 **CLI hat keinen Session-Context:** Keine Möglichkeit, DEK zu erhalten
 
 ### **Module:**
 
@@ -221,26 +246,42 @@ Encrypted Data in DB
 
 ## ⚠️ Häufige Fehler (VERMEIDEN!)
 
-### ❌ **CLI-Tests mit echten Credentials:**
+### ❌ **CLI-Tests mit echten Mail-Credentials:**
 ```python
-# FALSCH:
+# FALSCH - Zero-Knowledge-Verletzung!
 TEST_IMAP_HOST=imap.gmx.net
-TEST_IMAP_PASSWORD=klartext_passwort  # ← NIEMALS!
+TEST_IMAP_USER=user@example.com
+TEST_IMAP_PASSWORD=klartext_passwort  # ← NIEMALS! Credentials sind verschlüsselt in DB!
 ```
 
-### ✅ **Richtig: UI-basierte Tests:**
+**Warum falsch?**
+- ❌ Credentials sind verschlüsselt in DB (nur mit Master-Password entschlüsselbar)
+- ❌ Master-Password wird nur im UI eingegeben (nie in CLI/`.env`)
+- ❌ CLI hat keinen Flask-Session-Context → kein Zugriff auf DEK
+
+### ✅ **Richtig: Unterschiedliche Test-Typen:**
 ```python
-# Unit-Test mit Mock:
+# ✅ CLI: Unit-Test mit Mock (ERLAUBT)
 @pytest.mark.unit
 def test_connection_with_mock():
     mock_client = Mock()
-    # ... Test mit Mock
+    mock_client.login.return_value = None
+    # ... Test mit Mock (keine echten Credentials)
 
-# Integration-Test im UI:
-# 1. Login im Browser
+# ✅ CLI: Wartungs-Skript ohne Credentials (ERLAUBT)
+def list_accounts():
+    accounts = MailAccount.query.all()
+    for acc in accounts:
+        print(f"{acc.name} (ID: {acc.id})")
+        # Keine Passwort-Entschlüsselung!
+
+# ✅ UI: Integration-Test mit echten Credentials (NUR HIER!)
+# 1. Login im Browser (Master-Password eingeben)
 # 2. /imap-test-dashboard öffnen
 # 3. "Test Connection" Button klicken
 # 4. Backend lädt Credentials aus DB (verschlüsselt)
+# 5. Backend entschlüsselt mit DEK aus Flask-Session
+# 6. Echter IMAP-Call
 ```
 
 ---
