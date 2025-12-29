@@ -19,12 +19,12 @@ anthropic==0.7.7           # Optional: Claude API
 mistralai==0.0.8           # Optional: Mistral API
 
 # Security & Authentication
-cryptography==41.0.7       # AES-256 encryption (Phase 3)
+cryptography==44.0.3       # AES-256 encryption (Phase 3) - Security update
 bcrypt==4.1.1              # Password hashing
 pyotp==2.9.0               # TOTP 2FA (Google Authenticator)
 qrcode==7.4.2              # QR-Code generation for 2FA
 zxcvbn==4.4.28             # Password strength estimation (Phase 8c)
-pyOpenSSL==24.0.0          # HTTPS support (self-signed certificates for development)
+pyOpenSSL==25.0.0          # HTTPS support - Updated for cryptography 44.x compatibility
 
 # NLP & Text Processing (optional für bessere Pseudonymisierung)
 # spacy==3.7.2
@@ -32,7 +32,7 @@ pyOpenSSL==24.0.0          # HTTPS support (self-signed certificates for develop
 
 # Utils
 python-dotenv==1.0.0       # .env-Datei Support
-requests==2.31.0           # HTTP-Requests
+requests==2.32.5           # HTTP-Requests - Security update
 imapclient==3.0.1          # IMAP email fetching (Phase 11.5)
 
 # Testing
@@ -40,7 +40,7 @@ pytest==7.4.3
 pytest-cov==4.1.0
 
 # Dev Tools (optional)
-black==23.12.0             # Code Formatter
+black==24.10.0             # Code Formatter - Security update
 flake8==6.1.0              # Linter
 Flask-Limiter==3.5.0
-gunicorn==21.2.0
+gunicorn==23.0.0           # Production WSGI server - Security update
