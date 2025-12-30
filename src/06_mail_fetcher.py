@@ -7,13 +7,125 @@ import imaplib
 import email
 from email.header import decode_header
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import os
 import importlib
 import re
 import logging
+import json
+import uuid
 
 logger = logging.getLogger(__name__)
+
+
+class ThreadCalculator:
+    """Berechnet Thread-IDs aus verschiedenen Quellen (Phase 12)"""
+
+    @staticmethod
+    def from_message_id_chain(
+        emails: Dict[str, Dict]
+    ) -> Tuple[Dict[str, str], Dict[str, Optional[str]]]:
+        """Berechnet Thread-IDs aus Message-ID Chain (In-Reply-To)
+
+        Input: {
+            'uid1': {'message_id': 'msg1@server', 'in_reply_to': None},
+            'uid2': {'message_id': 'msg2@server', 'in_reply_to': 'msg1@server'},
+            'uid3': {'message_id': 'msg3@server', 'in_reply_to': 'msg2@server'},
+        }
+
+        Returns:
+            (thread_ids, parent_uids) Tuple mit:
+            - thread_ids: {uid: thread_id, ...}
+            - parent_uids: {uid: parent_uid or None, ...}
+        """
+        msg_id_to_uid = {}
+        for uid, email_data in emails.items():
+            if email_data.get('message_id'):
+                msg_id_to_uid[email_data['message_id']] = uid
+
+        thread_ids = {}
+        parent_uids = {}
+        thread_id_for_root = {}
+
+        for uid, email_data in emails.items():
+            initial_in_reply_to = email_data.get('in_reply_to')
+            parent_uid = None
+
+            if initial_in_reply_to:
+                parent_uid = msg_id_to_uid.get(initial_in_reply_to)
+
+            root_uid = (
+                uid if not initial_in_reply_to
+                else msg_id_to_uid.get(initial_in_reply_to)
+            )
+
+            in_reply_to = initial_in_reply_to
+            visited = set()
+            while in_reply_to and in_reply_to not in visited:
+                visited.add(in_reply_to)
+                current_uid = msg_id_to_uid.get(in_reply_to)
+
+                if current_uid is None:
+                    break
+
+                root_uid = current_uid
+                parent_email = emails.get(current_uid, {})
+                in_reply_to = parent_email.get('in_reply_to')
+
+            root_msg_id = emails.get(root_uid, {}).get('message_id')
+            if root_msg_id not in thread_id_for_root:
+                thread_id_for_root[root_msg_id] = str(uuid.uuid4())
+
+            thread_ids[uid] = thread_id_for_root[root_msg_id]
+            parent_uids[uid] = parent_uid
+
+        return thread_ids, parent_uids
+
+    @staticmethod
+    def from_imap_thread_structure(
+        thread_structure
+    ) -> Dict[int, str]:
+        """Berechnet Thread-IDs aus nested IMAP THREAD response
+
+        IMAP THREAD response Struktur:
+        - Top-level items sind separate Threads
+        - Nested items sind Replies
+
+        Input: (1, 2, (3, 4, (5)), 6)
+        Bedeutung:
+          - Thread 1: UID 1
+          - Thread 2: UID 2
+          - Thread 3: UIDs 3, 4, 5
+          - Thread 4: UID 6
+
+        Returns: {1: 'uuid-a', 2: 'uuid-b', 3: 'uuid-c', ...}
+        """
+        result = {}
+
+        def process_items(items, current_thread_id=None):
+            for item in items:
+                if isinstance(item, (list, tuple)):
+                    if current_thread_id is None:
+                        current_thread_id = str(uuid.uuid4())
+                    process_items(item, current_thread_id)
+                else:
+                    if current_thread_id is None:
+                        current_thread_id = str(uuid.uuid4())
+                    result[item] = current_thread_id
+                    current_thread_id = None
+
+        if isinstance(thread_structure, (list, tuple)):
+            for item in thread_structure:
+                if isinstance(item, (list, tuple)):
+                    new_thread_id = str(uuid.uuid4())
+                    process_items(item, new_thread_id)
+                else:
+                    new_thread_id = str(uuid.uuid4())
+                    result[item] = new_thread_id
+        else:
+            result[thread_structure] = str(uuid.uuid4())
+
+        return result
 
 
 class MailFetcher:
@@ -29,7 +141,6 @@ class MailFetcher:
             password: Passwort
             port: IMAP-Port (Standard: 993 für SSL)
         """
-        # Input Validation (Security Fix - Layer 2 Review)
         if not server or not isinstance(server, str) or not server.strip():
             raise ValueError("Server must be a non-empty string")
         if not isinstance(port, int) or not (1 <= port <= 65535):
@@ -52,8 +163,7 @@ class MailFetcher:
             self.connection.login(self.username, self.password)
             print(f"✅ Verbunden mit {self.server}")
         except Exception as e:
-            # Security Fix: Don't expose credentials in error messages
-            logger.debug(f"Connection error details: {e}")  # Debug only
+            logger.debug(f"Connection error details: {e}")
             print("❌ Verbindungsfehler: Authentifizierung fehlgeschlagen")
             raise ConnectionError("IMAP connection failed") from None
 
@@ -66,29 +176,28 @@ class MailFetcher:
             except Exception as e:
                 logger.debug(f"Error closing IMAP connection: {e}")
 
-    def fetch_new_emails(self, folder: str = "INBOX", limit: int = 50) -> List[Dict]:
+    def fetch_new_emails(
+        self, folder: str = "INBOX", limit: int = 50
+    ) -> List[Dict]:
         """
-        Holt E-Mails (readonly - markiert nicht als gelesen)
-        Nutzt UID-Tracking für Deduplication in der DB
+        Holt E-Mails mit Threadin-Informationen (Phase 12)
 
         Args:
             folder: IMAP-Ordner (Standard: "INBOX")
             limit: Max. Anzahl Mails (die neuesten)
 
         Returns:
-            Liste von E-Mail-Dicts mit uid, sender, subject, body, received_at, imap_uid, imap_folder, imap_flags
+            Liste von E-Mail-Dicts mit erweiterten Metadaten
         """
         if not self.connection:
             self.connect()
 
         try:
-            # Ordner im readonly-Modus auswählen (nicht als gelesen markieren!)
             conn = self.connection
             if conn is None:
                 raise ConnectionError("IMAP connection failed")
             conn.select(folder, readonly=True)
 
-            # Hole ALLE Mails (DB dedupliziert per UID)
             status, messages = conn.search(None, "ALL")
 
             if status != "OK":
@@ -96,9 +205,7 @@ class MailFetcher:
                 return []
 
             mail_ids = messages[0].split()
-            # Neueste zuerst (reverse)
             mail_ids = list(reversed(mail_ids))
-            # Limit anwenden
             mail_ids = mail_ids[:limit]
 
             print(f"📧 {len(mail_ids)} Mails gefunden")
@@ -109,18 +216,36 @@ class MailFetcher:
                 if email_data:
                     emails.append(email_data)
 
+            if emails:
+                self._calculate_thread_ids(emails)
+
             return emails
 
         except Exception as e:
-            # Security Fix: Don't expose sensitive data in error messages
-            logger.debug(f"Fetch error details: {e}")  # Debug only
+            logger.debug(f"Fetch error details: {e}")
             print("❌ Fehler beim Abrufen: Operation fehlgeschlagen")
             return []
+
+    def _calculate_thread_ids(self, emails: List[Dict]) -> None:
+        """Berechnet Thread-IDs für alle geholten E-Mails
+
+        Modifiziert die emails List in-place um thread_id & parent_uid zu setzen
+        """
+        email_dict = {email['uid']: email for email in emails}
+
+        thread_ids, parent_uids = ThreadCalculator.from_message_id_chain(
+            email_dict
+        )
+
+        for email_item in emails:
+            uid = email_item['uid']
+            email_item['thread_id'] = thread_ids.get(uid)
+            email_item['parent_uid'] = parent_uids.get(uid)
 
     def _fetch_email_by_id(
         self, mail_id: bytes, folder: str = "INBOX"
     ) -> Optional[Dict]:
-        """Holt eine einzelne E-Mail mit IMAP-Flags"""
+        """Holt eine einzelne E-Mail mit erweiterten Metadaten (Phase 12)"""
         try:
             if self.connection is None:
                 return None
@@ -131,31 +256,29 @@ class MailFetcher:
             if status != "OK":
                 return None
 
-            # Metadaten parsen (Flags + UID)
             meta = msg_data[0][0]
             meta_str = meta.decode("utf-8", errors="ignore")
 
             imap_flags = self._parse_imap_flags(meta_str)
             imap_uid = self._parse_imap_uid(meta_str)
+            flags_dict = self._parse_flags_dict(imap_flags)
 
-            # E-Mail parsen
             raw_email = msg_data[0][1]
             msg = email.message_from_bytes(raw_email)
 
-            # Header dekodieren
             subject = self._decode_header(msg.get("Subject", ""))
             sender = self._decode_header(msg.get("From", ""))
             date_str = msg.get("Date", "")
 
-            # Body extrahieren
             body = self._extract_body(msg)
 
-            # Datum parsen
             try:
                 received_at = email.utils.parsedate_to_datetime(date_str)
             except Exception as e:
                 logger.debug(f"Failed to parse date '{date_str}': {e}")
                 received_at = datetime.now()
+
+            envelope = self._parse_envelope(msg)
 
             return {
                 "uid": mail_id_str,
@@ -166,15 +289,33 @@ class MailFetcher:
                 "imap_uid": imap_uid,
                 "imap_folder": folder,
                 "imap_flags": imap_flags,
+                "message_id": envelope.get("message_id"),
+                "in_reply_to": envelope.get("in_reply_to"),
+                "to": envelope.get("to"),
+                "cc": envelope.get("cc"),
+                "bcc": envelope.get("bcc"),
+                "reply_to": envelope.get("reply_to"),
+                "references": envelope.get("references"),
+                "message_size": envelope.get("message_size"),
+                "content_type": envelope.get("content_type"),
+                "charset": envelope.get("charset"),
+                "has_attachments": envelope.get("has_attachments"),
+                "imap_is_seen": flags_dict.get("imap_is_seen"),
+                "imap_is_answered": flags_dict.get("imap_is_answered"),
+                "imap_is_flagged": flags_dict.get("imap_is_flagged"),
+                "imap_is_deleted": flags_dict.get("imap_is_deleted"),
+                "imap_is_draft": flags_dict.get("imap_is_draft"),
+                "thread_id": None,
+                "parent_uid": None,
             }
 
         except Exception as e:
-            # Security Fix: Don't expose mail content in error messages
             logger.debug(
                 f"Fetch mail error for ID {mail_id.decode(errors='ignore')}: {e}"
-            )  # Debug only
+            )
             print(
-                f"⚠️  Fehler bei Mail-ID {mail_id.decode(errors='ignore')}: Abruf fehlgeschlagen"
+                f"⚠️  Fehler bei Mail-ID {mail_id.decode(errors='ignore')}: "
+                f"Abruf fehlgeschlagen"
             )
             return None
 
@@ -202,7 +343,6 @@ class MailFetcher:
             for part in msg.walk():
                 content_type = part.get_content_type()
 
-                # Nur Text-Parts
                 if content_type == "text/plain":
                     try:
                         payload = part.get_payload(decode=True)
@@ -211,7 +351,6 @@ class MailFetcher:
                     except Exception as e:
                         logger.debug(f"Failed to decode text/plain payload: {e}")
         else:
-            # Einfache (nicht-multipart) Mail
             try:
                 payload = msg.get_payload(decode=True)
                 charset = msg.get_content_charset() or "utf-8"
@@ -223,6 +362,156 @@ class MailFetcher:
                 body = str(msg.get_payload())
 
         return body.strip()
+
+    def _parse_envelope(self, msg) -> Dict:
+        """Extrahiert erweiterte Envelope-Daten aus RFC822-Message
+
+        Returns:
+            Dict mit message_id, in_reply_to, references, to, cc, bcc, reply_to,
+            message_size, content_type, charset, has_attachments
+        """
+        try:
+            envelope = {}
+
+            envelope["message_id"] = self._extract_message_id(msg)
+            envelope["in_reply_to"] = self._extract_in_reply_to(msg)
+            envelope["references"] = self._extract_references(msg)
+            envelope["to"] = self._extract_address_list(msg, "To")
+            envelope["cc"] = self._extract_address_list(msg, "Cc")
+            envelope["bcc"] = self._extract_address_list(msg, "Bcc")
+            envelope["reply_to"] = self._extract_address_list(msg, "Reply-To")
+            envelope["message_size"] = self._estimate_message_size(msg)
+            envelope["content_type"] = msg.get_content_type()
+            envelope["charset"] = msg.get_content_charset() or "utf-8"
+            envelope["has_attachments"] = self._detect_attachments(msg)
+
+            return envelope
+        except Exception as e:
+            logger.debug(f"Error parsing envelope: {e}")
+            return {}
+
+    def _extract_message_id(self, msg) -> Optional[str]:
+        """Extrahiert Message-ID Header (RFC 5322)"""
+        try:
+            msg_id = msg.get("Message-ID", "").strip()
+            if msg_id:
+                msg_id = msg_id.strip("<>")
+                if "@" in msg_id:
+                    return msg_id
+        except Exception as e:
+            logger.debug(f"Error extracting Message-ID: {e}")
+        return None
+
+    def _extract_in_reply_to(self, msg) -> Optional[str]:
+        """Extrahiert In-Reply-To Header (RFC 5322)"""
+        try:
+            in_reply = msg.get("In-Reply-To", "").strip()
+            if in_reply:
+                in_reply = in_reply.strip("<>")
+                if "@" in in_reply:
+                    return in_reply
+        except Exception as e:
+            logger.debug(f"Error extracting In-Reply-To: {e}")
+        return None
+
+    def _extract_references(self, msg) -> Optional[str]:
+        """Extrahiert References Header (RFC 5322)"""
+        try:
+            refs = msg.get("References", "").strip()
+            if refs:
+                return refs
+        except Exception as e:
+            logger.debug(f"Error extracting References: {e}")
+        return None
+
+    def _extract_address_list(self, msg, header: str) -> Optional[str]:
+        """Extrahiert Adressliste aus Header (To, Cc, Bcc, Reply-To)
+
+        Returns: JSON string mit List von {name, email} dicts
+        """
+        try:
+            from email.utils import parseaddr
+
+            addresses_str = msg.get(header, "").strip()
+            if not addresses_str:
+                return None
+
+            addresses = []
+            for item in addresses_str.split(","):
+                item = item.strip()
+                if item:
+                    name, email_addr = parseaddr(item)
+                    if email_addr:
+                        addresses.append({
+                            "name": name.strip() or email_addr,
+                            "email": email_addr
+                        })
+
+            return json.dumps(addresses) if addresses else None
+        except Exception as e:
+            logger.debug(f"Error extracting address list from {header}: {e}")
+            return None
+
+    def _estimate_message_size(self, msg) -> int:
+        """Schätzt Nachrichtengröße in Bytes"""
+        try:
+            return len(msg.as_bytes())
+        except Exception as e:
+            logger.debug(f"Error estimating message size: {e}")
+            return 0
+
+    def _detect_attachments(self, msg) -> bool:
+        """Erkennt ob die Nachricht Anhänge hat"""
+        try:
+            if not msg.is_multipart():
+                return False
+
+            for part in msg.walk():
+                content_disposition = part.get("Content-Disposition", "")
+                if "attachment" in content_disposition:
+                    return True
+            return False
+        except Exception as e:
+            logger.debug(f"Error detecting attachments: {e}")
+            return False
+
+    def _parse_flags_dict(self, imap_flags: str) -> Dict[str, bool]:
+        """Konvertiert IMAP-Flags String zu Dictionary mit boolean Werten
+
+        Beispiel Input: '\\Seen \\Answered \\Flagged'
+        Beispiel Output: {
+            'imap_is_seen': True,
+            'imap_is_answered': True,
+            'imap_is_flagged': True,
+            'imap_is_deleted': False,
+            'imap_is_draft': False
+        }
+        """
+        flags_dict = {
+            "imap_is_seen": False,
+            "imap_is_answered": False,
+            "imap_is_flagged": False,
+            "imap_is_deleted": False,
+            "imap_is_draft": False,
+        }
+
+        if not imap_flags:
+            return flags_dict
+
+        flags_lower = imap_flags.lower()
+
+        if "\\seen" in flags_lower:
+            flags_dict["imap_is_seen"] = True
+        if "\\answered" in flags_lower:
+            flags_dict["imap_is_answered"] = True
+        if "\\flagged" in flags_lower:
+            flags_dict["imap_is_flagged"] = True
+        if "\\deleted" in flags_lower:
+            flags_dict["imap_is_deleted"] = True
+        if "\\draft" in flags_lower:
+            flags_dict["imap_is_draft"] = True
+
+        return flags_dict
 
     def _parse_imap_flags(self, meta_str: str) -> str:
         """Extrahiert IMAP-Flags aus Metadaten-String
@@ -285,7 +574,6 @@ def get_mail_fetcher_for_account(mail_account, master_key: str | None = None):
     """
     encryption = importlib.import_module(".08_encryption", "src")
 
-    # Validiere Auth-Felder
     is_valid, error_msg = mail_account.validate_auth_fields()
     if not is_valid:
         raise ValueError(f"Invalid account configuration: {error_msg}")
@@ -293,7 +581,6 @@ def get_mail_fetcher_for_account(mail_account, master_key: str | None = None):
     if not master_key:
         raise ValueError("Master-Key erforderlich für Credential Decryption")
 
-    # OAuth-basierte Authentifizierung (Google, Microsoft)
     if mail_account.auth_type == "oauth":
         google_oauth = importlib.import_module(".10_google_oauth", "src")
 
@@ -304,12 +591,10 @@ def get_mail_fetcher_for_account(mail_account, master_key: str | None = None):
         if mail_account.oauth_provider == "google":
             return google_oauth.GoogleMailFetcher(access_token=decrypted_token)
         elif mail_account.oauth_provider == "microsoft":
-            # TODO: Microsoft OAuth Fetcher implementieren
             raise NotImplementedError("Microsoft OAuth not yet implemented")
         else:
             raise ValueError(f"Unknown OAuth provider: {mail_account.oauth_provider}")
 
-    # IMAP-basierte Authentifizierung
     elif mail_account.auth_type == "imap":
         imap_password = encryption.CredentialManager.decrypt_imap_password(
             mail_account.encrypted_imap_password, master_key
@@ -322,7 +607,6 @@ def get_mail_fetcher_for_account(mail_account, master_key: str | None = None):
             port=mail_account.imap_port,
         )
 
-    # POP3-basierte Authentifizierung (Experimental)
     elif mail_account.auth_type == "pop3":
         pop3_fetcher = importlib.import_module(".07_pop3_fetcher", "src")
 

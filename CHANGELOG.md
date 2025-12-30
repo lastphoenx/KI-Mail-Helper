@@ -8,6 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Phase 11.5h: THREAD Fix & Debug Integration (2025-12-29)
+
+**Fixed THREAD Display + Integrated Debug Info into Extensions**
+- **Problem**: THREAD sample threads showed `[1] ?: (kein Betreff)` instead of actual email data
+- **Root Cause**: Nested thread structures not flattened; envelope data not properly extracted
+- **Solution**:
+  - Added `flatten_thread()` helper function to recursively extract UIDs from nested thread lists
+  - Improved envelope data extraction with proper null-checks and fallback values
+  - Enhanced error logging for troubleshooting
+  - Integrated CAPABILITY server responses into Extensions test card (blue info box)
+- **Details**:
+  - `src/imap_diagnostics.py` (lines ~900-966): Thread data extraction + envelope handling
+  - Now displays actual dates and subjects in thread samples
+  - `test_enable_extensions()` now collects `server_responses` for CAPABILITY checks
+  - `templates/imap_diagnostics.html` (lines 599-617): Server responses shown in Extension card
+- **UX Improvement**: Users see which extensions are available + debug CAPABILITY responses
+- **Files**: `src/imap_diagnostics.py`, `templates/imap_diagnostics.html`
+
+---
+
 ### Feature: IMAP Extensions Diagnostics (2025-12-29)
 
 **IMAP Extensions: CAPABILITY Server-Antworten anzeigen**

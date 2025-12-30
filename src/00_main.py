@@ -252,6 +252,26 @@ def fetch_and_process(
                                 )
                             )
 
+                            # Phase 12: Verschlüssele Envelope-Daten
+                            encrypted_to = encryption.EncryptionManager.encrypt_data(
+                                raw_email_data.get("to") or "", user_master_key
+                            ) if raw_email_data.get("to") else None
+                            encrypted_cc = encryption.EncryptionManager.encrypt_data(
+                                raw_email_data.get("cc") or "", user_master_key
+                            ) if raw_email_data.get("cc") else None
+                            encrypted_bcc = encryption.EncryptionManager.encrypt_data(
+                                raw_email_data.get("bcc") or "", user_master_key
+                            ) if raw_email_data.get("bcc") else None
+                            encrypted_reply_to = encryption.EncryptionManager.encrypt_data(
+                                raw_email_data.get("reply_to") or "", user_master_key
+                            ) if raw_email_data.get("reply_to") else None
+                            encrypted_in_reply_to = encryption.EncryptionManager.encrypt_data(
+                                raw_email_data.get("in_reply_to") or "", user_master_key
+                            ) if raw_email_data.get("in_reply_to") else None
+                            encrypted_references = encryption.EncryptionManager.encrypt_data(
+                                raw_email_data.get("references") or "", user_master_key
+                            ) if raw_email_data.get("references") else None
+
                             raw_email = models.RawEmail(
                                 user_id=user.id,
                                 mail_account_id=mail_account.id,
@@ -263,6 +283,24 @@ def fetch_and_process(
                                 imap_uid=raw_email_data.get("imap_uid"),
                                 imap_folder=raw_email_data.get("imap_folder"),
                                 imap_flags=raw_email_data.get("imap_flags"),
+                                message_id=raw_email_data.get("message_id"),
+                                thread_id=raw_email_data.get("thread_id"),
+                                parent_uid=raw_email_data.get("parent_uid"),
+                                encrypted_in_reply_to=encrypted_in_reply_to,
+                                encrypted_to=encrypted_to,
+                                encrypted_cc=encrypted_cc,
+                                encrypted_bcc=encrypted_bcc,
+                                encrypted_reply_to=encrypted_reply_to,
+                                encrypted_references=encrypted_references,
+                                message_size=raw_email_data.get("message_size"),
+                                content_type=raw_email_data.get("content_type"),
+                                charset=raw_email_data.get("charset"),
+                                has_attachments=raw_email_data.get("has_attachments"),
+                                imap_is_seen=raw_email_data.get("imap_is_seen"),
+                                imap_is_answered=raw_email_data.get("imap_is_answered"),
+                                imap_is_flagged=raw_email_data.get("imap_is_flagged"),
+                                imap_is_deleted=raw_email_data.get("imap_is_deleted"),
+                                imap_is_draft=raw_email_data.get("imap_is_draft"),
                             )
                             session.add(raw_email)
                             saved_count += 1

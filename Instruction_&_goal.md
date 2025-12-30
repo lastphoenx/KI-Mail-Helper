@@ -220,13 +220,36 @@
   - Blauer Debug-Kasten mit ✅/❌ Status
   - Verhindert IllegalStateError durch ENABLE im falschen State
 
+#### Phase 11.5g-11.5h: Deep Review & Final Fixes (Abgeschlossen - 29.12.2025)
+- [x] **Phase 11.5g: Deep Review & RFC 2047 Decoding Fix**
+  - Fixed critical bug: `_decode_header()` not being called for subjects
+  - RFC 2047 decoding now active: `=?UTF-8?Q?Wir_nehmen_einige_=C3=84nderungen?=` → "Wir nehmen einige Änderungen..."
+  - Enhanced Server-ID parsing for nested structures (dict/list/tuple)
+  - Added input validation: hostname, port, username, timeout bounds checking
+  - COMPRESS extension now dynamically activates when available
+  - THREAD statistics: avg_messages_per_thread, timeline (oldest→newest date)
+  - Enhanced Envelope display: position tracking, In-Reply-To fields, reply detection
+  - **Result**: All 11 tests passing with enhanced data quality ✅
+
+- [x] **Phase 11.5h: THREAD Fix & Debug Integration**
+  - Fixed THREAD display showing `[1] ?: (kein Betreff)` with empty data
+  - **Root Cause**: Nested thread structures not properly flattened
+  - **Solution**: Added `flatten_thread()` recursive helper function
+  - Improved envelope data extraction with null-checks + fallback values
+  - Integrated CAPABILITY server responses into Extensions card (blue info box)
+  - Shows status for each extension check (✅ OK / ❌ NOT_FOUND / ⚠️)
+  - **Result**: Thread samples now display actual dates + subjects ✅
+
 #### Deployment Ready
 - ✅ Production-tested (GMX, Gmail, Outlook)
 - ✅ Input Validation (Injection-Schutz)
 - ✅ Session-based Encryption (Credentials)
 - ✅ CSRF-Protection (POST-Endpoints)
 - ✅ Mobile-responsive UI (Bootstrap 5)
-- ✅ 11 Tests complete (771 lines Python, 449 lines HTML)
+- ✅ 11 Tests complete (1500+ lines Python, 864 lines HTML)
+- ✅ RFC 2047 Subject Decoding
+- ✅ Nested Thread Structure Handling
+- ✅ CAPABILITY Server Response Inspection
 
 ---
 
