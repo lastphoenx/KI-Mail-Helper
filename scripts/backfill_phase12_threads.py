@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Backfill Script für Phase 12: Thread-Metadaten
 ==============================================
@@ -16,7 +16,6 @@ Optionen:
     --dry-run       Zeige Änderungen ohne sie zu speichern
 """
 import sys
-import os
 import argparse
 import logging
 from pathlib import Path
@@ -87,9 +86,6 @@ def backfill_threads(db_path: str, master_key: str, batch_size: int = 100, dry_r
         for (account_id, folder), emails in grouped.items():
             logger.info(f"🔄 Verarbeite Account {account_id} / Folder '{folder}': {len(emails)} Emails")
 
-            # Baue UID → RawEmail Mapping
-            uid_to_email = {email.imap_uid: email for email in emails}
-
             # Entschlüssele In-Reply-To/References für ThreadCalculator
             decrypted_data = {}
             for email in emails:
@@ -139,13 +135,12 @@ def backfill_threads(db_path: str, master_key: str, batch_size: int = 100, dry_r
                 except Exception as e:
                     logger.error(f"❌ Thread-Berechnung fehlgeschlagen für UID {email.imap_uid}: {e}")
                     skipped_count += 1
-                    continue
 
         # Final Commit
         if not dry_run and updated_count % batch_size != 0:
             session.commit()
 
-        logger.info(f"✅ Backfill abgeschlossen:")
+        logger.info("✅ Backfill abgeschlossen:")
         logger.info(f"   - Aktualisiert: {updated_count}")
         logger.info(f"   - Übersprungen: {skipped_count}")
         if dry_run:

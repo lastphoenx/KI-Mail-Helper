@@ -99,43 +99,55 @@ class ThreadCalculator:
     def from_imap_thread_structure(
         thread_structure
     ) -> Dict[int, str]:
-        """Berechnet Thread-IDs aus nested IMAP THREAD response
+        """Berechnet Thread-IDs aus nested IMAP THREAD response (RFC 5256)
 
-        IMAP THREAD response Struktur:
-        - Top-level items sind separate Threads
-        - Nested items sind Replies
+        thread-member = thread-node *(SP thread-list)
+        - Node mit weiteren nested lists = gleicher Thread
+        - Flache list mit mehreren nodes = separate Thread von dem node davor
 
-        Input: (1, 2, (3, 4, (5)), 6)
-        Bedeutung:
-          - Thread 1: UID 1
-          - Thread 2: UID 2
-          - Thread 3: UIDs 3, 4, 5
-          - Thread 4: UID 6
+        Input: (1, (2, (3, (4, (5))))) → node 1 + deeply nested list → 1 Thread
+        Input: (1, (2, 3, 4))         → node 1 + flat list → 2 Threads (1 separate, (2,3,4) separate)
 
         Returns: {1: 'uuid-a', 2: 'uuid-b', 3: 'uuid-c', ...}
         """
         result = {}
 
-        def process_items(items, current_thread_id=None):
+        def is_deeply_nested(structure):
+            """Check if structure contains further nested tuples (not just ints)"""
+            if not isinstance(structure, (list, tuple)):
+                return False
+            for item in structure:
+                if isinstance(item, (list, tuple)):
+                    return True
+            return False
+
+        def flatten_and_assign(items, thread_id: str):
             for item in items:
                 if isinstance(item, (list, tuple)):
-                    if current_thread_id is None:
-                        current_thread_id = str(uuid.uuid4())
-                    process_items(item, current_thread_id)
+                    flatten_and_assign(item, thread_id)
                 else:
-                    if current_thread_id is None:
-                        current_thread_id = str(uuid.uuid4())
-                    result[item] = current_thread_id
-                    current_thread_id = None
+                    result[item] = thread_id
 
         if isinstance(thread_structure, (list, tuple)):
-            for item in thread_structure:
-                if isinstance(item, (list, tuple)):
-                    new_thread_id = str(uuid.uuid4())
-                    process_items(item, new_thread_id)
+            i = 0
+            while i < len(thread_structure):
+                item = thread_structure[i]
+                thread_id = str(uuid.uuid4())
+                
+                if isinstance(item, int):
+                    result[item] = thread_id
+                    # Check if next item is a deeply nested list
+                    if (i + 1 < len(thread_structure) and 
+                        isinstance(thread_structure[i + 1], (list, tuple)) and
+                        is_deeply_nested(thread_structure[i + 1])):
+                        # Deeply nested list = same thread as node
+                        flatten_and_assign(thread_structure[i + 1], thread_id)
+                        i += 1
                 else:
-                    new_thread_id = str(uuid.uuid4())
-                    result[item] = new_thread_id
+                    # Pure nested structure
+                    flatten_and_assign(item, thread_id)
+                
+                i += 1
         else:
             result[thread_structure] = str(uuid.uuid4())
 
