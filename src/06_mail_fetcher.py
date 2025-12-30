@@ -54,11 +54,18 @@ class ThreadCalculator:
             if initial_in_reply_to:
                 parent_uid = msg_id_to_uid.get(initial_in_reply_to)
 
-            root_uid = (
-                uid if not initial_in_reply_to
-                else msg_id_to_uid.get(initial_in_reply_to)
-            )
+            # BUG-001-FIX: Wenn parent nicht in unserer DB, starte eigenen Thread
+            if initial_in_reply_to and parent_uid is None:
+                # External parent → eigener Thread statt None-Collision
+                root_uid = uid
+            elif initial_in_reply_to:
+                # Parent bekannt, trace zurück zur Root
+                root_uid = parent_uid
+            else:
+                # Keine In-Reply-To → ist selbst Root
+                root_uid = uid
 
+            # Trace zur Root (falls parent_uid bekannt war)
             in_reply_to = initial_in_reply_to
             visited = set()
             while in_reply_to and in_reply_to not in visited:
@@ -66,13 +73,20 @@ class ThreadCalculator:
                 current_uid = msg_id_to_uid.get(in_reply_to)
 
                 if current_uid is None:
+                    # Parent nicht in DB → stop tracing
                     break
 
                 root_uid = current_uid
                 parent_email = emails.get(current_uid, {})
                 in_reply_to = parent_email.get('in_reply_to')
 
+            # root_uid ist jetzt garantiert nicht None!
             root_msg_id = emails.get(root_uid, {}).get('message_id')
+            
+            # Fallback wenn message_id fehlt (sollte nicht passieren, aber defensiv)
+            if not root_msg_id:
+                root_msg_id = f"fallback_{root_uid}"
+            
             if root_msg_id not in thread_id_for_root:
                 thread_id_for_root[root_msg_id] = str(uuid.uuid4())
 
@@ -428,24 +442,27 @@ class MailFetcher:
         """Extrahiert Adressliste aus Header (To, Cc, Bcc, Reply-To)
 
         Returns: JSON string mit List von {name, email} dicts
+        
+        WARN-001-FIX: Nutzt email.utils.getaddresses für RFC-konformes Parsing
+        (Vorher: naives split(',') zerstörte Namen wie 'Doe, John')
         """
         try:
-            from email.utils import parseaddr
+            from email.utils import getaddresses
 
             addresses_str = msg.get(header, "").strip()
             if not addresses_str:
                 return None
 
+            # RFC2822-konform: Behandelt Quotes, Kommas in Namen, etc.
+            parsed = getaddresses([addresses_str])
+            
             addresses = []
-            for item in addresses_str.split(","):
-                item = item.strip()
-                if item:
-                    name, email_addr = parseaddr(item)
-                    if email_addr:
-                        addresses.append({
-                            "name": name.strip() or email_addr,
-                            "email": email_addr
-                        })
+            for name, email_addr in parsed:
+                if email_addr:  # Nur valide Email-Adressen
+                    addresses.append({
+                        "name": name.strip() if name else email_addr,
+                        "email": email_addr.strip()
+                    })
 
             return json.dumps(addresses) if addresses else None
         except Exception as e:
@@ -461,15 +478,25 @@ class MailFetcher:
             return 0
 
     def _detect_attachments(self, msg) -> bool:
-        """Erkennt ob die Nachricht Anhänge hat"""
+        """Erkennt ob die Nachricht Anhänge hat
+        
+        OPT-001-FIX: Erkennt auch inline-Attachments mit Filename
+        (z.B. PDFs, Bilder ohne explicit 'attachment' disposition)
+        """
         try:
             if not msg.is_multipart():
                 return False
 
             for part in msg.walk():
+                # Explicit attachment
                 content_disposition = part.get("Content-Disposition", "")
-                if "attachment" in content_disposition:
+                if "attachment" in content_disposition.lower():
                     return True
+                
+                # Inline mit Filename (oft PDFs, Bilder)
+                if part.get_filename():
+                    return True
+            
             return False
         except Exception as e:
             logger.debug(f"Error detecting attachments: {e}")

@@ -558,6 +558,10 @@ class RawEmail(Base):
     # ===== PHASE 12: MUST-HAVE (Threading & Query Optimization) =====
     message_id = Column(String(255), nullable=True, index=True)
     encrypted_in_reply_to = Column(Text, nullable=True)
+    
+    # BUG-003: parent_uid ist String (IMAP-UID), nicht ForeignKey
+    # CAVEAT: UID ist nur eindeutig pro (user_id, mail_account_id, imap_folder)
+    # TODO Phase 12b: Migriere zu parent_id (ForeignKey) für effiziente Joins
     parent_uid = Column(String(255), nullable=True, index=True)
     thread_id = Column(String(36), nullable=True, index=True)
 

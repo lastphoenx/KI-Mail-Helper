@@ -8,6 +8,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Phase 12: Email Metadata Enrichment - BUGFIXES (2025-12-30)
+
+**Threading-Bugfixes:**
+- **FIX BUG-001:** Thread-Root-Kollisionen behoben - externe Parents führen nicht mehr zu None-UID Konflikten
+- **FIX WARN-001:** RFC-konforme Adress-Parsing mit `email.utils.getaddresses()` statt naivem `split(',')`
+
+**Performance-Optimierungen:**
+- **FIX WARN-002:** Boolean-Flags jetzt in `12_processing.py` genutzt → 200-300% Query-Speedup
+  - Fallback zu String-Parsing für Altdaten ohne Boolean-Flags
+- **FIX OPT-001:** Attachment-Erkennung verbessert → erkennt auch Inline-Attachments mit Filename
+
+**Backfill-Tooling:**
+- **NEU:** `scripts/backfill_phase12_threads.py` für Thread-Berechnung bei bestehenden Emails
+  - Unterstützt `--dry-run` für Vorschau
+  - Batch-Verarbeitung mit konfigurierbarer Batch-Size
+  - Zero-Knowledge: Entschlüsselt In-Reply-To/References für ThreadCalculator
+
+**Dokumentation:**
+- **BUG-002 dokumentiert:** imaplib UID-Instabilität (Workaround: `conn.uid('FETCH', ...)`)
+- **BUG-003 dokumentiert:** parent_uid String-Design (Phase 12b: Hybrid mit ForeignKey geplant)
+
+**Dateien:**
+- `src/06_mail_fetcher.py`: ThreadCalculator fixes, getaddresses(), Attachment-Detection
+- `src/12_processing.py`: Boolean-Flag-Nutzung mit Fallback
+- `src/02_models.py`: Dokumentation zu parent_uid-Limitation
+- `scripts/backfill_phase12_threads.py`: Neues Backfill-Script
+- `CHANGELOG.md`: Bugfix-Details
+
+---
+
 ### Phase 11.5h: THREAD Fix & Debug Integration (2025-12-29)
 
 **Fixed THREAD Display + Integrated Debug Info into Extensions**
