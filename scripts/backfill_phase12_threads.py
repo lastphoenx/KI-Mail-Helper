@@ -24,9 +24,12 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
-from src import models
-from src.mail_fetcher import ThreadCalculator
-from src.encryption import EncryptionManager
+import importlib
+models = importlib.import_module('src.02_models')
+mail_fetcher = importlib.import_module('src.06_mail_fetcher')
+ThreadCalculator = mail_fetcher.ThreadCalculator
+encryption = importlib.import_module('src.08_encryption')
+EncryptionManager = encryption.EncryptionManager
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
