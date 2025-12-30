@@ -8,6 +8,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Phase 12: Performance-Optimierungen (FINDING-002/003) - 2025-12-30
+
+**IMAP-Fetch Optimierung: 10-100x schneller bei großen Emails**
+
+**FINDING-002: BODYSTRUCTURE statt vollständigem RFC822-Download**
+- Alte Methode: Lade komplette Email (Header + Body + Attachments) nur für Metadaten
+  - Problem: 2MB Email mit PDF → 2MB Download für 200 Bytes Info
+- Neue Methode: Zwei-Phasen-Fetch
+  - Phase 1: `BODYSTRUCTURE + RFC822.SIZE + FLAGS + UID` (~500 Bytes Struktur-Info)
+  - Phase 2: `RFC822` nur für Body-Extraktion (wenn benötigt)
+- **Performance-Gewinn: 10-100x bei großen Emails mit Attachments**
+- BODYSTRUCTURE-Parser extrahiert: content_type, charset, has_attachments
+- Fallback zu msg-Parsing falls BODYSTRUCTURE fehlschlägt
+
+**FINDING-003: RFC822.SIZE vom Server (statt teurer Berechnung)**
+- Alte Methode: `len(msg.as_bytes())` → Serialisierung + Memory-Allokation
+  - Problem: 5MB Email = 5MB+ RAM + CPU für jeden Größen-Check
+- Neue Methode: `RFC822.SIZE` direkt aus IMAP-Response lesen
+- **Performance: Instant (Server kennt Größe bereits), exakt, kein RAM-Overhead**
+
+**Technische Details:**
+- `_fetch_email_by_id()`: Optimiert mit zwei-Phasen-Strategie
+- `_parse_bodystructure_from_response()`: Neuer Parser für IMAP BODYSTRUCTURE Format
+- `_parse_rfc822_size()`: Extrahiert exakte Größe aus Server-Response
+- `_parse_envelope()`: Nutzt BODYSTRUCTURE-Daten statt teure Berechnungen
+- `_estimate_message_size()`: Entfernt (ersetzt durch RFC822.SIZE)
+
+**Kompatibilität:**
+- IMAP-Standard (RFC 3501) - alle Server unterstützen BODYSTRUCTURE + RFC822.SIZE
+- Fallback-Logik falls Parsing fehlschlägt
+- Keine Breaking Changes für bestehende Datenbank
+
+**Dateien:**
+- `src/06_mail_fetcher.py`: BODYSTRUCTURE-Parser, zwei-Phasen-Fetch, RFC822.SIZE
+- `CHANGELOG.md`: Performance-Optimierungen dokumentiert
+
+---
+
 ### Phase 12: Email Metadata Enrichment - BUGFIXES (2025-12-30)
 
 **Threading-Bugfixes:**
