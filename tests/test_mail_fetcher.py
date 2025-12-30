@@ -36,7 +36,7 @@ def test_imap_connection():
         if not all([server, username, password]):
             print("⏭️  IMAP-Test übersprungen (Umgebungsvariablen nicht gesetzt)")
             print("   Setze diese für Test: TEST_IMAP_SERVER, TEST_IMAP_USERNAME, TEST_IMAP_PASSWORD")
-            return True
+            return  # Skip test
         
         print(f"📧 Verbinde zu {server}:{port}")
         fetcher = mail_fetcher.MailFetcher(server, username, password, port)
@@ -56,13 +56,13 @@ def test_imap_connection():
         
         fetcher.disconnect()
         print("✅ IMAP-Test bestanden!")
-        return True
+        # pytest-konform: kein return, implizit pass
         
     except Exception as e:
         print(f"❌ IMAP-Test fehlgeschlagen: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False, f"IMAP-Test failed: {e}"
 
 
 def test_google_oauth():
@@ -85,16 +85,16 @@ def test_google_oauth():
             print(f"   {auth_url[:80]}...")
         else:
             print("❌ Auth URL ungültig")
-            return False
+            assert False, "Auth URL validation failed"
         
         print("\n✅ Google OAuth Manager funktioniert!")
-        return True
+        # pytest-konform: kein return
         
     except Exception as e:
         print(f"❌ Google OAuth Test fehlgeschlagen: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False, f"Google OAuth test failed: {e}"
 
 
 def test_encryption():
@@ -126,18 +126,15 @@ def test_encryption():
         print("\n🔓 Entschlüssele IMAP-Passwort...")
         print(f"   Decrypted: {decrypted}")
         
-        if decrypted == imap_password:
-            print("✅ Encryption Test bestanden!")
-            return True
-        else:
-            print("❌ Decryption Match fehlgeschlagen")
-            return False
+        assert decrypted == imap_password, "Decryption mismatch"
+        print("✅ Encryption Test bestanden!")
+        # pytest-konform: kein return
         
     except Exception as e:
         print(f"❌ Encryption Test fehlgeschlagen: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False, f"Encryption test failed: {e}"
 
 
 def test_database():
@@ -151,7 +148,7 @@ def test_database():
         
         if not os.path.exists(db_path):
             print(f"⏭️  Database-Test übersprungen ({db_path} nicht gefunden)")
-            return True
+            return  # Skip test
         
         engine = create_engine(f"sqlite:///{db_path}")
         Session = sessionmaker(bind=engine)
@@ -170,18 +167,19 @@ def test_database():
             print(f"\n   Beispiel Account:")
             print(f"   - Name: {account.name}")
             print(f"   - Provider: {account.oauth_provider or 'IMAP'}")
-            print(f"   - Server: {account.imap_server}")
+            # imap_server ist verschlüsselt, nutze name stattdessen
+            print(f"   - ID: {account.id}")
             print(f"   - OAuth Token vorhanden: {bool(account.encrypted_oauth_token)}")
         
         db.close()
         print("✅ Database Test bestanden!")
-        return True
+        # pytest-konform: kein return
         
     except Exception as e:
         print(f"❌ Database Test fehlgeschlagen: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False, f"Database test failed: {e}"
 
 
 def main():

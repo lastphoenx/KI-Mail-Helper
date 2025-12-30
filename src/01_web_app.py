@@ -2980,6 +2980,134 @@ def delete_mail_account(account_id):
         db.close()
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# Phase 11.5a: IMAP Connection Diagnostics
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route("/imap-diagnostics")
+@login_required
+def imap_diagnostics():
+    """IMAP Connection Diagnostics Dashboard (Phase 11.5a)"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect(url_for("login"))
+        
+        # Lade Mail-Accounts mit entschlüsselten Usernames
+        mail_accounts = db.query(models.MailAccount).filter_by(
+            user_id=user.id,
+            enabled=True,
+            auth_type="imap"  # Nur IMAP-Accounts
+        ).all()
+        
+        # Entschlüssele Usernames für Anzeige
+        master_key = session.get("master_key")
+        if master_key:
+            for account in mail_accounts:
+                try:
+                    if account.encrypted_imap_username:
+                        account.decrypted_imap_username = (
+                            encryption.CredentialManager.decrypt_email_address(
+                                account.encrypted_imap_username, master_key
+                            )
+                        )
+                except Exception as e:
+                    logger.warning(f"Konnte Username für Account {account.id} nicht entschlüsseln: {e}")
+                    account.decrypted_imap_username = "***verschlüsselt***"
+        
+        return render_template("imap_diagnostics.html", user=user, accounts=mail_accounts, csp_nonce=g.csp_nonce)
+    
+    finally:
+        db.close()
+
+
+@app.route("/api/imap-diagnostics/<int:account_id>", methods=["POST"])
+@login_required
+def api_imap_diagnostics(account_id):
+    """API: Run IMAP diagnostics for a specific account"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"success": False, "error": "Unauthorized"}), 401
+        
+        # Lade Account
+        account = db.query(models.MailAccount).filter_by(
+            id=account_id,
+            user_id=user.id
+        ).first()
+        
+        if not account:
+            return jsonify({"success": False, "error": "Account nicht gefunden"}), 404
+        
+        if account.auth_type != "imap":
+            return jsonify({"success": False, "error": "Nur IMAP-Accounts unterstützt"}), 400
+        
+        # Entschlüssele Credentials
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"success": False, "error": "Session abgelaufen - bitte erneut anmelden"}), 401
+        
+        try:
+            imap_server = encryption.CredentialManager.decrypt_server(
+                account.encrypted_imap_server, master_key
+            )
+            imap_username = encryption.CredentialManager.decrypt_email_address(
+                account.encrypted_imap_username, master_key
+            )
+            imap_password = encryption.CredentialManager.decrypt_imap_password(
+                account.encrypted_imap_password, master_key
+            )
+        except Exception as e:
+            logger.error(f"Fehler beim Entschlüsseln der Credentials: {e}")
+            return jsonify({"success": False, "error": "Fehler beim Entschlüsseln der Credentials"}), 500
+        
+        # Run Diagnostics
+        try:
+            # Check for subscribed_only parameter in query string or request body
+            subscribed_only = False
+            try:
+                if request.args.get('subscribed_only'):
+                    subscribed_only = request.args.get('subscribed_only').lower() in ('true', '1', 'yes')
+                elif request.is_json:
+                    json_data = request.get_json(silent=True) or {}
+                    subscribed_only = json_data.get('subscribed_only', False)
+            except Exception as param_error:
+                logger.debug(f"Parameter parsing error (using default): {param_error}")
+                subscribed_only = False
+            
+            imap_diag_mod = importlib.import_module("src.imap_diagnostics")
+            
+            diagnostics = imap_diag_mod.IMAPDiagnostics(
+                host=imap_server,
+                port=account.imap_port or 993,
+                username=imap_username,
+                password=imap_password,
+                timeout=30,
+                ssl=(account.imap_encryption == "SSL")
+            )
+            
+            result = diagnostics.run_diagnostics(subscribed_only=subscribed_only)
+            
+            return jsonify({
+                "success": True,
+                "diagnostics": result
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"IMAP Diagnostics Fehler: {e}")
+            return jsonify({
+                "success": False,
+                "error": f"Diagnostics fehlgeschlagen: {str(e)}"
+            }), 500
+    
+    finally:
+        db.close()
+
+
 @app.route("/mail-account/<int:account_id>/fetch", methods=["POST"])
 @login_required
 def fetch_mails(account_id):

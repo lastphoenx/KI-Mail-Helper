@@ -213,6 +213,15 @@ def process_pending_raw_emails(
                 )
                 continue
 
+            # WARN-002-FIX: Nutze neue Boolean-Flags direkt (200-300% schneller)
+            # Falls Boolean-Flags fehlen (Altdaten), Fallback zu String-Parsing
+            was_seen = raw_email.imap_is_seen if raw_email.imap_is_seen is not None else (
+                imap_flags_parser.is_seen(raw_email.imap_flags or "")
+            )
+            was_answered = raw_email.imap_is_answered if raw_email.imap_is_answered is not None else (
+                imap_flags_parser.is_answered(raw_email.imap_flags or "")
+            )
+
             processed_email = models.ProcessedEmail(
                 raw_email_id=raw_email.id,
                 dringlichkeit=ai_result["dringlichkeit"],
@@ -229,13 +238,9 @@ def process_pending_raw_emails(
                 done=False,
                 base_provider=ai_provider,
                 base_model=ai_model,
-                imap_flags_at_processing=raw_email.imap_flags,
-                was_seen_at_processing=imap_flags_parser.is_seen(
-                    raw_email.imap_flags or ""
-                ),
-                was_answered_at_processing=imap_flags_parser.is_answered(
-                    raw_email.imap_flags or ""
-                ),
+                imap_flags_at_processing=raw_email.imap_flags,  # Audit-Trail
+                was_seen_at_processing=was_seen,  # Optimiert!
+                was_answered_at_processing=was_answered,  # Optimiert!
             )
 
             session.add(processed_email)

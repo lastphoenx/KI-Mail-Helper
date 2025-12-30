@@ -33,6 +33,7 @@ pyOpenSSL==25.0.0          # HTTPS support - Updated for cryptography 44.x compa
 # Utils
 python-dotenv==1.0.0       # .env-Datei Support
 requests==2.32.5           # HTTP-Requests - Security update
+imapclient==3.0.1          # IMAP email fetching (Phase 11.5)
 
 # Testing
 pytest==7.4.3

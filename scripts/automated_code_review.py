@@ -352,7 +352,7 @@ def load_project_context(file_size_chars=0):
             'README.md': 'Projekt-Übersicht, Features, Tech Stack',
             'docs/SECURITY.md': 'Security Model, Known Limitations, Threat Analysis',
             'docs/DEPLOYMENT.md': 'Production Setup, Security Architecture',
-            'Instruction_&_goal.md': 'Detaillierte Architektur, Phase 0-10'
+            'Instruction_&_goal.md': 'Detaillierte Architektur, Phase 0-12'
         }
         mode = "FULL"
     

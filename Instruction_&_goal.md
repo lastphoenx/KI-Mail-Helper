@@ -2,7 +2,7 @@
 
 ---
 
-## 📋 Projekt-Status (Aktualisiert: 28.12.2025)
+## 📋 Projekt-Status (Aktualisiert: 29.12.2025)
 
 ### ✅ Phase 0: Projektstruktur (Abgeschlossen)
 - [x] Grundstruktur aufgebaut (src/, templates/, tests/, scripts/)
@@ -166,6 +166,92 @@
 - [x] **Backward-Kompatibilität:** `decrypt_dek_from_password()` hat Fallback
 - [x] **Fresh DB Setup:** DB-Reset + Neuregistrierung getestet
 - [x] **19 Test-Emails:** Analyse erfolgreich (martina: Fertig! ~10m 0s, 19/19)
+
+### ✅ Phase 11.5a-11.5f: IMAP Connection Diagnostics (Abgeschlossen - 29.12.2025)
+**Ziel:** Vollständige IMAP-Diagnose-Suite mit 11 Tests für Troubleshooting
+
+#### Phase 11.5a: Basic Diagnostics (Tests 1-8)
+- [x] **IMAP-Diagnostics Modul** (`src/imap_diagnostics.py`)
+  - Test 1: Connection & Authentication (SSL, Login, Welcome-Message)
+  - Test 2: Server Capabilities (IDLE, NAMESPACE, UIDPLUS, MOVE, ID, etc.)
+  - Test 3: Namespace & Delimiter (Personal/Other/Shared, Folder-Separator)
+  - Test 4: INBOX Access (EXISTS, RECENT, UNSEEN, UIDVALIDITY, Flags)
+  - Test 5: Folder Listing (All/Subscribed, Special-Folders: Sent/Trash/Drafts)
+  - Test 6: Flag Detection (\Seen, \Flagged, \Answered, Custom-Flags)
+  - Test 7: Server ID & Provider Detection (GMX, Gmail, Outlook via RFC 2971)
+  - Test 8: Extensions Support (CONDSTORE, UTF8, ENABLE, COMPRESS, STARTTLS)
+- [x] **UI Dashboard** (`templates/imap_diagnostics.html`)
+  - Account-Dropdown für alle IMAP-Accounts des Users
+  - Test-Button startet diagnostics via `/api/imap-diagnostics/<id>`
+  - Live-Results mit farbcodierten Karten (✅❌⚠️)
+  - Collapsible Details für jede Test-Sektion
+  - Toggle "Alle Ordner" ↔️ "Nur abonnierte"
+- [x] **Input Validation** (Hostname, Port, Timeout Injection-Schutz)
+- [x] **Provider Detection** (GMX, Gmail, Outlook, Yahoo, ProtonMail, T-Online)
+- [x] **Error Handling** (Graceful degradation, Timeout-Management)
+
+#### Phase 11.5b-11.5e: Enhanced Features
+- [x] **Subscribed-Only Toggle**: LSUB vs LIST Command
+- [x] **Folder Statistics**: Total count, delimiter, special folder icons
+- [x] **Flag Statistics**: Sample messages (last 10), seen/unseen/flagged counts
+- [x] **Server ID Parsing**: Robust RFC 2971 parsing (dict/list/tuple formats)
+- [x] **Timeout Handling**: 90s timeout für Server mit vielen Ordnern
+- [x] **Single Connection**: Alle Tests nutzen eine IMAP-Verbindung
+
+#### Phase 11.5f: Advanced Extensions (Tests 9-11)
+- [x] **Test 9: THREAD Support** (RFC 5256 Conversation Threading)
+  - Algorithmen: REFERENCES, ORDEREDSUBJECT
+  - Statistiken: Thread-Count, Messages/Thread, Largest Thread
+  - Sample-Threads mit Betreff/Datum/UIDs
+  - Timeline: Oldest→Newest Date
+  - UI: Collapsible Thread-Details
+- [x] **Test 10: SORT Support** (RFC 5256 Server-Side Sorting)
+  - Kriterien: ARRIVAL, DATE, FROM, SUBJECT, SIZE
+  - Charset-Support: UTF-8, US-ASCII
+  - Working-Criteria Counter
+- [x] **Test 11: Envelope Parsing** (RFC 822 Header Analysis)
+  - From/To/Cc/Bcc/Reply-To Parsing
+  - Message-ID, In-Reply-To (Thread-Detection)
+  - Subject mit RFC 2047 Decoding (=?UTF-8?Q?...?=)
+  - Reply-Detection: ↩️ Antwort vs 📨 Root-Message
+  - Position-Tracking: "Email 1/3"
+- [x] **CAPABILITY Server-Antworten** (29.12.2025)
+  - Zeigt CAPABILITY-Check-Responses für Extensions
+  - Blauer Debug-Kasten mit ✅/❌ Status
+  - Verhindert IllegalStateError durch ENABLE im falschen State
+
+#### Phase 11.5g-11.5h: Deep Review & Final Fixes (Abgeschlossen - 29.12.2025)
+- [x] **Phase 11.5g: Deep Review & RFC 2047 Decoding Fix**
+  - Fixed critical bug: `_decode_header()` not being called for subjects
+  - RFC 2047 decoding now active: `=?UTF-8?Q?Wir_nehmen_einige_=C3=84nderungen?=` → "Wir nehmen einige Änderungen..."
+  - Enhanced Server-ID parsing for nested structures (dict/list/tuple)
+  - Added input validation: hostname, port, username, timeout bounds checking
+  - COMPRESS extension now dynamically activates when available
+  - THREAD statistics: avg_messages_per_thread, timeline (oldest→newest date)
+  - Enhanced Envelope display: position tracking, In-Reply-To fields, reply detection
+  - **Result**: All 11 tests passing with enhanced data quality ✅
+
+- [x] **Phase 11.5h: THREAD Fix & Debug Integration**
+  - Fixed THREAD display showing `[1] ?: (kein Betreff)` with empty data
+  - **Root Cause**: Nested thread structures not properly flattened
+  - **Solution**: Added `flatten_thread()` recursive helper function
+  - Improved envelope data extraction with null-checks + fallback values
+  - Integrated CAPABILITY server responses into Extensions card (blue info box)
+  - Shows status for each extension check (✅ OK / ❌ NOT_FOUND / ⚠️)
+  - **Result**: Thread samples now display actual dates + subjects ✅
+
+#### Deployment Ready
+- ✅ Production-tested (GMX, Gmail, Outlook)
+- ✅ Input Validation (Injection-Schutz)
+- ✅ Session-based Encryption (Credentials)
+- ✅ CSRF-Protection (POST-Endpoints)
+- ✅ Mobile-responsive UI (Bootstrap 5)
+- ✅ 11 Tests complete (1500+ lines Python, 864 lines HTML)
+- ✅ RFC 2047 Subject Decoding
+- ✅ Nested Thread Structure Handling
+- ✅ CAPABILITY Server Response Inspection
+
+---
 
 ### ✅ Phase 9: Learning System & Newsletter-Detection (Abgeschlossen - 25.12.2025)
 **Ziel:** Human-in-the-Loop ML: User-Korrektionen trainieren neue Modelle, bessere Newsletter-Erkennung
@@ -525,6 +611,188 @@
 - ✅ Flask-Session 0.8.0 in requirements.txt (kritischer Bug-Fix)
 
 **Gesamt-Aufwand:** ~90 Minuten (Prio 1+2)
+
+---
+
+### ✅ Phase 10: Tag-Management (Abgeschlossen - 28.12.2025)
+**Ziel:** User-definierte Tags für bessere Email-Organisation
+
+- [x] **EmailTag Model** (`02_models.py`)
+  - user_id, name, color (Tag-System pro User)
+  - Soft-Delete Support
+- [x] **EmailTagAssignment** (Many-to-Many)
+  - Verknüpfung ProcessedEmail ↔ EmailTag
+- [x] **TagManager Service** (`src/services/tag_manager.py`)
+  - create_tag(), delete_tag(), assign_tags()
+  - get_user_tags(), get_email_tags()
+- [x] **Tag-UI & Filters**
+  - Tag-Verwaltung in Settings
+  - Tag-Filter im Dashboard
+  - Tag-Badges bei Emails
+
+**Commit:** Phase 10 - Tag-Management System
+
+---
+
+### ✅ Phase 11.5: IMAP Diagnostics & Folder Toggle (Abgeschlossen - 29.12.2025)
+**Ziel:** Umfassende IMAP-Diagnose-Tools mit 8 Tests + Subscribe/All-Folders Toggle
+
+- [x] **Test 1–4:** Connection, Capabilities, Namespace, INBOX Access
+- [x] **Test 5:** Folder-Listing mit RFC 3501 Flag-Dekodierung + Toggle
+- [x] **Test 6–8:** Flag-Detection, Server-ID, Extensions-Support
+- [x] **UI Toggle:** "📌 Nur abonniert" ↔ "📭 Alle anzeigen" (<500ms switching)
+- [x] **Bug Fixes:** Logger numbering, client.id_() tuple handling, IMAPClient API resolution
+
+---
+
+### ✅ Phase 11: Full ML-Learning System (Abgeschlossen - 29.12.2025)
+**Ziel:** Vollständiges Machine-Learning mit Embeddings, Online-Learning, Tag-Semantik & Sender-Patterns
+
+#### **Phase 11a: Full Mail-Embedding (Chunking + Mean-Pooling) ✅**
+- [x] **Chunking Strategy** (`03_ai_client.py`)
+  - Max 512 tokens per chunk
+  - Overlap 50 tokens für Kontext
+  - Mean-Pooling über alle Chunks
+- [x] **all-minilm:22m Integration**
+  - 384-dimensionale Embeddings
+  - CPU-optimiert, ~100x schneller als llama3.2
+- [x] **Embedding Storage** (`02_models.py`)
+  - embedding_vector (JSON) in ProcessedEmail
+  - Vektorisierung für Similarity-Search
+
+#### **Phase 11b: Online-Learning (SGDClassifier.partial_fit()) ✅**
+- [x] **SGDClassifier Integration** (`train_classifier.py`)
+  - partial_fit() für inkrementelles Learning
+  - 3 Klassifikatoren: dringlichkeit, wichtigkeit, spam
+  - RandomForest als Basis-Modell
+- [x] **Training Pipeline**
+  - Min. 5 Korrektionen für Training
+  - Embeddings als Features
+  - Model Persistence (.pkl Files)
+
+#### **Phase 11c: Tag-Embeddings (Semantische Ähnlichkeit) ✅**
+- [x] **Tag-Embedding-Cache** (`src/services/tag_manager.py`)
+  - Tag-Name → Embedding (all-minilm:22m)
+  - Cosine Similarity für Tag-Vorschläge
+- [x] **Semantic Tag Suggestions**
+  - Ähnliche Tags basierend auf Email-Embedding
+  - Threshold 0.7 für Relevanz
+  - Top-5 Vorschläge im UI
+
+#### **Phase 11d: Sender-Patterns (Absender-Präferenzen) ✅**
+- [x] **SenderPatternManager** (`src/services/sender_patterns.py`)
+  - sender_hash (SHA-256) für Privacy
+  - category, priority, is_newsletter
+  - email_count, correction_count, confidence
+- [x] **Pattern Learning**
+  - User-Korrektionen → Sender-Pattern
+  - Confidence-Score (0-100)
+  - Pattern-Anwendung bei neuen Mails
+- [x] **Database Schema** (`migrations/versions/ph11d_sender_patterns.py`)
+  - sender_patterns Tabelle
+  - user_id + sender_hash UNIQUE Constraint
+  - Cascade Delete bei User-Löschung
+
+#### **Testing & Integration:**
+- [x] **Bugfixes Phase 11 Review** (Commit 1b5c191)
+  - ai_client.py: Newsletter-Detection verbessert
+  - tag_manager.py: Embedding-Cache optimiert
+- [x] **End-to-End Tests**
+  - Embedding-Generierung funktional
+  - Online-Learning mit 5+ Korrektionen
+  - Tag-Suggestions korrekt
+  - Sender-Patterns werden angewendet
+
+**Gesamt-Aufwand:** ~5 Commits (631863f, ad3fd4d, 1918fa2, 04ce808, 1b5c191)  
+**Recovery:** 29.12.2025 - Von main branch (1b5c191) wiederhergestellt nach Phase 11.5 Rollback
+
+---
+
+## 🚀 **Ausstehende Aufgaben (Priorität)**
+
+### **✅ Phase 11.5: IMAP Diagnostics & Folder Toggle (Abgeschlossen - 29.12.2025)**
+**Ziel:** Umfassende IMAP-Diagnose-Tools mit Subscribe/All-Folders Toggle
+
+#### **Phase 11.5a: 4-Test Core Diagnostics ✅**
+- [x] **Test 1: Connection & Authentication** - Verbindung, SSL, Authentifizierung
+- [x] **Test 2: Server Capabilities** - 18 IMAP-Capabilities (IDLE, NAMESPACE, UIDPLUS, etc.)
+- [x] **Test 3: Namespace & Delimiter** - Personal/Shared Namespaces
+- [x] **Test 4: INBOX Access** - Folder-Zugriff, Email-Count, Flags
+
+#### **Phase 11.5b: Folder Listing with RFC 3501 Compliance ✅**
+- [x] **RFC 3501 Flag Decoding** - `\Drafts`, `\Sent`, `\Trash`, `\Junk`, `\Archive`, `\HasChildren`, etc.
+- [x] **Flag Byte-String Handling** - korrekte Konvertierung bytes ↔ ASCII
+- [x] **60s Timeout Handling** - Large Folder-Lists graceful degradation
+- [x] **7-Folder Display** - Folder-Hierarchie mit Special-Markers
+
+#### **Phase 11.5c: Flag Detection & Statistics ✅**
+- [x] **Sample-Based Analysis** - 10 von 19 Emails getestet
+- [x] **Flag Statistics** - Gelesen (Seen), Ungelesen, Flagged, Answered, Deleted
+- [x] **Custom Flag Detection** - `\Seen` + Custom Flags
+- [x] **Statistical Aggregation** - Count-basierte Auswertung
+
+#### **Phase 11.5d: Server-ID & Provider Detection ✅**
+- [x] **ID Command** - Server-Info (name, version, vendor, support-email)
+- [x] **Dual-Strategy Provider Matching** - Domain + Server-String Detection
+- [x] **Provider Library** - 12 Providers (GMX/Dovecot, Gmail, Outlook, etc.)
+- [x] **5-Extension Support Testing** - COMPRESS, CONDSTORE, ENABLE, STARTTLS, UTF8
+
+#### **Phase 11.5e: Subscribed vs. All Folders Toggle ✅**
+- [x] **IMAPClient API Resolution** - `list_folders()` vs. `list_sub_folders()`
+- [x] **Backend Infrastructure** - `subscribed_only` Parameter in `list_all_folders()`
+- [x] **API Endpoint** - `/api/imap-diagnostics/<id>` with query string + JSON body support
+- [x] **UI Toggle Button** - "📌 Nur abonniert" ↔ "📭 Alle anzeigen"
+- [x] **Fast Switching** - <500ms response time, visual feedback
+- [x] **Results Display** - 5 subscribed vs. 7 total folders (GMX example)
+
+#### **Test Results (Final):**
+✅ **8/8 Tests bestanden** (All tests passed)
+- Test 1-4, 6-8: Consistent Pass Rate
+- Test 5: Folder-Listing ✅ mit Toggle-Support
+- Response Time: <1s per diagnostic run
+- Toggle Switching: <500ms per toggle
+
+**Aufwand:** ~8 Commits (Phase 11.5a→11.5e + Fix)  
+**Bug Fixes:** Logger numbering, client.id_() tuple handling, SSL timeout, toggle CSS, request body, parameter parsing, IMAPClient API resolution
+
+---
+
+### **⏳ Phase 11.5f: THREAD/SORT & Envelope Parsing (Geplant)**
+**Ziel:** Erweiterte IMAP-Funktionen für Conversation Threading und strukturierte Email-Header
+
+#### **Planned Features:**
+- [ ] **THREAD Support Testing** - IMAP THREAD-Capabilities (optional, viele Server unterstützen nicht)
+- [ ] **SORT Support Testing** - IMAP SORT-Optionen (DATE, SIZE, FROM, SUBJECT, etc.)
+- [ ] **Envelope Parsing** - Strukturierte RFC 822 Header-Analyse
+  - From, To, Cc, Bcc, Date, Subject
+  - Content-Type, Content-Transfer-Encoding
+- [ ] **Test Results Integration** - Ergebnisse im Diagnostics-Dashboard anzeigen
+
+**Aufwand:** ~30% von Phase 11.5a–11.5e (ca. 2–3 Tests statt 8)
+
+---
+
+### **⏳ Phase 11.6: Sync Engine (Geplant)**
+**Ziel:** UIDVALIDITY-Tracking und inkrementelle Email-Synchronisation
+
+#### **Planned Features:**
+- [ ] **UIDVALIDITY Tracking** - Änderungserkennung bei Folder-Reorganisation
+- [ ] **Incremental Sync** - Nur neue/geänderte Emails abrufen (nicht alle)
+- [ ] **Flag Change Propagation** - User-Änderungen zurück zum Server
+- [ ] **Sync Status Dashboard** - UI für Sync-Fortschritt und -Fehler
+
+**Aufwand:** Groß (~2 Wochen), Core-Funktionalität für Production-Sync
+
+---
+
+### **🔴 Phase 0: Clean Rollback (COMPLETED)** ✅
+**Status:** Phase 11.5 IMAP Smart Sync fehlgeschlagen → Rollback zu Phase 10f → Phase 11a-11d wiederhergestellt
+
+- [x] **Phase 11.5 Code archiviert** (232KB in _archive/)
+- [x] **Rollback zu Phase 10f** (Commit 170c942)
+- [x] **Phase 11a-11d Recovery** (8 Files von main/1b5c191)
+- [x] **Alembic Migration** (ph11d_sender_patterns.py erfolgreich)
+- [x] **Lessons Learned** dokumentiert in doc/imap/README.md
 
 ---
 
