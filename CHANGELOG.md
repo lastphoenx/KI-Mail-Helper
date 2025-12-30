@@ -8,6 +8,61 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Phase 12: BUG-002 Fix (UID-Stabilität) - 2025-12-30
+
+**🔴 BUG-002: UID-Instabilität mit imaplib behoben (HIGH)**
+
+**Problem:**
+- stdlib `imaplib` nutzt Sequence-Numbers statt UIDs per default
+- Nach EXPUNGE (Email-Löschung) ändern sich Sequence-Numbers
+- Threading brach bei gelöschten Emails (parent_uid zeigte auf falsche Email)
+
+**Warum das kritisch war:**
+```python
+# VORHER (instabil):
+conn.search(None, "ALL")          # → Sequence-Numbers [1, 2, 3, 4]
+conn.fetch("2", ...)              # → Email mit Seq-Num 2
+
+# User löscht Email 1 → EXPUNGE
+# Seq-Num 2 zeigt jetzt auf andere Email! ❌
+```
+
+**Lösung:**
+```python
+# NACHHER (stabil):
+conn.uid('search', None, "ALL")   # → UIDs [101, 205, 308, 412]
+conn.uid('fetch', "205", ...)     # → Immer dieselbe Email ✅
+
+# User löscht Email 101 → EXPUNGE
+# UID 205 zeigt weiterhin auf korrekte Email! ✅
+```
+
+**Implementierung:**
+- `fetch_new_emails()`: `conn.uid('search', ...)` statt `conn.search(...)`
+- `_fetch_email_by_id()`:
+  - Phase 1: `conn.uid('fetch', uid, "(BODYSTRUCTURE ...)")`
+  - Phase 2: `conn.uid('fetch', uid, "(RFC822)")`
+- mail_id Parameter ist jetzt UID (von uid-search)
+
+**Impact:**
+- ✅ Threading bleibt stabil nach Email-Löschungen
+- ✅ parent_uid zeigt immer auf korrekte Parent-Email
+- ✅ Keine Breaking Changes (UIDs werden eh gespeichert)
+- ✅ IMAP-Standard RFC 3501 konform
+
+**Testing:**
+- Manuelle Verifikation: UID-basierte Befehle korrekt
+- Backward-Compatible: Bestehende imap_uid Spalte funktioniert
+
+**Dateien:**
+- `src/06_mail_fetcher.py`: 3 Stellen geändert (search + 2x fetch)
+- `CHANGELOG.md`: BUG-002 Fix dokumentiert
+
+**Warum jetzt und nicht früher:**
+Ursprünglich als "dokumentiert, Workaround bekannt" eingestuft, aber User hatte Recht - 5-Minuten-Fix, kein Grund zu warten!
+
+---
+
 ### Phase 12: Code Review Fixes (ISSUE-001/002, WARN-001/003) - 2025-12-30
 
 **Kritische Bugfixes nach Code-Review:**

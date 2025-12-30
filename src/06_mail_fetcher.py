@@ -212,7 +212,8 @@ class MailFetcher:
                 raise ConnectionError("IMAP connection failed")
             conn.select(folder, readonly=True)
 
-            status, messages = conn.search(None, "ALL")
+            # BUG-002-FIX: Nutze UID-basierte Suche (stabil nach EXPUNGE)
+            status, messages = conn.uid('search', None, "ALL")
 
             if status != "OK":
                 print("⚠️  Keine Mails gefunden")
@@ -265,6 +266,7 @@ class MailFetcher:
         - Phase 1: BODYSTRUCTURE + RFC822.SIZE + FLAGS + UID (schnell, <1KB)
         - Phase 2: RFC822 nur für Body-Extraktion (wenn benötigt)
         
+        BUG-002-FIX: Nutzt conn.uid('FETCH') für stabile UIDs (imaplib)
         Performance: 10-100x schneller bei großen Emails mit Attachments
         """
         try:
@@ -273,8 +275,10 @@ class MailFetcher:
             conn = self.connection
             mail_id_str = mail_id.decode(errors="ignore")
             
+            # BUG-002-FIX: UID-basierter Fetch (mail_id ist bereits UID von uid-search)
             # PHASE 1: Metadaten ohne Body-Download
-            status, meta_data = conn.fetch(
+            status, meta_data = conn.uid(
+                'fetch',
                 mail_id_str, 
                 "(BODYSTRUCTURE RFC822.SIZE FLAGS UID BODY.PEEK[HEADER])"
             )
@@ -295,8 +299,9 @@ class MailFetcher:
             # BODYSTRUCTURE parsen (FINDING-002)
             bodystructure_info = self._parse_bodystructure_from_response(meta_str)
             
+            # BUG-002-FIX: Phase 2 auch UID-basiert
             # PHASE 2: Body laden (nur für Text-Extraktion)
-            status, body_data = conn.fetch(mail_id_str, "(RFC822)")
+            status, body_data = conn.uid('fetch', mail_id_str, "(RFC822)")
             if status != "OK":
                 return None
                 
