@@ -74,7 +74,7 @@ def backfill_threads(db_path: str, master_key: str, batch_size: int = 100, dry_r
         # Gruppiere nach Account + Folder für korrekten UID-Kontext
         grouped = {}
         for email in emails_to_update:
-            key = (email.mail_account_id, email.folder)
+            key = (email.mail_account_id, email.imap_folder)  # WARN-001-FIX: imap_folder nicht folder
             if key not in grouped:
                 grouped[key] = []
             grouped[key].append(email)
@@ -114,24 +114,17 @@ def backfill_threads(db_path: str, master_key: str, batch_size: int = 100, dry_r
                     continue
 
             # Berechne Threads für diese Gruppe
+            # ISSUE-001-FIX: ThreadCalculator erwartet emails Dict, nicht einzelne Parameter
+            thread_ids, parent_uids = ThreadCalculator.from_message_id_chain(decrypted_data)
+            
             for email in emails:
                 if email.imap_uid not in decrypted_data:
                     continue  # Wurde übersprungen wegen Entschlüsselungsfehler
-
-                data = decrypted_data[email.imap_uid]
                 
                 try:
-                    thread_calc = ThreadCalculator.from_message_id_chain(
-                        uid=email.imap_uid,
-                        message_id=data["message_id"],
-                        in_reply_to=data["in_reply_to"],
-                        references=data["references"],
-                        uid_to_message_id=uid_to_email,  # Für Parent-Lookup
-                    )
-
-                    # Update Felder
-                    email.thread_id = thread_calc.thread_id
-                    email.parent_uid = thread_calc.parent_uid
+                    # Update Felder aus berechneten Thread-IDs
+                    email.thread_id = thread_ids.get(email.imap_uid)
+                    email.parent_uid = parent_uids.get(email.imap_uid)
 
                     updated_count += 1
 

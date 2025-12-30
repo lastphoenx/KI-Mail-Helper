@@ -401,15 +401,16 @@ class MailFetcher:
 
         return body.strip()
 
-    def _parse_envelope(self, msg, bodystructure_info: Dict, message_size: int) -> Dict:
+    def _parse_envelope(self, msg, bodystructure_info: Optional[Dict], message_size: Optional[int]) -> Dict:
         """Extrahiert erweiterte Envelope-Daten aus RFC822-Message
         
         FINDING-002/003: Nutzt BODYSTRUCTURE-Daten statt teurer Berechnungen
+        ISSUE-002/WARN-003-FIX: Robustes Fallback zu msg-Parsing bei None-Werten
 
         Args:
             msg: Parsed email.message object
-            bodystructure_info: Pre-parsed BODYSTRUCTURE vom IMAP-Server
-            message_size: RFC822.SIZE vom IMAP-Server (exakt)
+            bodystructure_info: Pre-parsed BODYSTRUCTURE vom IMAP-Server (kann None sein)
+            message_size: RFC822.SIZE vom IMAP-Server (kann None sein bei Parse-Fehler)
 
         Returns:
             Dict mit message_id, in_reply_to, references, to, cc, bcc, reply_to,
@@ -426,13 +427,20 @@ class MailFetcher:
             envelope["bcc"] = self._extract_address_list(msg, "Bcc")
             envelope["reply_to"] = self._extract_address_list(msg, "Reply-To")
             
-            # FINDING-003: RFC822.SIZE vom Server (instant, exakt)
-            envelope["message_size"] = message_size
+            # FINDING-003/WARN-003-FIX: RFC822.SIZE vom Server, Fallback bei None
+            envelope["message_size"] = message_size if message_size is not None else 0
             
-            # FINDING-002: BODYSTRUCTURE-Daten nutzen (10-100x schneller)
-            envelope["content_type"] = bodystructure_info.get("content_type", msg.get_content_type())
-            envelope["charset"] = bodystructure_info.get("charset", msg.get_content_charset() or "utf-8")
-            envelope["has_attachments"] = bodystructure_info.get("has_attachments", False)
+            # FINDING-002/ISSUE-002-FIX: BODYSTRUCTURE-Daten nutzen, Fallback zu msg-Parsing
+            if bodystructure_info and bodystructure_info.get("content_type"):
+                envelope["content_type"] = bodystructure_info["content_type"]
+                envelope["charset"] = bodystructure_info.get("charset") or msg.get_content_charset() or "utf-8"
+                envelope["has_attachments"] = bodystructure_info.get("has_attachments", False)
+            else:
+                # Fallback zu msg-Parsing (zuverlässig aber langsamer)
+                fallback = self._bodystructure_fallback(msg)
+                envelope["content_type"] = fallback["content_type"]
+                envelope["charset"] = fallback["charset"]
+                envelope["has_attachments"] = fallback["has_attachments"]
 
             return envelope
         except Exception as e:
@@ -504,7 +512,7 @@ class MailFetcher:
             logger.debug(f"Error extracting address list from {header}: {e}")
             return None
 
-    def _parse_rfc822_size(self, response_str: str) -> int:
+    def _parse_rfc822_size(self, response_str: str) -> Optional[int]:
         """Extrahiert RFC822.SIZE aus IMAP FETCH Response
         
         FINDING-003: Server kennt exakte Größe bereits (instant, kein RAM-Overhead)
@@ -514,7 +522,7 @@ class MailFetcher:
             response_str: FETCH Response String mit "RFC822.SIZE 12345"
             
         Returns:
-            Message size in bytes, 0 bei Fehler
+            Message size in bytes, None bei Fehler (WARN-003-FIX: nicht 0!)
         """
         try:
             import re
@@ -523,12 +531,13 @@ class MailFetcher:
                 return int(match.group(1))
         except Exception as e:
             logger.debug(f"Error parsing RFC822.SIZE: {e}")
-        return 0
+        return None  # WARN-003-FIX: None statt 0 (Unterscheidung Fehler vs. kleine Email)
 
     def _parse_bodystructure_from_response(self, response_str: str) -> Dict:
         """Parst BODYSTRUCTURE aus IMAP FETCH Response
         
         FINDING-002: BODYSTRUCTURE liefert Struktur-Info OHNE Body zu laden (10-100x schneller)
+        ISSUE-002-FIX: Robusterer Parsing mit Fallback zu None bei komplexen Strukturen
         
         BODYSTRUCTURE Format (RFC 3501):
         - Single Part: ("text" "plain" ("charset" "utf-8") NIL NIL "7bit" 1234 52)
@@ -539,55 +548,80 @@ class MailFetcher:
             
         Returns:
             Dict mit: content_type, charset, has_attachments
+            Bei Parse-Fehler: None statt falsche Defaults (ISSUE-002-FIX)
         """
         try:
             # Extrahiere BODYSTRUCTURE Teil aus Response
             import re
-            match = re.search(r'BODYSTRUCTURE\s+(\(.*?\)(?:\s+\(.*?\))*)', response_str, re.DOTALL)
+            # ISSUE-002-FIX: Robusterer Regex mit besserer Klammer-Behandlung
+            match = re.search(r'BODYSTRUCTURE\s+(\((?:[^()]|\([^()]*\))*\))', response_str, re.DOTALL)
             if not match:
-                return self._bodystructure_fallback()
+                logger.debug("BODYSTRUCTURE not found in response, falling back")
+                return None  # ISSUE-002-FIX: None statt falscher Defaults
                 
             structure = match.group(1)
             
-            # Vereinfachte Parsing-Logik
+            # Vereinfachte aber robuste Parsing-Logik
             info = {
-                "content_type": "text/plain",  # Default
-                "charset": "utf-8",  # Default
+                "content_type": None,
+                "charset": None,
                 "has_attachments": False
             }
             
-            # Check for multipart
+            # Check for multipart (starts with nested parens)
             if structure.startswith('(('):
-                info["content_type"] = "multipart/mixed"
-                # Multipart → prüfe auf attachment/application/image types
-                if any(word in structure.lower() for word in ['attachment', 'application', 'image', 'video']):
-                    info["has_attachments"] = True
+                info["content_type"] = "multipart/mixed"  # Conservative default
+                # Multipart → prüfe auf attachment/application/image/video types
+                # ISSUE-002-FIX: Vorsichtigere Heuristik
+                lower_struct = structure.lower()
+                has_attachment_markers = any([
+                    'attachment' in lower_struct,
+                    '"application"' in lower_struct,
+                    '"image"' in lower_struct and '"jpeg"' in lower_struct,
+                    '"video"' in lower_struct,
+                    'filename' in lower_struct
+                ])
+                info["has_attachments"] = has_attachment_markers
             else:
                 # Single part: extrahiere content-type
-                parts = structure.strip('()').split('"')
-                if len(parts) >= 4:
-                    mime_type = parts[1].lower()  # "text"
-                    mime_subtype = parts[3].lower()  # "plain"
+                # ISSUE-002-FIX: Robusteres Parsing mit Regex statt split
+                type_match = re.search(r'\("([^"]+)"\s+"([^"]+)"', structure)
+                if type_match:
+                    mime_type = type_match.group(1).lower()
+                    mime_subtype = type_match.group(2).lower()
                     info["content_type"] = f"{mime_type}/{mime_subtype}"
                     
-                # Extrahiere charset
-                charset_match = re.search(r'"charset"\s+"([^"]+)"', structure, re.IGNORECASE)
-                if charset_match:
-                    info["charset"] = charset_match.group(1)
+            # Extrahiere charset (funktioniert für single & multi)
+            charset_match = re.search(r'"charset"\s+"([^"]+)"', structure, re.IGNORECASE)
+            if charset_match:
+                info["charset"] = charset_match.group(1)
             
             return info
             
         except Exception as e:
             logger.debug(f"Error parsing BODYSTRUCTURE: {e}")
-            return self._bodystructure_fallback()
+            return None  # ISSUE-002-FIX: None statt falscher Fallback-Daten
     
-    def _bodystructure_fallback(self) -> Dict:
-        """Fallback wenn BODYSTRUCTURE-Parsing fehlschlägt"""
-        return {
-            "content_type": "text/plain",
-            "charset": "utf-8",
-            "has_attachments": False
-        }
+    def _bodystructure_fallback(self, msg) -> Dict:
+        """Fallback: Parse MIME-Struktur aus msg-Objekt (langsamer aber zuverlässig)
+        
+        ISSUE-002-FIX: Bei komplexen BODYSTRUCTURE-Formaten fallback zu msg.walk()
+        """
+        try:
+            info = {
+                "content_type": msg.get_content_type(),
+                "charset": msg.get_content_charset() or "utf-8",
+                "has_attachments": self._detect_attachments(msg)
+            }
+            return info
+        except Exception as e:
+            logger.debug(f"Fallback MIME parsing failed: {e}")
+            # Letzter Fallback: Safe defaults
+            return {
+                "content_type": "text/plain",
+                "charset": "utf-8",
+                "has_attachments": False
+            }
 
     def _detect_attachments(self, msg) -> bool:
         """Erkennt ob die Nachricht Anhänge hat

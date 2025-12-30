@@ -8,6 +8,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Phase 12: Code Review Fixes (ISSUE-001/002, WARN-001/003) - 2025-12-30
+
+**Kritische Bugfixes nach Code-Review:**
+
+**🔴 ISSUE-001: Backfill-Script Funktionssignatur-Fehler (CRITICAL)**
+- Problem: `ThreadCalculator.from_message_id_chain()` wurde mit 5 einzelnen Args aufgerufen
+- Realität: Methode erwartet einen Dict-Parameter `emails: Dict[str, Dict]`
+- Fix: Korrigierter Aufruf mit `thread_ids, parent_uids = ThreadCalculator.from_message_id_chain(decrypted_data)`
+- Impact: Backfill-Script wäre mit TypeError gecrasht
+
+**🔴 WARN-001: Backfill-Script Attribut-Fehler (HIGH)**
+- Problem: `email.folder` statt `email.imap_folder`
+- Fix: Korrigiert zu `key = (email.mail_account_id, email.imap_folder)`
+- Impact: AttributeError bei jedem Backfill-Aufruf
+
+**🟡 ISSUE-002: BODYSTRUCTURE-Parser Robustheit (HIGH)**
+- Problem: Regex `(\(.*?\))` war nicht-gierig → schnitt nested Strukturen ab
+- Problem: String-Splitting mit `split('"')` unsicher bei escaped quotes
+- Problem: Fallback zu aggressiv (falsche Defaults statt None)
+- Fix: Robusterer Regex `(\((?:[^()]|\([^()]*\))*\))`
+- Fix: Regex-basiertes Type-Extraction statt split
+- Fix: Return `None` bei Parse-Fehler → Fallback zu msg-Parsing
+- Fix: Neue `_bodystructure_fallback(msg)` mit msg.walk() als Backup
+- Impact: Attachment-Detection nun zuverlässig auch bei komplexen MIME-Strukturen
+
+**🟡 WARN-003: RFC822.SIZE Error Handling (LOW)**
+- Problem: `return 0` bei Parse-Fehler → Queries sehen Email als "klein"
+- Fix: `return None` → Unterscheidung zwischen Fehler und tatsächlich kleine Email
+- Fix: `_parse_envelope()` nutzt Fallback: `message_size if message_size is not None else 0`
+- Impact: Bessere Fehler-Unterscheidbarkeit in Queries
+
+**Technische Details:**
+- `scripts/backfill_phase12_threads.py`: ISSUE-001 + WARN-001 gefixt
+- `src/06_mail_fetcher.py`:
+  - `_parse_bodystructure_from_response()`: Robusterer Parser mit Fallback zu None
+  - `_bodystructure_fallback(msg)`: Neue Methode für msg.walk() Fallback
+  - `_parse_rfc822_size()`: Return type → `Optional[int]` statt `int`
+  - `_parse_envelope()`: Robustes Fallback bei None-Werten
+
+**Code Quality:**
+- Alle kritischen Bugs gefixt (TypeErrors verhindert)
+- Graceful Degradation bei Parse-Fehlern
+- Bessere Error-Handling-Strategie (None statt falsche Defaults)
+
+**Dateien:**
+- `scripts/backfill_phase12_threads.py`: 2 kritische Bugs gefixt
+- `src/06_mail_fetcher.py`: Parser robuster, besseres Fallback-Handling
+- `CHANGELOG.md`: Review-Findings dokumentiert
+
+---
+
 ### Phase 12: Performance-Optimierungen (FINDING-002/003) - 2025-12-30
 
 **IMAP-Fetch Optimierung: 10-100x schneller bei großen Emails**
