@@ -306,6 +306,42 @@ class BackgroundJobQueue:
                 raw_email_data["body"], master_key
             )
 
+            encrypted_in_reply_to = None
+            if raw_email_data.get("in_reply_to"):
+                encrypted_in_reply_to = encryption.EncryptionManager.encrypt_data(
+                    raw_email_data["in_reply_to"], master_key
+                )
+
+            encrypted_to = None
+            if raw_email_data.get("to"):
+                encrypted_to = encryption.EncryptionManager.encrypt_data(
+                    raw_email_data["to"], master_key
+                )
+
+            encrypted_cc = None
+            if raw_email_data.get("cc"):
+                encrypted_cc = encryption.EncryptionManager.encrypt_data(
+                    raw_email_data["cc"], master_key
+                )
+
+            encrypted_bcc = None
+            if raw_email_data.get("bcc"):
+                encrypted_bcc = encryption.EncryptionManager.encrypt_data(
+                    raw_email_data["bcc"], master_key
+                )
+
+            encrypted_reply_to = None
+            if raw_email_data.get("reply_to"):
+                encrypted_reply_to = encryption.EncryptionManager.encrypt_data(
+                    raw_email_data["reply_to"], master_key
+                )
+
+            encrypted_references = None
+            if raw_email_data.get("references"):
+                encrypted_references = encryption.EncryptionManager.encrypt_data(
+                    raw_email_data["references"], master_key
+                )
+
             raw_email = models.RawEmail(
                 user_id=user.id,
                 mail_account_id=account.id,
@@ -317,6 +353,24 @@ class BackgroundJobQueue:
                 imap_uid=raw_email_data.get("imap_uid"),
                 imap_folder=raw_email_data.get("imap_folder"),
                 imap_flags=raw_email_data.get("imap_flags"),
+                message_id=raw_email_data.get("message_id"),
+                encrypted_in_reply_to=encrypted_in_reply_to,
+                parent_uid=raw_email_data.get("parent_uid"),
+                thread_id=raw_email_data.get("thread_id"),
+                imap_is_seen=raw_email_data.get("imap_is_seen"),
+                imap_is_answered=raw_email_data.get("imap_is_answered"),
+                imap_is_flagged=raw_email_data.get("imap_is_flagged"),
+                imap_is_deleted=raw_email_data.get("imap_is_deleted"),
+                imap_is_draft=raw_email_data.get("imap_is_draft"),
+                encrypted_to=encrypted_to,
+                encrypted_cc=encrypted_cc,
+                encrypted_bcc=encrypted_bcc,
+                encrypted_reply_to=encrypted_reply_to,
+                message_size=raw_email_data.get("message_size"),
+                encrypted_references=encrypted_references,
+                content_type=raw_email_data.get("content_type"),
+                charset=raw_email_data.get("charset"),
+                has_attachments=raw_email_data.get("has_attachments"),
             )
             session.add(raw_email)
             saved += 1

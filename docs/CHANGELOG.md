@@ -8,6 +8,90 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added - Phase 12: Thread-basierte Conversations (2025-12-31)
+
+#### Features
+**Thread-basierte Email-Conversations**
+- Vollständige Metadata-Erfassung (12 neue Felder):
+  - thread_id, message_id, parent_uid für Reply-Chain-Mapping
+  - imap_is_seen, imap_is_answered, imap_is_flagged, imap_is_deleted, imap_is_draft
+  - has_attachments, content_type, charset, message_size
+  - Alle Felder Zero-Knowledge verschlüsselt
+- Message-ID-Chain Threading mit ThreadCalculator Klasse
+- Reply-Chains korrekt aufgebaut und verifiziert
+
+**Backend-Services**
+- `ThreadService` (`src/thread_service.py`, 256 Zeilen):
+  - get_conversation() - alle Emails eines Threads
+  - get_reply_chain() - Parent-Child-Mapping
+  - get_threads_summary() - paginierte Übersichten
+  - get_thread_subject() - Root-Email Betreff
+  - search_conversations() - Volltextsuche
+  - get_thread_stats() - Thread-Statistiken
+- `ThreadAPI` (`src/thread_api.py`, 294 Zeilen):
+  - GET /api/threads - Thread-Liste mit Pagination
+  - GET /api/threads/{thread_id} - Komplette Conversation
+  - GET /api/threads/search?q=... - Conversation-Suche
+
+**Frontend**
+- Thread-View Template (`templates/threads_view.html`, 380 Zeilen)
+- Zweigeteiltes Layout: Thread-Liste + Email-Details
+- Real-time API Integration
+- Search & Pagination Support
+
+**Integration**
+- Thread Route in Web-App (`src/01_web_app.py`, +18 Zeilen)
+- Navbar Link in Base-Template (`templates/base.html`)
+- Thread-Calculation in Mail-Fetcher (`src/06_mail_fetcher.py`)
+- Phase-12-Field Persistierung (`src/14_background_jobs.py`)
+
+#### Testing & Verification
+- ✅ 3-teilige Reply-Chain erfolgreich erstellt (UIDs 424, 425, 426)
+- ✅ Thread-ID korrekt berechnet (82eafc8b-7ee8-45cf-8ff3-0c0f056e783c)
+- ✅ Parent-Child-Relationships verifiziert
+- ✅ Alle Metadaten korrekt verschlüsselt
+
+#### Known Issues
+- 🔴 N+1 Query Performance-Problem (101 Queries für 50 Threads)
+  - Root Cause: get_threads_summary() + separate latest_email + get_thread_subject() calls
+  - Solution documented in `doc/next_steps/PERFORMANCE_OPTIMIZATION.md`
+  - Expected Fix: 101 → 1-2 Queries (10x speedup)
+
+#### Documentation
+- `doc/next_steps/PHASE_12_IMPLEMENTATION.md` - Implementation Overview
+- `doc/next_steps/PERFORMANCE_OPTIMIZATION.md` - N+1 Query Fix Guide
+- `doc/next_steps/FILES_AND_API.md` - API-Endpoints & Status-Matrix
+
+### Fixed - Phase 12 Quick-Fixes (2025-12-31)
+
+**Flask-Login Authentication Fix** (P0 - CRITICAL)
+- File: `src/thread_api.py`
+- Fixed authentication in all 3 endpoints to use Flask-Login's current_user
+- Added proper `from flask_login import current_user` import
+- Replaced session-based auth with Flask-Login pattern
+- Impact: Thread-API now properly authenticated
+
+**Email Body XSS Protection** (P0 - CRITICAL)
+- File: `templates/threads_view.html`
+- Applied Jinja2 `|e` (escape) filter to email body display
+- Prevents XSS injection via crafted email content
+- Impact: All user-generated content now HTML-escaped
+
+**subject_or_preview Column Fix** (P1 - HIGH)
+- File: `src/thread_service.py`
+- Replaced SQLAlchemy `.c.` notation with model attribute access
+- Fixed: `RawEmail.c.subject` → `RawEmail.encrypted_subject`
+- Impact: Thread search queries now work correctly
+
+**TypeScript Type Errors** (P2 - MEDIUM)
+- File: `templates/threads_view.html` (TypeScript section)
+- Fixed optional chaining: `?.` where properties might be undefined
+- Fixed date parsing with proper null checks
+- Fixed array type annotations
+- Impact: Frontend now compiles without TypeScript errors
+
+---
+
 ### Security Fixes - Phase 9f (2025-12-28)
 
 #### HIGH Priority Security Improvements

@@ -308,13 +308,25 @@ class IMAPDiagnostics:
             flags_raw = folder_info.get(b'FLAGS', ())
             flags_str = [f.decode('ascii') if isinstance(f, bytes) else str(f) for f in flags_raw]
             
+            # Helper function to safely convert to int (handle lists and other types)
+            def safe_int(value, default=0):
+                if value is None:
+                    return default
+                if isinstance(value, (list, tuple)):
+                    # Take first element if it's a list/tuple
+                    value = value[0] if value else default
+                try:
+                    return int(value)
+                except (ValueError, TypeError):
+                    return default
+            
             return {
                 'success': True,
                 'folder': folder_name,
-                'exists': int(folder_info.get(b'EXISTS', 0)),
-                'recent': int(folder_info.get(b'RECENT', 0)),
-                'unseen': int(folder_info.get(b'UNSEEN', 0)) if folder_info.get(b'UNSEEN') else 0,
-                'uidvalidity': int(folder_info.get(b'UIDVALIDITY', 0)) if folder_info.get(b'UIDVALIDITY') else None,
+                'exists': safe_int(folder_info.get(b'EXISTS', 0)),
+                'recent': safe_int(folder_info.get(b'RECENT', 0)),
+                'unseen': safe_int(folder_info.get(b'UNSEEN', 0)),
+                'uidvalidity': safe_int(folder_info.get(b'UIDVALIDITY'), None),
                 'flags': flags_str
             }
         

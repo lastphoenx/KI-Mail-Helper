@@ -220,6 +220,7 @@ logger.info("🔒 Security Headers aktiviert (CSP + X-Frame-Options + Referrer-P
 
 # Rate Limiting (Phase 9: Production Hardening)
 from flask_limiter import Limiter
+from src.thread_api import thread_api
 from flask_limiter.util import get_remote_address
 
 # Auto-detect Redis availability for multi-worker setups
@@ -383,6 +384,10 @@ def ensure_master_key_in_session():
         logger.error(f"Master-Key nicht in Session für User {current_user.id}")
         return False
     return True
+
+
+# Register Thread API Blueprint
+app.register_blueprint(thread_api)
 
 
 @app.route("/")
@@ -983,6 +988,23 @@ def list_view():
             all_tags=all_tags,
             filter_tag_ids=filter_tag_ids,
         )
+
+    finally:
+        db.close()
+
+
+@app.route("/threads")
+@login_required
+def threads_view():
+    """Thread-basierte Conversations-Ansicht (Phase 12)"""
+    db = get_db_session()
+
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect(url_for("login"))
+
+        return render_template("threads_view.html", user=user, csp_nonce=g.csp_nonce)
 
     finally:
         db.close()
