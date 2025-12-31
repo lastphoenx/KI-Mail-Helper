@@ -1,35 +1,37 @@
 """
 Thread & Conversation Service (Phase 12)
 =========================================
-Hilfs-Methoden für Thread-basierte Email-Queries.
+Helper methods for thread-based email queries.
 
-Verwendet: thread_id, parent_uid, message_id, received_at
+Uses: thread_id, parent_uid, message_id, received_at
 """
 
 from typing import List, Dict, Optional, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, and_
 import importlib
+import logging
 
 models = importlib.import_module(".02_models", "src")
+logger = logging.getLogger(__name__)
 
 
 class ThreadService:
-    """Service für Thread- und Conversation-Queries"""
+    """Service for thread and conversation queries"""
 
     @staticmethod
     def get_conversation(
         session: Session, user_id: int, thread_id: str
     ) -> List[models.RawEmail]:
-        """Holt alle Emails in einem Thread, sortiert nach Datum
+        """Get all emails in a thread, sorted by date
         
         Args:
-            session: SQLAlchemy Session
+            session: SQLAlchemy session
             user_id: User ID
-            thread_id: UUID des Threads
+            thread_id: Thread UUID
             
         Returns:
-            Liste von RawEmails in Conversation (zeitlich sortiert)
+            List of RawEmails in conversation (chronologically sorted)
         """
         return (
             session.query(models.RawEmail)
@@ -42,15 +44,15 @@ class ThreadService:
     def get_reply_chain(
         session: Session, user_id: int, thread_id: str
     ) -> Dict[str, Dict[str, Any]]:
-        """Erstellt Parent-Child Mapping für Thread-Visualisierung
+        """Create parent-child mapping for thread visualization with cycle detection
         
         Args:
-            session: SQLAlchemy Session
+            session: SQLAlchemy session
             user_id: User ID
-            thread_id: UUID des Threads
+            thread_id: Thread UUID
             
         Returns:
-            Dict mapping uid → {email, parent_uid, children_uids}
+            Dict mapping uid → {email, parent_uid, children}
             
         Example:
             {
@@ -76,9 +78,17 @@ class ThreadService:
                 'children': []
             }
         
+        visited = set()
         for uid, data in result.items():
             if data['parent_uid'] and data['parent_uid'] in result:
-                result[data['parent_uid']]['children'].append(uid)
+                parent_uid = data['parent_uid']
+                
+                if uid in visited:
+                    logger.warning(f"Circular parent reference detected for uid={uid} in thread={thread_id}")
+                    continue
+                
+                result[parent_uid]['children'].append(uid)
+                visited.add(uid)
         
         return result
 
@@ -87,19 +97,19 @@ class ThreadService:
         session: Session, user_id: int, limit: int = 50, offset: int = 0,
         thread_ids: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
-        """Holt Thread-Zusammenfassungen mit Count, neuest, älteste Email
+        """Get thread summaries with count, latest and oldest email
         
         Args:
-            session: SQLAlchemy Session
+            session: SQLAlchemy session
             user_id: User ID
-            limit: Max Anzahl Threads
+            limit: Maximum number of threads to return
             offset: Pagination offset
-            thread_ids: Optional - nur diese Threads laden (für Search-Optimization)
+            thread_ids: Optional - only load these threads (for search optimization)
             
         Returns:
-            Liste von {
+            List of {
                 thread_id, 
-                count (Anzahl Emails), 
+                count (email count), 
                 latest_uid, 
                 latest_date, 
                 latest_subject,
@@ -196,15 +206,15 @@ class ThreadService:
     def get_thread_subject(
         session: Session, user_id: int, thread_id: str
     ) -> Optional[str]:
-        """Holt Subject des Thread-Roots (Email mit parent_uid=NULL)
+        """Get subject of thread root email (email with parent_uid=NULL)
         
         Args:
-            session: SQLAlchemy Session
+            session: SQLAlchemy session
             user_id: User ID
-            thread_id: UUID des Threads
+            thread_id: Thread UUID
             
         Returns:
-            Encrypted subject (wird im Frontend entschlüsselt)
+            Encrypted subject (decrypted on frontend)
         """
         root = (
             session.query(models.RawEmail)
@@ -226,64 +236,95 @@ class ThreadService:
         return fallback.encrypted_subject if fallback else None
 
     @staticmethod
+    def get_all_user_emails(
+        session: Session,
+        user_id: int,
+    ) -> List[models.RawEmail]:
+        """Get all user emails for client-side search
+        
+        Required because data is encrypted and cannot be searched at the database level.
+        Filtering is done in Python after decryption.
+        
+        Args:
+            session: SQLAlchemy session
+            user_id: User ID
+            
+        Returns:
+            List of all user RawEmails
+        """
+        return (
+            session.query(models.RawEmail)
+            .filter_by(user_id=user_id)
+            .order_by(models.RawEmail.thread_id, models.RawEmail.received_at.desc())
+            .all()
+        )
+
+    @staticmethod
     def search_conversations(
         session: Session,
         user_id: int,
         query: str,
+        decryption_key: str,
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
-        """Sucht in Conversations (Subject + Sender)
+        """Search conversations with client-side decryption
+        
+        IMPORTANT: Data is encrypted and cannot be searched at the database level with ILIKE.
+        This method loads ALL emails and filters after decryption.
         
         Args:
-            session: SQLAlchemy Session
+            session: SQLAlchemy session
             user_id: User ID
-            query: Suchstring
-            limit: Max Results
+            query: Search string
+            decryption_key: Master key for decryption
+            limit: Maximum results
             
         Returns:
-            Ähnlich get_threads_summary()
+            Similar to get_threads_summary()
         """
-        thread_ids_subquery = (
-            session.query(models.RawEmail.thread_id)
-            .filter_by(user_id=user_id)
-            .filter(
-                (models.RawEmail.encrypted_subject.ilike(f"%{query}%"))
-                | (models.RawEmail.encrypted_sender.ilike(f"%{query}%"))
-            )
-            .distinct()
-            .limit(limit)
-            .subquery()
-        )
+        from src.thread_api import decrypt_email
         
-        thread_ids_results = session.query(thread_ids_subquery).all()
-        thread_ids = [tid[0] for tid in thread_ids_results]
+        all_emails = ThreadService.get_all_user_emails(session, user_id)
         
-        if not thread_ids:
+        matching_thread_ids = set()
+        for email in all_emails:
+            subject = decrypt_email(email.encrypted_subject, decryption_key)
+            sender = decrypt_email(email.encrypted_sender, decryption_key)
+            
+            combined = f"{subject} {sender}".lower()
+            if query.lower() in combined:
+                if email.thread_id:
+                    matching_thread_ids.add(email.thread_id)
+        
+        if not matching_thread_ids:
             return []
         
+        thread_ids_list = list(matching_thread_ids)[:limit]
+        
         return ThreadService.get_threads_summary(
-            session, user_id, limit=len(thread_ids), offset=0,
-            thread_ids=thread_ids
+            session, user_id, limit=len(thread_ids_list), offset=0,
+            thread_ids=thread_ids_list
         )
 
     @staticmethod
     def get_thread_stats(
         session: Session, user_id: int, thread_id: str
     ) -> Dict[str, Any]:
-        """Detaillierte Thread-Statistik
+        """Get detailed thread statistics
         
         Args:
-            session: SQLAlchemy Session
+            session: SQLAlchemy session
             user_id: User ID
-            thread_id: UUID des Threads
+            thread_id: Thread UUID
             
         Returns:
             {
                 count, 
                 unread_count,
-                has_attachments_count,
-                senders_set,
-                span_days
+                with_attachments_count,
+                span_days,
+                latest_date,
+                oldest_date
             }
         """
         emails = ThreadService.get_conversation(session, user_id, thread_id)

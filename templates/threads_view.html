@@ -66,10 +66,18 @@
 
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
+// Configuration constants
+const CONFIG = {
+    ITEMS_PER_PAGE: 50,
+    PREVIEW_LENGTH: 100,
+    MIN_SEARCH_LENGTH: 2,
+    MODAL_FADE_TIMEOUT: 300
+};
+
 // Global state
 let currentThreads = [];
 let currentPage = 0;
-let itemsPerPage = 50;
+let itemsPerPage = CONFIG.ITEMS_PER_PAGE;
 let currentSelectedThreadId = null;
 let isSearchMode = false;
 
@@ -91,7 +99,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// Load threads from API
+/**
+ * Load threads from API with pagination
+ * @param {number} [page=0] - Page number to load
+ * @returns {Promise<void>}
+ */
 async function loadThreads(page = 0) {
     try {
         const offset = page * itemsPerPage;
@@ -118,14 +130,20 @@ async function loadThreads(page = 0) {
     } catch (error) {
         console.error('Error loading threads:', error);
         showError('Failed to load threads: ' + error.message);
+        
+        const threadList = document.getElementById('threadList');
+        threadList.innerHTML = '<div class="list-group-item text-danger">⚠️ Failed to load threads. <br/><small>Check your internet connection and try again.</small></div>';
     }
 }
 
-// Search threads
+/**
+ * Perform thread search with query string
+ * @returns {Promise<void>}
+ */
 async function performSearch() {
     const query = document.getElementById('searchInput').value.trim();
-    if (query.length < 2) {
-        showError('Search query must be at least 2 characters');
+    if (query.length < CONFIG.MIN_SEARCH_LENGTH) {
+        showError(`Search query must be at least ${CONFIG.MIN_SEARCH_LENGTH} characters`);
         return;
     }
     
@@ -150,10 +168,17 @@ async function performSearch() {
     } catch (error) {
         console.error('Error searching threads:', error);
         showError('Search failed: ' + error.message);
+        
+        const threadList = document.getElementById('threadList');
+        threadList.innerHTML = '<div class="list-group-item text-danger">⚠️ Search failed. Please try again.</div>';
     }
 }
 
-// Render thread list
+/**
+ * Render thread list in the DOM
+ * @param {Array<{thread_id: string, subject: string, latest_sender: string, count: number, latest_date: string, has_unread: boolean}>} threads - List of threads to render
+ * @returns {void}
+ */
 function renderThreadList(threads) {
     const listContainer = document.getElementById('threadList');
     
@@ -187,7 +212,11 @@ function renderThreadList(threads) {
     });
 }
 
-// Select and load conversation
+/**
+ * Select a thread and load its conversation
+ * @param {string} threadId - ID of the thread to select
+ * @returns {Promise<void>}
+ */
 async function selectThread(threadId) {
     currentSelectedThreadId = threadId;
     
@@ -215,10 +244,20 @@ async function selectThread(threadId) {
     } catch (error) {
         console.error('Error loading conversation:', error);
         showError('Failed to load conversation: ' + error.message);
+        
+        const conversationView = document.getElementById('conversationView');
+        conversationView.innerHTML = '<div class="p-4 text-danger">⚠️ Failed to load conversation. Please try again.</div>';
     }
 }
 
-// Render conversation view
+/**
+ * Render conversation view with email list
+ * @param {Object} data - Conversation data from API
+ * @param {string} data.thread_id - Thread ID
+ * @param {Array} data.emails - List of emails in thread
+ * @param {Object} data.stats - Thread statistics
+ * @returns {void}
+ */
 function renderConversation(data) {
     const viewContainer = document.getElementById('conversationView');
     
@@ -283,7 +322,14 @@ function renderConversation(data) {
     });
 }
 
-// View full email modal
+/**
+ * Display full email in modal
+ * @param {string} messageId - Email message ID
+ * @param {string} subject - Email subject
+ * @param {string} sender - Email sender
+ * @param {string} date - Email date
+ * @returns {void}
+ */
 function viewFullEmail(messageId, subject, sender, date) {
     document.getElementById('emailModalTitle').textContent = `From: ${escapeHtml(sender)}`;
     document.getElementById('emailModalBody').innerHTML = `
@@ -301,7 +347,12 @@ function viewFullEmail(messageId, subject, sender, date) {
     new bootstrap.Modal(document.getElementById('emailModal')).show();
 }
 
-// Update pagination UI
+/**
+ * Update pagination UI buttons and info
+ * @param {number} total - Total number of items
+ * @param {boolean} [isSearch=false] - Whether in search mode
+ * @returns {void}
+ */
 function updatePagination(total, isSearch = false) {
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
@@ -317,7 +368,11 @@ function updatePagination(total, isSearch = false) {
         : `Page ${currentPage + 1}`;
 }
 
-// Utility functions
+/**
+ * Escape HTML special characters to prevent XSS
+ * @param {string} text - Text to escape
+ * @returns {string} Escaped HTML
+ */
 function escapeHtml(text) {
     if (!text) return '';
     const map = {
@@ -330,6 +385,11 @@ function escapeHtml(text) {
     return text.replace(/[&<>"']/g, m => map[m]);
 }
 
+/**
+ * Format date for display (time if today, date otherwise)
+ * @param {string} dateString - ISO date string
+ * @returns {string} Formatted date
+ */
 function formatDate(dateString) {
     if (!dateString) return '';
     const date = new Date(dateString);
@@ -342,6 +402,11 @@ function formatDate(dateString) {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+/**
+ * Format datetime for display
+ * @param {string} dateString - ISO datetime string
+ * @returns {string} Formatted datetime
+ */
 function formatDateTime(dateString) {
     if (!dateString) return '';
     const date = new Date(dateString);
@@ -353,6 +418,11 @@ function formatDateTime(dateString) {
     });
 }
 
+/**
+ * Display error message as alert
+ * @param {string} message - Error message to display
+ * @returns {void}
+ */
 function showError(message) {
     const alert = document.createElement('div');
     alert.className = 'alert alert-danger alert-dismissible fade show';
