@@ -295,6 +295,9 @@ def check_dek_in_session():
 
 
 DATABASE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "emails.db")
+
+engine = create_engine(f"sqlite:///{DATABASE_PATH}")
+SessionLocal = sessionmaker(bind=engine)
 job_queue = background_jobs.BackgroundJobQueue(DATABASE_PATH)
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -365,10 +368,8 @@ def load_user(user_id):
 
 
 def get_db_session():
-    """Erstellt eine DB-Session"""
-    engine = create_engine(f"sqlite:///{DATABASE_PATH}")
-    Session = sessionmaker(bind=engine)
-    return Session()
+    """Get database session from shared pool"""
+    return SessionLocal()
 
 
 def get_current_user_model(db):

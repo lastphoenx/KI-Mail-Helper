@@ -13,9 +13,7 @@ from flask import Blueprint, jsonify, request, session, current_app
 from flask_login import login_required, current_user
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, func
-import os
+from sqlalchemy import func
 import logging
 import importlib
 
@@ -43,14 +41,11 @@ def format_datetime(dt):
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.isoformat()
 
-DATABASE_PATH = os.getenv("DATABASE_PATH", "emails.db")
-
 
 def get_db_session():
-    """Erstellt eine DB-Session (identisch zu 01_web_app.py)"""
-    engine = create_engine(f"sqlite:///{DATABASE_PATH}")
-    Session = sessionmaker(bind=engine)
-    return Session()
+    """Get database session from shared pool (avoid circular imports with lazy import)"""
+    web_app = importlib.import_module(".01_web_app", "src")
+    return web_app.SessionLocal()
 
 
 def get_current_user_model(db):
