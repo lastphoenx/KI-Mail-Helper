@@ -1,6 +1,6 @@
 ﻿#!/usr/bin/env python3
 """
-Automated Code Review mit Claude API (v3.0)
+Automated Code Review mit Claude API (v3.1)
 ============================================
 Improved with:
 - Context-aware prompts with Threat Model
@@ -9,11 +9,13 @@ Improved with:
 - File-by-file reviews with 2-Pass for critical files
 - Context-aware calibration (markiert statt ignoriert)
 - Extended Security Layer (6 files statt 4)
+- 3 Context Modes: REDUCED, FULL, DEEP (adaptive + manual override)
 """
 
 import os
 import sys
 import time
+import argparse
 from pathlib import Path
 from datetime import datetime
 import anthropic
@@ -26,6 +28,7 @@ load_dotenv(project_root / '.env')
 
 # Configuration
 LARGE_FILE_THRESHOLD = 50000  # Chars - Trigger für reduziertem Kontext
+CONTEXT_MODE_OVERRIDE = None  # Global for CLI override
 
 
 def estimate_tokens(text):
@@ -84,27 +87,71 @@ class APIRateLimiter:
 
 
 # Known False Positives Database
+# Status Levels:
+#   RESOLVED - Issue wurde gefixt, AI prüft trotzdem ob Fix korrekt ist
+#   IGNORED  - Issue ist kein Problem (AI kann trotzdem warnen bei Zweifel)
+#   MONITOR  - Issue ist akzeptabel, aber bei Context-Änderung neu bewerten
 KNOWN_FALSE_POSITIVES = {
+    # ========================================================================
+    # RESOLVED ISSUES (Phase 12 Fixes - 2025-12-31)
+    # ========================================================================
+    "Issue #18 - Multi-Worker DB Engine": [
+        {
+            "pattern": r"engine = create_engine.*SessionLocal = sessionmaker",
+            "reason": "RESOLVED: Issue #18 fixed (Commit 0ccac65, 2025-12-31) - Shared engine at module level",
+            "status": "RESOLVED",
+            "applies_to": ["src/01_web_app.py", "src/thread_api.py"],
+            "fix_commit": "0ccac65",
+            "fix_verification": "doc/erledigt/PHASE_12_FIX_VERIFICATION.md",
+            "expected_implementation": "engine/SessionLocal at module level (lines 299-300), lazy import in thread_api"
+        },
+    ],
+    "Issue #1 - CSRF AJAX Protection": [
+        {
+            "pattern": r"X-CSRFToken.*csrf_protect_ajax",
+            "reason": "RESOLVED: Phase 12 Fix #1 - CSRF validation for all AJAX endpoints",
+            "status": "RESOLVED",
+            "applies_to": ["src/01_web_app.py"],
+            "fix_verification": "doc/erledigt/PHASE_12_FIX_VERIFICATION.md",
+            "expected_implementation": "csrf_protect_ajax() validates X-CSRFToken header"
+        },
+    ],
+    "Issue #3 - XSS in Thread View": [
+        {
+            "pattern": r"escapeHtml\(\).*innerHTML",
+            "reason": "RESOLVED: Phase 12 Fix #3 - XSS protection with escapeHtml() for dynamic content",
+            "status": "RESOLVED",
+            "applies_to": ["templates/threads_view.html"],
+            "fix_verification": "doc/erledigt/PHASE_12_FIX_VERIFICATION.md",
+            "expected_implementation": "All dynamic content escaped before innerHTML insertion"
+        },
+    ],
+    "Issue #10 - N+1 Query in list_view": [
+        {
+            "pattern": r"email_tags_map.*subqueryload",
+            "reason": "RESOLVED: Phase 12 Fix #10 - Eager loading with subqueryload() prevents N+1",
+            "status": "RESOLVED",
+            "applies_to": ["src/01_web_app.py"],
+            "fix_verification": "doc/erledigt/PERFORMANCE_FIX_N+1_QUERY.md",
+            "expected_implementation": "Tags loaded in single query via subqueryload()"
+        },
+    ],
+    
+    # ========================================================================
+    # KNOWN FALSE POSITIVES (Design Decisions)
+    # ========================================================================
     "Command Injection": [
         {
             "pattern": r"args\.host.*app\.run",
             "reason": "Flask app.run() validates host internally (no shell execution)",
             "status": "MONITOR",  # Überwachen bei subprocess-Nutzung
-            "applies_to": ["00_main.py"]
+            "applies_to": ["src/00_main.py"]
         },
         {
             "pattern": r"argparse.*type=int",
             "reason": "argparse validates types automatically",
             "status": "IGNORED",  # Komplett sicher
-            "applies_to": ["00_main.py"]
-        },
-    ],
-    "Connection Pool": [
-        {
-            "pattern": r"SQLite.*create_engine",
-            "reason": "SQLite is single-threaded, no connection pool needed",
-            "status": "MONITOR",  # ABER: Multi-Worker Race Conditions möglich!
-            "applies_to": ["02_models.py", "00_main.py", "14_background_jobs.py"]
+            "applies_to": ["src/00_main.py"]
         },
     ],
     "JSON Deserialization": [
@@ -112,7 +159,7 @@ KNOWN_FALSE_POSITIVES = {
             "pattern": r"json\.loads",
             "reason": "Python 3.13+ has built-in memory limits in json.loads()",
             "status": "MONITOR",  # Bei User-Input trotzdem prüfen
-            "applies_to": ["00_main.py", "10_google_oauth.py"]
+            "applies_to": ["src/00_main.py", "src/10_google_oauth.py"]
         },
     ],
     "Process Memory": [
@@ -120,7 +167,7 @@ KNOWN_FALSE_POSITIVES = {
             "pattern": r"CLI.*ps aux",
             "reason": "Requires local access (game over scenario)",
             "status": "IGNORED",  # Nicht relevant für Threat Model
-            "applies_to": ["00_main.py"]
+            "applies_to": ["src/00_main.py"]
         },
     ],
     "Uncontrolled Thread": [
@@ -128,7 +175,19 @@ KNOWN_FALSE_POSITIVES = {
             "pattern": r"threading\.Thread.*ensure_worker",
             "reason": "Single worker thread per instance (controlled)",
             "status": "MONITOR",  # Bei Multi-Instance Deployment prüfen
-            "applies_to": ["14_background_jobs.py"]
+            "applies_to": ["src/14_background_jobs.py"]
+        },
+        {
+            "pattern": r"threading\.Thread.*run_http_redirector.*daemon=True",
+            "reason": "HTTP→HTTPS redirector thread (daemon=True, terminates with parent process)",
+            "status": "IGNORED",  # Safe pattern
+            "applies_to": ["src/01_web_app.py"]
+        },
+        {
+            "pattern": r"threading\.Thread.*daemon=True.*timeout",
+            "reason": "Sanitization timeout handler (daemon, terminates with parent)",
+            "status": "IGNORED",  # Safe pattern
+            "applies_to": ["src/04_sanitizer.py"]
         },
     ],
     "Rate Limiting Storage": [
@@ -136,7 +195,7 @@ KNOWN_FALSE_POSITIVES = {
             "pattern": r"storage_uri.*memory://",
             "reason": "In-memory OK für Heimnetz + Fail2Ban backup (Phase 9 Design-Decision)",
             "status": "MONITOR",  # Bei Cloud-Deployment ändern
-            "applies_to": ["01_web_app.py"]
+            "applies_to": ["src/01_web_app.py"]
         },
     ],
     "Hardcoded Secrets": [
@@ -152,7 +211,7 @@ KNOWN_FALSE_POSITIVES = {
             "pattern": r"session\.regenerate\(\)",
             "reason": "Flask-Session 0.8.0 mit 256-bit random IDs + SameSite=Lax (Phase 9 Decision)",
             "status": "MONITOR",  # Bei Session-Upgrades prüfen
-            "applies_to": ["01_web_app.py"]
+            "applies_to": ["src/01_web_app.py"]
         },
     ],
 }
@@ -334,32 +393,71 @@ def get_related_files(filepath, layer_config):
     return ', '.join([Path(f).name for f in related[:5]])  # Max 5
 
 
-def load_project_context(file_size_chars=0):
+def load_project_context(file_size_chars=0, mode_override=None):
     """Lädt Projekt-Dokumentation adaptiv basierend auf Dateigröße
     
-    - Kleine Files (<LARGE_FILE_THRESHOLD): Voller Kontext (README+SECURITY+DEPLOYMENT+Instruction)
-    - Große Files (>LARGE_FILE_THRESHOLD): Nur README (Überblick, spart ~20k tokens)
+    Modi (3 Levels):
+    - REDUCED: Minimal (3 Docs) - für große Files oder schnelle Reviews (~15k tokens)
+    - FULL: Standard (9 Docs) - für normale Files (<50k) (~50k tokens) [DEFAULT]
+    - DEEP: Maximum (11 Docs) - für erste Reviews oder Security-Deep-Dives (~65k tokens)
+    
+    Args:
+        file_size_chars: Dateigröße für adaptive Auswahl
+        mode_override: Manuelles Override ('REDUCED', 'FULL', 'DEEP' oder None für auto)
     """
     
-    # Adaptive Kontext-Auswahl basierend auf Review-Dateigröße
-    if file_size_chars > LARGE_FILE_THRESHOLD:
-        context_files = {
-            'README.md': 'Projekt-Übersicht, Features, Tech Stack (reduziert für große Files)'
-        }
+    # 1. CLI-Override hat Priorität
+    if mode_override:
+        mode = mode_override.upper()
+    # 2. Sonst: Automatisch basierend auf Dateigröße
+    elif file_size_chars > LARGE_FILE_THRESHOLD:
         mode = "REDUCED"
     else:
-        context_files = {
-            'README.md': 'Projekt-Übersicht, Features, Tech Stack',
-            'docs/SECURITY.md': 'Security Model, Known Limitations, Threat Analysis',
-            'docs/DEPLOYMENT.md': 'Production Setup, Security Architecture',
-            'Instruction_&_goal.md': 'Detaillierte Architektur, Phase 0-12'
-        }
         mode = "FULL"
     
-    context = "## 📚 PROJEKT-KONTEXT\n\n"
+    # Context-Files je nach Modus
     if mode == "REDUCED":
-        context += "*(Context reduziert für große Datei - nur README geladen)*\n\n"
+        context_files = {
+            'README.md': 'Projekt-Übersicht',
+            'ARCHITECTURE.md': 'Design Decisions',
+            'doc/erledigt/PHASE_12_FIX_VERIFICATION.md': 'Bereits gefixte Issues (verhindert Duplikate!)',
+        }
+    elif mode == "DEEP":
+        context_files = {
+            'README.md': 'Projekt-Übersicht, Features, Tech Stack',
+            'ARCHITECTURE.md': 'Design Decisions, Zero-Knowledge Model',
+            'docs/SECURITY.md': 'Security Model, Threat Analysis',
+            'docs/DEPLOYMENT.md': 'Production Setup',
+            'docs/CHANGELOG.md': 'Fix-History, Known Issues',
+            'doc/erledigt/ZERO_KNOWLEDGE_ARCHITECTURE.md': 'Zero-Knowledge Details',
+            'doc/erledigt/PHASE_12_FIX_VERIFICATION.md': 'Verified Fixes (alle 20)',
+            'doc/erledigt/PHASE_12_CODE_REVIEW.md': 'Review-Findings',
+            'doc/development/Instruction_&_goal.md': 'Detaillierte Architektur Phase 0-12',
+            'doc/erledigt/PERFORMANCE_FIX_N+1_QUERY.md': 'Performance-Optimierung',
+            'doc/erledigt/PHASE_12_DEEP_REVIEW.md': 'Detaillierte Fix-Analyse',
+        }
+    else:  # FULL (default)
+        context_files = {
+            'README.md': 'Projekt-Übersicht, Features, Tech Stack',
+            'ARCHITECTURE.md': 'Design Decisions, Zero-Knowledge Model',
+            'docs/SECURITY.md': 'Security Model, Threat Analysis',
+            'docs/DEPLOYMENT.md': 'Production Setup',
+            'docs/CHANGELOG.md': 'Fix-History, Known Issues',
+            'doc/erledigt/ZERO_KNOWLEDGE_ARCHITECTURE.md': 'Zero-Knowledge Details',
+            'doc/erledigt/PHASE_12_FIX_VERIFICATION.md': 'Verified Fixes (alle 20)',
+            'doc/erledigt/PHASE_12_CODE_REVIEW.md': 'Review-Findings',
+            'doc/development/Instruction_&_goal.md': 'Detaillierte Architektur Phase 0-12',
+        }
     
+    context = "## 📚 PROJEKT-KONTEXT\n\n"
+    context += f"**Context Mode:** {mode} ({len(context_files)} Dokumente)\n\n"
+    
+    if mode == "REDUCED":
+        context += "*(Context reduziert - Minimal-Modus für große Files/schnelle Reviews)*\n\n"
+    elif mode == "DEEP":
+        context += "*(Context maximum - Alle verfügbaren Docs für Deep-Dive)*\n\n"
+    
+    loaded_count = 0
     for filename, description in context_files.items():
         filepath = project_root / filename
         if filepath.exists():
@@ -371,26 +469,30 @@ def load_project_context(file_size_chars=0):
                     if len(content) > 100000:
                         content = content[:100000] + "\n\n[... gekürzt - Datei zu groß ...]"
                     context += f"```\n{content}\n```\n\n"
+                    loaded_count += 1
             except Exception as e:
                 context += f"⚠️ Fehler beim Laden: {e}\n\n"
         else:
-            context += f"### {filename} (nicht gefunden)\n\n"
+            context += f"⚠️ {filename} nicht gefunden (erwartet aber nicht kritisch)\n\n"
+    
+    context += f"\n---\n**Geladene Dokumente:** {loaded_count}/{len(context_files)}\n\n"
     
     return context
 
 
-def build_review_prompt(filepath, code_content, layer_name, layer_config=None, file_size_chars=0):
+def build_review_prompt(filepath, code_content, layer_name, layer_config=None, file_size_chars=0, context_mode=None):
     """Erstellt Context-aware Review-Prompt mit Threat Model & Dependencies
     
     file_size_chars wird automatisch aus code_content ermittelt, falls nicht angegeben
+    context_mode: Optional 'REDUCED', 'FULL', 'DEEP' override
     """
     
     # Auto-detect file size if not provided
     if not file_size_chars:
         file_size_chars = len(code_content)
     
-    # Load project context (adaptive basierend auf Dateigröße)
-    project_context = load_project_context(file_size_chars)
+    # Load project context (adaptive basierend auf Dateigröße + optional override)
+    project_context = load_project_context(file_size_chars, context_mode)
     
     # Extract Dependencies
     imports = extract_imports(code_content)
@@ -567,7 +669,7 @@ def two_pass_review(filepath, code_content, layer_name, layer_config, limiter):
     
     try:
         # Pass 1: Quick Security Scan (file_size_chars wird auto-erkannt)
-        quick_prompt = build_review_prompt(filepath, code_content, layer_name, layer_config)
+        quick_prompt = build_review_prompt(filepath, code_content, layer_name, layer_config, context_mode=CONTEXT_MODE_OVERRIDE)
         quick_prompt += "\n\n**PASS 1: Quick Security Scan**\nFokus auf KRITISCHE/HOHE Severity Issues. Kurze Zusammenfassung.\n"
         
         # Rate Limit Check
@@ -592,7 +694,7 @@ def two_pass_review(filepath, code_content, layer_name, layer_config, limiter):
             print(f"      🚨 Kritische Issues gefunden → Deep Dive...")
             
             # Pass 2: Deep Dive (file_size_chars wird auto-erkannt)
-            deep_prompt = build_review_prompt(filepath, code_content, layer_name, layer_config)
+            deep_prompt = build_review_prompt(filepath, code_content, layer_name, layer_config, context_mode=CONTEXT_MODE_OVERRIDE)
             deep_prompt += f"\n\n**PASS 2: Deep Dive Analysis**\n\nQuick Scan ergab:\n{quick_review[:1000]}...\n\n"
             deep_prompt += "Analysiere jetzt im Detail: Root Cause, Exploit-Szenarien, konkrete Fixes mit Code.\n"
             
@@ -649,7 +751,7 @@ def review_file_with_claude(filepath, code_content, layer_name, layer_config=Non
         return two_pass_review(filepath, code_content, layer_name, layer_config, limiter)
     
     # Build prompt (file_size_chars wird auto-erkannt)
-    prompt = build_review_prompt(filepath, code_content, layer_name, layer_config)
+    prompt = build_review_prompt(filepath, code_content, layer_name, layer_config, context_mode=CONTEXT_MODE_OVERRIDE)
     
     # Rate Limit Check
     estimated_tokens = estimate_tokens(prompt)
@@ -929,10 +1031,41 @@ def merge_file_reviews(layer_id, layer_config, file_reviews, reports_dir):
 
 
 def main():
+    # Parse CLI arguments
+    parser = argparse.ArgumentParser(
+        description='Automated Code Review mit Claude API (v3.1)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Context Modes:
+  REDUCED  - Minimal (3 Docs, ~15k tokens)  - Große Files, schnelle Reviews
+  FULL     - Standard (9 Docs, ~50k tokens) - Default für normale Files [DEFAULT]
+  DEEP     - Maximum (11 Docs, ~65k tokens) - Erste Reviews, Security Deep-Dives
+
+Examples:
+  python scripts/automated_code_review.py                  # Auto (adaptiv)
+  python scripts/automated_code_review.py --context full   # Force FULL
+  python scripts/automated_code_review.py --context deep   # Force DEEP
+        """
+    )
+    parser.add_argument(
+        '--context',
+        choices=['reduced', 'full', 'deep'],
+        help='Context-Modus override (default: adaptiv basierend auf Dateigröße)'
+    )
+    
+    args = parser.parse_args()
+    
     print("=" * 80)
     print("🔍 Automated Code Review System v3.1")
     print("   ✨ With Rate Limit Protection, Adaptive Context & Deep Reviews")
     print("=" * 80)
+    print()
+    
+    # Context Mode Info
+    if args.context:
+        print(f"📚 Context Mode: {args.context.upper()} (manual override)")
+    else:
+        print("📚 Context Mode: AUTO (adaptiv basierend auf Dateigröße)")
     print()
     
     # Initialize Rate Limiter
@@ -944,6 +1077,10 @@ def main():
     reports_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"📁 Output: {reports_dir}\n")
+    
+    # Store context mode for use in review functions
+    global CONTEXT_MODE_OVERRIDE
+    CONTEXT_MODE_OVERRIDE = args.context
     
     # Process each layer
     reports = {}

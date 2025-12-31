@@ -213,15 +213,21 @@
             // CSRF Token
             const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
 
-            // API Call
+            // API Call with 150s timeout (max server wait + buffer)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 150000);
+            
             const response = await fetch(`/api/imap-diagnostics/${accountId}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken
                 },
-                body: JSON.stringify({})
+                body: JSON.stringify({}),
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
 
             const result = await response.json();
 
@@ -235,7 +241,11 @@
             }
         } catch (error) {
             document.getElementById('loadingIndicator').style.display = 'none';
-            displayError('Network Error: ' + error.message);
+            if (error.name === 'AbortError') {
+                displayError('Timeout: Test-Timeout nach 2.5 Minuten. Server antwortet zu langsam - überprüfen Sie die Netzwerkverbindung.');
+            } else {
+                displayError('Netzwerkfehler: ' + error.message);
+            }
         } finally {
             this.disabled = false;
         }
@@ -257,15 +267,20 @@
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
 
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 150000);
+            
             const response = await fetch(`/api/imap-diagnostics/${accountId}?subscribed_only=${subscribedOnly}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken
                 },
-                body: JSON.stringify({ subscribed_only: subscribedOnly })
+                body: JSON.stringify({ subscribed_only: subscribedOnly }),
+                signal: controller.signal
             });
 
+            clearTimeout(timeoutId);
             const result = await response.json();
             document.getElementById('loadingIndicator').style.display = 'none';
 

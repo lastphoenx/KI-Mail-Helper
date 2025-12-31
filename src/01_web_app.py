@@ -815,7 +815,7 @@ def dashboard():
 @app.route("/list")
 @login_required
 def list_view():
-    """Listen-Ansicht: alle Mails nach Score sortiert"""
+    """Listen-Ansicht: alle Mails mit erweiterten Filtern"""
     db = get_db_session()
 
     try:
@@ -823,6 +823,7 @@ def list_view():
         if not user:
             return redirect(url_for("login"))
 
+        # Legacy-Filter
         filter_color = request.args.get("farbe") or None
         filter_done = (request.args.get("done") or "").lower()
         search_term = (request.args.get("search", "") or "").strip()
@@ -844,6 +845,22 @@ def list_view():
                 filter_tag_ids = [int(tag_id_str)]
             except (ValueError, TypeError):
                 filter_tag_ids = []
+
+        # Phase 13: Neue Filter
+        filter_folder = request.args.get("folder") or None
+        filter_seen = (request.args.get("seen") or "").lower()
+        filter_flagged = (request.args.get("flagged") or "").lower()
+        filter_attachments = (request.args.get("attach") or "").lower()
+        
+        # Datums-Filter
+        filter_date_from = request.args.get("date_from") or None
+        filter_date_to = request.args.get("date_to") or None
+        
+        # Sortierung
+        sort_by = request.args.get("sort", "score")  # date/score/size/sender
+        sort_order = request.args.get("order", "desc").lower()  # asc/desc
+        if sort_order not in ("asc", "desc"):
+            sort_order = "desc"
 
         query = (
             db.query(models.ProcessedEmail)
@@ -871,8 +888,58 @@ def list_view():
                 .filter(models.EmailTagAssignment.tag_id.in_(filter_tag_ids))
             )
 
-        # Alle E-Mails abrufen (Search auf verschlüsselten Feldern muss in Python passieren)
-        mails = query.order_by(models.ProcessedEmail.score.desc()).all()
+        # Phase 13: Ordner-Filter
+        if filter_folder:
+            query = query.filter(models.RawEmail.imap_folder == filter_folder)
+
+        # Phase 13: Gelesen/Ungelesen-Filter
+        if filter_seen == "true":
+            query = query.filter(models.RawEmail.imap_is_seen == True)
+        elif filter_seen == "false":
+            query = query.filter(models.RawEmail.imap_is_seen == False)
+
+        # Phase 13: Geflaggt/Nicht-Filter
+        if filter_flagged == "true":
+            query = query.filter(models.RawEmail.imap_is_flagged == True)
+        elif filter_flagged == "false":
+            query = query.filter(models.RawEmail.imap_is_flagged == False)
+
+        # Phase 13: Anhang-Filter
+        if filter_attachments == "true":
+            query = query.filter(models.RawEmail.has_attachments == True)
+        elif filter_attachments == "false":
+            query = query.filter(models.RawEmail.has_attachments == False)
+
+        # Phase 13: Datums-Filter
+        if filter_date_from:
+            try:
+                from_date = datetime.fromisoformat(filter_date_from)
+                query = query.filter(models.RawEmail.received_at >= from_date)
+            except (ValueError, TypeError):
+                pass
+        
+        if filter_date_to:
+            try:
+                to_date = datetime.fromisoformat(filter_date_to)
+                to_date = to_date.replace(hour=23, minute=59, second=59)
+                query = query.filter(models.RawEmail.received_at <= to_date)
+            except (ValueError, TypeError):
+                pass
+
+        # Phase 13: Sortierung anwenden
+        if sort_by == "date":
+            sort_col = models.RawEmail.received_at
+        elif sort_by == "size":
+            sort_col = models.RawEmail.message_size
+        elif sort_by == "sender":
+            sort_col = models.RawEmail.encrypted_sender
+        else:  # "score" (default)
+            sort_col = models.ProcessedEmail.score
+
+        if sort_order == "asc":
+            mails = query.order_by(sort_col.asc()).all()
+        else:
+            mails = query.order_by(sort_col.desc()).all()
         
         # Lade alle User-Accounts für Filter-Dropdown
         user_accounts = db.query(models.MailAccount).filter(
@@ -977,6 +1044,13 @@ def list_view():
             # Ohne master_key können wir nichts anzeigen
             decrypted_mails = []
 
+        # Phase 13: Sammle verfügbare Ordner aus RawEmails
+        available_folders = set()
+        for mail in decrypted_mails:
+            if mail.raw_email.imap_folder:
+                available_folders.add(mail.raw_email.imap_folder)
+        available_folders = sorted(list(available_folders))
+
         return render_template(
             "list_view.html",
             user=user,
@@ -988,6 +1062,16 @@ def list_view():
             filter_account_id=filter_account_id,
             all_tags=all_tags,
             filter_tag_ids=filter_tag_ids,
+            # Phase 13: Neue Filter-Parameter
+            filter_folder=filter_folder,
+            available_folders=available_folders,
+            filter_seen=filter_seen,
+            filter_flagged=filter_flagged,
+            filter_attachments=filter_attachments,
+            filter_date_from=filter_date_from,
+            filter_date_to=filter_date_to,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
 
     finally:
@@ -3109,7 +3193,7 @@ def api_imap_diagnostics(account_id):
                 port=account.imap_port or 993,
                 username=imap_username,
                 password=imap_password,
-                timeout=30,
+                timeout=120,
                 ssl=(account.imap_encryption == "SSL")
             )
             
@@ -3120,6 +3204,12 @@ def api_imap_diagnostics(account_id):
                 "diagnostics": result
             }), 200
             
+        except TimeoutError as e:
+            logger.error(f"IMAP Diagnostics Timeout: {e}")
+            return jsonify({
+                "success": False,
+                "error": "Verbindungs-Timeout: Server antwortet zu langsam. Überprüfen Sie die Netzwerkverbindung oder versuchen Sie es später erneut."
+            }), 504
         except Exception as e:
             logger.error(f"IMAP Diagnostics Fehler: {e}")
             return jsonify({
