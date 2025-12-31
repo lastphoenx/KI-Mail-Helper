@@ -51,6 +51,9 @@ logs/
 # Code Reviews (SENSIBEL - nicht auf GitHub!)
 review_output/
 
+# Internal Documentation (development notes, not for GitHub)
+doc/
+
 # OS
 .DS_Store
 Thumbs.db
