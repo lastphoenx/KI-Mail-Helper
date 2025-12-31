@@ -205,7 +205,14 @@
                 <div class="col-md-6">
                     <h6 class="text-muted">Aktuell vom Server:</h6>
                     <div id="flagsCurrent" class="mb-3">
-                        <div id="currentFlagsLoading"><small class="text-muted">⏳ Wird abgerufen...</small></div>
+                        {% if raw and raw.imap_is_seen %}
+                        <span class="badge bg-info">👁️ Gelesen</span>
+                        {% else %}
+                        <span class="badge bg-secondary">🔘 Ungelesen</span>
+                        {% endif %}
+                        {% if raw and raw.imap_is_flagged %}
+                        <span class="badge bg-danger">🚩 Markiert</span>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -302,6 +309,23 @@
                     <button class="btn btn-outline-secondary todo-btn" data-action="todo">
                         📋 Auf ToDo-Liste setzen
                     </button>
+
+                    <!-- Phase 13: Server-Aktionen (IMAP-Sync) -->
+                    <div class="btn-group w-100" role="group">
+                        <button type="button" class="btn btn-outline-secondary sync-action-btn" id="markReadBtn" 
+                                data-action="mark-read" title="Als gelesen markieren">
+                            👁️ Gelesen
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary sync-action-btn" id="markFlagBtn" 
+                                data-action="mark-flag" title="Wichtig-Flag toggle">
+                            {% if raw and raw.imap_is_flagged %}🚩 Unflag{% else %}🚩️ Flag{% endif %}
+                        </button>
+                        <button type="button" class="btn btn-outline-danger sync-action-btn" id="deleteBtn" 
+                                data-action="delete" title="Auf Server löschen">
+                            🗑️ Löschen
+                        </button>
+                    </div>
+
                     {% if not email.done %}
                     <form method="post" action="/email/{{ email.id }}/done" id="markDoneForm">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
@@ -317,6 +341,10 @@
 </div>
 
 <script nonce="{{ csp_nonce() }}">
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+}
+
 function getAnalysisModal() {
     if (typeof analysisModal === 'undefined' || !analysisModal) {
         analysisModal = new bootstrap.Modal(document.getElementById('progressModal'), {backdrop: 'static', keyboard: false});
@@ -736,7 +764,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initCorrectionModal(emailId);
     
     highlightRawHtml();
-    fetchCurrentFlags(emailId);
+    // fetchCurrentFlags(emailId); // Phase 13: Disabled - nicht kritisch, Endpoint existiert nicht
     
     // CSP-compliant event listeners
     const copyRawHtmlBtn = document.getElementById('copyRawHtmlBtn');
@@ -831,6 +859,84 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             } catch (error) {
                 alert('Fehler beim Zuweisen: ' + error.message);
+            }
+        });
+    });
+
+    // Phase 13: Server-Sync Action Buttons (DELETE, MARK_READ, MARK_FLAG)
+    document.querySelectorAll('.sync-action-btn').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            const action = this.dataset.action;
+            
+            let confirmMsg = '';
+            if (action === 'delete') {
+                confirmMsg = '🗑️ Email wirklich LÖSCHEN? Diese Aktion kann nicht rückgängig gemacht werden.';
+            } else if (action === 'mark-read') {
+                confirmMsg = '👁️ Email als gelesen markieren?';
+            } else if (action === 'mark-flag') {
+                const isCurrentlyFlagged = document.getElementById('markFlagBtn').innerHTML.includes('Unflag');
+                if (isCurrentlyFlagged) {
+                    confirmMsg = '🚩 Flag entfernen (nicht mehr als wichtig markieren)?';
+                } else {
+                    confirmMsg = '🚩 Flag setzen (als wichtig markieren)?';
+                }
+            }
+            
+            if (!confirm(confirmMsg)) return;
+            
+            const btn = this;
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '⏳...';
+            
+            try {
+                const response = await fetch(`/email/${emailId}/${action}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Success
+                    if (action === 'delete') {
+                        alert('✓ Email gelöscht');
+                        window.location.href = '/list';
+                    } else if (action === 'mark-read') {
+                        alert('✓ Als gelesen markiert');
+                        location.reload();
+                    } else if (action === 'mark-flag') {
+                        // Toggle button text und badge
+                        const isFlaggedNow = data.flagged;
+                        btn.innerHTML = isFlaggedNow ? '🚩 Unflag' : '🚩 Flag';
+                        
+                        // Update badge
+                        const badge = document.querySelector('#flagsCurrent .badge.bg-danger');
+                        if (isFlaggedNow && !badge) {
+                            const newBadge = document.createElement('span');
+                            newBadge.className = 'badge bg-danger';
+                            newBadge.textContent = '🚩 Markiert';
+                            document.getElementById('flagsCurrent').appendChild(newBadge);
+                        } else if (!isFlaggedNow && badge) {
+                            badge.remove();
+                        }
+                        
+                        btn.disabled = false;
+                        // Kein alert nötig - Button-Text ändert sich schon
+                    }
+                } else {
+                    alert('❌ ' + (data.error || 'Fehler bei der Aktion'));
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                }
+            } catch (error) {
+                alert('❌ Fehler: ' + error.message);
+                btn.disabled = false;
+                btn.innerHTML = originalText;
             }
         });
     });

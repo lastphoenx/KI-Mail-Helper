@@ -57,6 +57,8 @@ processing = importlib.import_module(".12_processing", "src")
 background_jobs = importlib.import_module(".14_background_jobs", "src")
 provider_utils = importlib.import_module(".15_provider_utils", "src")
 password_validator = importlib.import_module(".09_password_validator", "src")
+mail_fetcher_mod = importlib.import_module(".06_mail_fetcher", "src")
+mail_sync = importlib.import_module(".16_mail_sync", "src")
 
 logger = logging.getLogger(__name__)
 
@@ -3357,6 +3359,274 @@ def job_status(job_id: str):
     if not status:
         return jsonify({"error": "Job nicht gefunden"}), 404
     return jsonify(status)
+
+
+@app.route("/email/<int:email_id>/delete", methods=["POST"])
+@login_required
+def delete_email(email_id):
+    """Löscht eine Email auf dem Server"""
+    db = get_db_session()
+
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+
+        email = (
+            db.query(models.ProcessedEmail)
+            .join(models.RawEmail)
+            .filter(
+                models.ProcessedEmail.id == email_id,
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.deleted_at == None,
+                models.ProcessedEmail.deleted_at == None,
+            )
+            .first()
+        )
+
+        if not email:
+            return jsonify({"error": "Email nicht gefunden"}), 404
+
+        raw_email = email.raw_email
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key erforderlich"}), 401
+
+        account = db.query(models.MailAccount).filter(
+            models.MailAccount.id == raw_email.mail_account_id,
+            models.MailAccount.user_id == user.id,
+        ).first()
+
+        if not account or account.auth_type != "imap":
+            return jsonify({"error": "IMAP-Account erforderlich"}), 400
+
+        imap_server = encryption.CredentialManager.decrypt_server(
+            account.encrypted_imap_server, master_key
+        )
+        imap_username = encryption.CredentialManager.decrypt_email_address(
+            account.encrypted_imap_username, master_key
+        )
+        imap_password = encryption.CredentialManager.decrypt_imap_password(
+            account.encrypted_imap_password, master_key
+        )
+
+        fetcher = mail_fetcher_mod.MailFetcher(
+            server=imap_server,
+            username=imap_username,
+            password=imap_password,
+            port=account.imap_port,
+        )
+        fetcher.connect()
+
+        try:
+            if not fetcher.connection:
+                logger.error(f"IMAP-Verbindung nicht initialisiert für Email {email_id}")
+                return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
+            
+            synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
+            uid_to_use = raw_email.imap_uid or raw_email.uid
+            folder_to_use = raw_email.imap_folder or "INBOX"
+            success, message = synchronizer.delete_email(uid_to_use, folder_to_use)
+
+            if success:
+                email.deleted_at = datetime.now(UTC)
+                db.commit()
+                logger.info(f"✓ Email {email_id} auf Server gelöscht")
+                return jsonify({"success": True, "message": message})
+            else:
+                return jsonify({"error": message}), 500
+
+        finally:
+            fetcher.disconnect()
+
+    except Exception as e:
+        logger.error(f"Fehler beim Löschen von Email {email_id}: {type(e).__name__}: {e}")
+        return jsonify({"error": "Fehler beim Löschen"}), 500
+
+    finally:
+        db.close()
+
+
+@app.route("/email/<int:email_id>/mark-read", methods=["POST"])
+@login_required
+def mark_email_read(email_id):
+    """Markiert eine Email als gelesen auf dem Server"""
+    db = get_db_session()
+
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+
+        email = (
+            db.query(models.ProcessedEmail)
+            .join(models.RawEmail)
+            .filter(
+                models.ProcessedEmail.id == email_id,
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.deleted_at == None,
+                models.ProcessedEmail.deleted_at == None,
+            )
+            .first()
+        )
+
+        if not email:
+            return jsonify({"error": "Email nicht gefunden"}), 404
+
+        raw_email = email.raw_email
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key erforderlich"}), 401
+
+        account = db.query(models.MailAccount).filter(
+            models.MailAccount.id == raw_email.mail_account_id,
+            models.MailAccount.user_id == user.id,
+        ).first()
+
+        if not account or account.auth_type != "imap":
+            return jsonify({"error": "IMAP-Account erforderlich"}), 400
+
+        imap_server = encryption.CredentialManager.decrypt_server(
+            account.encrypted_imap_server, master_key
+        )
+        imap_username = encryption.CredentialManager.decrypt_email_address(
+            account.encrypted_imap_username, master_key
+        )
+        imap_password = encryption.CredentialManager.decrypt_imap_password(
+            account.encrypted_imap_password, master_key
+        )
+
+        fetcher = mail_fetcher_mod.MailFetcher(
+            server=imap_server,
+            username=imap_username,
+            password=imap_password,
+            port=account.imap_port,
+        )
+        fetcher.connect()
+
+        try:
+            if not fetcher.connection:
+                logger.error(f"IMAP-Verbindung nicht initialisiert für Email {email_id}")
+                return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
+            
+            synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
+            uid_to_use = raw_email.imap_uid or raw_email.uid
+            folder_to_use = raw_email.imap_folder or "INBOX"
+            success, message = synchronizer.mark_as_read(uid_to_use, folder_to_use)
+
+            if success:
+                raw_email.imap_is_seen = True
+                db.commit()
+                return jsonify({"success": True, "message": message})
+            else:
+                return jsonify({"error": message}), 500
+
+        finally:
+            fetcher.disconnect()
+
+    except Exception as e:
+        logger.error(f"Fehler beim Mark-as-Read für Email {email_id}: {type(e).__name__}")
+        return jsonify({"error": "Fehler beim Markieren"}), 500
+
+    finally:
+        db.close()
+
+
+@app.route("/email/<int:email_id>/mark-flag", methods=["POST"])
+@login_required
+def toggle_email_flag(email_id):
+    """Togglet Wichtig-Flag einer Email auf dem Server"""
+    db = get_db_session()
+
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+
+        email = (
+            db.query(models.ProcessedEmail)
+            .join(models.RawEmail)
+            .filter(
+                models.ProcessedEmail.id == email_id,
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.deleted_at == None,
+                models.ProcessedEmail.deleted_at == None,
+            )
+            .first()
+        )
+
+        if not email:
+            return jsonify({"error": "Email nicht gefunden"}), 404
+
+        raw_email = email.raw_email
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key erforderlich"}), 401
+
+        account = db.query(models.MailAccount).filter(
+            models.MailAccount.id == raw_email.mail_account_id,
+            models.MailAccount.user_id == user.id,
+        ).first()
+
+        if not account or account.auth_type != "imap":
+            return jsonify({"error": "IMAP-Account erforderlich"}), 400
+
+        imap_server = encryption.CredentialManager.decrypt_server(
+            account.encrypted_imap_server, master_key
+        )
+        imap_username = encryption.CredentialManager.decrypt_email_address(
+            account.encrypted_imap_username, master_key
+        )
+        imap_password = encryption.CredentialManager.decrypt_imap_password(
+            account.encrypted_imap_password, master_key
+        )
+
+        fetcher = mail_fetcher_mod.MailFetcher(
+            server=imap_server,
+            username=imap_username,
+            password=imap_password,
+            port=account.imap_port,
+        )
+        fetcher.connect()
+
+        try:
+            if not fetcher.connection:
+                logger.error(f"IMAP-Verbindung nicht initialisiert für Email {email_id}")
+                return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
+            
+            synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
+            
+            # Use imap_uid (Phase 12 attribute) instead of uid (legacy)
+            uid_to_use = raw_email.imap_uid or raw_email.uid
+            folder_to_use = raw_email.imap_folder or "INBOX"
+            
+            logger.debug(f"Flag-Toggle: uid={uid_to_use}, folder={folder_to_use}, flagged={raw_email.imap_is_flagged}")
+            
+            if raw_email.imap_is_flagged:
+                success, message = synchronizer.unset_flag(uid_to_use, folder_to_use)
+                flag_state = False
+            else:
+                success, message = synchronizer.set_flag(uid_to_use, folder_to_use)
+                flag_state = True
+
+            if success:
+                raw_email.imap_is_flagged = flag_state
+                db.commit()
+                return jsonify({"success": True, "message": message, "flagged": flag_state})
+            else:
+                return jsonify({"error": message}), 500
+
+        finally:
+            fetcher.disconnect()
+
+    except Exception as e:
+        import traceback
+        logger.error(f"Fehler beim Flag-Toggle für Email {email_id}: {type(e).__name__}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"error": "Fehler beim Flag-Toggle"}), 500
+
+    finally:
+        db.close()
 
 
 @app.errorhandler(404)
