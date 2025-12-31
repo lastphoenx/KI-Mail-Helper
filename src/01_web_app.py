@@ -4,6 +4,7 @@ Phase 2: Login, Register, 2FA Setup, Mail-Accounts
 """
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from flask import (
@@ -183,19 +184,23 @@ def set_security_headers(response):
 
     CSP uses nonce for inline scripts (no 'unsafe-inline' needed).
     Security headers are set for ALL responses (including errors).
-    
+
     Exception: /email/<id>/render-html endpoint has relaxed CSP for email content.
     """
     # Exception: Email rendering endpoint sets its own headers
-    if g.get('skip_security_headers', False):
+    if g.get("skip_security_headers", False):
         return response
-    
+
     # Security Headers für ALLE anderen Responses (inkl. Errors) - Defense-in-Depth
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers[
+        "Strict-Transport-Security"
+    ] = "max-age=31536000; includeSubDomains"
+    response.headers[
+        "Strict-Transport-Security"
+    ] = "max-age=31536000; includeSubDomains"
 
     # CSP nur bei erfolgreichen Responses (< 400) - benötigt Nonce aus g
     if response.status_code < 400:
@@ -501,9 +506,14 @@ def login():
             db.query(models.ServiceToken).filter_by(user_id=user.id).delete()
             service_token = models.ServiceToken(
                 user_id=user.id,
-                token_hash=models.ServiceToken.hash_token(models.ServiceToken.generate_token()),
+                token_hash=models.ServiceToken.hash_token(
+                    models.ServiceToken.generate_token()
+                ),
                 master_key=dek,  # DEK für Background-Jobs
-                expires_at=__import__('datetime').datetime.now(__import__('datetime').UTC) + __import__('datetime').timedelta(days=7)
+                expires_at=__import__("datetime").datetime.now(
+                    __import__("datetime").UTC
+                )
+                + __import__("datetime").timedelta(days=7),
             )
             db.add(service_token)
             db.commit()
@@ -680,9 +690,14 @@ def verify_2fa():
                 db.query(models.ServiceToken).filter_by(user_id=user.id).delete()
                 service_token = models.ServiceToken(
                     user_id=user.id,
-                    token_hash=models.ServiceToken.hash_token(models.ServiceToken.generate_token()),
+                    token_hash=models.ServiceToken.hash_token(
+                        models.ServiceToken.generate_token()
+                    ),
                     master_key=dek,  # DEK für Background-Jobs
-                    expires_at=__import__('datetime').datetime.now(__import__('datetime').UTC) + __import__('datetime').timedelta(days=7)
+                    expires_at=__import__("datetime").datetime.now(
+                        __import__("datetime").UTC
+                    )
+                    + __import__("datetime").timedelta(days=7),
                 )
                 db.add(service_token)
                 db.commit()
@@ -829,7 +844,7 @@ def list_view():
         filter_color = request.args.get("farbe") or None
         filter_done = (request.args.get("done") or "").lower()
         search_term = (request.args.get("search", "") or "").strip()
-        
+
         # Account-Filter
         filter_account_id = None
         account_id_str = request.args.get("mail_account")
@@ -838,7 +853,7 @@ def list_view():
                 filter_account_id = int(account_id_str)
             except (ValueError, TypeError):
                 filter_account_id = None
-        
+
         # Phase 10: Tag-Filter
         filter_tag_ids = []
         tag_id_str = request.args.get("tags")
@@ -853,11 +868,11 @@ def list_view():
         filter_seen = (request.args.get("seen") or "").lower()
         filter_flagged = (request.args.get("flagged") or "").lower()
         filter_attachments = (request.args.get("attach") or "").lower()
-        
+
         # Datums-Filter
         filter_date_from = request.args.get("date_from") or None
         filter_date_to = request.args.get("date_to") or None
-        
+
         # Sortierung
         sort_by = request.args.get("sort", "score")  # date/score/size/sender
         sort_order = request.args.get("order", "desc").lower()  # asc/desc
@@ -879,15 +894,14 @@ def list_view():
 
         if filter_color:
             query = query.filter(models.ProcessedEmail.farbe == filter_color)
-        
+
         if filter_account_id:
             query = query.filter(models.RawEmail.mail_account_id == filter_account_id)
-        
+
         # Phase 10: Filter nach Tags
         if filter_tag_ids:
-            query = (
-                query.join(models.EmailTagAssignment)
-                .filter(models.EmailTagAssignment.tag_id.in_(filter_tag_ids))
+            query = query.join(models.EmailTagAssignment).filter(
+                models.EmailTagAssignment.tag_id.in_(filter_tag_ids)
             )
 
         # Phase 13: Ordner-Filter
@@ -919,7 +933,7 @@ def list_view():
                 query = query.filter(models.RawEmail.received_at >= from_date)
             except (ValueError, TypeError):
                 pass
-        
+
         if filter_date_to:
             try:
                 to_date = datetime.fromisoformat(filter_date_to)
@@ -942,12 +956,14 @@ def list_view():
             mails = query.order_by(sort_col.asc()).all()
         else:
             mails = query.order_by(sort_col.desc()).all()
-        
+
         # Lade alle User-Accounts für Filter-Dropdown
-        user_accounts = db.query(models.MailAccount).filter(
-            models.MailAccount.user_id == user.id
-        ).all()
-        
+        user_accounts = (
+            db.query(models.MailAccount)
+            .filter(models.MailAccount.user_id == user.id)
+            .all()
+        )
+
         # Phase 10: Lade alle User-Tags für Filter-Dropdown
         all_tags = []
         tag_manager_mod = None
@@ -956,7 +972,7 @@ def list_view():
             all_tags = tag_manager_mod.TagManager.get_user_tags(db, user.id)
         except ImportError:
             logger.warning("TagManager nicht verfügbar")
-        
+
         # Phase 10 Fix: Eager load alle Tags für alle Emails (verhindert n+1)
         email_ids = [mail.id for mail in mails]
         email_tags_map = {}
@@ -965,14 +981,17 @@ def list_view():
                 # Single query für alle Email-Tag-Assignments
                 tag_assignments = (
                     db.query(models.EmailTagAssignment, models.EmailTag)
-                    .join(models.EmailTag, models.EmailTagAssignment.tag_id == models.EmailTag.id)
+                    .join(
+                        models.EmailTag,
+                        models.EmailTagAssignment.tag_id == models.EmailTag.id,
+                    )
                     .filter(
                         models.EmailTagAssignment.email_id.in_(email_ids),
-                        models.EmailTag.user_id == user.id
+                        models.EmailTag.user_id == user.id,
                     )
                     .all()
                 )
-                
+
                 # Group by email_id
                 for assignment, tag in tag_assignments:
                     if assignment.email_id not in email_tags_map:
@@ -984,17 +1003,21 @@ def list_view():
         # Zero-Knowledge: Entschlüsselung für Anzeige und Suche
         master_key = session.get("master_key")
         decrypted_mails = []
-        
+
         # Dekryptiere Mail-Adressen der Accounts für Dropdown
         if master_key and user_accounts:
             for account in user_accounts:
                 if account.auth_type == "imap" and account.encrypted_imap_username:
                     try:
-                        account.decrypted_imap_username = encryption.EmailDataManager.decrypt_email_sender(
-                            account.encrypted_imap_username, master_key
+                        account.decrypted_imap_username = (
+                            encryption.EmailDataManager.decrypt_email_sender(
+                                account.encrypted_imap_username, master_key
+                            )
                         )
                     except Exception as e:
-                        logger.warning(f"Fehler beim Entschlüsseln der Account-Email: {e}")
+                        logger.warning(
+                            f"Fehler beim Entschlüsseln der Account-Email: {e}"
+                        )
                         account.decrypted_imap_username = None
 
         if master_key:
@@ -1031,10 +1054,10 @@ def list_view():
                     mail._decrypted_sender = decrypted_sender
                     mail._decrypted_summary_de = decrypted_summary_de
                     mail._decrypted_tags = decrypted_tags
-                    
+
                     # Phase 10 Fix: Tags aus pre-loaded map holen (kein n+1)
                     mail.email_tags = email_tags_map.get(mail.id, [])
-                    
+
                     decrypted_mails.append(mail)
 
                 except (ValueError, KeyError, Exception) as e:
@@ -1162,13 +1185,15 @@ def email_detail(email_id):
                 logger.error(
                     f"Entschlüsselung fehlgeschlagen für RawEmail {raw.id}: {type(e).__name__}"
                 )
-        
+
         # Phase 10: Lade Email-Tags
         email_tags = []
         all_user_tags = []
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
-            email_tags = tag_manager_mod.TagManager.get_email_tags(db, email_id, user.id)
+            email_tags = tag_manager_mod.TagManager.get_email_tags(
+                db, email_id, user.id
+            )
             all_user_tags = tag_manager_mod.TagManager.get_user_tags(db, user.id)
         except ImportError:
             logger.warning("TagManager nicht verfügbar")
@@ -1197,21 +1222,21 @@ def email_detail(email_id):
 @login_required
 def render_email_html(email_id: int):
     """Rendert E-Mail-HTML mit lockerer CSP (Fonts/Bilder erlaubt, Scripts blockiert)
-    
+
     Dieser Endpoint wird von <iframe> in email_detail.html verwendet.
     CSP erlaubt externe Ressourcen für korrektes E-Mail-Rendering,
     blockiert aber alle Scripts (XSS-Schutz).
-    
+
     Setzt eigene CSP-Header (g.skip_security_headers umgeht globalen Hook).
     """
     db = get_db_session()
-    
+
     try:
         user = get_current_user_model(db)
         if not user:
             logger.error(f"render_email_html: User not found (email_id={email_id})")
             return "Unauthorized", 403
-        
+
         processed = (
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
@@ -1223,54 +1248,59 @@ def render_email_html(email_id: int):
             )
             .first()
         )
-        
+
         if not processed:
-            logger.error(f"render_email_html: Email {email_id} not found for user {user.id}")
+            logger.error(
+                f"render_email_html: Email {email_id} not found for user {user.id}"
+            )
             return "Email not found", 404
-        
+
         # Zero-Knowledge: Entschlüssele E-Mail-Body
         master_key = session.get("master_key")
         if not master_key:
             logger.error(f"render_email_html: master_key missing in session")
             return "Session expired", 401
-        
+
         try:
             decrypted_body = encryption.EmailDataManager.decrypt_email_body(
                 processed.raw_email.encrypted_body or "", master_key
             )
         except Exception as e:
-            logger.error(f"render_email_html: Entschlüsselung fehlgeschlagen für Email {email_id}: {type(e).__name__}: {e}")
+            logger.error(
+                f"render_email_html: Entschlüsselung fehlgeschlagen für Email {email_id}: {type(e).__name__}: {e}"
+            )
             return "Decryption failed", 500
-        
+
         # Marker für after_request Hook: Überschreibe Headers nicht (MUSS VOR make_response!)
         g.skip_security_headers = True
-        
+
         # Response mit lockerer CSP nur für E-Mail-Content
         response = make_response(decrypted_body)
-        response.headers['Content-Type'] = 'text/html; charset=utf-8'
-        
+        response.headers["Content-Type"] = "text/html; charset=utf-8"
+
         # CSP für E-Mail-Rendering: Erlaube externe Fonts/Bilder (PayPal, etc.)
         # WICHTIG: Scripts IMMER blockiert (XSS-Schutz)
-        response.headers['Content-Security-Policy'] = (
+        response.headers["Content-Security-Policy"] = (
             "default-src 'none'; "
             "style-src 'unsafe-inline'; "
             "img-src https: data:; "
             "font-src https: data:; "
             "script-src 'none'"
         )
-        
+
         # Security Headers (ohne X-Frame-Options für iframe embedding)
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-        
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
         return response
-        
+
     except Exception as e:
         logger.error(f"render_email_html: Unhandled exception: {type(e).__name__}: {e}")
         import traceback
+
         logger.error(traceback.format_exc())
         return "Internal Server Error", 500
-        
+
     finally:
         db.close()
 
@@ -1633,7 +1663,7 @@ def correct_email(email_id: int):
         db.commit()
 
         logger.info(f"✅ Mail {email_id} korrigiert durch User {user.id}")
-        
+
         # Phase 11b: Online-Learning - Inkrementelles Lernen aus Korrektur
         _trigger_online_learning(email, data)
 
@@ -1894,12 +1924,12 @@ def settings():
 def tags_view():
     """Tag-Management-Seite"""
     db = get_db_session()
-    
+
     try:
         user = get_current_user_model(db)
         if not user:
             return redirect(url_for("login"))
-        
+
         # Lade TagManager dynamisch
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
@@ -1907,10 +1937,10 @@ def tags_view():
         except ImportError as e:
             logger.error(f"TagManager konnte nicht geladen werden: {e}")
             return render_template("tags.html", user=user, tags=[])
-        
+
         # Hole alle Tags des Users
         tags = TagManager.get_user_tags(db, user.id)
-        
+
         # Zähle E-Mails pro Tag
         tags_with_counts = []
         for tag in tags:
@@ -1919,15 +1949,19 @@ def tags_view():
                 .filter(models.EmailTagAssignment.tag_id == tag.id)
                 .count()
             )
-            tags_with_counts.append({
-                'id': tag.id,
-                'name': tag.name,
-                'color': tag.color,
-                'email_count': email_count
-            })
-        
-        return render_template("tags.html", user=user, tags=tags_with_counts, csp_nonce=g.csp_nonce)
-    
+            tags_with_counts.append(
+                {
+                    "id": tag.id,
+                    "name": tag.name,
+                    "color": tag.color,
+                    "email_count": email_count,
+                }
+            )
+
+        return render_template(
+            "tags.html", user=user, tags=tags_with_counts, csp_nonce=g.csp_nonce
+        )
+
     finally:
         db.close()
 
@@ -1937,26 +1971,27 @@ def tags_view():
 def api_get_tags():
     """API: Alle User-Tags abrufen (für Learning-Modal)"""
     db = get_db_session()
-    
+
     try:
         user = get_current_user_model(db)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        
+
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             TagManager = tag_manager_mod.TagManager
         except ImportError:
             return jsonify([]), 200
-        
+
         tags = TagManager.get_user_tags(db, user.id)
-        
-        return jsonify([{
-            "id": tag.id,
-            "name": tag.name,
-            "color": tag.color
-        } for tag in tags]), 200
-    
+
+        return (
+            jsonify(
+                [{"id": tag.id, "name": tag.name, "color": tag.color} for tag in tags]
+            ),
+            200,
+        )
+
     finally:
         db.close()
 
@@ -1966,31 +2001,27 @@ def api_get_tags():
 def api_create_tag():
     """API: Tag erstellen"""
     db = get_db_session()
-    
+
     try:
         user = get_current_user_model(db)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        
+
         data = request.get_json()
         name = data.get("name", "").strip()
         color = data.get("color", "#3B82F6")
-        
+
         if not name:
             return jsonify({"error": "Tag-Name erforderlich"}), 400
-        
+
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             tag = tag_manager_mod.TagManager.create_tag(db, user.id, name, color)
-            
-            return jsonify({
-                "id": tag.id,
-                "name": tag.name,
-                "color": tag.color
-            }), 201
+
+            return jsonify({"id": tag.id, "name": tag.name, "color": tag.color}), 201
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
-    
+
     finally:
         db.close()
 
@@ -2000,33 +2031,29 @@ def api_create_tag():
 def api_update_tag(tag_id):
     """API: Tag aktualisieren"""
     db = get_db_session()
-    
+
     try:
         user = get_current_user_model(db)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        
+
         data = request.get_json()
         name = data.get("name")
         color = data.get("color")
-        
+
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             tag = tag_manager_mod.TagManager.update_tag(
                 db, tag_id, user.id, name=name, color=color
             )
-            
+
             if not tag:
                 return jsonify({"error": "Tag nicht gefunden"}), 404
-            
-            return jsonify({
-                "id": tag.id,
-                "name": tag.name,
-                "color": tag.color
-            })
+
+            return jsonify({"id": tag.id, "name": tag.name, "color": tag.color})
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
-    
+
     finally:
         db.close()
 
@@ -2036,23 +2063,23 @@ def api_update_tag(tag_id):
 def api_delete_tag(tag_id):
     """API: Tag löschen"""
     db = get_db_session()
-    
+
     try:
         user = get_current_user_model(db)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        
+
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             success = tag_manager_mod.TagManager.delete_tag(db, tag_id, user.id)
-            
+
             if not success:
                 return jsonify({"error": "Tag nicht gefunden"}), 404
-            
+
             return jsonify({"success": True})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-    
+
     finally:
         db.close()
 
@@ -2062,25 +2089,29 @@ def api_delete_tag(tag_id):
 def api_get_email_tags(email_id):
     """API: Tags einer E-Mail abrufen (für Learning-Modal)"""
     db = get_db_session()
-    
+
     try:
         user = get_current_user_model(db)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        
+
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             tags = tag_manager_mod.TagManager.get_email_tags(db, email_id, user.id)
-            
-            return jsonify([{
-                "id": tag.id,
-                "name": tag.name,
-                "color": tag.color
-            } for tag in tags]), 200
+
+            return (
+                jsonify(
+                    [
+                        {"id": tag.id, "name": tag.name, "color": tag.color}
+                        for tag in tags
+                    ]
+                ),
+                200,
+            )
         except Exception as e:
             logger.error(f"Fehler beim Abrufen der Email-Tags: {e}")
             return jsonify([]), 200
-    
+
     finally:
         db.close()
 
@@ -2090,30 +2121,27 @@ def api_get_email_tags(email_id):
 def api_get_tag_suggestions(email_id):
     """
     API: Tag-Vorschläge für eine E-Mail abrufen (Phase 11c).
-    
+
     Verwendet Embeddings um semantisch ähnliche Tags vorzuschlagen.
     """
     db = get_db_session()
-    
+
     try:
         user = get_current_user_model(db)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        
+
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             suggestions = tag_manager_mod.TagManager.get_tag_suggestions_for_email(
                 db, email_id, user.id, top_k=5
             )
-            
-            return jsonify({
-                "suggestions": suggestions,
-                "email_id": email_id
-            }), 200
+
+            return jsonify({"suggestions": suggestions, "email_id": email_id}), 200
         except Exception as e:
             logger.error(f"Fehler beim Abrufen der Tag-Vorschläge: {e}")
             return jsonify({"suggestions": [], "email_id": email_id}), 200
-    
+
     finally:
         db.close()
 
@@ -2123,34 +2151,37 @@ def api_get_tag_suggestions(email_id):
 def api_assign_tag_to_email(email_id):
     """API: Tag zu E-Mail zuweisen"""
     db = get_db_session()
-    
+
     try:
         user = get_current_user_model(db)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        
+
         data = request.get_json()
         tag_id = data.get("tag_id")
-        
+
         if not tag_id:
             return jsonify({"error": "tag_id erforderlich"}), 400
-        
+
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             success = tag_manager_mod.TagManager.assign_tag(
                 db, email_id, tag_id, user.id
             )
-            
+
             if not success:
-                return jsonify({"error": "Tag bereits zugewiesen oder nicht gefunden"}), 400
-            
+                return (
+                    jsonify({"error": "Tag bereits zugewiesen oder nicht gefunden"}),
+                    400,
+                )
+
             # Learning: Update user_override_tags für ML-Training
             _update_user_override_tags(db, email_id, user.id, tag_manager_mod)
-            
+
             return jsonify({"success": True})
         except ValueError as e:
             return jsonify({"error": str(e)}), 404
-    
+
     finally:
         db.close()
 
@@ -2160,62 +2191,63 @@ def api_assign_tag_to_email(email_id):
 def api_remove_tag_from_email(email_id, tag_id):
     """API: Tag von E-Mail entfernen"""
     db = get_db_session()
-    
+
     try:
         user = get_current_user_model(db)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
-        
+
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             success = tag_manager_mod.TagManager.remove_tag(
                 db, email_id, tag_id, user.id
             )
-            
+
             if not success:
                 return jsonify({"error": "Tag-Verknüpfung nicht gefunden"}), 404
-            
+
             # Learning: Update user_override_tags für ML-Training
             _update_user_override_tags(db, email_id, user.id, tag_manager_mod)
-            
+
             return jsonify({"success": True})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-    
+
     finally:
         db.close()
 
 
 def _update_user_override_tags(db, email_id: int, user_id: int, tag_manager_mod):
     """Helper: Aktualisiert user_override_tags für ML-Training
-    
+
     Wenn User Tags manuell ändert, speichern wir die finalen Tag-Namen
     in user_override_tags (comma-separated) für sklearn-Training.
     """
     try:
         from datetime import datetime, UTC
-        
+
         # Hole aktuelle Tags der Email
         current_tags = tag_manager_mod.TagManager.get_email_tags(db, email_id, user_id)
         tag_names = [tag.name for tag in current_tags]
         tag_string = ",".join(tag_names) if tag_names else ""
-        
+
         # Update ProcessedEmail
         processed = (
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
-                models.RawEmail.user_id == user_id
+                models.ProcessedEmail.id == email_id, models.RawEmail.user_id == user_id
             )
             .first()
         )
-        
+
         if processed:
             processed.user_override_tags = tag_string
             processed.correction_timestamp = datetime.now(UTC)
             db.commit()
-            logger.debug(f"📚 user_override_tags updated für Email {email_id}: {tag_string}")
+            logger.debug(
+                f"📚 user_override_tags updated für Email {email_id}: {tag_string}"
+            )
     except Exception as e:
         logger.warning(f"⚠️  Fehler beim Update von user_override_tags: {e}")
         db.rollback()
@@ -2223,7 +2255,7 @@ def _update_user_override_tags(db, email_id: int, user_id: int, tag_manager_mod)
 
 def _trigger_online_learning(email, data: dict):
     """Phase 11b: Online-Learning nach User-Korrektur.
-    
+
     Trainiert SGD-Klassifikatoren inkrementell mit der neuen Korrektur.
     Aktualisiert auch Sender-Patterns für konsistente Klassifizierung (Phase 11d).
     Läuft async im Hintergrund um Response nicht zu verzögern.
@@ -2231,48 +2263,56 @@ def _trigger_online_learning(email, data: dict):
     try:
         # Import hier um circular imports zu vermeiden
         train_mod = importlib.import_module("src.train_classifier")
-        
+
         # Hole Original-Mail-Daten
         subject = ""
         body = ""
         sender = ""
         user_id = None
-        
+
         if email.raw_email:
             subject = email.raw_email.subject or ""
             body = email.raw_email.body or ""
             sender = email.raw_email.sender or ""
             user_id = email.raw_email.user_id
-        
+
         if not subject and not body:
             logger.debug("Online-Learning übersprungen: Keine Mail-Daten")
             return
-        
+
         # Initialisiere OnlineLearner
         learner = train_mod.OnlineLearner()
-        
+
         # Lerne aus jeder Korrektur
         learned_count = 0
-        
+
         if data.get("dringlichkeit") is not None:
-            if learner.learn_from_correction(subject, body, "dringlichkeit", data["dringlichkeit"]):
+            if learner.learn_from_correction(
+                subject, body, "dringlichkeit", data["dringlichkeit"]
+            ):
                 learned_count += 1
-        
+
         if data.get("wichtigkeit") is not None:
-            if learner.learn_from_correction(subject, body, "wichtigkeit", data["wichtigkeit"]):
+            if learner.learn_from_correction(
+                subject, body, "wichtigkeit", data["wichtigkeit"]
+            ):
                 learned_count += 1
-        
+
         if data.get("spam_flag") is not None:
             if learner.learn_from_correction(subject, body, "spam", data["spam_flag"]):
                 learned_count += 1
-        
+
         if learned_count > 0:
-            logger.info(f"📚 Online-Learning: {learned_count} Klassifikator(en) aktualisiert")
-        
+            logger.info(
+                f"📚 Online-Learning: {learned_count} Klassifikator(en) aktualisiert"
+            )
+
         # Phase 11d: Sender-Pattern aktualisieren
         if sender and user_id:
             try:
-                sender_patterns_mod = importlib.import_module("src.services.sender_patterns")
+                sender_patterns_mod = importlib.import_module(
+                    "src.services.sender_patterns"
+                )
                 db = get_db_session()
                 try:
                     sender_patterns_mod.SenderPatternManager.update_from_classification(
@@ -2282,14 +2322,14 @@ def _trigger_online_learning(email, data: dict):
                         category=data.get("kategorie"),
                         priority=data.get("dringlichkeit"),
                         is_newsletter=data.get("spam_flag"),
-                        is_correction=True  # User-Korrektur hat höheres Gewicht
+                        is_correction=True,  # User-Korrektur hat höheres Gewicht
                     )
                     logger.debug(f"📊 Sender-Pattern aktualisiert für User {user_id}")
                 finally:
                     db.close()
             except Exception as e:
                 logger.debug(f"Sender-Pattern Update übersprungen: {e}")
-            
+
     except ImportError:
         logger.debug("Online-Learning nicht verfügbar (scikit-learn nicht installiert)")
     except Exception as e:
@@ -3093,24 +3133,27 @@ def delete_mail_account(account_id):
 # Phase 11.5a: IMAP Connection Diagnostics
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @app.route("/imap-diagnostics")
 @login_required
 def imap_diagnostics():
     """IMAP Connection Diagnostics Dashboard (Phase 11.5a)"""
     db = get_db_session()
-    
+
     try:
         user = get_current_user_model(db)
         if not user:
             return redirect(url_for("login"))
-        
+
         # Lade Mail-Accounts mit entschlüsselten Usernames
-        mail_accounts = db.query(models.MailAccount).filter_by(
-            user_id=user.id,
-            enabled=True,
-            auth_type="imap"  # Nur IMAP-Accounts
-        ).all()
-        
+        mail_accounts = (
+            db.query(models.MailAccount)
+            .filter_by(
+                user_id=user.id, enabled=True, auth_type="imap"  # Nur IMAP-Accounts
+            )
+            .all()
+        )
+
         # Entschlüssele Usernames für Anzeige
         master_key = session.get("master_key")
         if master_key:
@@ -3123,11 +3166,18 @@ def imap_diagnostics():
                             )
                         )
                 except Exception as e:
-                    logger.warning(f"Konnte Username für Account {account.id} nicht entschlüsseln: {e}")
+                    logger.warning(
+                        f"Konnte Username für Account {account.id} nicht entschlüsseln: {e}"
+                    )
                     account.decrypted_imap_username = "***verschlüsselt***"
-        
-        return render_template("imap_diagnostics.html", user=user, accounts=mail_accounts, csp_nonce=g.csp_nonce)
-    
+
+        return render_template(
+            "imap_diagnostics.html",
+            user=user,
+            accounts=mail_accounts,
+            csp_nonce=g.csp_nonce,
+        )
+
     finally:
         db.close()
 
@@ -3137,29 +3187,41 @@ def imap_diagnostics():
 def api_imap_diagnostics(account_id):
     """API: Run IMAP diagnostics for a specific account"""
     db = get_db_session()
-    
+
     try:
         user = get_current_user_model(db)
         if not user:
             return jsonify({"success": False, "error": "Unauthorized"}), 401
-        
+
         # Lade Account
-        account = db.query(models.MailAccount).filter_by(
-            id=account_id,
-            user_id=user.id
-        ).first()
-        
+        account = (
+            db.query(models.MailAccount)
+            .filter_by(id=account_id, user_id=user.id)
+            .first()
+        )
+
         if not account:
             return jsonify({"success": False, "error": "Account nicht gefunden"}), 404
-        
+
         if account.auth_type != "imap":
-            return jsonify({"success": False, "error": "Nur IMAP-Accounts unterstützt"}), 400
-        
+            return (
+                jsonify({"success": False, "error": "Nur IMAP-Accounts unterstützt"}),
+                400,
+            )
+
         # Entschlüssele Credentials
         master_key = session.get("master_key")
         if not master_key:
-            return jsonify({"success": False, "error": "Session abgelaufen - bitte erneut anmelden"}), 401
-        
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Session abgelaufen - bitte erneut anmelden",
+                    }
+                ),
+                401,
+            )
+
         try:
             imap_server = encryption.CredentialManager.decrypt_server(
                 account.encrypted_imap_server, master_key
@@ -3172,53 +3234,69 @@ def api_imap_diagnostics(account_id):
             )
         except Exception as e:
             logger.error(f"Fehler beim Entschlüsseln der Credentials: {e}")
-            return jsonify({"success": False, "error": "Fehler beim Entschlüsseln der Credentials"}), 500
-        
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Fehler beim Entschlüsseln der Credentials",
+                    }
+                ),
+                500,
+            )
+
         # Run Diagnostics
         try:
             # Check for subscribed_only parameter in query string or request body
             subscribed_only = False
             try:
-                if request.args.get('subscribed_only'):
-                    subscribed_only = request.args.get('subscribed_only').lower() in ('true', '1', 'yes')
+                if request.args.get("subscribed_only"):
+                    subscribed_only = request.args.get("subscribed_only").lower() in (
+                        "true",
+                        "1",
+                        "yes",
+                    )
                 elif request.is_json:
                     json_data = request.get_json(silent=True) or {}
-                    subscribed_only = json_data.get('subscribed_only', False)
+                    subscribed_only = json_data.get("subscribed_only", False)
             except Exception as param_error:
                 logger.debug(f"Parameter parsing error (using default): {param_error}")
                 subscribed_only = False
-            
+
             imap_diag_mod = importlib.import_module("src.imap_diagnostics")
-            
+
             diagnostics = imap_diag_mod.IMAPDiagnostics(
                 host=imap_server,
                 port=account.imap_port or 993,
                 username=imap_username,
                 password=imap_password,
                 timeout=120,
-                ssl=(account.imap_encryption == "SSL")
+                ssl=(account.imap_encryption == "SSL"),
             )
-            
+
             result = diagnostics.run_diagnostics(subscribed_only=subscribed_only)
-            
-            return jsonify({
-                "success": True,
-                "diagnostics": result
-            }), 200
-            
+
+            return jsonify({"success": True, "diagnostics": result}), 200
+
         except TimeoutError as e:
             logger.error(f"IMAP Diagnostics Timeout: {e}")
-            return jsonify({
-                "success": False,
-                "error": "Verbindungs-Timeout: Server antwortet zu langsam. Überprüfen Sie die Netzwerkverbindung oder versuchen Sie es später erneut."
-            }), 504
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Verbindungs-Timeout: Server antwortet zu langsam. Überprüfen Sie die Netzwerkverbindung oder versuchen Sie es später erneut.",
+                    }
+                ),
+                504,
+            )
         except Exception as e:
             logger.error(f"IMAP Diagnostics Fehler: {e}")
-            return jsonify({
-                "success": False,
-                "error": f"Diagnostics fehlgeschlagen: {str(e)}"
-            }), 500
-    
+            return (
+                jsonify(
+                    {"success": False, "error": f"Diagnostics fehlgeschlagen: {str(e)}"}
+                ),
+                500,
+            )
+
     finally:
         db.close()
 
@@ -3246,6 +3324,30 @@ def fetch_mails(account_id):
         master_key = session.get("master_key")
         if not master_key:
             return jsonify({"error": "Master-Key nicht im Session"}), 401
+
+        existing_token = (
+            db.query(models.ServiceToken)
+            .filter_by(user_id=user.id)
+            .filter(models.ServiceToken.expires_at > datetime.now(UTC))
+            .first()
+        )
+        
+        if not existing_token:
+            db.query(models.ServiceToken).filter_by(user_id=user.id).delete()
+            service_token = models.ServiceToken(
+                user_id=user.id,
+                token_hash=models.ServiceToken.hash_token(
+                    models.ServiceToken.generate_token()
+                ),
+                master_key=master_key,
+                expires_at=datetime.now(UTC) + timedelta(hours=24),
+            )
+            db.add(service_token)
+            db.commit()
+            logger.info(f"Neuer ServiceToken für User {user.id} erstellt")
+        else:
+            logger.debug(f"Bestehender ServiceToken für User {user.id} wird wiederverwendet")
+
         provider = (user.preferred_ai_provider or "ollama").lower()
         resolved_model = ai_client.resolve_model(provider, user.preferred_ai_model)
         use_cloud = ai_client.provider_requires_cloud(provider)
@@ -3392,10 +3494,14 @@ def delete_email(email_id):
         if not master_key:
             return jsonify({"error": "Master-Key erforderlich"}), 401
 
-        account = db.query(models.MailAccount).filter(
-            models.MailAccount.id == raw_email.mail_account_id,
-            models.MailAccount.user_id == user.id,
-        ).first()
+        account = (
+            db.query(models.MailAccount)
+            .filter(
+                models.MailAccount.id == raw_email.mail_account_id,
+                models.MailAccount.user_id == user.id,
+            )
+            .first()
+        )
 
         if not account or account.auth_type != "imap":
             return jsonify({"error": "IMAP-Account erforderlich"}), 400
@@ -3420,9 +3526,11 @@ def delete_email(email_id):
 
         try:
             if not fetcher.connection:
-                logger.error(f"IMAP-Verbindung nicht initialisiert für Email {email_id}")
+                logger.error(
+                    f"IMAP-Verbindung nicht initialisiert für Email {email_id}"
+                )
                 return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
-            
+
             synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
             uid_to_use = raw_email.imap_uid or raw_email.uid
             folder_to_use = raw_email.imap_folder or "INBOX"
@@ -3440,8 +3548,104 @@ def delete_email(email_id):
             fetcher.disconnect()
 
     except Exception as e:
-        logger.error(f"Fehler beim Löschen von Email {email_id}: {type(e).__name__}: {e}")
+        logger.error(
+            f"Fehler beim Löschen von Email {email_id}: {type(e).__name__}: {e}"
+        )
         return jsonify({"error": "Fehler beim Löschen"}), 500
+
+    finally:
+        db.close()
+
+
+@app.route("/email/<int:email_id>/move-trash", methods=["POST"])
+@login_required
+def move_email_to_trash(email_id):
+    """Verschiebt eine Email in den Papierkorb auf dem Server"""
+    db = get_db_session()
+
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+
+        email = (
+            db.query(models.ProcessedEmail)
+            .join(models.RawEmail)
+            .filter(
+                models.ProcessedEmail.id == email_id,
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.deleted_at == None,
+                models.ProcessedEmail.deleted_at == None,
+            )
+            .first()
+        )
+
+        if not email:
+            return jsonify({"error": "Email nicht gefunden"}), 404
+
+        raw_email = email.raw_email
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key erforderlich"}), 401
+
+        account = (
+            db.query(models.MailAccount)
+            .filter(
+                models.MailAccount.id == raw_email.mail_account_id,
+                models.MailAccount.user_id == user.id,
+            )
+            .first()
+        )
+
+        if not account or account.auth_type != "imap":
+            return jsonify({"error": "IMAP-Account erforderlich"}), 400
+
+        imap_server = encryption.CredentialManager.decrypt_server(
+            account.encrypted_imap_server, master_key
+        )
+        imap_username = encryption.CredentialManager.decrypt_email_address(
+            account.encrypted_imap_username, master_key
+        )
+        imap_password = encryption.CredentialManager.decrypt_imap_password(
+            account.encrypted_imap_password, master_key
+        )
+
+        fetcher = mail_fetcher_mod.MailFetcher(
+            server=imap_server,
+            username=imap_username,
+            password=imap_password,
+            port=account.imap_port,
+        )
+        fetcher.connect()
+
+        try:
+            if not fetcher.connection:
+                logger.error(
+                    f"IMAP-Verbindung nicht initialisiert für Email {email_id}"
+                )
+                return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
+
+            synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
+            uid_to_use = raw_email.imap_uid or raw_email.uid
+            folder_to_use = raw_email.imap_folder or "INBOX"
+
+            success, message = synchronizer.move_to_trash(uid_to_use, folder_to_use)
+
+            if success:
+                email.deleted_at = datetime.now(UTC)
+                db.commit()
+                return jsonify({"success": True, "message": message})
+            else:
+                return jsonify({"error": message}), 500
+
+        finally:
+            fetcher.disconnect()
+
+    except Exception as e:
+        logger.error(
+            f"Fehler beim Verschieben von Email {email_id} in Papierkorb: {type(e).__name__}: {e}"
+        )
+        return jsonify({"error": "Fehler beim Verschieben in Papierkorb"}), 500
 
     finally:
         db.close()
@@ -3478,10 +3682,14 @@ def mark_email_read(email_id):
         if not master_key:
             return jsonify({"error": "Master-Key erforderlich"}), 401
 
-        account = db.query(models.MailAccount).filter(
-            models.MailAccount.id == raw_email.mail_account_id,
-            models.MailAccount.user_id == user.id,
-        ).first()
+        account = (
+            db.query(models.MailAccount)
+            .filter(
+                models.MailAccount.id == raw_email.mail_account_id,
+                models.MailAccount.user_id == user.id,
+            )
+            .first()
+        )
 
         if not account or account.auth_type != "imap":
             return jsonify({"error": "IMAP-Account erforderlich"}), 400
@@ -3506,9 +3714,11 @@ def mark_email_read(email_id):
 
         try:
             if not fetcher.connection:
-                logger.error(f"IMAP-Verbindung nicht initialisiert für Email {email_id}")
+                logger.error(
+                    f"IMAP-Verbindung nicht initialisiert für Email {email_id}"
+                )
                 return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
-            
+
             synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
             uid_to_use = raw_email.imap_uid or raw_email.uid
             folder_to_use = raw_email.imap_folder or "INBOX"
@@ -3525,8 +3735,117 @@ def mark_email_read(email_id):
             fetcher.disconnect()
 
     except Exception as e:
-        logger.error(f"Fehler beim Mark-as-Read für Email {email_id}: {type(e).__name__}")
+        logger.error(
+            f"Fehler beim Mark-as-Read für Email {email_id}: {type(e).__name__}"
+        )
         return jsonify({"error": "Fehler beim Markieren"}), 500
+
+    finally:
+        db.close()
+
+
+@app.route("/email/<int:email_id>/toggle-read", methods=["POST"])
+@login_required
+def toggle_email_read(email_id):
+    """Togglet Gelesen/Ungelesen Status einer Email auf dem Server"""
+    db = get_db_session()
+
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+
+        email = (
+            db.query(models.ProcessedEmail)
+            .join(models.RawEmail)
+            .filter(
+                models.ProcessedEmail.id == email_id,
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.deleted_at == None,
+                models.ProcessedEmail.deleted_at == None,
+            )
+            .first()
+        )
+
+        if not email:
+            return jsonify({"error": "Email nicht gefunden"}), 404
+
+        raw_email = email.raw_email
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key erforderlich"}), 401
+
+        account = (
+            db.query(models.MailAccount)
+            .filter(
+                models.MailAccount.id == raw_email.mail_account_id,
+                models.MailAccount.user_id == user.id,
+            )
+            .first()
+        )
+
+        if not account or account.auth_type != "imap":
+            return jsonify({"error": "IMAP-Account erforderlich"}), 400
+
+        imap_server = encryption.CredentialManager.decrypt_server(
+            account.encrypted_imap_server, master_key
+        )
+        imap_username = encryption.CredentialManager.decrypt_email_address(
+            account.encrypted_imap_username, master_key
+        )
+        imap_password = encryption.CredentialManager.decrypt_imap_password(
+            account.encrypted_imap_password, master_key
+        )
+
+        fetcher = mail_fetcher_mod.MailFetcher(
+            server=imap_server,
+            username=imap_username,
+            password=imap_password,
+            port=account.imap_port,
+        )
+        fetcher.connect()
+
+        try:
+            if not fetcher.connection:
+                logger.error(
+                    f"IMAP-Verbindung nicht initialisiert für Email {email_id}"
+                )
+                return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
+
+            synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
+            uid_to_use = raw_email.imap_uid or raw_email.uid
+            folder_to_use = raw_email.imap_folder or "INBOX"
+
+            logger.debug(
+                f"Toggle-Read: uid={uid_to_use}, folder={folder_to_use}, is_seen={raw_email.imap_is_seen}"
+            )
+
+            if raw_email.imap_is_seen:
+                success, message = synchronizer.mark_as_unread(
+                    uid_to_use, folder_to_use
+                )
+                is_now_seen = False
+            else:
+                success, message = synchronizer.mark_as_read(uid_to_use, folder_to_use)
+                is_now_seen = True
+
+            if success:
+                raw_email.imap_is_seen = is_now_seen
+                db.commit()
+                return jsonify(
+                    {"success": True, "message": message, "is_seen": is_now_seen}
+                )
+            else:
+                return jsonify({"error": message}), 500
+
+        finally:
+            fetcher.disconnect()
+
+    except Exception as e:
+        logger.error(
+            f"Fehler beim Toggle-Read für Email {email_id}: {type(e).__name__}"
+        )
+        return jsonify({"error": "Fehler beim Umschalten des Lesestatus"}), 500
 
     finally:
         db.close()
@@ -3563,10 +3882,14 @@ def toggle_email_flag(email_id):
         if not master_key:
             return jsonify({"error": "Master-Key erforderlich"}), 401
 
-        account = db.query(models.MailAccount).filter(
-            models.MailAccount.id == raw_email.mail_account_id,
-            models.MailAccount.user_id == user.id,
-        ).first()
+        account = (
+            db.query(models.MailAccount)
+            .filter(
+                models.MailAccount.id == raw_email.mail_account_id,
+                models.MailAccount.user_id == user.id,
+            )
+            .first()
+        )
 
         if not account or account.auth_type != "imap":
             return jsonify({"error": "IMAP-Account erforderlich"}), 400
@@ -3591,17 +3914,21 @@ def toggle_email_flag(email_id):
 
         try:
             if not fetcher.connection:
-                logger.error(f"IMAP-Verbindung nicht initialisiert für Email {email_id}")
+                logger.error(
+                    f"IMAP-Verbindung nicht initialisiert für Email {email_id}"
+                )
                 return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
-            
+
             synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
-            
+
             # Use imap_uid (Phase 12 attribute) instead of uid (legacy)
             uid_to_use = raw_email.imap_uid or raw_email.uid
             folder_to_use = raw_email.imap_folder or "INBOX"
-            
-            logger.debug(f"Flag-Toggle: uid={uid_to_use}, folder={folder_to_use}, flagged={raw_email.imap_is_flagged}")
-            
+
+            logger.debug(
+                f"Flag-Toggle: uid={uid_to_use}, folder={folder_to_use}, flagged={raw_email.imap_is_flagged}"
+            )
+
             if raw_email.imap_is_flagged:
                 success, message = synchronizer.unset_flag(uid_to_use, folder_to_use)
                 flag_state = False
@@ -3612,7 +3939,9 @@ def toggle_email_flag(email_id):
             if success:
                 raw_email.imap_is_flagged = flag_state
                 db.commit()
-                return jsonify({"success": True, "message": message, "flagged": flag_state})
+                return jsonify(
+                    {"success": True, "message": message, "flagged": flag_state}
+                )
             else:
                 return jsonify({"error": message}), 500
 
@@ -3621,7 +3950,10 @@ def toggle_email_flag(email_id):
 
     except Exception as e:
         import traceback
-        logger.error(f"Fehler beim Flag-Toggle für Email {email_id}: {type(e).__name__}")
+
+        logger.error(
+            f"Fehler beim Flag-Toggle für Email {email_id}: {type(e).__name__}"
+        )
         logger.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": "Fehler beim Flag-Toggle"}), 500
 
@@ -3726,9 +4058,9 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
                 ],  # Nonce-basierte CSP für inline-scripts
                 content_security_policy_report_only=False,
             )
-            
+
             logger.info("🔒 Flask-Talisman aktiviert - Security Headers + CSP + Nonce")
-        
+
         # Store talisman instance globally for decorator usage
         global talisman
         talisman = talisman_instance

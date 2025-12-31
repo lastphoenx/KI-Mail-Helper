@@ -62,6 +62,56 @@ class MailSynchronizer:
             self.logger.error(f"DELETE fehlgeschlagen für UID {uid}: {e}")
             return False, f"Fehler: {str(e)}"
 
+    def find_trash_folder(self) -> Optional[str]:
+        try:
+            typ, mailboxes = self.conn.list()
+            if typ != 'OK':
+                return None
+            for mailbox in mailboxes:
+                if not mailbox:
+                    continue
+                mailbox_str = mailbox.decode('utf-8') if isinstance(mailbox, bytes) else str(mailbox)
+                if '\\Trash' in mailbox_str:
+                    parts = mailbox_str.split('" ', 1)
+                    if len(parts) > 1:
+                        folder_name = parts[1].strip()
+                        if folder_name.startswith('"') and folder_name.endswith('"'):
+                            folder_name = folder_name[1:-1]
+                        return folder_name
+            return None
+        except Exception as e:
+            self.logger.error(f"Fehler beim Suchen von Trash-Folder: {e}")
+            return None
+
+    def move_to_trash(self, uid: str, source_folder: str = "INBOX") -> Tuple[bool, str]:
+        """
+        Verschiebt Email in Papierkorb durch Verschieben in Trash-Folder
+        """
+        try:
+            trash_folder = self.find_trash_folder()
+            if not trash_folder:
+                return False, "Papierkorb-Ordner nicht gefunden"
+            
+            self.conn.select(source_folder)
+            typ, resp = self.conn.uid('copy', uid, trash_folder)
+            if typ != 'OK':
+                return False, f"Fehler beim Kopieren nach {trash_folder}: {resp}"
+            
+            typ, resp = self.conn.uid('store', uid, '+FLAGS', '\\Deleted')
+            if typ != 'OK':
+                return False, f"Fehler beim Setzen von \\Deleted Flag: {resp}"
+            
+            typ, resp = self.conn.expunge()
+            if typ != 'OK':
+                return False, f"Fehler beim Expunge: {resp}"
+            
+            self.logger.info(f"Email {uid} aus {source_folder} nach {trash_folder} verschoben")
+            return True, f"In {trash_folder} verschoben"
+            
+        except Exception as e:
+            self.logger.error(f"MOVE_TO_TRASH fehlgeschlagen für UID {uid}: {e}")
+            return False, f"Fehler: {str(e)}"
+
     def move_to_folder(
         self, uid: str, target_folder: str, source_folder: str = "INBOX"
     ) -> Tuple[bool, str]:

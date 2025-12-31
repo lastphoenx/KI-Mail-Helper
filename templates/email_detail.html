@@ -312,17 +312,23 @@
 
                     <!-- Phase 13: Server-Aktionen (IMAP-Sync) -->
                     <div class="btn-group w-100" role="group">
-                        <button type="button" class="btn btn-outline-secondary sync-action-btn" id="markReadBtn" 
-                                data-action="mark-read" title="Als gelesen markieren">
-                            👁️ Gelesen
+                        <button type="button" class="btn btn-outline-secondary sync-action-btn" id="toggleReadBtn" 
+                                data-action="toggle-read" title="Gelesen/Ungelesen wechseln">
+                            {% if raw and raw.imap_is_seen %}👁️ Ungelesen{% else %}🔘 Gelesen{% endif %}
                         </button>
                         <button type="button" class="btn btn-outline-secondary sync-action-btn" id="markFlagBtn" 
                                 data-action="mark-flag" title="Wichtig-Flag toggle">
                             {% if raw and raw.imap_is_flagged %}🚩 Unflag{% else %}🚩️ Flag{% endif %}
                         </button>
+                    </div>
+                    <div class="btn-group w-100 mt-2" role="group">
+                        <button type="button" class="btn btn-outline-warning sync-action-btn" id="moveTrashBtn" 
+                                data-action="move-trash" title="In Papierkorb verschieben">
+                            🗑️ In Papierkorb
+                        </button>
                         <button type="button" class="btn btn-outline-danger sync-action-btn" id="deleteBtn" 
-                                data-action="delete" title="Auf Server löschen">
-                            🗑️ Löschen
+                                data-action="delete" title="Permanent löschen">
+                            🗑️ Permanent löschen
                         </button>
                     </div>
 
@@ -863,7 +869,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Phase 13: Server-Sync Action Buttons (DELETE, MARK_READ, MARK_FLAG)
+    // Phase 13: Server-Sync Action Buttons (DELETE, MARK_READ, MARK_FLAG, MOVE_TRASH, TOGGLE_READ)
     document.querySelectorAll('.sync-action-btn').forEach(btn => {
         btn.addEventListener('click', async function(e) {
             e.preventDefault();
@@ -871,9 +877,16 @@ document.addEventListener('DOMContentLoaded', function() {
             
             let confirmMsg = '';
             if (action === 'delete') {
-                confirmMsg = '🗑️ Email wirklich LÖSCHEN? Diese Aktion kann nicht rückgängig gemacht werden.';
-            } else if (action === 'mark-read') {
-                confirmMsg = '👁️ Email als gelesen markieren?';
+                confirmMsg = '🗑️ Email wirklich PERMANENT LÖSCHEN? Diese Aktion kann nicht rückgängig gemacht werden.';
+            } else if (action === 'move-trash') {
+                confirmMsg = '🗑️ Email in Papierkorb verschieben?';
+            } else if (action === 'toggle-read') {
+                const isCurrentlySeen = document.getElementById('toggleReadBtn').innerHTML.includes('Ungelesen');
+                if (isCurrentlySeen) {
+                    confirmMsg = '🔘 Email als ungelesen markieren?';
+                } else {
+                    confirmMsg = '👁️ Email als gelesen markieren?';
+                }
             } else if (action === 'mark-flag') {
                 const isCurrentlyFlagged = document.getElementById('markFlagBtn').innerHTML.includes('Unflag');
                 if (isCurrentlyFlagged) {
@@ -904,11 +917,41 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (response.ok) {
                     // Success
                     if (action === 'delete') {
-                        alert('✓ Email gelöscht');
+                        // Permanent delete - redirect to list
                         window.location.href = '/list';
-                    } else if (action === 'mark-read') {
-                        alert('✓ Als gelesen markiert');
-                        location.reload();
+                    } else if (action === 'move-trash') {
+                        // Move to trash - redirect to list
+                        window.location.href = '/list';
+                    } else if (action === 'toggle-read') {
+                        // Toggle button text und badge
+                        const isNowSeen = data.is_seen;
+                        btn.innerHTML = isNowSeen ? '👁️ Ungelesen' : '🔘 Gelesen';
+                        
+                        // Update badge
+                        const seenBadge = document.querySelector('#flagsCurrent .badge.bg-info');
+                        if (isNowSeen && !seenBadge) {
+                            const newBadge = document.createElement('span');
+                            newBadge.className = 'badge bg-info';
+                            newBadge.textContent = '👁️ Gelesen';
+                            document.getElementById('flagsCurrent').appendChild(newBadge);
+                        } else if (!isNowSeen && seenBadge) {
+                            seenBadge.remove();
+                        } else if (isNowSeen && seenBadge) {
+                            seenBadge.textContent = '👁️ Gelesen';
+                        }
+                        
+                        // Also update Ungelesen badge if exists
+                        const unseenBadge = document.querySelector('#flagsCurrent .badge.bg-secondary');
+                        if (!isNowSeen && !unseenBadge) {
+                            const newBadge = document.createElement('span');
+                            newBadge.className = 'badge bg-secondary';
+                            newBadge.textContent = '🔘 Ungelesen';
+                            document.getElementById('flagsCurrent').appendChild(newBadge);
+                        } else if (isNowSeen && unseenBadge && unseenBadge.textContent.includes('Ungelesen')) {
+                            unseenBadge.remove();
+                        }
+                        
+                        btn.disabled = false;
                     } else if (action === 'mark-flag') {
                         // Toggle button text und badge
                         const isFlaggedNow = data.flagged;
@@ -926,7 +969,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                         
                         btn.disabled = false;
-                        // Kein alert nötig - Button-Text ändert sich schon
                     }
                 } else {
                     alert('❌ ' + (data.error || 'Fehler bei der Aktion'));
