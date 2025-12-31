@@ -123,6 +123,7 @@ def get_threads_endpoint():
         }), 200
             
     except Exception as e:
+        db.rollback()
         logger.error(f"Error getting threads: {e}")
         return jsonify({'error': str(e)}), 500
     finally:
@@ -219,6 +220,7 @@ def get_conversation_endpoint(thread_id: str):
         }), 200
             
     except Exception as e:
+        db.rollback()
         logger.error(f"Error getting conversation: {e}")
         return jsonify({'error': str(e)}), 500
     finally:
@@ -259,9 +261,12 @@ def search_threads_endpoint():
         
         result = []
         for summary in results:
-            subject = thread_service.ThreadService.get_thread_subject(
-                db, user.id, summary['thread_id']
-            )
+            subject = summary.get('root_subject')
+            if not subject and summary['thread_id']:
+                # Fallback: Only query if root_subject is missing
+                subject = thread_service.ThreadService.get_thread_subject(
+                    db, user.id, summary['thread_id']
+                )
             
             result.append({
                 'thread_id': summary['thread_id'],
@@ -279,6 +284,7 @@ def search_threads_endpoint():
         }), 200
             
     except Exception as e:
+        db.rollback()
         logger.error(f"Error searching threads: {e}")
         return jsonify({'error': str(e)}), 500
     finally:

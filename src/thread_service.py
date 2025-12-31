@@ -8,7 +8,7 @@ Verwendet: thread_id, parent_uid, message_id, received_at
 
 from typing import List, Dict, Optional, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case
+from sqlalchemy import func, case, and_
 import importlib
 
 models = importlib.import_module(".02_models", "src")
@@ -84,7 +84,8 @@ class ThreadService:
 
     @staticmethod
     def get_threads_summary(
-        session: Session, user_id: int, limit: int = 50, offset: int = 0
+        session: Session, user_id: int, limit: int = 50, offset: int = 0,
+        thread_ids: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """Holt Thread-Zusammenfassungen mit Count, neuest, älteste Email
         
@@ -93,6 +94,7 @@ class ThreadService:
             user_id: User ID
             limit: Max Anzahl Threads
             offset: Pagination offset
+            thread_ids: Optional - nur diese Threads laden (für Search-Optimization)
             
         Returns:
             Liste von {
@@ -117,6 +119,13 @@ class ThreadService:
             )
             .filter(models.RawEmail.user_id == user_id)
             .filter(models.RawEmail.thread_id.isnot(None))
+        )
+        
+        if thread_ids:
+            subquery = subquery.filter(models.RawEmail.thread_id.in_(thread_ids))
+        
+        subquery = (
+            subquery
             .group_by(models.RawEmail.thread_id)
             .order_by(func.max(models.RawEmail.received_at).desc())
             .limit(limit)
@@ -126,23 +135,47 @@ class ThreadService:
         
         results = session.query(subquery).all()
         
+        if not results:
+            return []
+        
+        result_thread_ids = [row[0] for row in results]
+        
+        latest_emails = (
+            session.query(models.RawEmail)
+            .filter_by(user_id=user_id)
+            .filter(models.RawEmail.thread_id.in_(result_thread_ids))
+            .order_by(models.RawEmail.thread_id, models.RawEmail.received_at.desc())
+            .all()
+        )
+        
+        root_emails = (
+            session.query(models.RawEmail)
+            .filter_by(user_id=user_id)
+            .filter(models.RawEmail.thread_id.in_(result_thread_ids))
+            .order_by(models.RawEmail.thread_id, models.RawEmail.received_at.asc())
+            .all()
+        )
+        
+        latest_map = {}
+        root_map = {}
+        seen_latest = set()
+        seen_root = set()
+        
+        for email in latest_emails:
+            if email.thread_id not in seen_latest:
+                latest_map[email.thread_id] = email
+                seen_latest.add(email.thread_id)
+        
+        for email in root_emails:
+            if email.thread_id not in seen_root:
+                root_map[email.thread_id] = email
+                seen_root.add(email.thread_id)
+        
         summary = []
         for row in results:
             thread_id, count, latest_date, oldest_date, unread = row
-            
-            latest_email = (
-                session.query(models.RawEmail)
-                .filter_by(user_id=user_id, thread_id=thread_id)
-                .order_by(models.RawEmail.received_at.desc())
-                .first()
-            )
-            
-            root_email = (
-                session.query(models.RawEmail)
-                .filter_by(user_id=user_id, thread_id=thread_id)
-                .order_by(models.RawEmail.received_at.asc())
-                .first()
-            )
+            latest_email = latest_map.get(thread_id)
+            root_email = root_map.get(thread_id)
             
             summary.append({
                 'thread_id': thread_id,
@@ -163,7 +196,7 @@ class ThreadService:
     def get_thread_subject(
         session: Session, user_id: int, thread_id: str
     ) -> Optional[str]:
-        """Holt Subject des Thread-Roots (erste Email)
+        """Holt Subject des Thread-Roots (Email mit parent_uid=NULL)
         
         Args:
             session: SQLAlchemy Session
@@ -175,12 +208,22 @@ class ThreadService:
         """
         root = (
             session.query(models.RawEmail)
+            .filter_by(user_id=user_id, thread_id=thread_id, parent_uid=None)
+            .order_by(models.RawEmail.received_at.asc())
+            .first()
+        )
+        
+        if root:
+            return root.encrypted_subject
+        
+        fallback = (
+            session.query(models.RawEmail)
             .filter_by(user_id=user_id, thread_id=thread_id)
             .order_by(models.RawEmail.received_at.asc())
             .first()
         )
         
-        return root.encrypted_subject if root else None
+        return fallback.encrypted_subject if fallback else None
 
     @staticmethod
     def search_conversations(
@@ -200,7 +243,7 @@ class ThreadService:
         Returns:
             Ähnlich get_threads_summary()
         """
-        subquery = (
+        thread_ids_subquery = (
             session.query(models.RawEmail.thread_id)
             .filter_by(user_id=user_id)
             .filter(
@@ -212,18 +255,16 @@ class ThreadService:
             .subquery()
         )
         
-        thread_ids = session.query(subquery).all()
+        thread_ids_results = session.query(thread_ids_subquery).all()
+        thread_ids = [tid[0] for tid in thread_ids_results]
         
-        result = []
-        for (thread_id,) in thread_ids:
-            summary = ThreadService.get_threads_summary(
-                session, user_id, limit=1, offset=0
-            )
-            for item in summary:
-                if item['thread_id'] == thread_id:
-                    result.append(item)
+        if not thread_ids:
+            return []
         
-        return result
+        return ThreadService.get_threads_summary(
+            session, user_id, limit=len(thread_ids), offset=0,
+            thread_ids=thread_ids
+        )
 
     @staticmethod
     def get_thread_stats(

@@ -545,7 +545,7 @@ class RawEmail(Base):
     encrypted_subject = Column(Text)
     encrypted_body = Column(Text)
 
-    received_at = Column(DateTime, nullable=False)
+    received_at = Column(DateTime, nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     deleted_at = Column(DateTime, nullable=True)
     deleted_verm = Column(Boolean, default=False)
