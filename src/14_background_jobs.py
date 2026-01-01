@@ -317,8 +317,10 @@ class BackgroundJobQueue:
             # Phase 13C Part 3: FULL SYNC - keine Filter!
             logger.info(f"📁 {len(folders)} Ordner, FULL SYNC (keine UNSEEN-Filter)")
             
-            # 2. Fetch aus jedem Ordner (limit pro Ordner)
-            mails_per_folder = max(10, limit // len(folders)) if folders else limit
+            # Phase 13C Part 3 FIX: Höheres Limit pro Ordner für FULL SYNC
+            # Problem: Bei 7 Ordnern und limit=50 → nur 10 Mails/Ordner
+            # Lösung: Mindestens 100 Mails pro Ordner bei FULL SYNC
+            mails_per_folder = max(100, limit // len(folders)) if folders else limit
             
             for folder in folders:
                 try:
@@ -335,7 +337,11 @@ class BackgroundJobQueue:
                     continue
             
             logger.info(f"📧 Gesamt: {len(all_emails)} Mails aus {len(folders)} Ordnern")
-            return all_emails[:limit]  # Begrenze Gesamtzahl
+            
+            # Phase 13C Part 3 FIX: Keine Gesamt-Begrenzung bei FULL SYNC
+            # Bei FULL SYNC wollen wir ALLE Mails synchronisieren, nicht nur die ersten 50/500
+            # Das Limit gilt nur pro Ordner (um nicht zu viele Mails auf einmal zu holen)
+            return all_emails  # Keine Begrenzung mehr!
             
         finally:
             fetcher.disconnect()
