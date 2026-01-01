@@ -238,7 +238,8 @@ class MailSynchronizer:
     def move_to_folder(self, uid: int, target_folder: str, source_folder: str = "INBOX") -> MoveResult:
         """Phase 14c: Verschiebt Email in anderen Ordner (mit COPYUID Support)
         
-        RFC 4315 UIDPLUS: IMAPClient parsed COPYUID automatisch!
+        RFC 4315 UIDPLUS: COPYUID muss aus untagged_responses geholt werden!
+        IMAPClient.copy() gibt nur den Response-String zurück, nicht die COPYUID.
         
         Args:
             uid: IMAP UID
@@ -253,23 +254,27 @@ class MailSynchronizer:
             self.conn.select_folder(source_folder)
             
             # 2. COPY zu target folder
-            # IMAPClient gibt copy_set zurück: (uidvalidity, [old_uids], [new_uids])
             copy_response = self.conn.copy([uid], target_folder)
             
             target_uid = None
             target_uidvalidity = None
             
-            if copy_response:
-                # copy_response ist: (uidvalidity, [old_uids], [new_uids])
-                # Format: (1702396800, [424], [17])
-                if isinstance(copy_response, tuple) and len(copy_response) >= 3:
-                    target_uidvalidity = copy_response[0]
-                    if len(copy_response[2]) > 0:
-                        target_uid = copy_response[2][0]
-                
-                self.logger.debug(f"COPYUID: {copy_response}")
+            # 3. COPYUID aus untagged_responses holen
+            # IMAPClient nutzt intern self._imap (imaplib), dort sind die untagged_responses
+            if hasattr(self.conn, '_imap'):
+                untagged = self.conn._imap.untagged_responses
+                if 'COPYUID' in untagged and untagged['COPYUID']:
+                    # Format: [b'1 443 8'] → uidvalidity old_uid new_uid
+                    copyuid_data = untagged['COPYUID'][0]
+                    if isinstance(copyuid_data, bytes):
+                        copyuid_str = copyuid_data.decode('utf-8')
+                        parts = copyuid_str.split()
+                        if len(parts) >= 3:
+                            target_uidvalidity = int(parts[0])
+                            target_uid = int(parts[2])
+                            self.logger.debug(f"COPYUID parsed: UIDVAL={target_uidvalidity}, new UID={target_uid}")
             
-            # 3. DELETE aus source (mark + expunge)
+            # 4. DELETE aus source (mark + expunge)
             try:
                 self.conn.set_flags([uid], ['\\Deleted'])
                 self.conn.expunge()
