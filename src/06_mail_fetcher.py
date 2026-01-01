@@ -298,13 +298,13 @@ class MailFetcher:
             conn.select(folder, readonly=True)
 
             # Phase 13C Part 4: Delta-Sync via UID-Range
+            search_criteria = []  # Initialisiere immer (auch für uid_range Branch)
+            
             if uid_range:
                 # UID-Range suche: z.B. "123:*" = alle Mails ab UID 123
                 status, messages = conn.uid('search', None, f"UID {uid_range}")
             else:
                 # Phase 13C Part 2: Build IMAP SEARCH criteria
-                search_criteria = []
-                
                 if unseen_only:
                     search_criteria.append("UNSEEN")
                 
@@ -331,10 +331,21 @@ class MailFetcher:
                 return []
 
             mail_ids = messages[0].split()
+            
+            # Phase 13C Part 4 FIX: Leeres Ergebnis ist OK (keine neuen Mails)
+            # Bei Delta-Sync mit UID-Range kann messages[0] leer sein = keine neuen Mails
+            if not mail_ids:
+                if uid_range:
+                    # Bei Delta-Sync: Keine neuen Mails ist normal
+                    print(f"📧 0 Mails gefunden (keine neuen seit UID {uid_range.split(':')[0]})")
+                else:
+                    print("📧 0 Mails gefunden")
+                return []
+            
             mail_ids = list(reversed(mail_ids))
             mail_ids = mail_ids[:limit]
 
-            if search_criteria:
+            if not uid_range and search_criteria:
                 print(f"🔍 Filter: {search_string}")
             print(f"📧 {len(mail_ids)} Mails gefunden")
 
