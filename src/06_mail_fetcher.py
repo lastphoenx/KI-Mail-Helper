@@ -343,16 +343,11 @@ class MailFetcher:
             # UIDVALIDITY vom Server (in untagged responses nach SELECT)
             # imaplib speichert untagged responses in conn.untagged_responses dict
             server_uidvalidity = None
-            import re
-            
-            # DEBUG: Log folder_info structure
-            logger.debug(f"SELECT {folder}: status={status}, folder_info={folder_info}")
             
             # 1) Prüfe untagged responses (primär bei imaplib)
             # GMX, Yahoo und die meisten Server geben UIDVALIDITY hier zurück
             try:
                 untagged = getattr(conn, 'untagged_responses', {})
-                logger.debug(f"Untagged responses keys: {list(untagged.keys())}")
                 
                 # UIDVALIDITY ist typischerweise in 'OK' responses
                 # Format: [b'[UIDVALIDITY 1352540700] UIDs valid']
@@ -363,10 +358,9 @@ class MailFetcher:
                             match = re.search(r'UIDVALIDITY\s+(\d+)', resp_str)
                             if match:
                                 server_uidvalidity = int(match.group(1))
-                                logger.debug(f"✅ UIDVALIDITY from untagged['OK']: {server_uidvalidity}")
                                 break
             except Exception as e:
-                logger.debug(f"Could not parse untagged responses: {e}")
+                pass  # Try fallbacks
             
             # 2) Fallback: Prüfe folder_info (manche Server geben es dort)
             if not server_uidvalidity and isinstance(folder_info, list):
@@ -377,15 +371,11 @@ class MailFetcher:
                             match = re.search(r'UIDVALIDITY\s+(\d+)', response_str)
                             if match:
                                 server_uidvalidity = int(match.group(1))
-                                logger.debug(f"✅ UIDVALIDITY from folder_info: {server_uidvalidity}")
                                 break
             
             # 3) Letzter Fallback: Ohne UIDVALIDITY weitermachen (suboptimal)
             if not server_uidvalidity:
-                logger.warning(
-                    f"⚠️  Konnte UIDVALIDITY für {folder} nicht abrufen! "
-                    f"SELECT response: {folder_info}, untagged: {list(getattr(conn, 'untagged_responses', {}).keys())}"
-                )
+                logger.warning(f"⚠️  Konnte UIDVALIDITY für {folder} nicht abrufen!")
                 # Continue ohne UIDVALIDITY (Mails werden skipped in persistence)
             
             # Phase 14b: UIDVALIDITY-Check wenn account_id + session gegeben
@@ -477,8 +467,10 @@ class MailFetcher:
             return emails
 
         except Exception as e:
-            logger.debug(f"Fetch error details: {e}")
-            print("❌ Fehler beim Abrufen: Operation fehlgeschlagen")
+            import traceback
+            logger.error(f"❌ FETCH EXCEPTION: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            print(f"❌ Fehler beim Abrufen: {type(e).__name__}: {e}")
             return []
 
     def _calculate_thread_ids(self, emails: List[Dict]) -> None:
