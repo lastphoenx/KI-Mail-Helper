@@ -875,86 +875,134 @@
         const statusEl = document.getElementById('dbSyncStatus');
         const detailsEl = document.getElementById('dbSyncDetails');
 
-        if (data.success && data.sync_ok) {
-            statusEl.innerHTML = '1️⃣2️⃣ DB Sync Verification ✅';
-            let html = `<p class="text-success mb-2"><strong>✅ Perfekt synchronisiert!</strong></p>`;
+        if (data.success) {
+            const isSync = data.sync_ok;
+            statusEl.innerHTML = isSync ? '1️⃣2️⃣ DB Sync Verification ✅' : '1️⃣2️⃣ DB Sync Verification ⚠️';
             
-            html += `
-                <div class="row">
-                    <div class="col-md-4">
-                        <div class="card bg-light">
-                            <div class="card-body text-center">
-                                <h5 class="mb-0">${data.imap_count}</h5>
-                                <small class="text-muted">IMAP Server</small>
-                            </div>
+            let html = `
+                <div class="alert ${isSync ? 'alert-success' : 'alert-warning'}">
+                    <strong>${isSync ? '✅ Perfekt synchronisiert!' : '⚠️ Synchronisations-Unterschiede gefunden'}</strong><br>
+                    <div class="row mt-2">
+                        <div class="col-md-3">
+                            <span class="badge bg-primary">📡 IMAP: ${data.imap_count}</span>
                         </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="card bg-light">
-                            <div class="card-body text-center">
-                                <h5 class="mb-0">${data.db_count}</h5>
-                                <small class="text-muted">Lokale DB</small>
-                            </div>
+                        <div class="col-md-3">
+                            <span class="badge bg-info">💾 DB: ${data.db_count}</span>
                         </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="card bg-success text-white">
-                            <div class="card-body text-center">
-                                <h5 class="mb-0">${data.in_both}</h5>
-                                <small>In beiden</small>
-                            </div>
+                        <div class="col-md-3">
+                            <span class="badge bg-success">✅ Beide: ${data.in_both}</span>
+                        </div>
+                        <div class="col-md-3">
+                            <span class="badge bg-warning">⚠️ Diff: ${data.only_imap + data.only_db}</span>
                         </div>
                     </div>
                 </div>
             `;
             
             if (data.test_mail_found) {
-                html += `<div class="alert alert-info mt-3">
-                    <strong>🎯 Test-Mail gefunden:</strong><br>
-                    UID: ${data.test_mail_uid}<br>
-                    In DB: ${data.test_mail_in_db ? '✅ Ja' : '❌ Nein'}<br>
-                    ${data.test_mail_synced ? '<strong class="text-success">✅ Korrekt synchronisiert!</strong>' : '<strong class="text-danger">❌ Nicht in DB!</strong>'}
-                </div>`;
+                html += `
+                    <div class="alert ${data.test_mail_synced ? 'alert-success' : 'alert-danger'}">
+                        <strong>🎯 Test-Mail "${data.test_mail_uid}":</strong>
+                        ${data.test_mail_in_db ? '✅ Korrekt in DB synchronisiert' : '❌ NICHT in DB gefunden!'}
+                    </div>
+                `;
             }
             
-            if (data.imap_samples && data.imap_samples.length > 0) {
-                html += `<h6 class="mt-3">📧 Mails auf Server (erste 10):</h6><ul class="list-group">`;
-                data.imap_samples.forEach(mail => {
-                    const inDb = data.in_both > 0 ? '✅' : '❓';
-                    html += `<li class="list-group-item"><small>${inDb} UID ${mail.uid}: ${mail.subject}</small></li>`;
+            // TABELLE mit ALLEN Mails
+            if (data.all_mails && data.all_mails.length > 0) {
+                html += `
+                    <h6 class="mt-3">📊 Alle Mails (${data.all_mails.length}):</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover" style="font-size: 0.85em;">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Herkunft</th>
+                                    <th>UID</th>
+                                    <th>UIDVAL</th>
+                                    <th>Betreff</th>
+                                    <th>Message-ID</th>
+                                    <th>👁️</th>
+                                    <th>🚩</th>
+                                    <th>↩️</th>
+                                    <th>Datum</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                data.all_mails.forEach(mail => {
+                    // Status Badge
+                    let statusBadge = '';
+                    let herkunft = '';
+                    if (mail.in_imap && mail.in_db) {
+                        statusBadge = '<span class="badge bg-success">✅</span>';
+                        herkunft = '<small><strong class="text-success">IMAP + DB</strong></small>';
+                    } else if (mail.in_imap && !mail.in_db) {
+                        statusBadge = '<span class="badge bg-warning">📡</span>';
+                        herkunft = '<small><strong class="text-warning">Nur IMAP</strong></small>';
+                    } else if (!mail.in_imap && mail.in_db) {
+                        statusBadge = '<span class="badge bg-danger">💾</span>';
+                        herkunft = '<small><strong class="text-danger">Nur DB</strong></small>';
+                    }
+                    
+                    // Highlight Test-Mail
+                    const rowClass = (data.test_mail_uid === mail.uid) ? 'table-warning' : '';
+                    
+                    // Flags
+                    const seenIcon = mail.is_seen ? '✅' : '—';
+                    const flagIcon = mail.is_flagged ? '🚩' : '—';
+                    const replyIcon = mail.is_answered ? '↩️' : '—';
+                    
+                    // Datum kürzen
+                    const dateShort = mail.received_at ? mail.received_at.substring(0, 16) : '—';
+                    
+                    // Subject kürzen
+                    const subjectShort = mail.subject.length > 50 ? mail.subject.substring(0, 47) + '...' : mail.subject;
+                    
+                    // Message-ID kürzen
+                    const msgIdShort = mail.message_id.length > 30 ? mail.message_id.substring(0, 27) + '...' : mail.message_id;
+                    
+                    html += `
+                        <tr class="${rowClass}">
+                            <td>${statusBadge}</td>
+                            <td>${herkunft}</td>
+                            <td><strong>${mail.uid}</strong></td>
+                            <td><small>${mail.uidvalidity || '—'}</small></td>
+                            <td title="${mail.subject}">${subjectShort}</td>
+                            <td><small><code title="${mail.message_id}">${msgIdShort}</code></small></td>
+                            <td class="text-center">${seenIcon}</td>
+                            <td class="text-center">${flagIcon}</td>
+                            <td class="text-center">${replyIcon}</td>
+                            <td><small>${dateShort}</small></td>
+                        </tr>
+                    `;
                 });
-                html += `</ul>`;
+                
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                
+                // Legende
+                html += `
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <strong>Legende:</strong>
+                            <span class="badge bg-success">✅</span> = In IMAP & DB |
+                            <span class="badge bg-warning">📡</span> = Nur auf Server |
+                            <span class="badge bg-danger">💾</span> = Nur in DB |
+                            👁️ = Gelesen | 🚩 = Markiert | ↩️ = Beantwortet
+                        </small>
+                    </div>
+                `;
             }
             
             detailsEl.innerHTML = html;
-        } else if (data.success && !data.sync_ok) {
-            statusEl.innerHTML = '1️⃣2️⃣ DB Sync Verification ⚠️';
-            let html = `<p class="text-warning mb-2"><strong>⚠️ Synchronisations-Unterschiede gefunden</strong></p>`;
-            
-            html += `
-                <div class="alert alert-warning">
-                    <strong>Unterschiede:</strong><br>
-                    📡 Nur auf IMAP-Server: ${data.only_imap || 0}<br>
-                    💾 Nur in lokaler DB: ${data.only_db || 0}<br>
-                    ✅ In beiden: ${data.in_both || 0}
-                </div>
-            `;
-            
-            if (data.test_mail_found) {
-                html += `<div class="alert alert-info">
-                    <strong>🎯 Test-Mail:</strong><br>
-                    UID: ${data.test_mail_uid}<br>
-                    In DB: ${data.test_mail_in_db ? '✅' : '❌'}
-                </div>`;
-            }
-            
-            detailsEl.innerHTML = html;
-        } else if (!data.success) {
+        } else {
             statusEl.innerHTML = '1️⃣2️⃣ DB Sync Verification ⚠️';
             detailsEl.innerHTML = `<p class="text-muted">${data.message || 'Skipped (no DB access)'}</p>`;
-        } else {
-            statusEl.innerHTML = '1️⃣2️⃣ DB Sync Verification ❌';
-            detailsEl.innerHTML = `<p class="text-danger">Fehler: ${data.error || data.message}</p>`;
         }
     }
     function displaySummary(diagnostics) {

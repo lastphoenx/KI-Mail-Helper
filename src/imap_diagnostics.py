@@ -1459,7 +1459,7 @@ class IMAPDiagnostics:
                 should_close = True
             
             # DB Mails holen (wenn session und account_id gegeben)
-            db_mails = []
+            db_mails = {}
             if session and account_id:
                 import importlib
                 models = importlib.import_module("src.02_models")
@@ -1469,14 +1469,20 @@ class IMAPDiagnostics:
                     models.RawEmail.mail_account_id == account_id
                 ).order_by(models.RawEmail.imap_uid).all()
                 
-                db_mails = [
-                    {
+                for m in db_mails_raw:
+                    db_mails[m.imap_uid] = {
                         'uid': m.imap_uid,
                         'uidvalidity': m.imap_uidvalidity,
-                        'db_id': m.id
+                        'db_id': m.id,
+                        'message_id': '(encrypted)',  # In DB verschlüsselt
+                        'subject': '(encrypted)',
+                        'is_seen': m.imap_is_seen,
+                        'is_flagged': m.imap_is_flagged,
+                        'is_answered': m.imap_is_answered,
+                        'received_at': str(m.received_at) if m.received_at else None,
+                        'in_db': True,
+                        'in_imap': False  # Wird gleich gesetzt
                     }
-                    for m in db_mails_raw
-                ]
             
             # IMAP Archiv-Mails holen
             folder_info = client.select_folder('Archiv', readonly=True)
@@ -1495,22 +1501,24 @@ class IMAPDiagnostics:
                     'uidvalidity': uidvalidity,
                     'imap_count': 0,
                     'db_count': len(db_mails),
-                    'in_both': 0,
-                    'only_imap': 0,
-                    'only_db': len(db_mails),
+                    'sync_ok': len(db_mails) == 0,
+                    'all_mails': list(db_mails.values()),
                     'message': 'Archiv ist leer auf Server'
                 }
             
-            # Fetch subjects für Testmail-Suche
-            envelope_data = client.fetch(all_msgs, ['ENVELOPE'])
+            # Fetch ALLE Details für jede Mail
+            envelope_data = client.fetch(all_msgs, ['ENVELOPE', 'FLAGS', 'INTERNALDATE'])
             
-            imap_mails = []
-            test_mail_found = False
+            imap_mails = {}
             test_mail_uid = None
             
             for msg_id in all_msgs:
-                envelope = envelope_data.get(msg_id, {}).get(b'ENVELOPE')
+                msg_data = envelope_data.get(msg_id, {})
+                envelope = msg_data.get(b'ENVELOPE')
+                flags_raw = msg_data.get(b'FLAGS', [])
+                internal_date = msg_data.get(b'INTERNALDATE')
                 
+                # Parse subject
                 subject = '(no subject)'
                 if envelope and envelope.subject:
                     try:
@@ -1518,27 +1526,78 @@ class IMAPDiagnostics:
                     except:
                         subject = str(envelope.subject)
                 
-                imap_mails.append({
-                    'uid': msg_id,
-                    'uidvalidity': uidvalidity,
-                    'subject': subject[:80]
-                })
+                # Parse message-id
+                message_id = '(no message-id)'
+                if envelope and envelope.message_id:
+                    try:
+                        message_id = envelope.message_id.decode('utf-8', errors='replace')
+                    except:
+                        message_id = str(envelope.message_id)
+                
+                # Parse flags
+                flags_str = [f.decode('ascii') if isinstance(f, bytes) else str(f) 
+                           for f in flags_raw]
+                is_seen = b'\\Seen' in flags_raw or '\\Seen' in flags_str
+                is_flagged = b'\\Flagged' in flags_raw or '\\Flagged' in flags_str
+                is_answered = b'\\Answered' in flags_raw or '\\Answered' in flags_str
+                
+                # Parse date
+                date_str = str(internal_date) if internal_date else None
                 
                 # Check for test mail
                 if 'test' in subject.lower() and 'verschieben' in subject.lower():
-                    test_mail_found = True
                     test_mail_uid = msg_id
+                
+                # Check if in DB
+                in_db = msg_id in db_mails
+                
+                imap_mails[msg_id] = {
+                    'uid': msg_id,
+                    'uidvalidity': uidvalidity,
+                    'folder': 'Archiv',
+                    'message_id': message_id,
+                    'subject': subject,
+                    'is_seen': is_seen,
+                    'is_flagged': is_flagged,
+                    'is_answered': is_answered,
+                    'received_at': date_str,
+                    'in_imap': True,
+                    'in_db': in_db
+                }
+                
+                # Update DB entry wenn vorhanden
+                if in_db:
+                    db_mails[msg_id]['in_imap'] = True
+                    # Überschreibe mit IMAP-Daten (die sind nicht verschlüsselt)
+                    db_mails[msg_id]['message_id'] = message_id
+                    db_mails[msg_id]['subject'] = subject
             
-            # Vergleich
-            db_uids = {m['uid'] for m in db_mails}
-            imap_uids = {m['uid'] for m in imap_mails}
+            # Merge beide Listen
+            all_mails = {}
             
-            in_both = db_uids & imap_uids
-            only_db = db_uids - imap_uids
-            only_imap = imap_uids - db_uids
+            # Alle IMAP Mails
+            for uid, mail in imap_mails.items():
+                all_mails[uid] = mail
+            
+            # Alle DB-only Mails (die nicht auf IMAP sind)
+            for uid, mail in db_mails.items():
+                if not mail['in_imap']:
+                    all_mails[uid] = mail
+            
+            # Sortiere nach UID
+            all_mails_list = sorted(all_mails.values(), key=lambda x: x['uid'])
+            
+            # Statistiken
+            in_both = sum(1 for m in all_mails_list if m['in_imap'] and m['in_db'])
+            only_imap = sum(1 for m in all_mails_list if m['in_imap'] and not m['in_db'])
+            only_db = sum(1 for m in all_mails_list if not m['in_imap'] and m['in_db'])
             
             # Check if test mail is in both
-            test_mail_in_db = test_mail_uid in db_uids if test_mail_uid else False
+            test_mail_in_db = False
+            if test_mail_uid:
+                test_mail_in_db = test_mail_uid in db_mails and db_mails[test_mail_uid]['in_imap']
+            
+            sync_ok = only_imap == 0 and only_db == 0
             
             return {
                 'success': True,
@@ -1546,16 +1605,16 @@ class IMAPDiagnostics:
                 'uidvalidity': uidvalidity,
                 'imap_count': len(imap_mails),
                 'db_count': len(db_mails),
-                'in_both': len(in_both),
-                'only_imap': len(only_imap),
-                'only_db': len(only_db),
-                'sync_ok': len(only_imap) == 0 and len(only_db) == 0,
-                'test_mail_found': test_mail_found,
+                'in_both': in_both,
+                'only_imap': only_imap,
+                'only_db': only_db,
+                'sync_ok': sync_ok,
+                'test_mail_found': test_mail_uid is not None,
                 'test_mail_uid': test_mail_uid,
                 'test_mail_in_db': test_mail_in_db,
-                'test_mail_synced': test_mail_found and test_mail_in_db,
-                'imap_samples': imap_mails[:10],  # Erste 10 für UI
-                'message': f'✅ Perfekt synchronisiert' if len(only_imap) == 0 and len(only_db) == 0 else f'⚠️ {len(only_imap)} nur auf Server, {len(only_db)} nur in DB'
+                'test_mail_synced': test_mail_uid is not None and test_mail_in_db,
+                'all_mails': all_mails_list,  # Komplette Liste mit allen Details
+                'message': f'✅ Perfekt synchronisiert' if sync_ok else f'⚠️ {only_imap} nur auf Server, {only_db} nur in DB'
             }
         
         except Exception as e:
