@@ -23,8 +23,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 models = importlib.import_module('.02_models', 'src')
 
 
-def reset_all_emails(account_id=None, user_id=None, force=False):
-    """Löscht RawEmail UND ProcessedEmail Einträge für kompletten Neustart"""
+def reset_all_emails(account_id=None, user_id=None, force=False, hard_delete=False):
+    """Löscht RawEmail UND ProcessedEmail Einträge für kompletten Neustart
+    
+    Args:
+        hard_delete: If True, HARD DELETE (records gone forever)
+                    If False, SOFT DELETE (deleted_at = NOW, keeps audit trail)
+                    Default: False (soft-delete)
+    """
     
     engine, Session = models.init_db("emails.db")
     session = Session()
@@ -76,19 +82,38 @@ def reset_all_emails(account_id=None, user_id=None, force=False):
                 print("❌ Abgebrochen")
                 return False
         
-        # Erst ProcessedEmails HARD DELETE (wegen Foreign Key)
-        # Grund: Bei Reset will User wirklich ALLES weg haben
-        # Soft-delete würde UniqueConstraint blockieren (UIDs bleiben in DB)
-        deleted_processed = session.query(models.ProcessedEmail).filter(
-            models.ProcessedEmail.raw_email_id.in_(raw_ids)
-        ).delete(synchronize_session=False)
+        # Erst ProcessedEmails löschen (wegen Foreign Key)
+        if hard_delete:
+            # HARD DELETE: Records komplett weg, keine UID-Konflikte beim Re-Fetch
+            deleted_processed = session.query(models.ProcessedEmail).filter(
+                models.ProcessedEmail.raw_email_id.in_(raw_ids)
+            ).delete(synchronize_session=False)
+        else:
+            # SOFT DELETE: deleted_at = NOW, Audit-Trail bleibt erhalten
+            from datetime import datetime, UTC
+            deleted_processed = session.query(models.ProcessedEmail).filter(
+                models.ProcessedEmail.raw_email_id.in_(raw_ids)
+            ).update(
+                {"deleted_at": datetime.now(UTC)},
+                synchronize_session=False
+            )
         session.flush()
         
-        # Dann RawEmails HARD DELETE
-        # WICHTIG: Hard-delete notwendig, sonst blockieren soft-deleted UIDs den Re-Fetch
-        deleted_raw = session.query(models.RawEmail).filter(
-            models.RawEmail.id.in_(raw_ids)
-        ).delete(synchronize_session=False)
+        # Dann RawEmails löschen
+        if hard_delete:
+            # HARD DELETE: Sauberer Re-Fetch ohne UID-Konflikte
+            deleted_raw = session.query(models.RawEmail).filter(
+                models.RawEmail.id.in_(raw_ids)
+            ).delete(synchronize_session=False)
+        else:
+            # SOFT DELETE: ⚠️ Kann UID-Konflikte beim Re-Fetch verursachen!
+            from datetime import datetime, UTC
+            deleted_raw = session.query(models.RawEmail).filter(
+                models.RawEmail.id.in_(raw_ids)
+            ).update(
+                {"deleted_at": datetime.now(UTC)},
+                synchronize_session=False
+            )
         session.flush()
         
         # Reset initial_sync_done Flag & UIDVALIDITY Cache für betroffene Accounts
@@ -111,17 +136,26 @@ def reset_all_emails(account_id=None, user_id=None, force=False):
         session.commit()
         
         print()
-        print(f"✅ {deleted_processed} ProcessedEmail-Einträge gelöscht (HARD DELETE)")
-        print(f"✅ {deleted_raw} RawEmail-Einträge gelöscht (HARD DELETE)")
+        delete_mode = "HARD DELETE" if hard_delete else "SOFT DELETE (deleted_at)"
+        print(f"✅ {deleted_processed} ProcessedEmail-Einträge gelöscht ({delete_mode})")
+        print(f"✅ {deleted_raw} RawEmail-Einträge gelöscht ({delete_mode})")
         print(f"✅ {reset_accounts} Mail-Account(s) zurückgesetzt:")
         print(f"   - initial_sync_done = False")
         print(f"   - folder_uidvalidity = NULL (UIDVALIDITY Cache geleert)")
         print()
-        print("🔄 Beim nächsten 'E-Mails abrufen':")
-        print("   - Werden alle E-Mails neu abgerufen (initial sync: 500 Mails)")
-        print("   - UIDVALIDITY wird neu vom Server geholt")
-        print("   - Keine UID-Konflikte (alte Records komplett gelöscht)")
-        print("   - Komplett neu analysiert")
+        
+        if hard_delete:
+            print("🔄 Beim nächsten 'E-Mails abrufen':")
+            print("   - Werden alle E-Mails neu abgerufen (initial sync: 500 Mails)")
+            print("   - UIDVALIDITY wird neu vom Server geholt")
+            print("   - Keine UID-Konflikte (alte Records komplett gelöscht)")
+            print("   - Komplett neu analysiert")
+        else:
+            print("⚠️  SOFT DELETE verwendet:")
+            print("   - Records bleiben in DB mit deleted_at = NOW()")
+            print("   - Audit-Trail erhalten (kann später wiederhergestellt werden)")
+            print("   - ⚠️ ACHTUNG: UIDs bleiben in DB, Re-Fetch könnte 'Duplikate' melden")
+            print("   - Für sauberen Neustart: --hard-delete verwenden")
         return True
         
     except Exception as e:
@@ -153,6 +187,7 @@ Hinweis:
     parser.add_argument('--account', type=int, help='Nur für diese Mail-Account ID')
     parser.add_argument('--user', type=int, help='Nur für diese User ID')
     parser.add_argument('--force', action='store_true', help='Ohne Bestätigung löschen')
+    parser.add_argument('--hard-delete', action='store_true', help='HARD DELETE (komplett löschen, keine UIDs in DB). Default: SOFT DELETE (deleted_at)')
     
     args = parser.parse_args()
     
@@ -163,7 +198,8 @@ Hinweis:
     success = reset_all_emails(
         account_id=args.account,
         user_id=args.user,
-        force=args.force
+        force=args.force,
+        hard_delete=args.hard_delete
     )
     
     sys.exit(0 if success else 1)
