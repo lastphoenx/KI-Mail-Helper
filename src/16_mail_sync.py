@@ -253,32 +253,49 @@ class MailSynchronizer:
             # 1. SELECT source folder
             self.conn.select_folder(source_folder)
             
-            # 2. COPY zu target folder
+            # 2. UNTAGGED_RESPONSES CLEAREN (wichtig für sauberen Test!)
+            if hasattr(self.conn, '_imap'):
+                self.conn._imap.untagged_responses.clear()
+                self.logger.info("🧹 Cleared untagged_responses before copy()")
+            
+            # 3. COPY zu target folder
             copy_response = self.conn.copy([uid], target_folder)
             
-            # 🔍 DEBUG: Was gibt copy() zurück?
-            self.logger.info(f"🔍 DEBUG copy() response type: {type(copy_response)}")
-            self.logger.info(f"🔍 DEBUG copy() response value: {copy_response}")
+            # 4. VOLLSTÄNDIGES LOGGING der copy() Response
+            self.logger.info(f"📡 copy() response:")
+            self.logger.info(f"  Type: {type(copy_response).__name__}")
+            self.logger.info(f"  Value: {repr(copy_response)}")
             
+            if isinstance(copy_response, dict):
+                self.logger.info(f"  Dict Keys: {list(copy_response.keys())}")
+                for key, val in copy_response.items():
+                    self.logger.info(f"    {key}: {repr(val)}")
+            
+            # 5. UNTAGGED_RESPONSES VOLLSTÄNDIG DUMPEN
+            if hasattr(self.conn, '_imap'):
+                untagged = self.conn._imap.untagged_responses
+                self.logger.info(f"📬 untagged_responses keys: {list(untagged.keys())}")
+                for key in untagged:
+                    self.logger.info(f"  {key}: {repr(untagged[key])}")
+            
+            # 6. COPYUID EXTRAHIEREN
             target_uid = None
             target_uidvalidity = None
             
-            # 3a. Prüfe ob copy_response selbst die COPYUID enthält (idealer Fall)
+            # 6a. Prüfe ob copy_response selbst die COPYUID enthält (idealer Fall)
             if isinstance(copy_response, dict) and 'COPYUID' in copy_response:
                 self.logger.info("✅ COPYUID direkt in copy_response gefunden!")
-                # IMAPClient könnte COPYUID als dict zurückgeben
                 copyuid = copy_response['COPYUID']
                 if isinstance(copyuid, (list, tuple)) and len(copyuid) >= 3:
                     target_uidvalidity = int(copyuid[0])
                     target_uid = int(copyuid[2])
             
-            # 3b. Fallback: COPYUID aus untagged_responses holen
+            # 6b. Fallback: COPYUID aus untagged_responses holen
             if not target_uid and hasattr(self.conn, '_imap'):
                 untagged = self.conn._imap.untagged_responses
-                self.logger.info(f"🔍 DEBUG untagged_responses keys: {list(untagged.keys())}")
                 
                 if 'COPYUID' in untagged and untagged['COPYUID']:
-                    self.logger.info(f"✅ COPYUID in untagged_responses gefunden: {untagged['COPYUID']}")
+                    self.logger.info(f"✅ COPYUID in untagged_responses gefunden!")
                     # Format: [b'1 443 8'] → uidvalidity old_uid new_uid
                     copyuid_data = untagged['COPYUID'][0]
                     if isinstance(copyuid_data, bytes):
