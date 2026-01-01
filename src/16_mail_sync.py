@@ -119,6 +119,53 @@ class MailSynchronizer:
             self.logger.error(f"Fehler beim Parsen von COPYUID: {e}")
             return None, None, None
 
+    def _parse_copyuid_from_untagged(self) -> Tuple[Optional[int], Optional[int], Optional[int]]:
+        """Parst COPYUID aus conn.untagged_responses (imaplib spezifisch)
+        
+        imaplib versteckt die COPYUID Response in untagged_responses['COPYUID']
+        Format: [b'1 437 6'] (ohne [COPYUID ...] prefix!)
+        
+        Returns:
+            (uidvalidity, old_uid, new_uid) oder (None, None, None)
+        """
+        try:
+            # Check untagged_responses dict
+            if hasattr(self.conn, 'untagged_responses'):
+                copyuid_data = self.conn.untagged_responses.get('COPYUID', [])
+                self.logger.info(f"📋 COPYUID from untagged_responses: {copyuid_data}")
+                
+                if copyuid_data:
+                    # Parse first COPYUID entry: b'1 437 6' oder '1 437 6'
+                    for item in copyuid_data:
+                        try:
+                            # Decode bytes
+                            if isinstance(item, bytes):
+                                item_str = item.decode('utf-8', errors='ignore')
+                            else:
+                                item_str = str(item)
+                            
+                            # Split: "1 437 6" → [1, 437, 6]
+                            parts = item_str.strip().split()
+                            if len(parts) == 3:
+                                uidvalidity = int(parts[0])
+                                old_uid = int(parts[1])
+                                new_uid = int(parts[2])
+                                
+                                self.logger.info(
+                                    f"✅ COPYUID decoded: UIDVALIDITY={uidvalidity}, "
+                                    f"{old_uid} → {new_uid}"
+                                )
+                                return uidvalidity, old_uid, new_uid
+                        except Exception as e:
+                            self.logger.debug(f"Failed to parse COPYUID item {item}: {e}")
+                            continue
+            
+            return None, None, None
+            
+        except Exception as e:
+            self.logger.error(f"Fehler beim Parsen von untagged COPYUID: {e}")
+            return None, None, None
+
     def delete_email(self, uid: str, folder: str = "INBOX") -> Tuple[bool, str]:
         """
         Löscht Mail auf Server (markiert als gelöscht + expunge)
@@ -218,36 +265,59 @@ class MailSynchronizer:
             # 1. SELECT source folder
             self.conn.select(source_folder)
             
-            # 2. COPY to target folder
-            typ, copy_resp = self.conn.uid('copy', uid_str, target_folder)
-            if typ != 'OK':
-                return MoveResult(
-                    success=False,
-                    target_folder=target_folder,
-                    message=f"Fehler beim Copy nach {target_folder}: {copy_resp}"
-                )
+            # 2. COPY to target folder (oder MOVE wenn Server unterstützt)
+            # Zuerst versuchen wir MOVE (RFC 6851) - atomarer als COPY+DELETE
+            typ, move_resp = self.conn.uid('move', uid_str, target_folder)
+            self.logger.info(
+                f"📡 IMAP MOVE Response: typ={typ}, response={move_resp}"
+            )
             
-            # 3. Parse COPYUID aus Response (RFC 4315)
-            target_uidvalidity, old_uid, target_uid = self._parse_copyuid(copy_resp)
-            
-            # 4. DELETE from source (mark + expunge)
-            typ, store_resp = self.conn.uid('store', uid_str, '+FLAGS', '\\Deleted')
             if typ != 'OK':
-                self.logger.warning(
-                    f"Copy erfolgreich aber Deleted-Flag setzen fehlgeschlagen: {store_resp}"
+                # Fallback zu COPY+DELETE wenn MOVE nicht unterstützt
+                self.logger.info(f"⚠️ MOVE nicht unterstützt, Fallback zu COPY+DELETE")
+                typ, copy_resp = self.conn.uid('copy', uid_str, target_folder)
+                self.logger.info(
+                    f"📡 IMAP COPY Response: typ={typ}, response={copy_resp}"
                 )
-                return MoveResult(
-                    success=False,
-                    target_folder=target_folder,
-                    target_uid=target_uid,
-                    target_uidvalidity=target_uidvalidity,
-                    message=f"Fehler beim Setzen von \\Deleted: {store_resp}"
-                )
+                
+                if typ != 'OK':
+                    return MoveResult(
+                        success=False,
+                        target_folder=target_folder,
+                        message=f"Fehler beim Copy nach {target_folder}: {copy_resp}"
+                    )
+                
+                # Parse COPYUID aus untagged_responses (imaplib versteckt es dort!)
+                self.logger.info(f"🔍 Checking untagged_responses: {self.conn.untagged_responses}")
+                target_uidvalidity, old_uid, target_uid = self._parse_copyuid_from_untagged()
+                
+                # 4. DELETE from source (mark + expunge) - nur bei COPY!
+                typ, store_resp = self.conn.uid('store', uid_str, '+FLAGS', '\\Deleted')
+                if typ != 'OK':
+                    self.logger.warning(
+                        f"Copy erfolgreich aber Deleted-Flag setzen fehlgeschlagen: {store_resp}"
+                    )
+                    return MoveResult(
+                        success=False,
+                        target_folder=target_folder,
+                        target_uid=target_uid,
+                        target_uidvalidity=target_uidvalidity,
+                        message=f"Fehler beim Setzen von \\Deleted: {store_resp}"
+                    )
+                
+                typ, expunge_resp = self.conn.expunge()
+                if typ != 'OK':
+                    self.logger.warning(f"Expunge fehlgeschlagen: {expunge_resp}")
+            else:
+                # MOVE erfolgreich! Parse COPYUID aus untagged_responses
+                self.logger.info(f"🔍 Checking untagged_responses after MOVE: {self.conn.untagged_responses}")
+                target_uidvalidity, old_uid, target_uid = self._parse_copyuid_from_untagged()
             
-            typ, expunge_resp = self.conn.expunge()
-            if typ != 'OK':
-                self.logger.warning(f"Expunge fehlgeschlagen: {expunge_resp}")
-                # Nicht kritisch, Mail ist schon kopiert
+            # 3. Log parsed values
+            self.logger.info(
+                f"✅ COPYUID geparst: UIDVALIDITY={target_uidvalidity}, "
+                f"old_uid={old_uid}, target_uid={target_uid}"
+            )
             
             # 5. Erfolgreich!
             if target_uid and target_uidvalidity:

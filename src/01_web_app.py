@@ -4037,30 +4037,57 @@ def move_email_to_folder(email_id):
             if result.success:
                 # Phase 14d: DB DIREKT UPDATEN mit neuer UID vom Server!
                 # RFC 4315 UIDPLUS: Server gibt neue UID zurück (COPYUID)
-                raw_email.imap_folder = result.target_folder
-                
-                # Wenn COPYUID verfügbar: neue UID + UIDVALIDITY speichern
-                if result.target_uid is not None:
-                    raw_email.imap_uid = result.target_uid
+                try:
                     logger.info(
-                        f"✅ Email {email_id}: UID {uid_to_use} → {result.target_uid} "
-                        f"({folder_to_use} → {result.target_folder})"
+                        f"📝 Starte DB-Update für Email {email_id} (raw_email.id={raw_email.id}): "
+                        f"UID {uid_to_use} → {result.target_uid}, "
+                        f"UIDVAL {raw_email.imap_uidvalidity} → {result.target_uidvalidity}"
                     )
-                
-                if result.target_uidvalidity is not None:
-                    raw_email.imap_uidvalidity = result.target_uidvalidity
+                    
+                    raw_email.imap_folder = result.target_folder
+                    
+                    # Wenn COPYUID verfügbar: neue UID + UIDVALIDITY speichern
+                    if result.target_uid is not None:
+                        raw_email.imap_uid = result.target_uid
+                        logger.info(
+                            f"✅ Email {email_id}: UID {uid_to_use} → {result.target_uid} "
+                            f"({folder_to_use} → {result.target_folder})"
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠️ Email {email_id}: COPYUID nicht verfügbar (target_uid=None)"
+                        )
+                    
+                    if result.target_uidvalidity is not None:
+                        raw_email.imap_uidvalidity = result.target_uidvalidity
+                        logger.info(
+                            f"✅ Email {email_id}: UIDVALIDITY = {result.target_uidvalidity}"
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠️ Email {email_id}: UIDVALIDITY nicht verfügbar (target_uidvalidity=None)"
+                        )
+                    
+                    raw_email.imap_last_seen_at = datetime.now(UTC)
+                    
+                    logger.info(f"💾 Führe db.commit() aus für Email {email_id}...")
+                    db.commit()
+                    
                     logger.info(
-                        f"✅ Email {email_id}: UIDVALIDITY = {result.target_uidvalidity}"
+                        f"✅ Email {email_id} zu {result.target_folder} verschoben "
+                        f"(DB direkt aktualisiert: UID={raw_email.imap_uid}, UIDVAL={raw_email.imap_uidvalidity})"
                     )
-                
-                raw_email.imap_last_seen_at = datetime.now(UTC)
-                db.commit()
-                
-                logger.info(
-                    f"✅ Email {email_id} zu {result.target_folder} verschoben "
-                    f"(DB direkt aktualisiert, kein Refetch!)"
-                )
-                return jsonify({"success": True, "message": result.message})
+                    return jsonify({"success": True, "message": result.message})
+                    
+                except Exception as commit_error:
+                    logger.error(
+                        f"❌ FEHLER beim DB-Commit für Email {email_id}: "
+                        f"{type(commit_error).__name__}: {commit_error}"
+                    )
+                    db.rollback()
+                    return jsonify({
+                        "error": f"IMAP-Verschiebung erfolgreich, aber DB-Update fehlgeschlagen: {commit_error}"
+                    }), 500
             else:
                 return jsonify({"error": result.message}), 500
 
