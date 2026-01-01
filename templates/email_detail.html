@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}E-Mail Details - Mail Helper{% endblock %}
 
@@ -51,55 +51,50 @@
                 <h4 class="mb-0">{{ decrypted_subject|default('Kein Betreff') }}</h4>
             </div>
             <div class="col-auto">
-                <span class="badge priority-{{ email.farbe }} fs-5">
-                    Score: {{ email.score }}
-                </span>
+                <small class="text-muted">
+                    📅 {{ email.received_at.strftime('%d.%m.%Y %H:%M') if email.received_at else 'Kein Datum' }}
+                </small>
+            </div>
+        </div>
+        <div class="row mt-2">
+            <div class="col">
+                <strong>📧 Von:</strong> {{ decrypted_sender|default('Unbekannt') }}
             </div>
         </div>
     </div>
-    
+
     <div class="card-body">
-        <!-- Meta-Informationen -->
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <p><strong>Von:</strong> {{ decrypted_sender }}</p>
-                <p><strong>Datum:</strong> {{ raw.received_at }}</p>
-                <p><strong>Status:</strong> 
-                    {% if email.done %}
-                    <span class="badge bg-success">Erledigt</span>
-                    {% else %}
-                    <span class="badge bg-warning">Offen</span>
-                    {% endif %}
-                </p>
-            </div>
-            <div class="col-md-6">
-                <p id="wichtigkeitDisplay"><strong>Wichtigkeit:</strong> <span id="wichtigkeitValue">{{ email.wichtigkeit }}/3</span> <span id="wichtigkeitSource" class="badge bg-secondary">vom System</span></p>
-                <p id="dringlichkeitDisplay"><strong>Dringlichkeit:</strong> <span id="dringlichkeitValue">{{ email.dringlichkeit }}/3</span> <span id="dringlichkeitSource" class="badge bg-secondary">vom System</span></p>
-                <p><strong>Matrix-Position:</strong> ({{ email.matrix_x }}, {{ email.matrix_y }})</p>
-                <p id="kategorieDisplay"><strong>Kategorie:</strong> <span id="kategorieValue">{{ email.kategorie_aktion }}</span> <span id="kategorieSource" class="badge bg-secondary">vom System</span></p>
-            </div>
-        </div>
-        
-        <div class="alert alert-info mb-4">
-            <strong>ℹ️ Bewertung korrigieren</strong><br>
-            Hat das System die Email falsch eingestuft? Korrigiere die Werte – das hilft dem System, besser zu werden!
-            <button type="button" class="btn btn-sm btn-primary ms-3" id="correctScoreBtn" data-bs-toggle="modal" data-bs-target="#correctionModal">✏️ Bewertung korrigieren</button>
-        </div>
-        
-        <!-- Tags (Phase 10) -->
+        <!-- Tag Management -->
         <div class="mb-4">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <strong>🏷️ Tags:</strong>
-                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addTagModal">
-                    ➕ Tag hinzufügen
-                </button>
-            </div>
-            <div id="emailTagsContainer">
-                {% if email_tags %}
-                    {% for tag in email_tags %}
-                    <span class="badge me-2 mb-2" style="background-color: {{ tag.color }}; font-size: 14px; padding: 8px 12px;">
+            <h5>🏷️ Tags</h5>
+            <div id="emailTags" class="mb-2">
+                {% if email.tags %}
+                    {% for tag in email.tags %}
+                    <span class="badge bg-primary d-inline-flex align-items-center gap-2">
                         {{ tag.name }}
-                        <button type="button" class="btn-close btn-close-white ms-2 remove-tag-btn" style="font-size: 10px;" 
+                        <button type="button" class="btn btn-sm btn-transparent remove-tag-btn p-0" 
+                                data-email-id="{{ email.id }}"
+                                data-tag-id="{{ tag.id }}"
+                                data-tag-name="{{ tag.name }}"
+                                aria-label="Entfernen" style="font-size: 16px; line-height: 1;">×</button>
+                    </span>
+                    {% endfor %}
+                {% else %}
+                    <span class="text-muted">Keine Tags zugewiesen</span>
+                {% endif %}
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="addTagBtn">+ Tag hinzufügen</button>
+
+            <!-- Current Flags Display -->
+            <div id="flagsCurrent" class="mt-2" style="display: none;"></div>
+            
+            <!-- Tag List -->
+            <div id="currentTagsList" class="mt-2">
+                {% if email.tags %}
+                    {% for tag in email.tags %}
+                    <span class="badge bg-primary d-inline-flex align-items-center gap-2">
+                        {{ tag.name }}
+                        <button type="button" class="btn btn-close btn-close-white ms-2 remove-tag-btn" style="font-size: 10px;" 
                                 data-email-id="{{ email.id }}"
                                 data-tag-id="{{ tag.id }}"
                                 data-tag-name="{{ tag.name }}"
@@ -249,103 +244,82 @@
                         </td>
                     </tr>
                     <tr>
-                        <td><strong>IMAP Flags:</strong></td>
+                        <td><strong>Thread ID:</strong></td>
                         <td>
-                            {% if email.raw_email.imap_flags %}
-                            <code>{{ email.raw_email.imap_flags }}</code>
+                            {% if email.raw_email.thread_id %}
+                            <code>{{ email.raw_email.thread_id }}</code>
                             {% else %}
-                            <span class="text-muted">Keine</span>
+                            <span class="text-muted">N/A</span>
                             {% endif %}
                         </td>
                     </tr>
                     <tr>
-                        <td><strong>Base-Pass (Schnell):</strong></td>
+                        <td><strong>Größe:</strong></td>
                         <td>
-                            {% if email.base_model and email.base_provider %}
-                            <code>{{ email.base_provider }}: {{ email.base_model }}</code>
+                            {% if email.raw_email.message_size %}
+                            {{ (email.raw_email.message_size / 1024)|round(2) }} KB
                             {% else %}
-                            <span class="text-muted">Noch nicht verarbeitet</span>
+                            <span class="text-muted">N/A</span>
                             {% endif %}
                         </td>
-                    </tr>
-                    <tr>
-                        <td><strong>Optimize-Pass (LLM):</strong></td>
-                        <td>
-                            {% if email.optimize_model and email.optimize_provider %}
-                            <code>{{ email.optimize_provider }}: {{ email.optimize_model }}</code>
-                            {% else %}
-                            <span class="text-muted">Noch nicht optimiert</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    <tr>
-                        <td><strong>Base-Pass durchgeführt:</strong></td>
-                        <td>{{ email.processed_at or 'N/A' }}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Optimize durchgeführt:</strong></td>
-                        <td>{{ email.optimization_completed_at or 'N/A' }}</td>
                     </tr>
                 </tbody>
             </table>
         </div>
-        
-        <!-- Aktionen -->
-        <div class="card bg-light">
-            <div class="card-body">
-                <h5>⚡ Vorgeschlagene Aktionen</h5>
-                <div class="btn-group-vertical w-100" role="group">
-                    <button id="reprocessBtn" class="btn btn-warning w-100" data-email-id="{{ email.id }}">
-                        🔄 Email neu verarbeiten (Base-Pass)
-                    </button>
-                    <button id="optimizeBtn" class="btn btn-info w-100" data-email-id="{{ email.id }}">
-                        🔧 Optimize-Pass (bessere Kategorisierung)
-                    </button>
-                    <button class="btn btn-outline-primary todo-btn" data-action="reply">
-                        ✍️ Antwort-Entwurf generieren
-                    </button>
-                    <button class="btn btn-outline-info todo-btn" data-action="calendar">
-                        📅 Kalendereintrag anlegen
-                    </button>
-                    <button class="btn btn-outline-secondary todo-btn" data-action="todo">
-                        📋 Auf ToDo-Liste setzen
-                    </button>
 
-                    <!-- Phase 13: Server-Aktionen (IMAP-Sync) -->
-                    <div class="btn-group w-100" role="group">
-                        <button type="button" class="btn btn-outline-secondary sync-action-btn" id="toggleReadBtn" 
-                                data-action="toggle-read" title="Gelesen/Ungelesen wechseln">
-                            {% if raw and raw.imap_is_seen %}👁️ Ungelesen{% else %}🔘 Gelesen{% endif %}
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary sync-action-btn" id="markFlagBtn" 
-                                data-action="mark-flag" title="Wichtig-Flag toggle">
-                            {% if raw and raw.imap_is_flagged %}🚩 Unflag{% else %}🚩️ Flag{% endif %}
-                        </button>
-                    </div>
-                    <div class="btn-group w-100 mt-2" role="group">
-                        <button type="button" class="btn btn-outline-info sync-action-btn" id="moveFolderBtn" 
-                                data-action="move-folder" title="In einen anderen Ordner verschieben">
-                            📁 In Ordner verschieben
-                        </button>
-                        <button type="button" class="btn btn-outline-warning sync-action-btn" id="moveTrashBtn" 
-                                data-action="move-trash" title="In Papierkorb verschieben">
-                            🗑️ In Papierkorb
-                        </button>
-                        <button type="button" class="btn btn-outline-danger sync-action-btn" id="deleteBtn" 
-                                data-action="delete" title="Permanent löschen">
-                            🗑️ Permanent löschen
-                        </button>
-                    </div>
+        <!-- Action Buttons Section -->
+        <div class="card bg-light p-3">
+            <div class="action-buttons">
+                <button class="btn btn-primary w-100" id="reprocessBtn">
+                    🔄 Neu verarbeiten
+                </button>
+                <button class="btn btn-outline-secondary w-100 mt-2" id="optimizeBtn">
+                    🔧 Optimize-Pass (bessere Kategorisierung)
+                </button>
+                <button class="btn btn-outline-primary todo-btn w-100 mt-2" data-action="reply">
+                    ✍️ Antwort-Entwurf generieren
+                </button>
+                <button class="btn btn-outline-info todo-btn w-100 mt-2" data-action="calendar">
+                    📅 Kalendereintrag anlegen
+                </button>
+                <button class="btn btn-outline-secondary todo-btn w-100 mt-2" data-action="todo">
+                    📋 Auf ToDo-Liste setzen
+                </button>
 
-                    {% if not email.done %}
-                    <form method="post" action="/email/{{ email.id }}/done" id="markDoneForm">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                        <button type="submit" id="markDoneBtn" class="btn btn-success w-100">
-                            ✓ Als erledigt markieren
-                        </button>
-                    </form>
-                    {% endif %}
+                <!-- Phase 13: Server-Aktionen (IMAP-Sync) -->
+                <div class="btn-group w-100 mt-3" role="group">
+                    <button type="button" class="btn btn-outline-secondary sync-action-btn" id="toggleReadBtn" 
+                            data-action="toggle-read" title="Gelesen/Ungelesen wechseln">
+                        {% if raw and raw.imap_is_seen %}👁️ Ungelesen{% else %}🔘 Gelesen{% endif %}
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary sync-action-btn" id="markFlagBtn" 
+                            data-action="mark-flag" title="Wichtig-Flag toggle">
+                        {% if raw and raw.imap_is_flagged %}🚩 Unflag{% else %}🚩️ Flag{% endif %}
+                    </button>
                 </div>
+                <div class="btn-group w-100 mt-2" role="group">
+                    <button type="button" class="btn btn-outline-info sync-action-btn" id="moveFolderBtn" 
+                            data-action="move-folder" title="In einen anderen Ordner verschieben">
+                        📁 In Ordner verschieben
+                    </button>
+                    <button type="button" class="btn btn-outline-warning sync-action-btn" id="moveTrashBtn" 
+                            data-action="move-trash" title="In Papierkorb verschieben">
+                        🗑️ In Papierkorb
+                    </button>
+                    <button type="button" class="btn btn-outline-danger sync-action-btn" id="deleteBtn" 
+                            data-action="delete" title="Permanent löschen">
+                        🗑️ Permanent löschen
+                    </button>
+                </div>
+
+                {% if not email.done %}
+                <form method="post" action="/email/{{ email.id }}/done" id="markDoneForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <button type="submit" id="markDoneBtn" class="btn btn-success w-100 mt-3">
+                        ✓ Als erledigt markieren
+                    </button>
+                </form>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -403,431 +377,138 @@ function reprocessEmail(emailId) {
         document.getElementById('progressBar').style.width = '100%';
         if (data.status === 'success') {
             document.getElementById('progressPercent').textContent = '100%';
-            document.getElementById('progressText').textContent = '✅ Neuer Score: ' + data.score;
+            document.getElementById('progressText').textContent = 'Erfolg! Email wurde neu verarbeitet.';
             document.getElementById('statusMessage').style.display = 'block';
-            document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-success mb-0';
-            document.getElementById('statusTitle').textContent = '✅ Reprocessing erfolgreich';
-            document.getElementById('statusDetails').textContent = 'Die Email wurde neu analysiert.';
+            document.getElementById('statusMessage').className = 'alert alert-success';
+            document.getElementById('statusMessage').textContent = 'Email wurde erfolgreich neu verarbeitet!';
             document.getElementById('closeAnalysisBtn').style.display = 'block';
-            document.getElementById('closeAnalysisBtn').onclick = function() {
-                modal.hide();
-                location.reload();
-            };
         } else {
             document.getElementById('progressBar').classList.add('bg-danger');
-            document.getElementById('progressText').textContent = '❌ Fehler beim Reprocessing';
+            document.getElementById('progressText').textContent = 'Fehler beim Reprocessing';
             document.getElementById('statusMessage').style.display = 'block';
-            document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
-            document.getElementById('statusTitle').textContent = '❌ Fehler';
-            document.getElementById('statusDetails').textContent = data.message || data.error || 'Unbekannter Fehler';
+            document.getElementById('statusMessage').className = 'alert alert-danger';
+            document.getElementById('statusMessage').textContent = data.error || 'Fehler beim Reprocessing';
             document.getElementById('closeAnalysisBtn').style.display = 'block';
-            document.getElementById('closeAnalysisBtn').onclick = function() {
-                modal.hide();
-                btn.disabled = false;
-                if (markDoneBtn) markDoneBtn.disabled = false;
-                if (optimizeBtn) optimizeBtn.disabled = false;
-            };
         }
     })
     .catch(error => {
         clearInterval(progressInterval);
-        document.getElementById('progressBar').style.width = '100%';
         document.getElementById('progressBar').classList.add('bg-danger');
-        document.getElementById('progressText').textContent = '❌ Netzwerkfehler';
+        document.getElementById('progressText').textContent = 'Fehler';
         document.getElementById('statusMessage').style.display = 'block';
-        document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
-        document.getElementById('statusTitle').textContent = '❌ Netzwerkfehler';
-        document.getElementById('statusDetails').textContent = error.message || 'Verbindung fehlgeschlagen';
+        document.getElementById('statusMessage').className = 'alert alert-danger';
+        document.getElementById('statusMessage').textContent = error.message;
         document.getElementById('closeAnalysisBtn').style.display = 'block';
-        document.getElementById('closeAnalysisBtn').onclick = function() {
-            modal.hide();
-            btn.disabled = false;
-            if (markDoneBtn) markDoneBtn.disabled = false;
-            if (optimizeBtn) optimizeBtn.disabled = false;
-        };
     });
-}
-
-function optimizeEmail(emailId) {
-    const btn = document.getElementById('optimizeBtn');
-    const reprocessBtn = document.getElementById('reprocessBtn');
-    const markDoneBtn = document.getElementById('markDoneBtn');
-    
-    if (!btn) return;
-    
-    btn.disabled = true;
-    if (reprocessBtn) reprocessBtn.disabled = true;
-    if (markDoneBtn) markDoneBtn.disabled = true;
-    
-    const modal = getAnalysisModal();
-    modal.show();
-    
-    document.getElementById('progressBar').style.width = '0%';
-    document.getElementById('progressBar').classList.remove('bg-danger');
-    document.getElementById('progressPercent').textContent = '0%';
-    document.getElementById('progressText').textContent = 'Optimize: Email wird optimiert...';
-    document.getElementById('statusMessage').style.display = 'none';
-    document.getElementById('closeAnalysisBtn').style.display = 'none';
-    
-    let progress = 0;
-    const progressInterval = setInterval(() => {
-        progress = Math.min(90, progress + Math.random() * 30);
-        document.getElementById('progressBar').style.width = progress + '%';
-        document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
-    }, 200);
-    
-    fetch(`/email/${emailId}/optimize`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
-        }
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                throw new Error(data.message || data.error || 'Unbekannter Fehler');
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        clearInterval(progressInterval);
-        document.getElementById('progressBar').style.width = '100%';
-        if (data.status === 'success') {
-            document.getElementById('progressPercent').textContent = '100%';
-            document.getElementById('progressText').textContent = '✅ Optimize erfolgreich';
-            document.getElementById('statusMessage').style.display = 'block';
-            document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-success mb-0';
-            document.getElementById('statusTitle').textContent = '✅ Optimize-Pass abgeschlossen';
-            document.getElementById('statusDetails').textContent = 'Die Email wurde mit erweiterten Modellen analysiert.';
-            document.getElementById('closeAnalysisBtn').style.display = 'block';
-            document.getElementById('closeAnalysisBtn').onclick = function() {
-                modal.hide();
-                location.reload();
-            };
-        } else {
-            throw new Error(data.message || 'Fehler bei Optimize');
-        }
-    })
-    .catch(error => {
-        clearInterval(progressInterval);
-        document.getElementById('progressBar').style.width = '100%';
-        document.getElementById('progressBar').classList.add('bg-danger');
-        document.getElementById('progressText').textContent = '❌ Optimize fehlgeschlagen';
-        document.getElementById('statusMessage').style.display = 'block';
-        document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
-        document.getElementById('statusTitle').textContent = '❌ Fehler';
-        document.getElementById('statusDetails').textContent = error.message || 'Unbekannter Fehler';
-        document.getElementById('closeAnalysisBtn').style.display = 'block';
-        document.getElementById('closeAnalysisBtn').onclick = function() {
-            modal.hide();
-            btn.disabled = false;
-            if (reprocessBtn) reprocessBtn.disabled = false;
-            if (markDoneBtn) markDoneBtn.disabled = false;
-        };
-    });
-}
-
-function initCorrectionModal(emailId) {
-    const saveCorrectionBtn = document.getElementById('saveCorrectionBtn');
-    if (!saveCorrectionBtn) return;
-    
-    // Modal-Open Event: Lade Tags
-    const modal = document.getElementById('correctionModal');
-    if (modal) {
-        modal.addEventListener('show.bs.modal', async function() {
-            // Reset Form
-            document.querySelectorAll('input[name="dringlichkeit"], input[name="wichtigkeit"]').forEach(el => el.checked = false);
-            document.getElementById('kategorie').value = 'nur_information';
-            document.getElementById('spamFlag').checked = false;
-            document.getElementById('noteInput').value = '';
-            
-            // Lade alle User-Tags
-            try {
-                const tagsResponse = await fetch('/api/tags');
-                const allTags = await tagsResponse.json();
-                
-                const tagsSelect = document.getElementById('tagsSelect');
-                tagsSelect.innerHTML = '';
-                
-                if (allTags && allTags.length > 0) {
-                    allTags.forEach(tag => {
-                        const option = document.createElement('option');
-                        option.value = tag.id;
-                        option.textContent = tag.name;
-                        option.style.backgroundColor = tag.color + '22'; // 22 = 13% opacity
-                        tagsSelect.appendChild(option);
-                    });
-                } else {
-                    tagsSelect.innerHTML = '<option disabled>Keine Tags vorhanden - <a href="/tags">erstellen</a></option>';
-                }
-                
-                // Lade aktuelle Tags für diese Email
-                const emailTagsResponse = await fetch(`/api/emails/${emailId}/tags`);
-                const currentTags = await emailTagsResponse.json();
-                
-                // Zeige aktuelle Tags als Badges
-                const container = document.getElementById('correctionTagsContainer');
-                if (currentTags && currentTags.length > 0) {
-                    container.innerHTML = '<div class="mb-2"><small class="text-muted">Aktuell:</small></div>';
-                    currentTags.forEach(tag => {
-                        const badge = document.createElement('span');
-                        badge.className = 'badge me-1';
-                        badge.style.backgroundColor = tag.color;
-                        badge.textContent = tag.name;
-                        container.appendChild(badge);
-                    });
-                    
-                    // Pre-select in dropdown
-                    currentTags.forEach(tag => {
-                        const option = tagsSelect.querySelector(`option[value="${tag.id}"]`);
-                        if (option) option.selected = true;
-                    });
-                } else {
-                    container.innerHTML = '<small class="text-muted">Keine Tags</small>';
-                }
-            } catch (error) {
-                console.error('Fehler beim Laden der Tags:', error);
-                document.getElementById('tagsSelect').innerHTML = '<option disabled>❌ Fehler beim Laden</option>';
-            }
-        });
-    }
-    
-    saveCorrectionBtn.onclick = async function() {
-        const dringlichkeit = document.querySelector('input[name="dringlichkeit"]:checked')?.value;
-        const wichtigkeit = document.querySelector('input[name="wichtigkeit"]:checked')?.value;
-        const kategorie = document.getElementById('kategorie').value;
-        const spamFlag = document.getElementById('spamFlag').checked;
-        const note = document.getElementById('noteInput').value;
-        
-        // Sammle ausgewählte Tag-IDs
-        const tagsSelect = document.getElementById('tagsSelect');
-        const selectedTagIds = Array.from(tagsSelect.selectedOptions).map(opt => parseInt(opt.value));
-        
-        try {
-            // 1. Speichere Bewertungs-Korrekturen
-            const correctionResponse = await fetch(`/email/${emailId}/correct`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCsrfToken()
-                },
-                body: JSON.stringify({
-                    dringlichkeit: dringlichkeit ? parseInt(dringlichkeit) : null,
-                    wichtigkeit: wichtigkeit ? parseInt(wichtigkeit) : null,
-                    kategorie: kategorie,
-                    spam_flag: spamFlag,
-                    note: note || null
-                })
-            });
-            
-            const correctionData = await correctionResponse.json();
-            if (correctionData.status !== 'success') {
-                throw new Error(correctionData.message || 'Fehler beim Speichern der Bewertung');
-            }
-            
-            // 2. Update Tags: Hole aktuelle Tags
-            const currentTagsResponse = await fetch(`/api/emails/${emailId}/tags`);
-            const currentTags = await currentTagsResponse.json();
-            const currentTagIds = currentTags.map(t => t.id);
-            
-            // Tags zum Entfernen (in current, nicht in selected)
-            const tagsToRemove = currentTagIds.filter(id => !selectedTagIds.includes(id));
-            // Tags zum Hinzufügen (in selected, nicht in current)
-            const tagsToAdd = selectedTagIds.filter(id => !currentTagIds.includes(id));
-            
-            // 3. Führe Tag-Updates durch
-            for (const tagId of tagsToRemove) {
-                await fetch(`/api/emails/${emailId}/tags/${tagId}`, {
-                    method: 'DELETE',
-                    headers: { 'X-CSRFToken': getCsrfToken() }
-                });
-            }
-            
-            for (const tagId of tagsToAdd) {
-                await fetch(`/api/emails/${emailId}/tags`, {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': getCsrfToken()
-                    },
-                    body: JSON.stringify({ tag_id: tagId })
-                });
-            }
-            
-            // 4. Erfolg - Update UI
-            const modalInstance = bootstrap.Modal.getInstance(document.getElementById('correctionModal'));
-            modalInstance.hide();
-            
-            if (dringlichkeit) {
-                document.getElementById('dringlichkeitValue').textContent = dringlichkeit + '/3';
-                document.getElementById('dringlichkeitSource').textContent = 'vom User';
-                document.getElementById('dringlichkeitSource').className = 'badge bg-success';
-            }
-            
-            if (wichtigkeit) {
-                document.getElementById('wichtigkeitValue').textContent = wichtigkeit + '/3';
-                document.getElementById('wichtigkeitSource').textContent = 'vom User';
-                document.getElementById('wichtigkeitSource').className = 'badge bg-success';
-            }
-            
-            document.getElementById('kategorieValue').textContent = kategorie;
-            document.getElementById('kategorieSource').textContent = 'vom User';
-            document.getElementById('kategorieSource').className = 'badge bg-success';
-            
-            alert('✅ Bewertung gespeichert! Tags aktualisiert.');
-            location.reload(); // Reload um neue Tags anzuzeigen
-            
-        } catch (error) {
-            alert('❌ Fehler: ' + error.message);
-        }
-    };
-}
-
-function copyRawHtml() {
-    const codeElement = document.getElementById('rawHtmlCode');
-    const text = codeElement.textContent;
-    
-    navigator.clipboard.writeText(text).then(() => {
-        const btn = event.target;
-        const oldText = btn.innerHTML;
-        btn.innerHTML = '✅ Kopiert!';
-        setTimeout(() => {
-            btn.innerHTML = oldText;
-        }, 2000);
-    }).catch(err => {
-        alert('Fehler beim Kopieren: ' + err);
-    });
-}
-
-// Email frame now uses src="/email/{{ email.id }}/render-html" instead of srcdoc
-// No need to populate iframe manually
-
-function highlightRawHtml() {
-    const codeElement = document.getElementById('rawHtmlCode');
-    if (codeElement && window.hljs) {
-        hljs.highlightElement(codeElement);
-    }
-}
-
-function fetchCurrentFlags(emailId) {
-    fetch(`/api/email/${emailId}/flags`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-    })
-    .then(data => {
-        const container = document.getElementById('flagsCurrent');
-        
-        if (!data.imap_flags) {
-            container.innerHTML = '<small class="text-muted">Keine Flags verfügbar</small>';
-            return;
-        }
-        
-        const isSeen = data.is_seen;
-        const isAnswered = data.is_answered;
-        const flags = data.imap_flags;
-        
-        let html = '';
-        html += isSeen ? '<span class="badge bg-info">👁️ Gelesen</span>' : '<span class="badge bg-secondary">🔘 Ungelesen</span>';
-        if (isAnswered) html += ' <span class="badge bg-success">✉️ Beantwortet</span>';
-        html += `<div class="small text-muted mt-2"><code>${flags}</code></div>`;
-        
-        container.innerHTML = html;
-        
-        checkFlagChanges(data, emailId);
-    })
-    .catch(err => {
-        document.getElementById('flagsCurrent').innerHTML = `<small class="text-danger">❌ Fehler: ${err.message}</small>`;
-    });
-}
-
-function checkFlagChanges(currentData, emailId) {
-    const oldSeen = document.getElementById('flagsAtProcessing').innerHTML.includes('👁️');
-    const oldAnswered = document.getElementById('flagsAtProcessing').innerHTML.includes('✉️');
-    
-    const newSeen = currentData.is_seen;
-    const newAnswered = currentData.is_answered;
-    
-    if (oldSeen !== newSeen || oldAnswered !== newAnswered) {
-        const alertDiv = document.getElementById('flagsChangedAlert');
-        const detailDiv = document.getElementById('flagChangesDetail');
-        
-        let changes = [];
-        if (oldSeen !== newSeen) {
-            changes.push(newSeen ? '📖 Markiert als gelesen' : '📭 Markiert als ungelesen');
-        }
-        if (oldAnswered !== newAnswered) {
-            changes.push(newAnswered ? '✉️ Beantwortet' : 'Antwort entfernt');
-        }
-        
-        detailDiv.innerHTML = '<ul><li>' + changes.join('</li><li>') + '</li></ul>';
-        alertDiv.style.display = 'block';
-    }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    const emailId = window.location.pathname.split('/').pop();
-    initCorrectionModal(emailId);
+    const emailId = {{ email.id }};
     
-    highlightRawHtml();
-    // fetchCurrentFlags(emailId); // Phase 13: Disabled - nicht kritisch, Endpoint existiert nicht
-    
-    // CSP-compliant event listeners
-    const copyRawHtmlBtn = document.getElementById('copyRawHtmlBtn');
-    const reprocessBtn = document.getElementById('reprocessBtn');
-    const optimizeBtn = document.getElementById('optimizeBtn');
-    
-    if (copyRawHtmlBtn) {
-        copyRawHtmlBtn.addEventListener('click', copyRawHtml);
-    }
-    if (reprocessBtn) {
-        reprocessBtn.addEventListener('click', function() {
-            const emailId = parseInt(this.dataset.emailId);
-            reprocessEmail(emailId);
-        });
-    }
-    if (optimizeBtn) {
-        optimizeBtn.addEventListener('click', function() {
-            const emailId = parseInt(this.dataset.emailId);
-            optimizeEmail(emailId);
-        });
-    }
-    
-    // TODO buttons
-    document.querySelectorAll('.todo-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const action = this.dataset.action;
-            switch(action) {
-                case 'reply':
-                    alert('TODO: Antwort-Entwurf generieren');
-                    break;
-                case 'calendar':
-                    alert('TODO: Kalendereintrag anlegen');
-                    break;
-                case 'todo':
-                    alert('TODO: Auf ToDo-Liste setzen');
-                    break;
-            }
+    // Copy raw HTML button
+    document.getElementById('copyRawHtmlBtn').addEventListener('click', function() {
+        const code = document.getElementById('rawHtmlCode').textContent;
+        navigator.clipboard.writeText(code).then(() => {
+            this.textContent = '✓ Kopiert!';
+            setTimeout(() => {
+                this.textContent = '📋 Kopieren';
+            }, 2000);
         });
     });
     
-    // Tag entfernen - Event Listener
+    // Reprocess button
+    document.getElementById('reprocessBtn').addEventListener('click', function(e) {
+        e.preventDefault();
+        reprocessEmail(emailId);
+    });
+    
+    // Optimize button
+    document.getElementById('optimizeBtn').addEventListener('click', function(e) {
+        e.preventDefault();
+        const btn = this;
+        
+        btn.disabled = true;
+        btn.textContent = '⏳ Optimiere...';
+        
+        const modal = getAnalysisModal();
+        modal.show();
+        
+        document.getElementById('progressBar').style.width = '0%';
+        document.getElementById('progressPercent').textContent = '0%';
+        document.getElementById('progressText').textContent = 'Optimize-Pass läuft...';
+        
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress = Math.min(90, progress + Math.random() * 25);
+            document.getElementById('progressBar').style.width = progress + '%';
+            document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+        }, 300);
+        
+        fetch(`/email/${emailId}/optimize`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            clearInterval(progressInterval);
+            document.getElementById('progressBar').style.width = '100%';
+            document.getElementById('progressPercent').textContent = '100%';
+            
+            if (data.status === 'success') {
+                document.getElementById('progressText').textContent = 'Optimize-Pass abgeschlossen!';
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusMessage').className = 'alert alert-success';
+                document.getElementById('statusMessage').innerHTML = `✓ Neue Kategorie: <strong>${data.new_classification}</strong>`;
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                btn.disabled = false;
+                btn.textContent = '🔧 Optimize-Pass (bessere Kategorisierung)';
+            } else {
+                document.getElementById('progressBar').classList.add('bg-danger');
+                document.getElementById('progressText').textContent = 'Fehler';
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusMessage').className = 'alert alert-danger';
+                document.getElementById('statusMessage').textContent = data.error || 'Fehler beim Optimize';
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                btn.disabled = false;
+                btn.textContent = '🔧 Optimize-Pass (bessere Kategorisierung)';
+            }
+        })
+        .catch(error => {
+            clearInterval(progressInterval);
+            document.getElementById('progressBar').classList.add('bg-danger');
+            document.getElementById('progressText').textContent = 'Fehler';
+            document.getElementById('statusMessage').style.display = 'block';
+            document.getElementById('statusMessage').className = 'alert alert-danger';
+            document.getElementById('statusMessage').textContent = error.message;
+            document.getElementById('closeAnalysisBtn').style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = '🔧 Optimize-Pass (bessere Kategorisierung)';
+        });
+    });
+    
+    // Add tag button
+    document.getElementById('addTagBtn').addEventListener('click', function() {
+        const modal = new bootstrap.Modal(document.getElementById('addTagModal'));
+        modal.show();
+    });
+    
+    // Remove tag buttons
     document.querySelectorAll('.remove-tag-btn').forEach(btn => {
         btn.addEventListener('click', async function(e) {
             e.preventDefault();
-            const emailId = this.dataset.emailId;
             const tagId = this.dataset.tagId;
             const tagName = this.dataset.tagName;
+            
+            if (!confirm(`Tag "${tagName}" entfernen?`)) return;
             
             try {
                 const response = await fetch(`/api/emails/${emailId}/tags/${tagId}`, {
                     method: 'DELETE',
-                    headers: {
+                    headers: { 
+                        'Content-Type': 'application/json',
                         'X-CSRFToken': getCsrfToken()
                     }
                 });
@@ -844,13 +525,11 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    // Tag zuweisen - Event Listener
+    // Assign tag buttons in modal
     document.querySelectorAll('.assign-tag-btn').forEach(btn => {
         btn.addEventListener('click', async function(e) {
             e.preventDefault();
-            const emailId = this.dataset.emailId;
             const tagId = this.dataset.tagId;
-            const tagName = this.dataset.tagName;
             
             try {
                 const response = await fetch(`/api/emails/${emailId}/tags`, {
@@ -880,11 +559,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const accountId = document.querySelector('input[name="account_id"]').value;
             const response = await fetch(`/account/${accountId}/folders`, {
                 method: 'GET',
-                headers: { 'X-CSRFToken': getCsrfToken() }
+                headers: { 'X-CSRFToken': getCsrfToken() },
+                credentials: 'include'
             });
             
             if (!response.ok) {
-                throw new Error('Folder-Listing fehlgeschlagen');
+                throw new Error(`Folder-Listing fehlgeschlagen: ${response.status}`);
             }
             
             const data = await response.json();
@@ -906,7 +586,6 @@ document.addEventListener('DOMContentLoaded', function() {
         return new Promise((resolve) => {
             let folderOptions = folders.map(f => `<option value="${f}">${f}</option>`).join('');
             
-            // Check if modal exists, if not create it
             let modal = document.getElementById('moveFolderModal');
             if (!modal) {
                 const modalHtml = `
@@ -935,15 +614,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 modal = document.getElementById('moveFolderModal');
             }
             
-            // Update folder options
             const select = modal.querySelector('#moveFolderSelect');
             select.innerHTML = '<option value="">-- Ordner wählen --</option>' + folderOptions;
             
-            // Show modal
             const bsModal = new bootstrap.Modal(modal);
             bsModal.show();
             
-            // Handle confirm button
             const confirmBtn = modal.querySelector('#confirmMoveBtn');
             const handleConfirm = () => {
                 const selectedFolder = select.value;
@@ -955,19 +631,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             };
             
-            // Remove old listener and add new one
             const newConfirmBtn = confirmBtn.cloneNode(true);
             confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
             newConfirmBtn.addEventListener('click', handleConfirm);
             
-            // Handle modal close (Escape, X button)
             modal.addEventListener('hidden.bs.modal', () => {
                 resolve(null);
             }, { once: true });
         });
     }
 
-    // Phase 13: Server-Sync Action Buttons (DELETE, MARK_READ, MARK_FLAG, MOVE_TRASH, TOGGLE_READ, MOVE_FOLDER)
+    // Phase 13: Server-Sync Action Buttons
     document.querySelectorAll('.sync-action-btn').forEach(btn => {
         btn.addEventListener('click', async function(e) {
             e.preventDefault();
@@ -979,7 +653,6 @@ document.addEventListener('DOMContentLoaded', function() {
             } else if (action === 'move-trash') {
                 confirmMsg = '🗑️ Email in Papierkorb verschieben?';
             } else if (action === 'move-folder') {
-                // Separate handling für move-folder (with folder selection)
                 const targetFolder = await showMoveDialog();
                 if (!targetFolder) return;
                 
@@ -995,6 +668,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             'Content-Type': 'application/json',
                             'X-CSRFToken': getCsrfToken()
                         },
+                        credentials: 'include',
                         body: JSON.stringify({ target_folder: targetFolder })
                     });
                     
@@ -1042,25 +716,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': getCsrfToken()
-                    }
+                    },
+                    credentials: 'include'
                 });
                 
                 const data = await response.json();
                 
                 if (response.ok) {
-                    // Success
                     if (action === 'delete') {
-                        // Permanent delete - redirect to list
                         window.location.href = '/list';
                     } else if (action === 'move-trash') {
-                        // Move to trash - redirect to list
                         window.location.href = '/list';
                     } else if (action === 'toggle-read') {
-                        // Toggle button text und badge
                         const isNowSeen = data.is_seen;
                         btn.innerHTML = isNowSeen ? '👁️ Ungelesen' : '🔘 Gelesen';
                         
-                        // Update badge
                         const seenBadge = document.querySelector('#flagsCurrent .badge.bg-info');
                         if (isNowSeen && !seenBadge) {
                             const newBadge = document.createElement('span');
@@ -1073,7 +743,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             seenBadge.textContent = '👁️ Gelesen';
                         }
                         
-                        // Also update Ungelesen badge if exists
                         const unseenBadge = document.querySelector('#flagsCurrent .badge.bg-secondary');
                         if (!isNowSeen && !unseenBadge) {
                             const newBadge = document.createElement('span');
@@ -1086,11 +755,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         btn.disabled = false;
                     } else if (action === 'mark-flag') {
-                        // Toggle button text und badge
                         const isFlaggedNow = data.flagged;
                         btn.innerHTML = isFlaggedNow ? '🚩 Unflag' : '🚩 Flag';
                         
-                        // Update badge
                         const badge = document.querySelector('#flagsCurrent .badge.bg-danger');
                         if (isFlaggedNow && !badge) {
                             const newBadge = document.createElement('span');
@@ -1131,29 +798,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="list-group">
                     {% for tag in all_user_tags %}
                     <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center assign-tag-btn"
-                            data-email-id="{{ email.id }}"
-                            data-tag-id="{{ tag.id }}"
-                            data-tag-name="{{ tag.name }}">
-                        <span>
-                            <span class="badge me-2" style="background-color: {{ tag.color }};">{{ tag.name }}</span>
-                        </span>
-                        <span class="badge bg-primary">Zuweisen</span>
+                            data-tag-id="{{ tag.id }}">
+                        {{ tag.name }}
+                        <span class="badge bg-primary rounded-pill">{{ tag.emails|length }}</span>
                     </button>
                     {% endfor %}
                 </div>
                 {% else %}
-                <p class="text-muted">Keine Tags vorhanden. <a href="/tags">Tags erstellen</a></p>
+                <p class="text-muted">Keine Tags vorhanden. Erstellen Sie zunächst Tags in den Einstellungen.</p>
                 {% endif %}
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Schließen</button>
-                <a href="/tags" class="btn btn-outline-primary">Tag-Verwaltung</a>
             </div>
         </div>
     </div>
 </div>
-
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.8.0/build/styles/atom-one-light.min.css">
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.8.0/build/highlight.min.js" nonce="{{ csp_nonce() }}"></script>
-
 {% endblock %}

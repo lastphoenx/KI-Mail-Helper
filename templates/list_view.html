@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}E-Mail Liste - Mail Helper{% endblock %}
 
@@ -14,7 +14,7 @@
                 <!-- Account -->
                 <div class="col-auto">
                     <label class="form-label small mb-1">📧 Account</label>
-                    <select class="form-select form-select-sm filter-select" data-filter="mail_account">
+                    <select class="form-select form-select-sm filter-select" data-filter="mail_account" id="accountSelect">
                         <option value="">Alle</option>
                         {% if user_accounts %}
                             {% for account in user_accounts %}
@@ -29,10 +29,11 @@
                 <!-- Folder -->
                 <div class="col-auto">
                     <label class="form-label small mb-1">📁 Ordner</label>
-                    <select class="form-select form-select-sm filter-select" data-filter="folder">
-                        <option value="">Alle</option>
-                        {% if available_folders %}
-                            {% for folder in available_folders %}
+                    <select class="form-select form-select-sm filter-select" data-filter="folder" id="folderSelect" 
+                            {% if not server_folders %}disabled{% endif %}>
+                        <option value="">{% if server_folders %}Alle Ordner{% else %}Erst Account wählen{% endif %}</option>
+                        {% if server_folders %}
+                            {% for folder in server_folders %}
                             <option value="{{ folder }}" {% if folder == filter_folder %}selected{% endif %}>
                                 {{ folder }}
                             </option>
@@ -237,17 +238,58 @@
 </div>
 
 <script nonce="{{ csp_nonce() }}">
-// Phase 13: Live-Filtering mit URL-Parametern
 document.addEventListener('DOMContentLoaded', function() {
     const filterSelects = document.querySelectorAll('.filter-select');
     const filterSearch = document.querySelector('.filter-search');
     const sortBySelect = document.getElementById('sortBy');
     const sortOrderBtn = document.getElementById('sortOrder');
+    const accountSelect = document.getElementById('accountSelect');
+    const folderSelect = document.getElementById('folderSelect');
+
+    async function updateFolderDropdown(accountId) {
+        if (!accountId || !folderSelect) {
+            folderSelect.disabled = true;
+            folderSelect.innerHTML = '<option value="">Erst Account wählen</option>';
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/account/${accountId}/folders`, {
+                method: 'GET',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                console.error('Fehler beim Laden von Ordnern:', response.status);
+                folderSelect.disabled = true;
+                folderSelect.innerHTML = '<option value="">Fehler beim Laden</option>';
+                return;
+            }
+            
+            const data = await response.json();
+            const folders = data.folders || [];
+            const currentValue = folderSelect.value;
+            
+            folderSelect.disabled = false;
+            folderSelect.innerHTML = '<option value="">Alle Ordner</option>';
+            folders.forEach(folder => {
+                const option = document.createElement('option');
+                option.value = folder;
+                option.textContent = folder;
+                if (folder === currentValue) option.selected = true;
+                folderSelect.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Fehler beim Abrufen von Ordnern:', error);
+            folderSelect.disabled = true;
+            folderSelect.innerHTML = '<option value="">Fehler beim Laden</option>';
+        }
+    }
 
     function updateFilters() {
         const params = new URLSearchParams();
 
-        // Sammle alle aktiven Filter
         filterSelects.forEach(select => {
             const value = select.value.trim();
             if (value) {
@@ -256,32 +298,26 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
 
-        // Suche
         if (filterSearch && filterSearch.value.trim()) {
             params.set('search', filterSearch.value.trim());
         }
 
-        // Sortierung
         if (sortBySelect && sortBySelect.value) {
             params.set('sort', sortBySelect.value);
         }
 
-        // Sortierrichtung
         const currentOrder = sortOrderBtn?.dataset.order || 'desc';
         params.set('order', currentOrder);
 
-        // URL aktualisieren (ohne Seite neuzuladen)
         const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
         window.history.replaceState({}, '', newUrl);
 
-        // Filter sofort anwenden (POST mit AJAX)
         applyFiltersViaAjax(params);
     }
 
     function applyFiltersViaAjax(params) {
         const url = '/list?' + params.toString();
         
-        // Zeige Loading-State
         const resultCount = document.getElementById('resultCount');
         if (resultCount) resultCount.textContent = '⏳...';
 
@@ -293,29 +329,22 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .then(response => response.text())
         .then(html => {
-            // Parse HTML
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             
-            // Finde die neue Email-Liste im Response
             const newListHtml = doc.querySelector('.card:last-of-type');
             const oldListHtml = document.querySelector('.card:last-of-type');
             
             if (newListHtml && oldListHtml) {
-                // Ersetze nur die Liste
                 oldListHtml.replaceWith(newListHtml);
-                
-                // Re-attach event listeners auf neue Action-Forms
                 attachActionFormListeners();
             }
 
-            // Update result count
             const emailCount = doc.querySelector('.card-header');
             if (emailCount && resultCount) {
                 const countMatch = emailCount.textContent.match(/(\d+)\s+Mails/);
                 if (countMatch) {
                     resultCount.textContent = countMatch[1];
-                    // Aktualisiere auch den emailListCount in der neuen Liste
                     const newListCount = doc.querySelector('#emailListCount');
                     if (newListCount) {
                         newListCount.textContent = countMatch[1];
@@ -323,7 +352,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            // Zeige aktive Filter Badge
             updateActiveFilterBadge(params);
         })
         .catch(error => {
@@ -349,7 +377,7 @@ document.addEventListener('DOMContentLoaded', function() {
         let isProcessing = false;
 
         document.querySelectorAll('.action-form').forEach(form => {
-            form.removeEventListener('submit', handleFormSubmit); // Cleanup
+            form.removeEventListener('submit', handleFormSubmit);
             form.addEventListener('submit', handleFormSubmit);
         });
 
@@ -365,7 +393,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         document.querySelectorAll('.action-btn[data-action="details"]').forEach(btn => {
-            btn.removeEventListener('click', handleDetailsClick); // Cleanup
+            btn.removeEventListener('click', handleDetailsClick);
             btn.addEventListener('click', handleDetailsClick);
         });
 
@@ -377,13 +405,19 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Event Listener für Filter-Änderungen
     filterSelects.forEach(select => {
-        select.addEventListener('change', updateFilters);
+        select.addEventListener('change', function() {
+            if (this === accountSelect) {
+                const accountId = this.value;
+                if (accountId) {
+                    updateFolderDropdown(accountId);
+                }
+            }
+            updateFilters();
+        });
     });
 
     if (filterSearch) {
-        // Suche mit Debounce (500ms)
         let searchTimeout;
         filterSearch.addEventListener('input', function() {
             clearTimeout(searchTimeout);
@@ -406,12 +440,14 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Initialisiere Action-Listener beim Laden
     attachActionFormListeners();
 
-    // Zeige Initial aktive Filter
     const params = new URLSearchParams(window.location.search);
     updateActiveFilterBadge(params);
+
+    if (accountSelect && accountSelect.value) {
+        updateFolderDropdown(accountSelect.value);
+    }
 });
 </script>
 {% endblock %}

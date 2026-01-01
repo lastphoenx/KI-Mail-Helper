@@ -172,8 +172,21 @@ class BackgroundJobQueue:
             if not master_key:
                 raise ValueError("Master-Key fehlt im Job")
 
-            raw_emails = self._fetch_raw_emails(account, master_key, job.max_mails)
+            # Phase 13C Part 3: FULL SYNC Mode - keine Filter mehr!
+            # Problem: UNSEEN-Filter führt zu unvollständigem Sync (nur 2/20 Mails in INBOX)
+            # Lösung: ALLE Mails aus ALLEN Ordnern fetchen (Server = Single Source of Truth)
+            
+            raw_emails = self._fetch_raw_emails(
+                account, master_key, job.max_mails
+            )
+            
+            # Phase 13C Part 3 FINAL: Keine Deduplizierung nötig!
+            # IMAP UID ist eindeutig pro (account, folder, uid)
+            # INBOX/UID=123 ≠ Archiv/UID=123 (verschiedene IMAP-Objekte!)
+            # → _persist_raw_emails() macht INSERT/UPDATE per (account, folder, uid)
+            
             if raw_emails:
+                logger.info(f"📧 {len(raw_emails)} Mails abgerufen, speichere in DB...")
                 saved = self._persist_raw_emails(
                     session, user, account, raw_emails, master_key
                 )
@@ -240,11 +253,22 @@ class BackgroundJobQueue:
     def _fetch_raw_emails(
         self, account, master_key: str, limit: int
     ) -> list[Dict[str, Any]]:
+        """
+        Fetcht Mails aus ALLEN Ordnern (Phase 13C: Multi-Folder FULL SYNC)
+        
+        Phase 13C Part 3: KEIN UNSEEN-Filter mehr!
+        Problem: UNSEEN-Filter führte zu unvollständigem Sync (nur 2/20 Mails)
+        Lösung: Server = Single Source of Truth → ALLE Mails fetchen
+        
+        Warum? Mails können manuell (außerhalb App) verschoben werden.
+        Wir müssen alle Ordner scannen, um DB mit Server zu synchronisieren.
+        """
         if account.oauth_provider == "google":
             decrypted_token = encryption.CredentialManager.decrypt_imap_password(
                 account.encrypted_oauth_token, master_key
             )
             fetcher = google_oauth.GoogleMailFetcher(access_token=decrypted_token)
+            # Google OAuth: Nur INBOX (Gmail nutzt Labels, nicht Folders)
             return fetcher.fetch_new_emails(limit=limit)
 
         if not account.encrypted_imap_password:
@@ -267,7 +291,52 @@ class BackgroundJobQueue:
         )
         fetcher.connect()
         try:
-            return fetcher.fetch_new_emails(limit=limit)
+            # Phase 13C: Fetch aus ALLEN Ordnern, nicht nur INBOX
+            all_emails = []
+            
+            # 1. Liste alle Ordner
+            typ, mailboxes = fetcher.connection.list()
+            if typ != "OK":
+                logger.warning("Konnte Ordner nicht listen, falle zurück auf INBOX")
+                return fetcher.fetch_new_emails(folder="INBOX", limit=limit, unseen_only=False)
+            
+            folders = []
+            for mailbox in mailboxes:
+                if not mailbox:
+                    continue
+                mailbox_str = (
+                    mailbox.decode("utf-8") if isinstance(mailbox, bytes) else str(mailbox)
+                )
+                parts = mailbox_str.split('" ')
+                if len(parts) >= 2:
+                    folder_name = parts[1].strip()
+                    if folder_name.startswith('"') and folder_name.endswith('"'):
+                        folder_name = folder_name[1:-1]
+                    folders.append(folder_name)
+            
+            # Phase 13C Part 3: FULL SYNC - keine Filter!
+            logger.info(f"📁 {len(folders)} Ordner, FULL SYNC (keine UNSEEN-Filter)")
+            
+            # 2. Fetch aus jedem Ordner (limit pro Ordner)
+            mails_per_folder = max(10, limit // len(folders)) if folders else limit
+            
+            for folder in folders:
+                try:
+                    # FULL SYNC: Alle Mails, keine Filter
+                    folder_emails = fetcher.fetch_new_emails(
+                        folder=folder, 
+                        limit=mails_per_folder,
+                        unseen_only=False  # Immer alle Mails!
+                    )
+                    all_emails.extend(folder_emails)
+                    logger.info(f"  ✓ {folder}: {len(folder_emails)} Mails")
+                except Exception as e:
+                    logger.warning(f"  ⚠️ Fehler in Ordner '{folder}': {e}")
+                    continue
+            
+            logger.info(f"📧 Gesamt: {len(all_emails)} Mails aus {len(folders)} Ordnern")
+            return all_emails[:limit]  # Begrenze Gesamtzahl
+            
         finally:
             fetcher.disconnect()
 
@@ -276,104 +345,142 @@ class BackgroundJobQueue:
     ) -> int:
         """Speichert RawEmails verschlüsselt in der Datenbank
 
+        Phase 13C Part 3 FINAL: Korrekte IMAP-Sync-Logik
+        - IMAP UID ist eindeutig pro (account, folder, uid)
+        - INBOX/UID=123 ≠ Archiv/UID=123 (verschiedene IMAP-Objekte!)
+        - Für jedes Mail: SELECT by (account_id, imap_folder, imap_uid)
+          * Exists? → UPDATE (Flags können sich geändert haben)
+          * Not Exists? → INSERT (neues Mail)
+        - KEINE MESSAGE-ID-basierte Deduplizierung!
+        
         Args:
             master_key: Master-Key für Verschlüsselung (Zero-Knowledge!)
         """
         saved = 0
-        for raw_email_data in raw_emails:
-            existing = (
-                session.query(models.RawEmail)
-                .filter_by(
+        updated = 0
+        
+        # Phase 13C CRITICAL FIX: no_autoflush verhindert IntegrityError
+        # Problem: SQLAlchemy flusht neue Objekte VOR der Query → Constraint-Fehler
+        # Lösung: Autoflush deaktivieren während der Lookup-Phase
+        with session.no_autoflush:
+            for raw_email_data in raw_emails:
+                # Phase 13C: Lookup per (account, folder, imap_uid) - das ist die IMAP-Identität!
+                imap_folder = raw_email_data.get("imap_folder")
+                imap_uid = raw_email_data.get("imap_uid")
+                
+                if not imap_folder or not imap_uid:
+                    logger.warning(f"⚠️ Mail ohne folder/uid: {raw_email_data.get('subject', 'N/A')[:30]}")
+                    continue
+                
+                existing = (
+                    session.query(models.RawEmail)
+                    .filter_by(
+                        user_id=user.id,
+                        mail_account_id=account.id,
+                        imap_folder=imap_folder,
+                        imap_uid=imap_uid,
+                    )
+                    .first()
+                )
+                
+                if existing:
+                    # UPDATE: Mail existiert bereits, aktualisiere Flags/Status
+                    existing.imap_flags = raw_email_data.get("imap_flags")
+                    existing.imap_is_seen = raw_email_data.get("imap_is_seen", False)
+                    existing.imap_is_flagged = raw_email_data.get("imap_is_flagged", False)
+                    existing.imap_is_answered = raw_email_data.get("imap_is_answered", False)
+                    existing.imap_last_seen_at = datetime.now(UTC)
+                    updated += 1
+                    logger.debug(f"🔄 UPDATE: {imap_folder}/{imap_uid}")
+                    continue
+                
+                # INSERT: Neues Mail, verschlüssele und speichere
+
+                encrypted_sender = encryption.EmailDataManager.encrypt_email_sender(
+                    raw_email_data["sender"], master_key
+                )
+                encrypted_subject = encryption.EmailDataManager.encrypt_email_subject(
+                    raw_email_data["subject"], master_key
+                )
+                encrypted_body = encryption.EmailDataManager.encrypt_email_body(
+                    raw_email_data["body"], master_key
+                )
+
+                encrypted_in_reply_to = None
+                if raw_email_data.get("in_reply_to"):
+                    encrypted_in_reply_to = encryption.EncryptionManager.encrypt_data(
+                        raw_email_data["in_reply_to"], master_key
+                    )
+
+                encrypted_to = None
+                if raw_email_data.get("to"):
+                    encrypted_to = encryption.EncryptionManager.encrypt_data(
+                        raw_email_data["to"], master_key
+                    )
+
+                encrypted_cc = None
+                if raw_email_data.get("cc"):
+                    encrypted_cc = encryption.EncryptionManager.encrypt_data(
+                        raw_email_data["cc"], master_key
+                    )
+
+                encrypted_bcc = None
+                if raw_email_data.get("bcc"):
+                    encrypted_bcc = encryption.EncryptionManager.encrypt_data(
+                        raw_email_data["bcc"], master_key
+                    )
+
+                encrypted_reply_to = None
+                if raw_email_data.get("reply_to"):
+                    encrypted_reply_to = encryption.EncryptionManager.encrypt_data(
+                        raw_email_data["reply_to"], master_key
+                    )
+
+                encrypted_references = None
+                if raw_email_data.get("references"):
+                    encrypted_references = encryption.EncryptionManager.encrypt_data(
+                        raw_email_data["references"], master_key
+                    )
+
+                raw_email = models.RawEmail(
                     user_id=user.id,
                     mail_account_id=account.id,
                     uid=raw_email_data["uid"],
+                    encrypted_sender=encrypted_sender,
+                    encrypted_subject=encrypted_subject,
+                    encrypted_body=encrypted_body,
+                    received_at=raw_email_data["received_at"],
+                    imap_uid=raw_email_data.get("imap_uid"),
+                    imap_folder=raw_email_data.get("imap_folder"),
+                    imap_flags=raw_email_data.get("imap_flags"),
+                    message_id=raw_email_data.get("message_id"),
+                    encrypted_in_reply_to=encrypted_in_reply_to,
+                    parent_uid=raw_email_data.get("parent_uid"),
+                    thread_id=raw_email_data.get("thread_id"),
+                    imap_is_seen=raw_email_data.get("imap_is_seen"),
+                    imap_is_answered=raw_email_data.get("imap_is_answered"),
+                    imap_is_flagged=raw_email_data.get("imap_is_flagged"),
+                    imap_is_deleted=raw_email_data.get("imap_is_deleted"),
+                    imap_is_draft=raw_email_data.get("imap_is_draft"),
+                    encrypted_to=encrypted_to,
+                    encrypted_cc=encrypted_cc,
+                    encrypted_bcc=encrypted_bcc,
+                    encrypted_reply_to=encrypted_reply_to,
+                    message_size=raw_email_data.get("message_size"),
+                    encrypted_references=encrypted_references,
+                    content_type=raw_email_data.get("content_type"),
+                    charset=raw_email_data.get("charset"),
+                    has_attachments=raw_email_data.get("has_attachments"),
                 )
-                .first()
-            )
-            if existing:
-                continue
+                session.add(raw_email)
+                saved += 1
 
-            encrypted_sender = encryption.EmailDataManager.encrypt_email_sender(
-                raw_email_data["sender"], master_key
-            )
-            encrypted_subject = encryption.EmailDataManager.encrypt_email_subject(
-                raw_email_data["subject"], master_key
-            )
-            encrypted_body = encryption.EmailDataManager.encrypt_email_body(
-                raw_email_data["body"], master_key
-            )
-
-            encrypted_in_reply_to = None
-            if raw_email_data.get("in_reply_to"):
-                encrypted_in_reply_to = encryption.EncryptionManager.encrypt_data(
-                    raw_email_data["in_reply_to"], master_key
-                )
-
-            encrypted_to = None
-            if raw_email_data.get("to"):
-                encrypted_to = encryption.EncryptionManager.encrypt_data(
-                    raw_email_data["to"], master_key
-                )
-
-            encrypted_cc = None
-            if raw_email_data.get("cc"):
-                encrypted_cc = encryption.EncryptionManager.encrypt_data(
-                    raw_email_data["cc"], master_key
-                )
-
-            encrypted_bcc = None
-            if raw_email_data.get("bcc"):
-                encrypted_bcc = encryption.EncryptionManager.encrypt_data(
-                    raw_email_data["bcc"], master_key
-                )
-
-            encrypted_reply_to = None
-            if raw_email_data.get("reply_to"):
-                encrypted_reply_to = encryption.EncryptionManager.encrypt_data(
-                    raw_email_data["reply_to"], master_key
-                )
-
-            encrypted_references = None
-            if raw_email_data.get("references"):
-                encrypted_references = encryption.EncryptionManager.encrypt_data(
-                    raw_email_data["references"], master_key
-                )
-
-            raw_email = models.RawEmail(
-                user_id=user.id,
-                mail_account_id=account.id,
-                uid=raw_email_data["uid"],
-                encrypted_sender=encrypted_sender,
-                encrypted_subject=encrypted_subject,
-                encrypted_body=encrypted_body,
-                received_at=raw_email_data["received_at"],
-                imap_uid=raw_email_data.get("imap_uid"),
-                imap_folder=raw_email_data.get("imap_folder"),
-                imap_flags=raw_email_data.get("imap_flags"),
-                message_id=raw_email_data.get("message_id"),
-                encrypted_in_reply_to=encrypted_in_reply_to,
-                parent_uid=raw_email_data.get("parent_uid"),
-                thread_id=raw_email_data.get("thread_id"),
-                imap_is_seen=raw_email_data.get("imap_is_seen"),
-                imap_is_answered=raw_email_data.get("imap_is_answered"),
-                imap_is_flagged=raw_email_data.get("imap_is_flagged"),
-                imap_is_deleted=raw_email_data.get("imap_is_deleted"),
-                imap_is_draft=raw_email_data.get("imap_is_draft"),
-                encrypted_to=encrypted_to,
-                encrypted_cc=encrypted_cc,
-                encrypted_bcc=encrypted_bcc,
-                encrypted_reply_to=encrypted_reply_to,
-                message_size=raw_email_data.get("message_size"),
-                encrypted_references=encrypted_references,
-                content_type=raw_email_data.get("content_type"),
-                charset=raw_email_data.get("charset"),
-                has_attachments=raw_email_data.get("has_attachments"),
-            )
-            session.add(raw_email)
-            saved += 1
-
-        if saved:
+        if saved or updated:
             session.commit()
+            if updated > 0:
+                logger.info(f"💾 {saved} neue Mails, {updated} aktualisiert (Flags/Status)")
+            else:
+                logger.info(f"💾 {saved} neue Mails gespeichert")
         else:
             session.flush()
 

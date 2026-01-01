@@ -203,14 +203,26 @@ class MailFetcher:
                 logger.debug(f"Error closing IMAP connection: {e}")
 
     def fetch_new_emails(
-        self, folder: str = "INBOX", limit: int = 50
+        self, 
+        folder: str = "INBOX", 
+        limit: int = 50,
+        # Phase 13C Part 2: Server-Side Filtering
+        since: Optional[datetime] = None,
+        before: Optional[datetime] = None,
+        unseen_only: bool = False,
+        flagged_only: bool = False,
     ) -> List[Dict]:
         """
-        Holt E-Mails mit Threadin-Informationen (Phase 12)
+        Holt E-Mails mit Threading-Informationen (Phase 12)
+        + Server-Side Filtering (Phase 13C Part 2)
 
         Args:
             folder: IMAP-Ordner (Standard: "INBOX")
             limit: Max. Anzahl Mails (die neuesten)
+            since: Nur Mails nach diesem Datum (IMAP SEARCH SINCE)
+            before: Nur Mails vor diesem Datum (IMAP SEARCH BEFORE)
+            unseen_only: Nur ungelesene Mails (IMAP SEARCH UNSEEN)
+            flagged_only: Nur geflaggte Mails (IMAP SEARCH FLAGGED)
 
         Returns:
             Liste von E-Mail-Dicts mit erweiterten Metadaten
@@ -224,8 +236,29 @@ class MailFetcher:
                 raise ConnectionError("IMAP connection failed")
             conn.select(folder, readonly=True)
 
+            # Phase 13C Part 2: Build IMAP SEARCH criteria
+            search_criteria = []
+            
+            if unseen_only:
+                search_criteria.append("UNSEEN")
+            
+            if flagged_only:
+                search_criteria.append("FLAGGED")
+            
+            if since:
+                # IMAP date format: DD-Mon-YYYY (e.g., "01-Jan-2024")
+                date_str = since.strftime("%d-%b-%Y")
+                search_criteria.append(f"SINCE {date_str}")
+            
+            if before:
+                date_str = before.strftime("%d-%b-%Y")
+                search_criteria.append(f"BEFORE {date_str}")
+            
+            # Build final search string
+            search_string = " ".join(search_criteria) if search_criteria else "ALL"
+
             # BUG-002-FIX: Nutze UID-basierte Suche (stabil nach EXPUNGE)
-            status, messages = conn.uid('search', None, "ALL")
+            status, messages = conn.uid('search', None, search_string)
 
             if status != "OK":
                 print("⚠️  Keine Mails gefunden")
@@ -235,6 +268,8 @@ class MailFetcher:
             mail_ids = list(reversed(mail_ids))
             mail_ids = mail_ids[:limit]
 
+            if search_criteria:
+                print(f"🔍 Filter: {search_string}")
             print(f"📧 {len(mail_ids)} Mails gefunden")
 
             emails = []

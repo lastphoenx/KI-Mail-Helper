@@ -928,6 +928,53 @@ def list_view():
             .all()
         )
 
+        # Phase 13C: Lade Server-Ordner via IMAP (für Dropdown-Autocomplete)
+        server_folders = []
+        if filter_account_id:
+            try:
+                account = db.query(models.MailAccount).filter_by(
+                    id=filter_account_id, user_id=user.id
+                ).first()
+                if account and account.auth_type == "imap":
+                    master_key_temp = session.get("master_key")
+                    if master_key_temp:
+                        imap_server = encryption.CredentialManager.decrypt_server(
+                            account.encrypted_imap_server, master_key_temp
+                        )
+                        imap_username = encryption.CredentialManager.decrypt_email_address(
+                            account.encrypted_imap_username, master_key_temp
+                        )
+                        imap_password = encryption.CredentialManager.decrypt_imap_password(
+                            account.encrypted_imap_password, master_key_temp
+                        )
+                        fetcher = mail_fetcher_mod.MailFetcher(
+                            server=imap_server,
+                            username=imap_username,
+                            password=imap_password,
+                            port=account.imap_port,
+                        )
+                        fetcher.connect()
+                        try:
+                            typ, mailboxes = fetcher.connection.list()
+                            if typ == "OK":
+                                for mailbox in mailboxes:
+                                    if not mailbox:
+                                        continue
+                                    mailbox_str = (
+                                        mailbox.decode("utf-8") if isinstance(mailbox, bytes) else str(mailbox)
+                                    )
+                                    parts = mailbox_str.split('" ')
+                                    if len(parts) >= 2:
+                                        folder_name = parts[1].strip()
+                                        if folder_name.startswith('"') and folder_name.endswith('"'):
+                                            folder_name = folder_name[1:-1]
+                                        server_folders.append(folder_name)
+                                server_folders.sort()
+                        finally:
+                            fetcher.disconnect()
+            except Exception as e:
+                logger.warning(f"Konnte Server-Ordner nicht laden: {e}")
+
         # Phase 10: Lade alle User-Tags für Filter-Dropdown
         all_tags = []
         tag_manager_mod = None
@@ -1033,12 +1080,17 @@ def list_view():
             # Ohne master_key können wir nichts anzeigen
             decrypted_mails = []
 
-        # Phase 13: Sammle verfügbare Ordner aus RawEmails
-        available_folders = set()
-        for mail in decrypted_mails:
-            if mail.raw_email.imap_folder:
-                available_folders.add(mail.raw_email.imap_folder)
-        available_folders = sorted(list(available_folders))
+        # Phase 13: Sammle verfügbare Ordner aus ALLEN RawEmails des Users (nicht nur sichtbare)
+        available_folders_query = (
+            db.query(models.RawEmail.imap_folder)
+            .filter(
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.deleted_at == None,
+                models.RawEmail.imap_folder != None,
+            )
+            .distinct()
+        )
+        available_folders = sorted([f for (f,) in available_folders_query.all()])
 
         return render_template(
             "list_view.html",
@@ -1054,6 +1106,7 @@ def list_view():
             # Phase 13: Neue Filter-Parameter
             filter_folder=filter_folder,
             available_folders=available_folders,
+            server_folders=server_folders,
             filter_seen=filter_seen,
             filter_flagged=filter_flagged,
             filter_attachments=filter_attachments,
@@ -3658,6 +3711,29 @@ def get_account_folders(account_id):
             if typ != "OK":
                 return jsonify({"error": "Folder-Listing fehlgeschlagen"}), 500
 
+            def decode_imap_folder_name(name):
+                """Modified UTF-7 Dekodierung (RFC 2060) für IMAP Ordnernamen"""
+                if not name or '&' not in name:
+                    return name
+                try:
+                    import base64
+                    def decode_match(match):
+                        encoded = match.group(1)
+                        if encoded == '':
+                            return '&'
+                        encoded = encoded.replace(',', '/')
+                        padding = (4 - len(encoded) % 4) % 4
+                        encoded += '=' * padding
+                        try:
+                            decoded_bytes = base64.b64decode(encoded)
+                            return decoded_bytes.decode('utf-16-be')
+                        except:
+                            return match.group(0)
+                    import re
+                    return re.sub(r'&([^-]*)-', decode_match, name)
+                except:
+                    return name
+
             folders = []
             for mailbox in mailboxes:
                 if not mailbox:
@@ -3671,6 +3747,7 @@ def get_account_folders(account_id):
                     folder_name = parts[1].strip()
                     if folder_name.startswith('"') and folder_name.endswith('"'):
                         folder_name = folder_name[1:-1]
+                    folder_name = decode_imap_folder_name(folder_name)
                     folders.append(folder_name)
 
             folders.sort()
@@ -3767,9 +3844,11 @@ def move_email_to_folder(email_id):
             )
 
             if success:
-                email.deleted_at = datetime.now(UTC)
+                # ✅ FIX: Ordner aktualisieren statt löschen
+                raw_email.imap_folder = target_folder
+                raw_email.imap_last_seen_at = datetime.now(UTC)
                 db.commit()
-                logger.info(f"✓ Email {email_id} zu {target_folder} verschoben")
+                logger.info(f"✓ Email {email_id} zu {target_folder} verschoben (imap_folder aktualisiert)")
                 return jsonify({"success": True, "message": message})
             else:
                 return jsonify({"error": message}), 500

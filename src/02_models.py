@@ -597,7 +597,13 @@ class RawEmail(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("user_id", "mail_account_id", "uid", name="uq_raw_emails_uid"),
+        # Phase 13C Part 3 FIX: IMAP UID ist eindeutig pro (account, folder, uid)
+        # Nicht nur pro (account, uid)! Ein Mail kann in mehreren Ordnern sein.
+        # INBOX/UID=123 ≠ Archiv/UID=123 (verschiedene IMAP-Objekte!)
+        UniqueConstraint(
+            "user_id", "mail_account_id", "imap_folder", "imap_uid",
+            name="uq_raw_emails_folder_uid"
+        ),
     )
 
     @property
