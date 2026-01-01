@@ -528,10 +528,25 @@
             html += `      <li>🔵 Ungelesen: <strong>${stats.unseen || 0}</strong></li>`;
             html += `      <li>⭐ Flagged: <strong>${stats.flagged || 0}</strong></li>`;
             html += `      <li>✉️ Answered: <strong>${stats.answered || 0}</strong></li>`;
-            html += `      <li>🗑️ Deleted: <strong>${stats.deleted || 0}</strong></li>`;
-            html += `    </ul></div>`;
-            
-            html += `  <div class="col-md-6"><p class="mb-1"><strong>🏷️ Verfügbare Flags (${flags.length}):</strong></p>`;
+            html += `    </ul>`;
+            html += `  </div>`;
+            html += `  <div class="col-md-6"><p class="mb-1"><strong>🔐 UIDVALIDITY pro Ordner:</strong></p>`;
+            html += `    <div style="font-size: 0.85em; max-height: 120px; overflow-y: auto;">`;
+            if (data.folder_uidvalidities && Object.keys(data.folder_uidvalidities).length > 0) {
+                html += `      <table class="table table-sm table-bordered mb-0">`;
+                html += `        <thead class="table-light"><tr><th>Ordner</th><th>UIDVALIDITY</th></tr></thead><tbody>`;
+                for (const [folder, uidval] of Object.entries(data.folder_uidvalidities)) {
+                    html += `        <tr><td><small>${folder}</small></td><td><code>${uidval}</code></td></tr>`;
+                }
+                html += `      </tbody></table>`;
+            } else {
+                html += `      <p class="text-muted mb-0"><small>Keine UIDVALIDITY-Daten verfügbar</small></p>`;
+            }
+            html += `    </div>`;
+            html += `  </div>`;
+            html += `</div>`;
+            html += `<div class="row">`;
+            html += `  <div class="col-12"><p class="mb-1"><strong>🏷️ Verfügbare Flags (${flags.length}):</strong></p>`;
             html += `    <div style="background-color: #f8f9fa; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em; max-height: 150px; overflow-y: auto;">`;
             if (flags.length > 0) {
                 html += flags.join('<br>');
@@ -548,7 +563,8 @@
                 html += `<thead class="table-dark sticky-top"><tr>`;
                 html += `  <th style="width: 60px;">UID</th>`;
                 html += `  <th style="width: 120px;">Ordner</th>`;
-                html += `  <th style="width: 200px;">Message-ID</th>`;
+                html += `  <th style="width: 100px;">UIDVALIDITY</th>`;
+                html += `  <th style="width: 180px;">Message-ID</th>`;
                 html += `  <th>Betreff</th>`;
                 html += `  <th style="width: 50px;">Seen</th>`;
                 html += `  <th style="width: 50px;">Flag</th>`;
@@ -558,6 +574,7 @@
                     html += `<tr>`;
                     html += `  <td>${msg.uid}</td>`;
                     html += `  <td><small>${msg.folder || 'INBOX'}</small></td>`;
+                    html += `  <td><code style="font-size: 0.75em;">${msg.uidvalidity || 'N/A'}</code></td>`;
                     html += `  <td><small style="word-break: break-all;">${msg.message_id || '(keine)'}</small></td>`;
                     html += `  <td><small>${msg.subject || '(kein Betreff)'}</small></td>`;
                     html += `  <td class="text-center">${msg.is_seen ? '✅' : '❌'}</td>`;

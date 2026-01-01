@@ -478,14 +478,21 @@ class IMAPDiagnostics:
             sample_messages = []
             total_messages_all_folders = 0
             max_samples = 50  # Max 50 sample messages total
+            folder_uidvalidities = {}  # Track UIDVALIDITY per folder
             
             for folder in folders:
                 if len(sample_messages) >= max_samples:
                     break
                 
                 try:
-                    # Select folder (readonly)
-                    client.select_folder(folder, readonly=True)
+                    # Select folder (readonly) and capture UIDVALIDITY
+                    folder_info = client.select_folder(folder, readonly=True)
+                    
+                    # Extract UIDVALIDITY (important for UID consistency checks)
+                    uidvalidity = folder_info.get(b'UIDVALIDITY')
+                    if uidvalidity:
+                        uidvalidity = int(uidvalidity[0]) if isinstance(uidvalidity, list) else int(uidvalidity)
+                        folder_uidvalidities[folder] = uidvalidity
                     
                     # Search for all messages in this folder
                     all_msgs = client.search()
@@ -552,6 +559,7 @@ class IMAPDiagnostics:
                         sample_messages.append({
                             'uid': msg_id,
                             'folder': folder,
+                            'uidvalidity': folder_uidvalidities.get(folder),
                             'message_id': message_id,
                             'subject': subject,
                             'flags': flags_str,
@@ -578,6 +586,7 @@ class IMAPDiagnostics:
                 'success': True,
                 'total_messages': total_messages_all_folders,
                 'sample_count': len(sample_messages),
+                'folder_uidvalidities': folder_uidvalidities,
                 'folders_checked': len(folders),
                 'flags_found': sorted(unique_flags),
                 'statistics': stats,
