@@ -579,13 +579,6 @@ class RawEmail(Base):
         Integer, ForeignKey("mail_accounts.id"), nullable=False, index=True
     )
 
-    # ===== DEPRECATED (Phase 14f) =====
-    # uid war unser selbst-generierter Identifier (UUID/String)
-    # Wurde durch RFC-konformen Key ersetzt: (folder, uidvalidity, imap_uid)
-    # Feld bleibt für Backward-Compatibility, wird aber nicht mehr befüllt
-    # TODO: Kann in Zukunft entfernt werden wenn alle Emails migriert sind
-    uid = Column(String(255), nullable=True)
-
     # Zero-Knowledge: Verschlüsselte persönliche Daten
     encrypted_sender = Column(Text, nullable=False)
     encrypted_subject = Column(Text)
@@ -664,7 +657,7 @@ class RawEmail(Base):
         return self.deleted_at is not None
 
     def __repr__(self):
-        return f"<RawEmail(id={self.id}, user={self.user_id}, uid='{self.uid}')>"
+        return f"<RawEmail(id={self.id}, user={self.user_id}, imap_uid={self.imap_uid})>"
 
 
 class ProcessedEmail(Base):

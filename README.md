@@ -2,7 +2,7 @@
 
 > **Intelligente E-Mail-Priorisierung mit lokalem LLM & Zero-Knowledge Encryption**  
 > Datenschutzfreundlich • End-to-End verschlüsselt • Automatische Übersetzung • 3×3-Prioritäten-Dashboard  
-> Security Score: **98/100** 🔒 | Phase: **12 (Active Development)** 🚧
+> Security Score: **98/100** 🔒 | Phase: **14 (RFC-Compliant IMAP Architecture)** 🚧
 
 ---
 
@@ -20,7 +20,7 @@ Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher
 - Ein weiterer **KI-Provider + Modell** war hauptsächlich für Review, kritisches Gegenprüfen und das Vorschlagen von Fixes zuständig und hat nur wenige Änderungen selbst implementiert.
 - Ein dritter **KI-Provider + ausgewähltes Modell** wurde per API für ein Deep-Review eingesetzt – unterstützt durch ein eigenes Python-Review-Skript mit ca. 1.000 Zeilen (ausschließlich für Review-Zwecke).
 
-**Das Projekt befindet sich in Phase 12 (Email Metadata Enrichment) und wird aktiv weiterentwickelt.** Neue Features wie Threading-Support, Performance-Optimierungen und erweiterte Metadaten werden kontinuierlich integriert und getestet.
+**Das Projekt befindet sich in Phase 14 (RFC-Compliant IMAP Architecture) und wird aktiv weiterentwickelt.** Die neue Phase implementiert RFC-konforme IMAP UIDs (RFC 3501/4315/9051) mit (folder, UIDVALIDITY, UID) als unique key, beseitigt Race-Conditions bei MOVE-Operationen und verbessert die Zuverlässigkeit der Email-Synchronisation erheblich.
 
 **Trotz größter Sorgfalt beim Prompting, kritischem Hinterfragen und wiederholten Reviews erfolgt die Verwendung auf eigenes Risiko.** Die Software wird „wie gesehen" (as is) bereitgestellt – ohne Gewährleistung und ohne Zusicherung hinsichtlich Korrektheit, Sicherheit oder Eignung. Wenn du das Tool mit echten Mail-Accounts oder sensiblen Daten nutzen willst, führe bitte eigene Tests, Threat-Modeling und ein unabhängiges Security-Review durch.
 
@@ -36,7 +36,7 @@ This repository was created with multiple AI systems. So far, the codebase has b
 - Another **AI provider + model** was mainly responsible for review, critical verification, and proposing fixes, contributing only minor code changes.
 - A third **AI provider + selected model** was used via API for an in-depth review, supported by a dedicated Python review harness of about 1,000 lines (built solely for review purposes).
 
-**The project is currently in Phase 12 (Email Metadata Enrichment) and is being actively developed.** New features like threading support, performance optimizations, and enhanced metadata handling are continuously being integrated and tested.
+**The project is currently in Phase 14 (RFC-Compliant IMAP Architecture) and is being actively developed.** The new phase implements RFC-compliant IMAP UIDs (RFC 3501/4315/9051) with (folder, UIDVALIDITY, UID) as unique key, eliminates race conditions in MOVE operations, and significantly improves email synchronization reliability.
 
 **Despite careful prompting, critical challenge/verification, and repeated reviews, use is at your own risk.** The software is provided "as is", without warranty, and with no guarantee of correctness, security, or fitness for a particular purpose. If you plan to use it with real email accounts or sensitive data, please conduct your own testing, threat modeling, and an independent security review first.
 

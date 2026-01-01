@@ -2,10 +2,38 @@
 
 **Strategic Planning Document - Was haben wir, was brauchen wir?**
 
-**Status:** ✅ Phase A, B, C, D Abgeschlossen | 🟡 Phase E-H In Planung  
+**Status:** ✅ Phase A, B, C, D Abgeschlossen | ✅ Phase 14 Complete | 🟡 Phase E-H In Planung  
 **Created:** 31. Dezember 2025  
-**Updated:** 01. Januar 2026 (Phase C Part 4 Complete - Delta-Sync & Fetch Config)  
+**Updated:** 01. Januar 2026  
+**Recent:** Phase 14 Complete - RFC-konformer Unique Key (folder, uidvalidity, imap_uid)  
 **Supersedes/Integrates:** Task 5 & Task 6
+
+---
+
+## 🎉 Phase 14: RFC-konformer Unique Key - COMPLETE
+
+**Duration:** ~4 Stunden | **Status:** ✅ **ABGESCHLOSSEN**
+
+**Problem gelöst:**
+- ❌ Alte Architektur: `uid` = selbst-generierter String (UUID/Hash)
+- ❌ MOVE führte zu Race-Conditions (neue UID unbekannt)
+- ❌ Deduplizierung war heuristisch (content_hash)
+
+**Neue Architektur:**
+- ✅ RFC-konformer Key: `(user_id, account_id, folder, uidvalidity, imap_uid)`
+- ✅ MOVE mit COPYUID (RFC 4315 UIDPLUS)
+- ✅ UIDVALIDITY-Tracking pro Ordner
+- ✅ Keine Deduplizierung mehr nötig
+
+**Implemented:**
+- Phase 14a: DB Schema Migration (UIDVALIDITY, Integer UIDs, Unique Constraint)
+- Phase 14b: MailFetcher (UIDVALIDITY-Check, Delta-Fetch, _invalidate_folder)
+- Phase 14c: MailSynchronizer (COPYUID-Parsing, MoveResult)
+- Phase 14d: Web Endpoints (Direct DB Update nach MOVE)
+- Phase 14e: Background Jobs (Keine Deduplizierung, IntegrityError = skip)
+- Phase 14f: Cleanup (uid Feld komplett entfernt)
+
+📄 **Detailed Documentation:** [doc/erledigt/PHASE_14_RFC_UNIQUE_KEY_COMPLETE.md](../erledigt/PHASE_14_RFC_UNIQUE_KEY_COMPLETE.md)
 
 ---
 

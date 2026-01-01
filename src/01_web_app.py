@@ -3594,7 +3594,7 @@ def delete_email(email_id):
                 return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
 
             synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
-            uid_to_use = raw_email.imap_uid or raw_email.uid
+            uid_to_use = raw_email.imap_uid  # Phase 14f: uid Feld entfernt
             folder_to_use = raw_email.imap_folder or "INBOX"
             success, message = synchronizer.delete_email(uid_to_use, folder_to_use)
 
@@ -3688,7 +3688,7 @@ def move_email_to_trash(email_id):
                 return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
 
             synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
-            uid_to_use = raw_email.imap_uid or raw_email.uid
+            uid_to_use = raw_email.imap_uid  # Phase 14f: uid Feld entfernt
             folder_to_use = raw_email.imap_folder or "INBOX"
 
             success, message = synchronizer.move_to_trash(uid_to_use, folder_to_use)
@@ -4022,7 +4022,7 @@ def move_email_to_folder(email_id):
                 return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
 
             synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
-            uid_to_use = raw_email.imap_uid or raw_email.uid
+            uid_to_use = raw_email.imap_uid  # Phase 14f: uid Feld entfernt
             folder_to_use = raw_email.imap_folder or "INBOX"
 
             # Phase 14c: move_to_folder gibt MoveResult zurück
@@ -4142,7 +4142,7 @@ def mark_email_read(email_id):
                 return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
 
             synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
-            uid_to_use = raw_email.imap_uid or raw_email.uid
+            uid_to_use = raw_email.imap_uid  # Phase 14f: uid Feld entfernt
             folder_to_use = raw_email.imap_folder or "INBOX"
             success, message = synchronizer.mark_as_read(uid_to_use, folder_to_use)
 
@@ -4235,7 +4235,7 @@ def toggle_email_read(email_id):
                 return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
 
             synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
-            uid_to_use = raw_email.imap_uid or raw_email.uid
+            uid_to_use = raw_email.imap_uid  # Phase 14f: uid Feld entfernt
             folder_to_use = raw_email.imap_folder or "INBOX"
 
             logger.debug(
@@ -4344,7 +4344,7 @@ def toggle_email_flag(email_id):
             synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
 
             # Use imap_uid (Phase 12 attribute) instead of uid (legacy)
-            uid_to_use = raw_email.imap_uid or raw_email.uid
+            uid_to_use = raw_email.imap_uid  # Phase 14f: uid Feld entfernt
             folder_to_use = raw_email.imap_folder or "INBOX"
 
             logger.debug(
