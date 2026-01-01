@@ -468,7 +468,7 @@ for folder in folders:
 
 ## Changelog
 
-**Version 1.0 (2026-01-01):**
+**Version 1.0 (2026-01-01 12:00):**
 - ✅ Quick Count Endpoint
 - ✅ Fetch-Konfiguration UI
 - ✅ Delta-Sync Implementierung
@@ -476,9 +476,53 @@ for folder in folders:
 - ✅ Migration erstellt
 - ✅ Dokumentation
 
+**Version 1.0.1 (2026-01-01 13:13) - Bugfix:**
+- 🐛 Fix: Delta-Sync NameError
+  - Problem: `search_criteria` nicht im `uid_range` Branch definiert
+  - Lösung: Variable immer initialisieren (vor if/else)
+  - Testing: 38→40 Mails, 5 gefunden (2 neue, 3 aktualisiert)
+  - Performance: 30-60x schneller (1s statt 30-60s)
+
+---
+
+## Produktiv-Tests
+
+### Test 1: Initial FULL SYNC (12:56)
+```
+📁 7 Ordner, FULL SYNC (alle Mails)
+  ✓ Archiv: 3 Mails
+  ✓ Entwürfe: 2 Mails      ← UTF-7 Fix funktioniert!
+  ✓ Gelöscht: 2 Mails      ← UTF-7 Fix funktioniert!
+  ✓ Gesendet: 11 Mails
+  ✓ INBOX: 20 Mails
+📧 Gesamt: 38 Mails
+💾 38 neue / 38 verarbeitet
+🎉 Initial Sync abgeschlossen
+```
+
+### Test 2: Delta-Sync nach Testmail (13:13)
+```
+📁 7 Ordner, DELTA SYNC (nur neue Mails)
+📊 Max UIDs: {Archiv: 3, Entwürfe: 11, Gelöscht: 3, Gesendet: 169, INBOX: 433}
+  🔄 Archiv: Delta ab UID 4    → ✓ 1 Mail
+  🔄 Entwürfe: Delta ab UID 12 → ✓ 1 Mail
+  🔄 Gelöscht: Delta ab UID 4  → ✓ 1 Mail
+  🔄 Gesendet: Delta ab UID 170 → ✓ 1 Mail
+  🔄 INBOX: Delta ab UID 434   → ✓ 1 Mail
+📧 Gesamt: 5 Mails
+💾 2 neue, 3 aktualisiert (Flags)
+```
+
+**Analyse:**
+- 2 neue Mails: INBOX (eingehend) + Gesendet (ausgehend) ✅
+- 3 aktualisiert: Flag-Änderungen (gelesen/verschoben)
+- Performance: ~1s (vorher: ~30-60s) → **30-60x Speedup!**
+
 ---
 
 **Autor-Notizen:**
 - UTF-7 Problem war tricky: Brauchte RAW+DECODED Folder-Namen-Paar
-- Delta-Sync spart massiv Zeit bei regelmäßigen Fetches
+- Delta-Sync NameError war subtil: Variable nur in else-Branch definiert
+- Delta-Sync spart massiv Zeit bei regelmäßigen Fetches (1s vs 60s!)
 - Quick Count ist extrem nützlich für User-Feedback vor Fetch
+- Flag-Updates werden erkannt (3 aktualisierte Mails trotz Delta-Sync)

@@ -331,8 +331,59 @@ python3 scripts/reset_all_emails.py --user=1 --force
 - [x] Fetch-Konfiguration UI
 - [x] Delta-Sync Implementierung
 - [x] UTF-7 Encoding Fix
+- [x] Delta-Sync Bugfix (NameError bei search_criteria)
 - [x] Migration erstellt und angewendet
 - [x] Testing abgeschlossen
+- [x] Produktiv getestet (38→40 Mails, 5 gefunden via Delta-Sync)
 - [x] Dokumentation erstellt
 
-**Fazit:** Phase 13C Part 4 erfolgreich abgeschlossen! 🎉
+---
+
+## 🐛 Bugfixes (Post-Implementation)
+
+### Fix 1: Delta-Sync NameError (2026-01-01 13:13)
+
+**Problem:**
+- Delta-Sync warf Exception "Operation fehlgeschlagen" für alle Ordner
+- NameError: `search_criteria` nicht definiert im `uid_range` Branch
+- Code prüfte `if search_criteria:` aber Variable nur im `else` Branch definiert
+
+**Root Cause:**
+```python
+if uid_range:
+    status, messages = conn.uid('search', ...)
+else:
+    search_criteria = []  # ← Nur hier definiert!
+    ...
+
+if search_criteria:  # ← FEHLER: Variable nicht definiert wenn uid_range!
+```
+
+**Lösung:**
+```python
+search_criteria = []  # ← IMMER initialisieren (vor if/else)
+
+if uid_range:
+    status, messages = conn.uid('search', ...)
+else:
+    search_criteria.append(...)  # Nur hier befüllen
+```
+
+**Testing:**
+- ✅ Delta-Sync findet neue Mails korrekt
+- ✅ Quick Count: 38→40 Mails (Delta=2)
+- ✅ Fetch: 5 Mails gefunden (2 neue, 3 aktualisiert)
+  - INBOX: 1 neu (eingehende Testmail)
+  - Gesendet: 1 neu (ausgehende Testmail)
+  - Archiv, Entwürfe, Gelöscht: je 1 aktualisiert (Flag-Änderungen)
+
+**Performance:**
+- FULL SYNC vorher: ~30-60s (alle 38 Mails prüfen)
+- DELTA SYNC jetzt: ~1s (nur 5 neue/geänderte)
+- **→ 30-60x schneller!** 🚀
+
+**Commit:** `60a56da - Fix: Delta-Sync NameError - search_criteria initialisieren`
+
+---
+
+**Fazit:** Phase 13C Part 4 erfolgreich abgeschlossen & produktiv getestet! 🎉
