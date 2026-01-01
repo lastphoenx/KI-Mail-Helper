@@ -340,35 +340,51 @@ class MailFetcher:
                 print(f"⚠️  Ordner {folder} nicht gefunden")
                 return []
             
-            # UIDVALIDITY vom Server (aus SELECT Response)
+            # UIDVALIDITY vom Server (aus SELECT Response + untagged responses)
             server_uidvalidity = None
+            import re
+            
+            # 1) Prüfe folder_info (tagged response)
             if isinstance(folder_info, list):
                 for response in folder_info:
                     if isinstance(response, bytes):
                         response_str = response.decode('utf-8', errors='ignore')
                         if 'UIDVALIDITY' in response_str:
-                            import re
                             match = re.search(r'UIDVALIDITY\s+(\d+)', response_str)
                             if match:
                                 server_uidvalidity = int(match.group(1))
                                 break
             
-            # Phase 14f HOTFIX 2: Fallback zu STATUS command (RFC 3501)
-            # Manche IMAP-Server (GMX, Yahoo) geben UIDVALIDITY nicht in SELECT Response
+            # 2) Phase 14f HOTFIX 2: Prüfe untagged responses (GMX, Yahoo)
+            # GMX gibt UIDVALIDITY nicht in folder_info sondern in conn.untagged_responses
             if not server_uidvalidity:
                 try:
-                    import re
-                    status_cmd, status_resp = conn.status(folder, '(UIDVALIDITY)')
-                    if status_cmd == 'OK' and status_resp:
-                        # status_resp Format: [b'"folder" (UIDVALIDITY 1352540700)']
-                        response_str = status_resp[0].decode('utf-8', errors='ignore') if isinstance(status_resp[0], bytes) else str(status_resp[0])
-                        match = re.search(r'UIDVALIDITY\s+(\d+)', response_str)
-                        if match:
-                            server_uidvalidity = int(match.group(1))
-                            logger.debug(f"UIDVALIDITY via STATUS: {server_uidvalidity}")
+                    # IMAP untagged responses nach SELECT
+                    # Format: {'OK': [b'[UIDVALIDITY 1352540700] UIDs valid'], ...}
+                    untagged = getattr(conn, 'untagged_responses', {})
+                    
+                    # Durchsuche alle untagged responses nach UIDVALIDITY
+                    for key, responses in untagged.items():
+                        if responses:
+                            for resp in responses:
+                                resp_str = resp.decode('utf-8', errors='ignore') if isinstance(resp, bytes) else str(resp)
+                                if 'UIDVALIDITY' in resp_str:
+                                    match = re.search(r'UIDVALIDITY\s+(\d+)', resp_str)
+                                    if match:
+                                        server_uidvalidity = int(match.group(1))
+                                        logger.debug(f"UIDVALIDITY from untagged response: {server_uidvalidity}")
+                                        break
+                        if server_uidvalidity:
+                            break
                 except Exception as e:
-                    logger.warning(f"⚠️  Konnte UIDVALIDITY nicht abrufen: {e}")
-                    # Continue without UIDVALIDITY (suboptimal aber nicht fatal)
+                    logger.debug(f"Could not parse untagged responses: {e}")
+            
+            # 3) Letzter Fallback: Ohne UIDVALIDITY weitermachen (suboptimal)
+            if not server_uidvalidity:
+                logger.warning(
+                    f"⚠️  Konnte UIDVALIDITY für {folder} nicht abrufen! "
+                    f"Mails werden ohne UIDVALIDITY gespeichert (nicht RFC-konform)"
+                )
             
             # Phase 14b: UIDVALIDITY-Check wenn account_id + session gegeben
             if account_id and session and server_uidvalidity:
