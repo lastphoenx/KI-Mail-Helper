@@ -4025,19 +4025,40 @@ def move_email_to_folder(email_id):
             uid_to_use = raw_email.imap_uid or raw_email.uid
             folder_to_use = raw_email.imap_folder or "INBOX"
 
-            success, message = synchronizer.move_to_folder(
+            # Phase 14c: move_to_folder gibt MoveResult zurück
+            result = synchronizer.move_to_folder(
                 uid_to_use, target_folder, folder_to_use
             )
 
-            if success:
-                # ✅ FIX: Ordner aktualisieren statt löschen
-                raw_email.imap_folder = target_folder
+            if result.success:
+                # Phase 14d: DB DIREKT UPDATEN mit neuer UID vom Server!
+                # RFC 4315 UIDPLUS: Server gibt neue UID zurück (COPYUID)
+                raw_email.imap_folder = result.target_folder
+                
+                # Wenn COPYUID verfügbar: neue UID + UIDVALIDITY speichern
+                if result.target_uid is not None:
+                    raw_email.imap_uid = result.target_uid
+                    logger.info(
+                        f"✅ Email {email_id}: UID {uid_to_use} → {result.target_uid} "
+                        f"({folder_to_use} → {result.target_folder})"
+                    )
+                
+                if result.target_uidvalidity is not None:
+                    raw_email.imap_uidvalidity = result.target_uidvalidity
+                    logger.info(
+                        f"✅ Email {email_id}: UIDVALIDITY = {result.target_uidvalidity}"
+                    )
+                
                 raw_email.imap_last_seen_at = datetime.now(UTC)
                 db.commit()
-                logger.info(f"✓ Email {email_id} zu {target_folder} verschoben (imap_folder aktualisiert)")
-                return jsonify({"success": True, "message": message})
+                
+                logger.info(
+                    f"✅ Email {email_id} zu {result.target_folder} verschoben "
+                    f"(DB direkt aktualisiert, kein Refetch!)"
+                )
+                return jsonify({"success": True, "message": result.message})
             else:
-                return jsonify({"error": message}), 500
+                return jsonify({"error": result.message}), 500
 
         finally:
             fetcher.disconnect()
