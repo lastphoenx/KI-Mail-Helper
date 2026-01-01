@@ -2,10 +2,10 @@
 
 **Strategic Planning Document - Was haben wir, was brauchen wir?**
 
-**Status:** ✅ Phase A, B, C, D Abgeschlossen | ✅ Phase 14 Complete | 🟡 Phase E-H In Planung  
+**Status:** ✅ Phase A, B, C, D Abgeschlossen | ✅ Phase 14 Complete (a-g) | 🟡 Phase E-H In Planung  
 **Created:** 31. Dezember 2025  
 **Updated:** 01. Januar 2026  
-**Recent:** Phase 14 Complete - RFC-konformer Unique Key (folder, uidvalidity, imap_uid)  
+**Recent:** Phase 14g Complete - IMAPClient Migration (imaplib → IMAPClient 3.0.1)  
 **Supersedes/Integrates:** Task 5 & Task 6
 
 ---
@@ -34,6 +34,45 @@
 - Phase 14f: Cleanup (uid Feld komplett entfernt)
 
 📄 **Detailed Documentation:** [doc/erledigt/PHASE_14_RFC_UNIQUE_KEY_COMPLETE.md](../erledigt/PHASE_14_RFC_UNIQUE_KEY_COMPLETE.md)
+
+---
+
+## 🚀 Phase 14g: Complete IMAPClient Migration - COMPLETE
+
+**Duration:** ~4-5 Stunden | **Status:** ✅ **ABGESCHLOSSEN**
+
+**Problem gelöst:**
+- ❌ imaplib: Complex string parsing (regex, UTF-7, untagged_responses)
+- ❌ COPYUID hidden in untagged_responses → unreliable MOVE
+- ❌ Manual UTF-7 encoding/decoding for folder names
+- ❌ Error-prone response parsing
+
+**Neue Architektur:**
+- ✅ IMAPClient 3.0.1: Clean Pythonic API
+- ✅ COPYUID as tuple: `(uidvalidity, [old_uids], [new_uids])`
+- ✅ Automatic UTF-7 handling
+- ✅ Dict-based responses (no regex)
+- ✅ 40% code reduction (-119 lines across 5 files)
+
+**Implemented:**
+- Migration Commit 1 (378d7b0): 4 files, -376/+295 lines
+  - src/06_mail_fetcher.py: Connection, UIDVALIDITY, Search, Fetch
+  - src/16_mail_sync.py: COPYUID via tuple, all flag operations
+  - src/14_background_jobs.py: Folder listing with tuple unpacking
+  - src/01_web_app.py: mail-count endpoint
+- Migration Commit 2 (330f1b9): 1 file, -56/+18 lines
+  - src/01_web_app.py: /folders + Settings endpoints
+- Script Fix Commit (fa10846): scripts/reset_all_emails.py
+  - Soft-delete instead of hard-delete
+  - UIDVALIDITY cache clear (`folder_uidvalidity = None`)
+
+**Bugs Fixed:**
+- ✅ MOVE operation DB updates (COPYUID extraction 100% reliable)
+- ✅ Delta sync search syntax (`['UID', uid_range]` list format)
+- ✅ mail-count AttributeError (`list_folders()` + `folder_status()`)
+- ✅ reset_all_emails.py now uses soft-delete pattern
+
+📄 **Detailed Documentation:** [doc/erledigt/PHASE_14G_IMAPCLIENT_MIGRATION_COMPLETE.md](../erledigt/PHASE_14G_IMAPCLIENT_MIGRATION_COMPLETE.md)
 
 ---
 
@@ -593,14 +632,16 @@ def analyze_email(
 | ✅ DONE | 4 | Multi-Folder FULL SYNC | 6-8h | Korrekte IMAP-Architektur | Phase C Part 3 |
 | ✅ DONE | 4a | Delta-Sync + Fetch Config | 8-10h | 30-60x Speedup, Quick Count | Phase C Part 4 COMPLETE |
 | ✅ DONE | 4b | RFC-Compliant IMAP UIDs | 4-6h | Eliminiert Race-Conditions | Phase 14 (a-f) COMPLETE |
+| ✅ DONE | 4c | IMAPClient Migration | 4-5h | 40% Code-Reduktion, 100% Reliability | Phase 14g COMPLETE |
+| ✅ DONE | 4d | reset_all_emails.py Fix | 0.5h | Soft-Delete + UIDVALIDITY Cache Clear | Phase 14g COMPLETE |
 | 🟡 TODO | 5 | KI Thread-Context | 4-6h | Bessere Klassifizierung | Phase E |
 | 🟡 TODO | 6 | SMTP Antworten | 6-8h | Vollständige Automation | Phase F |
 | 🟢 TODO | 7 | Conversation UI | 8-10h | Nice-to-have | Phase G |
 | 🟢 TODO | 8 | Bulk Email Operations | 15-20h | Produktive Batch-Verarbeitung | Phase H |
 
-**Abgeschlossen:** 30-40h (Phase A + B + C + D + 14)  
+**Abgeschlossen:** 35-45h (Phase A + B + C + D + 14a-g)  
 **Geplant Phase 13 (E-H):** ~33-44 Stunden  
-**Phase 13 Gesamt:** ~63-84 Stunden
+**Phase 13 Gesamt:** ~68-89 Stunden
 
 **Phase D Justification (Critical Infrastructure):**
 - Moved ahead of Phase C due to critical nature
