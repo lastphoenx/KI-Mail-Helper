@@ -353,6 +353,23 @@ class MailFetcher:
                                 server_uidvalidity = int(match.group(1))
                                 break
             
+            # Phase 14f HOTFIX 2: Fallback zu STATUS command (RFC 3501)
+            # Manche IMAP-Server (GMX, Yahoo) geben UIDVALIDITY nicht in SELECT Response
+            if not server_uidvalidity:
+                try:
+                    import re
+                    status_cmd, status_resp = conn.status(folder, '(UIDVALIDITY)')
+                    if status_cmd == 'OK' and status_resp:
+                        # status_resp Format: [b'"folder" (UIDVALIDITY 1352540700)']
+                        response_str = status_resp[0].decode('utf-8', errors='ignore') if isinstance(status_resp[0], bytes) else str(status_resp[0])
+                        match = re.search(r'UIDVALIDITY\s+(\d+)', response_str)
+                        if match:
+                            server_uidvalidity = int(match.group(1))
+                            logger.debug(f"UIDVALIDITY via STATUS: {server_uidvalidity}")
+                except Exception as e:
+                    logger.warning(f"⚠️  Konnte UIDVALIDITY nicht abrufen: {e}")
+                    # Continue without UIDVALIDITY (suboptimal aber nicht fatal)
+            
             # Phase 14b: UIDVALIDITY-Check wenn account_id + session gegeben
             if account_id and session and server_uidvalidity:
                 from src import models_02 as models
