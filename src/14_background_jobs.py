@@ -506,7 +506,6 @@ class BackgroundJobQueue:
             raw_email = models.RawEmail(
                 user_id=user.id,
                 mail_account_id=account.id,
-                uid=None,  # Phase 14f: Deprecated, wird nicht mehr verwendet
                 encrypted_sender=encrypted_sender,
                 encrypted_subject=encrypted_subject,
                 encrypted_body=encrypted_body,

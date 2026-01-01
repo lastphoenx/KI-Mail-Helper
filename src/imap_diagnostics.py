@@ -1437,12 +1437,150 @@ class IMAPDiagnostics:
         
         return addresses
     
-    def run_diagnostics(self, subscribed_only: bool = False) -> Dict[str, Any]:
+    def verify_db_sync(self, client=None, account_id: int = None, session=None) -> Dict[str, Any]:
+        """
+        Test 12: Vergleicht Archiv-Mails zwischen DB und IMAP-Server
+        
+        Checkt ob verschobene Mails (z.B. "Test email verschieben") korrekt synchronisiert wurden.
+        
+        Args:
+            client: Optional pre-existing IMAPClient connection
+            account_id: Mail account ID for DB lookup
+            session: SQLAlchemy session for DB access
+        
+        Returns:
+            Dict with sync verification results
+        """
+        should_close = False
+        try:
+            if client is None:
+                client = self._get_connection()
+                client.login(self.username, self.password)
+                should_close = True
+            
+            # DB Mails holen (wenn session und account_id gegeben)
+            db_mails = []
+            if session and account_id:
+                import importlib
+                models = importlib.import_module("src.02_models")
+                
+                db_mails_raw = session.query(models.RawEmail).filter(
+                    models.RawEmail.imap_folder == 'Archiv',
+                    models.RawEmail.mail_account_id == account_id
+                ).order_by(models.RawEmail.imap_uid).all()
+                
+                db_mails = [
+                    {
+                        'uid': m.imap_uid,
+                        'uidvalidity': m.imap_uidvalidity,
+                        'db_id': m.id
+                    }
+                    for m in db_mails_raw
+                ]
+            
+            # IMAP Archiv-Mails holen
+            folder_info = client.select_folder('Archiv', readonly=True)
+            
+            uidvalidity = folder_info.get(b'UIDVALIDITY')
+            if uidvalidity:
+                uidvalidity = int(uidvalidity[0]) if isinstance(uidvalidity, list) else int(uidvalidity)
+            
+            # Search all messages
+            all_msgs = client.search()
+            
+            if not all_msgs:
+                return {
+                    'success': True,
+                    'folder': 'Archiv',
+                    'uidvalidity': uidvalidity,
+                    'imap_count': 0,
+                    'db_count': len(db_mails),
+                    'in_both': 0,
+                    'only_imap': 0,
+                    'only_db': len(db_mails),
+                    'message': 'Archiv ist leer auf Server'
+                }
+            
+            # Fetch subjects für Testmail-Suche
+            envelope_data = client.fetch(all_msgs, ['ENVELOPE'])
+            
+            imap_mails = []
+            test_mail_found = False
+            test_mail_uid = None
+            
+            for msg_id in all_msgs:
+                envelope = envelope_data.get(msg_id, {}).get(b'ENVELOPE')
+                
+                subject = '(no subject)'
+                if envelope and envelope.subject:
+                    try:
+                        subject = envelope.subject.decode('utf-8', errors='replace')
+                    except:
+                        subject = str(envelope.subject)
+                
+                imap_mails.append({
+                    'uid': msg_id,
+                    'uidvalidity': uidvalidity,
+                    'subject': subject[:80]
+                })
+                
+                # Check for test mail
+                if 'test' in subject.lower() and 'verschieben' in subject.lower():
+                    test_mail_found = True
+                    test_mail_uid = msg_id
+            
+            # Vergleich
+            db_uids = {m['uid'] for m in db_mails}
+            imap_uids = {m['uid'] for m in imap_mails}
+            
+            in_both = db_uids & imap_uids
+            only_db = db_uids - imap_uids
+            only_imap = imap_uids - db_uids
+            
+            # Check if test mail is in both
+            test_mail_in_db = test_mail_uid in db_uids if test_mail_uid else False
+            
+            return {
+                'success': True,
+                'folder': 'Archiv',
+                'uidvalidity': uidvalidity,
+                'imap_count': len(imap_mails),
+                'db_count': len(db_mails),
+                'in_both': len(in_both),
+                'only_imap': len(only_imap),
+                'only_db': len(only_db),
+                'sync_ok': len(only_imap) == 0 and len(only_db) == 0,
+                'test_mail_found': test_mail_found,
+                'test_mail_uid': test_mail_uid,
+                'test_mail_in_db': test_mail_in_db,
+                'test_mail_synced': test_mail_found and test_mail_in_db,
+                'imap_samples': imap_mails[:10],  # Erste 10 für UI
+                'message': f'✅ Perfekt synchronisiert' if len(only_imap) == 0 and len(only_db) == 0 else f'⚠️ {len(only_imap)} nur auf Server, {len(only_db)} nur in DB'
+            }
+        
+        except Exception as e:
+            logger.error(f"Failed to verify DB sync: {type(e).__name__}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'message': f'Fehler beim Sync-Check: {str(e)}'
+            }
+        
+        finally:
+            if should_close and client:
+                try:
+                    client.logout()
+                except:
+                    pass
+    
+    def run_diagnostics(self, subscribed_only: bool = False, account_id: int = None, session=None) -> Dict[str, Any]:
         """
         Run complete diagnostics suite using a single connection
         
         Args:
             subscribed_only: If True, list only subscribed folders. If False, list all folders.
+            account_id: Optional mail account ID for DB sync verification
+            session: Optional SQLAlchemy session for DB access
         
         Returns:
             Dict with all diagnostic results
@@ -1506,10 +1644,18 @@ class IMAPDiagnostics:
             results['sort'] = self.test_sort_support(client)
             
             # Test 11: Envelope Parsing
-            logger.info("Test 11/11: Testing envelope parsing...")
+            logger.info("Test 11/12: Testing envelope parsing...")
             results['envelope'] = self.test_envelope_parsing(client)
             
-            # Summary (server_id is optional, so always count as ok)
+            # Test 12: DB Sync Verification (optional, nur wenn account_id + session gegeben)
+            if account_id and session:
+                logger.info("Test 12/12: Verifying DB sync for Archiv folder...")
+                results['db_sync'] = self.verify_db_sync(client, account_id, session)
+            else:
+                logger.info("Test 12/12: Skipping DB sync (no account_id/session)")
+                results['db_sync'] = {'success': False, 'message': 'Skipped (no DB access)'}
+            
+            # Summary (server_id and db_sync are optional, so don't count them)
             all_success = all([
                 results['connection']['success'],
                 results['capabilities']['success'],

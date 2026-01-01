@@ -3346,7 +3346,11 @@ def api_imap_diagnostics(account_id):
                 ssl=(account.imap_encryption == "SSL"),
             )
 
-            result = diagnostics.run_diagnostics(subscribed_only=subscribed_only)
+            result = diagnostics.run_diagnostics(
+                subscribed_only=subscribed_only,
+                account_id=account_id,
+                session=db
+            )
 
             return jsonify({"success": True, "diagnostics": result}), 200
 

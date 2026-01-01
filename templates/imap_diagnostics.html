@@ -168,6 +168,16 @@
                         </div>
                     </div>
 
+                    <!-- DB Sync Verification Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="dbSyncStatus">1️⃣2️⃣ DB Sync Verification (Archiv)</strong>
+                        </div>
+                        <div class="card-body" id="dbSyncDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
                     <!-- Summary -->
                     <div class="alert" id="summaryAlert" role="alert">
                         <strong id="summaryTitle">Zusammenfassung</strong>
@@ -338,6 +348,11 @@
         // 11. Envelope Parsing
         if (diagnostics.envelope) {
             displayEnvelopeTest(diagnostics.envelope);
+        }
+
+        // 12. DB Sync Verification
+        if (diagnostics.db_sync) {
+            displayDbSyncTest(diagnostics.db_sync);
         }
 
         // Summary
@@ -856,7 +871,92 @@
             detailsEl.innerHTML = `<p class="text-danger mb-0"><strong>Fehler:</strong> ${data.error || 'Unbekannter Fehler'}</p>`;
         }
     }
+    function displayDbSyncTest(data) {
+        const statusEl = document.getElementById('dbSyncStatus');
+        const detailsEl = document.getElementById('dbSyncDetails');
 
+        if (data.success && data.sync_ok) {
+            statusEl.innerHTML = '1️⃣2️⃣ DB Sync Verification ✅';
+            let html = `<p class="text-success mb-2"><strong>✅ Perfekt synchronisiert!</strong></p>`;
+            
+            html += `
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="mb-0">${data.imap_count}</h5>
+                                <small class="text-muted">IMAP Server</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="mb-0">${data.db_count}</h5>
+                                <small class="text-muted">Lokale DB</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-success text-white">
+                            <div class="card-body text-center">
+                                <h5 class="mb-0">${data.in_both}</h5>
+                                <small>In beiden</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            if (data.test_mail_found) {
+                html += `<div class="alert alert-info mt-3">
+                    <strong>🎯 Test-Mail gefunden:</strong><br>
+                    UID: ${data.test_mail_uid}<br>
+                    In DB: ${data.test_mail_in_db ? '✅ Ja' : '❌ Nein'}<br>
+                    ${data.test_mail_synced ? '<strong class="text-success">✅ Korrekt synchronisiert!</strong>' : '<strong class="text-danger">❌ Nicht in DB!</strong>'}
+                </div>`;
+            }
+            
+            if (data.imap_samples && data.imap_samples.length > 0) {
+                html += `<h6 class="mt-3">📧 Mails auf Server (erste 10):</h6><ul class="list-group">`;
+                data.imap_samples.forEach(mail => {
+                    const inDb = data.in_both > 0 ? '✅' : '❓';
+                    html += `<li class="list-group-item"><small>${inDb} UID ${mail.uid}: ${mail.subject}</small></li>`;
+                });
+                html += `</ul>`;
+            }
+            
+            detailsEl.innerHTML = html;
+        } else if (data.success && !data.sync_ok) {
+            statusEl.innerHTML = '1️⃣2️⃣ DB Sync Verification ⚠️';
+            let html = `<p class="text-warning mb-2"><strong>⚠️ Synchronisations-Unterschiede gefunden</strong></p>`;
+            
+            html += `
+                <div class="alert alert-warning">
+                    <strong>Unterschiede:</strong><br>
+                    📡 Nur auf IMAP-Server: ${data.only_imap || 0}<br>
+                    💾 Nur in lokaler DB: ${data.only_db || 0}<br>
+                    ✅ In beiden: ${data.in_both || 0}
+                </div>
+            `;
+            
+            if (data.test_mail_found) {
+                html += `<div class="alert alert-info">
+                    <strong>🎯 Test-Mail:</strong><br>
+                    UID: ${data.test_mail_uid}<br>
+                    In DB: ${data.test_mail_in_db ? '✅' : '❌'}
+                </div>`;
+            }
+            
+            detailsEl.innerHTML = html;
+        } else if (!data.success) {
+            statusEl.innerHTML = '1️⃣2️⃣ DB Sync Verification ⚠️';
+            detailsEl.innerHTML = `<p class="text-muted">${data.message || 'Skipped (no DB access)'}</p>`;
+        } else {
+            statusEl.innerHTML = '1️⃣2️⃣ DB Sync Verification ❌';
+            detailsEl.innerHTML = `<p class="text-danger">Fehler: ${data.error || data.message}</p>`;
+        }
+    }
     function displaySummary(diagnostics) {
         const alertEl = document.getElementById('summaryAlert');
         const titleEl = document.getElementById('summaryTitle');

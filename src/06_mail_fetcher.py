@@ -270,7 +270,7 @@ class MailFetcher:
             account_id: MailAccount-ID
             folder: IMAP Folder name (UTF-8 decoded)
         """
-        from src import models_02 as models
+        import importlib; models = importlib.import_module(".02_models", "src")
         from datetime import datetime, UTC
         
         # Soft-Delete aller Emails dieses Folders
@@ -393,7 +393,8 @@ class MailFetcher:
             
             # Phase 14b: UIDVALIDITY-Check wenn account_id + session gegeben
             if account_id and session and server_uidvalidity:
-                from src import models_02 as models
+                import importlib
+                models = importlib.import_module(".02_models", "src")
                 
                 account = session.query(models.MailAccount).get(account_id)
                 if account:
