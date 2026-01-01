@@ -257,19 +257,31 @@ class MailSynchronizer:
             if hasattr(self.conn, '_imap'):
                 self.conn._imap.untagged_responses.clear()
                 self.logger.info("🧹 Cleared untagged_responses before copy()")
-                
-                # 🔥 ENABLE RAW IMAP DEBUG MODE (zeigt ORIGINAL Server-Response)
-                self.conn._imap.debug = 4
-                self.logger.info("🔥 IMAP RAW DEBUG MODE ENABLED - Zeige Original Server-Response:")
             
             # 3. COPY zu target folder
+            self.logger.info(f"📤 Sending IMAP command: UID COPY {uid} {target_folder}")
             copy_response = self.conn.copy([uid], target_folder)
             
-            # 🔥 DISABLE DEBUG MODE
+            # 4. RAW SERVER RESPONSE DUMPEN
             if hasattr(self.conn, '_imap'):
-                self.conn._imap.debug = 0
+                self.logger.info("=" * 80)
+                self.logger.info("🔥 RAW IMAP SERVER RESPONSE:")
+                self.logger.info("=" * 80)
+                
+                # Zeige tagged response (die eigentliche Antwort auf den Befehl)
+                if hasattr(self.conn._imap, 'tagged_commands'):
+                    self.logger.info(f"📋 tagged_commands: {self.conn._imap.tagged_commands}")
+                
+                # Zeige die letzte Response
+                if hasattr(self.conn._imap, 'untagged_responses'):
+                    raw_untagged = self.conn._imap.untagged_responses
+                    self.logger.info(f"📬 UNTAGGED RESPONSES (RAW vom Server):")
+                    for key, value in raw_untagged.items():
+                        self.logger.info(f"    {key}: {value}")
+                
+                self.logger.info("=" * 80)
             
-            # 4. VOLLSTÄNDIGES LOGGING der copy() Response
+            # 5. VOLLSTÄNDIGES LOGGING der copy() Response
             self.logger.info(f"📡 copy() response:")
             self.logger.info(f"  Type: {type(copy_response).__name__}")
             self.logger.info(f"  Value: {repr(copy_response)}")
