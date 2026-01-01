@@ -1923,6 +1923,13 @@ def settings():
         ).lower()
         selected_model_optimize = user.preferred_ai_model_optimize or "llama3.2:1b"
 
+        # Phase 13C Part 4: User Fetch Preferences
+        user_prefs = {
+            'mails_per_folder': getattr(user, 'fetch_mails_per_folder', 100),
+            'max_total_mails': getattr(user, 'fetch_max_total', 0),
+            'use_delta_sync': getattr(user, 'fetch_use_delta_sync', True)
+        }
+
         return render_template(
             "settings.html",
             user=user,
@@ -1932,7 +1939,54 @@ def settings():
             ai_selected_model_base=selected_model_base,
             ai_selected_provider_optimize=selected_provider_optimize,
             ai_selected_model_optimize=selected_model_optimize,
+            user_prefs=user_prefs,
         )
+
+    finally:
+        db.close()
+
+
+@app.route("/settings/fetch-config", methods=["POST"])
+@login_required
+def save_fetch_config():
+    """Speichert Fetch-Präferenzen des Users
+    
+    Phase 13C Part 4: User kann steuern wie viele Mails abgerufen werden
+    """
+    db = get_db_session()
+
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect(url_for("login"))
+
+        mails_per_folder = int(request.form.get('mails_per_folder', 100))
+        max_total_mails = int(request.form.get('max_total_mails', 0))
+        use_delta_sync = request.form.get('use_delta_sync') == 'on'
+
+        # Validierung
+        if mails_per_folder < 10 or mails_per_folder > 1000:
+            flash("❌ Mails pro Ordner muss zwischen 10 und 1000 liegen", "error")
+            return redirect(url_for("settings"))
+        
+        if max_total_mails < 0 or max_total_mails > 10000:
+            flash("❌ Max. Gesamt muss zwischen 0 und 10000 liegen", "error")
+            return redirect(url_for("settings"))
+
+        # Speichere in User-Modell (erweitere 02_models.py wenn nötig)
+        user.fetch_mails_per_folder = mails_per_folder
+        user.fetch_max_total = max_total_mails
+        user.fetch_use_delta_sync = use_delta_sync
+        
+        db.commit()
+
+        flash(f"✅ Fetch-Konfiguration gespeichert: {mails_per_folder}/Ordner, Max={max_total_mails}, Delta={use_delta_sync}", "success")
+        return redirect(url_for("settings"))
+
+    except Exception as e:
+        logger.error(f"Fehler beim Speichern der Fetch-Config: {e}")
+        flash("❌ Fehler beim Speichern", "error")
+        return redirect(url_for("settings"))
 
     finally:
         db.close()
@@ -3654,6 +3708,136 @@ def move_email_to_trash(email_id):
             f"Fehler beim Verschieben von Email {email_id} in Papierkorb: {type(e).__name__}: {e}"
         )
         return jsonify({"error": "Fehler beim Verschieben in Papierkorb"}), 500
+
+    finally:
+        db.close()
+
+
+@app.route("/account/<int:account_id>/mail-count", methods=["GET"])
+@login_required
+def get_account_mail_count(account_id):
+    """Zählt schnell wie viele Mails auf dem Server sind (ohne sie zu fetchen)
+    
+    Phase 13C Part 4: Quick Count für intelligentes Fetching
+    - Zeigt User wie viele Mails remote vorhanden sind
+    - User kann dann entscheiden: Alle holen oder in Portionen?
+    """
+    db = get_db_session()
+
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+
+        account = (
+            db.query(models.MailAccount)
+            .filter(
+                models.MailAccount.id == account_id,
+                models.MailAccount.user_id == user.id,
+            )
+            .first()
+        )
+
+        if not account or account.auth_type != "imap":
+            return jsonify({"error": "IMAP-Account erforderlich"}), 400
+
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key erforderlich"}), 401
+
+        imap_server = encryption.CredentialManager.decrypt_server(
+            account.encrypted_imap_server, master_key
+        )
+        imap_username = encryption.CredentialManager.decrypt_email_address(
+            account.encrypted_imap_username, master_key
+        )
+        imap_password = encryption.CredentialManager.decrypt_imap_password(
+            account.encrypted_imap_password, master_key
+        )
+
+        fetcher = mail_fetcher_mod.MailFetcher(
+            server=imap_server,
+            username=imap_username,
+            password=imap_password,
+            port=account.imap_port,
+        )
+        fetcher.connect()
+
+        try:
+            # Liste alle Ordner
+            typ, mailboxes = fetcher.connection.list()
+            if typ != "OK":
+                return jsonify({"error": "Folder-Listing fehlgeschlagen"}), 500
+
+            folder_counts = {}
+            total_remote = 0
+            total_unseen = 0
+
+            for mailbox in mailboxes:
+                if not mailbox:
+                    continue
+                mailbox_str = (
+                    mailbox.decode("utf-8") if isinstance(mailbox, bytes) else str(mailbox)
+                )
+                parts = mailbox_str.split('" ')
+                if len(parts) >= 2:
+                    folder_name_raw = parts[1].strip()
+                    if folder_name_raw.startswith('"') and folder_name_raw.endswith('"'):
+                        folder_name_raw = folder_name_raw[1:-1]
+                    
+                    # Decode UTF-7 for display
+                    folder_name_display = mail_fetcher_mod.decode_imap_folder_name(folder_name_raw)
+                    
+                    # STATUS command braucht ORIGINAL UTF-7 Namen!
+                    try:
+                        status = fetcher.connection.status(
+                            f'"{folder_name_raw}"',  # WICHTIG: Original UTF-7 Name!
+                            "(MESSAGES UNSEEN)"
+                        )
+                        if status[0] == "OK":
+                            # Parse: ['OK', [b'"INBOX" (MESSAGES 20 UNSEEN 2)']]
+                            status_str = status[1][0].decode() if isinstance(status[1][0], bytes) else status[1][0]
+                            import re
+                            messages_match = re.search(r'MESSAGES (\d+)', status_str)
+                            unseen_match = re.search(r'UNSEEN (\d+)', status_str)
+                            
+                            messages_count = int(messages_match.group(1)) if messages_match else 0
+                            unseen_count = int(unseen_match.group(1)) if unseen_match else 0
+                            
+                            # Nutze decoded Name für Response (user-sichtbar)
+                            folder_counts[folder_name_display] = {
+                                "total": messages_count,
+                                "unseen": unseen_count
+                            }
+                            total_remote += messages_count
+                            total_unseen += unseen_count
+                    except Exception as e:
+                        logger.warning(f"Konnte Status nicht abrufen für {folder_name_display}: {e}")
+                        continue
+
+            # Zähle lokale Mails in DB
+            total_local = db.query(models.RawEmail).filter(
+                models.RawEmail.mail_account_id == account_id,
+                models.RawEmail.deleted_at.is_(None)
+            ).count()
+
+            return jsonify({
+                "account_id": account_id,
+                "folders": folder_counts,
+                "summary": {
+                    "total_remote": total_remote,
+                    "total_unseen": total_unseen,
+                    "total_local": total_local,
+                    "delta": total_remote - total_local
+                }
+            })
+
+        finally:
+            fetcher.disconnect()
+
+    except Exception as e:
+        logger.error(f"Fehler beim Mail-Count für Account {account_id}: {type(e).__name__}")
+        return jsonify({"error": f"Fehler beim Zählen: {str(e)}"}), 500
 
     finally:
         db.close()

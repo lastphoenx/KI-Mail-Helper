@@ -260,6 +260,10 @@ class BackgroundJobQueue:
         Problem: UNSEEN-Filter führte zu unvollständigem Sync (nur 2/20 Mails)
         Lösung: Server = Single Source of Truth → ALLE Mails fetchen
         
+        Phase 13C Part 4: Delta-Sync Option
+        - Wenn user.fetch_use_delta_sync=True: Nur neue Mails seit letztem Sync
+        - Sonst: FULL SYNC (alle Mails)
+        
         Warum? Mails können manuell (außerhalb App) verschoben werden.
         Wir müssen alle Ordner scannen, um DB mit Server zu synchronisieren.
         """
@@ -300,7 +304,10 @@ class BackgroundJobQueue:
                 logger.warning("Konnte Ordner nicht listen, falle zurück auf INBOX")
                 return fetcher.fetch_new_emails(folder="INBOX", limit=limit, unseen_only=False)
             
-            folders = []
+            # Phase 13C Part 4 FIX: Speichere RAW + DECODED Namen
+            # WICHTIG: IMAP Commands (SELECT, STATUS) brauchen RAW UTF-7 Namen!
+            #          Aber DB und Logs nutzen DECODED UTF-8 Namen!
+            folders = []  # Liste von (raw_name, decoded_name) Tuples
             for mailbox in mailboxes:
                 if not mailbox:
                     continue
@@ -309,39 +316,80 @@ class BackgroundJobQueue:
                 )
                 parts = mailbox_str.split('" ')
                 if len(parts) >= 2:
-                    folder_name = parts[1].strip()
-                    if folder_name.startswith('"') and folder_name.endswith('"'):
-                        folder_name = folder_name[1:-1]
-                    folders.append(folder_name)
+                    folder_name_raw = parts[1].strip()
+                    if folder_name_raw.startswith('"') and folder_name_raw.endswith('"'):
+                        folder_name_raw = folder_name_raw[1:-1]
+                    # Decode für Display/DB
+                    folder_name_decoded = mail_fetcher_mod.decode_imap_folder_name(folder_name_raw)
+                    folders.append((folder_name_raw, folder_name_decoded))
             
-            # Phase 13C Part 3: FULL SYNC - keine Filter!
-            logger.info(f"📁 {len(folders)} Ordner, FULL SYNC (keine UNSEEN-Filter)")
+            # Phase 13C Part 4: Delta-Sync wenn aktiviert
+            user_use_delta = getattr(account.user, 'fetch_use_delta_sync', True)
             
-            # Phase 13C Part 3 FIX: Höheres Limit pro Ordner für FULL SYNC
-            # Problem: Bei 7 Ordnern und limit=50 → nur 10 Mails/Ordner
-            # Lösung: Mindestens 100 Mails pro Ordner bei FULL SYNC
+            if user_use_delta and account.initial_sync_done:
+                logger.info(f"📁 {len(folders)} Ordner, DELTA SYNC (nur neue Mails)")
+            else:
+                logger.info(f"📁 {len(folders)} Ordner, FULL SYNC (alle Mails)")
+            
+            # Phase 13C Part 4: User-steuerbare Limits
+            user_mails_per_folder = getattr(account.user, 'fetch_mails_per_folder', 100)
             mails_per_folder = max(100, limit // len(folders)) if folders else limit
+            mails_per_folder = min(mails_per_folder, user_mails_per_folder)
             
-            for folder in folders:
+            # Phase 13C Part 4: Delta-Sync: Hole highest UID per folder aus DB
+            session = object.__getattribute__(account, "_sa_instance_state").session
+            folder_max_uids = {}
+            
+            if user_use_delta and account.initial_sync_done:
+                # Query: SELECT imap_folder, MAX(imap_uid) FROM raw_emails WHERE account_id=X GROUP BY imap_folder
+                from sqlalchemy import func
+                results = (
+                    session.query(
+                        models.RawEmail.imap_folder,
+                        func.max(func.cast(models.RawEmail.imap_uid, models.Integer)).label('max_uid')
+                    )
+                    .filter(
+                        models.RawEmail.mail_account_id == account.id,
+                        models.RawEmail.deleted_at.is_(None)
+                    )
+                    .group_by(models.RawEmail.imap_folder)
+                    .all()
+                )
+                folder_max_uids = {folder: max_uid for folder, max_uid in results if max_uid}
+                logger.info(f"  📊 Max UIDs: {folder_max_uids}")
+            
+            for folder_raw, folder_decoded in folders:
                 try:
-                    # FULL SYNC: Alle Mails, keine Filter
+                    # Delta-Sync: Fetch nur Mails mit UID > last_known_uid
+                    uid_range = None
+                    if user_use_delta and folder_decoded in folder_max_uids:
+                        last_uid = folder_max_uids[folder_decoded]
+                        # UID-Range: (last_uid+1):* = Alle neuen Mails
+                        uid_range = f"{last_uid + 1}:*"
+                        logger.info(f"  🔄 {folder_decoded}: Delta ab UID {last_uid + 1}")
+                    
+                    # WICHTIG: IMAP SELECT braucht RAW UTF-7 Name!
                     folder_emails = fetcher.fetch_new_emails(
-                        folder=folder, 
+                        folder=folder_raw,  # RAW UTF-7 für IMAP Command
                         limit=mails_per_folder,
-                        unseen_only=False  # Immer alle Mails!
+                        unseen_only=False,  # Immer alle Mails!
+                        uid_range=uid_range  # Phase 13C Part 4: Delta-Filter
                     )
                     all_emails.extend(folder_emails)
-                    logger.info(f"  ✓ {folder}: {len(folder_emails)} Mails")
+                    logger.info(f"  ✓ {folder_decoded}: {len(folder_emails)} Mails")
                 except Exception as e:
-                    logger.warning(f"  ⚠️ Fehler in Ordner '{folder}': {e}")
+                    logger.warning(f"  ⚠️ Fehler in Ordner '{folder_decoded}': {e}")
                     continue
             
             logger.info(f"📧 Gesamt: {len(all_emails)} Mails aus {len(folders)} Ordnern")
             
-            # Phase 13C Part 3 FIX: Keine Gesamt-Begrenzung bei FULL SYNC
-            # Bei FULL SYNC wollen wir ALLE Mails synchronisieren, nicht nur die ersten 50/500
-            # Das Limit gilt nur pro Ordner (um nicht zu viele Mails auf einmal zu holen)
-            return all_emails  # Keine Begrenzung mehr!
+            # Phase 13C Part 4: User-steuerbare Gesamt-Begrenzung
+            user_max_total = getattr(account.user, 'fetch_max_total', 0)
+            if user_max_total > 0:
+                all_emails = all_emails[:user_max_total]
+                logger.info(f"  ✂️ Auf {user_max_total} Mails begrenzt (user_prefs)")
+            
+            return all_emails
             
         finally:
             fetcher.disconnect()

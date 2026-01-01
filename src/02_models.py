@@ -205,6 +205,11 @@ class User(Base):
         String(100), default="llama3.2:1b"
     )  # Optimize-Pass: besseres LLM
 
+    # Phase 13C Part 4: Fetch-Konfiguration (User-steuerbar)
+    fetch_mails_per_folder = Column(Integer, default=100)  # Limit pro Ordner
+    fetch_max_total = Column(Integer, default=0)  # 0 = unbegrenzt
+    fetch_use_delta_sync = Column(Boolean, default=True)  # Nur neue Mails holen
+
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)

@@ -120,6 +120,61 @@
                 </div>
             </div>
 
+            <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#0f172a,#1e1b4b);color:#f8fafc;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                        <div>
+                            <p class="text-uppercase small mb-1 opacity-75">📥 Fetch Konfiguration</p>
+                            <h4 class="mb-2">Mail-Abruf steuern</h4>
+                            <p class="mb-0" style="max-width:600px;">
+                                Kontrolliere wie viele Mails pro Ordner und insgesamt abgerufen werden. 
+                                Delta-Sync fetcht nur neue Mails seit letztem Sync.
+                            </p>
+                        </div>
+                        <span class="badge bg-light text-dark px-3 py-2 align-self-start">Phase 13C Part 4</span>
+                    </div>
+                    <form class="row gy-3" method="POST" action="/settings/fetch-config">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        
+                        <div class="col-md-6">
+                            <label for="mailsPerFolder" class="form-label">Mails pro Ordner (Standard: 100)</label>
+                            <input type="number" class="form-control" id="mailsPerFolder" name="mails_per_folder" 
+                                   value="{{ user_prefs.get('mails_per_folder', 100) }}" min="10" max="1000" step="10">
+                            <small class="text-muted">Bei FULL SYNC wird dieses Limit angewandt</small>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label for="maxTotalMails" class="form-label">Max. Gesamt (0 = unbegrenzt)</label>
+                            <input type="number" class="form-control" id="maxTotalMails" name="max_total_mails" 
+                                   value="{{ user_prefs.get('max_total_mails', 0) }}" min="0" max="10000" step="50">
+                            <small class="text-muted">0 bedeutet: Hole ALLE Mails aus allen Ordnern</small>
+                        </div>
+                        
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="useDeltaSync" name="use_delta_sync" 
+                                       {% if user_prefs.get('use_delta_sync', true) %}checked{% endif %}>
+                                <label class="form-check-label" for="useDeltaSync">
+                                    <strong>Delta-Sync aktivieren</strong>
+                                    <small class="d-block text-muted">Nur neue Mails abrufen (spart Bandbreite & Zeit)</small>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="col-12">
+                            <div class="alert alert-info mb-0 small">
+                                <strong>💡 Tipp:</strong> Nutze "Quick Count" (siehe Mail-Accounts unten) um zu sehen wie viele Mails remote sind, 
+                                bevor du fetchst. Bei vielen Tausend Mails empfiehlt sich Delta-Sync!
+                            </div>
+                        </div>
+                        
+                        <div class="col-12 d-flex justify-content-end gap-2">
+                            <button type="submit" class="btn btn-light text-dark px-4">Speichern</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
             <h4>Mail-Accounts</h4>
             
             {% if mail_accounts %}
@@ -152,6 +207,7 @@
                             <td>
                                 <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Mail-Aktionen" style="gap:0.25rem;">
                                     <a href="/settings/mail-account/{{ account.id }}/edit" class="btn btn-info">Bearbeiten</a>
+                                    <button type="button" class="btn btn-outline-primary quick-count-btn" data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">📊 Count</button>
                                     <button type="button" class="btn btn-success fetch-mails-btn" data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">Abrufen</button>
                                     <button type="button" class="btn btn-outline-danger purge-mails-btn" data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">Daten löschen</button>
                                     <form method="POST" action="/settings/mail-account/{{ account.id }}/delete" style="display: inline;" class="delete-account-form">
@@ -421,6 +477,55 @@ function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, star
                 btn.textContent = originalLabel || 'Abrufen';
             }
         });
+}
+
+function quickCount(evt, accountId, accountName) {
+    const btn = evt ? evt.target : null;
+    const originalLabel = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Zähle...';
+    }
+
+    fetch(`/account/${accountId}/mail-count`, {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        // Format folder details
+        let folderDetails = Object.entries(data.folders || {})
+            .map(([folder, counts]) => `  • ${folder}: ${counts.total} Mails (${counts.unseen} ungelesen)`)
+            .join('\n');
+        
+        const summary = data.summary || {};
+        const message = `📊 ${accountName}\n\n` +
+            `Remote (Server):\n${folderDetails}\n\n` +
+            `Gesamt Remote: ${summary.total_remote || 0} Mails\n` +
+            `Ungelesen: ${summary.total_unseen || 0}\n` +
+            `Lokal in DB: ${summary.total_local || 0}\n` +
+            `Delta: ${summary.delta || 0} Mails fehlen lokal`;
+        
+        alert(message);
+        
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalLabel;
+        }
+    })
+    .catch(err => {
+        alert(`❌ Fehler beim Zählen: ${err}`);
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalLabel || '📊 Count';
+        }
+    });
 }
 
 function purgeMails(evt, accountId, accountName) {
@@ -705,6 +810,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const accountId = parseInt(e.target.dataset.accountId);
             const accountName = e.target.dataset.accountName;
             purgeMails(e, accountId, accountName);
+        }
+        if (e.target.classList.contains('quick-count-btn')) {
+            const accountId = parseInt(e.target.dataset.accountId);
+            const accountName = e.target.dataset.accountName;
+            quickCount(e, accountId, accountName);
         }
     });
     

@@ -86,13 +86,30 @@ def reset_all_emails(account_id=None, user_id=None, force=False):
         deleted_raw = session.query(models.RawEmail).filter(
             models.RawEmail.id.in_(raw_ids)
         ).delete(synchronize_session=False)
+        
+        # Reset initial_sync_done Flag für betroffene Accounts
+        # Damit beim nächsten Fetch wieder 500 Mails geholt werden (initial sync)
+        account_query = session.query(models.MailAccount)
+        if account_id:
+            account_query = account_query.filter(models.MailAccount.id == account_id)
+        elif user_id:
+            account_query = account_query.filter(models.MailAccount.user_id == user_id)
+        
+        reset_accounts = account_query.update(
+            {"initial_sync_done": False},
+            synchronize_session=False
+        )
+        
         session.commit()
         
         print()
         print(f"✅ {deleted_processed} ProcessedEmail-Einträge gelöscht")
         print(f"✅ {deleted_raw} RawEmail-Einträge gelöscht")
+        print(f"✅ {reset_accounts} Mail-Account(s) auf Initial-Sync zurückgesetzt")
         print()
-        print("🔄 Beim nächsten 'E-Mails abrufen' werden alle E-Mails neu abgerufen und verarbeitet")
+        print("🔄 Beim nächsten 'E-Mails abrufen':")
+        print("   - Werden alle E-Mails neu abgerufen (initial sync: 500 Mails)")
+        print("   - Und komplett neu analysiert")
         return True
         
     except Exception as e:

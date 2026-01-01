@@ -48,6 +48,33 @@ def decode_imap_folder_name(folder_name: str) -> str:
         return folder_name
 
 
+def encode_imap_folder_name(folder_name: str) -> str:
+    """Enkodiert UTF-8 Ordnernamen zu IMAP UTF-7
+    
+    Umkehrfunktion zu decode_imap_folder_name():
+    - 'Entwürfe' → 'Entw&APw-rfe'
+    - 'Gelöscht' → 'Gel&APY-scht'
+    
+    Args:
+        folder_name: UTF-8 folder name
+        
+    Returns:
+        IMAP UTF-7 encoded folder name
+    """
+    try:
+        import codecs
+        try:
+            codecs.lookup('imap4-utf-7')
+            # Encode UTF-7
+            return folder_name.encode('imap4-utf-7').decode('latin1')
+        except LookupError:
+            # Fallback: manuelles Encoding
+            return folder_name.replace('ü', '&APw-').replace('ö', '&APY-').replace('ä', '&AOQ-').replace('Ä', '&ANY-').replace('Ö', '&APY-').replace('Ü', '&APs-')
+    except Exception as e:
+        logger.debug(f"Konnte Ordnername nicht enkodieren: {folder_name} - {e}")
+        return folder_name
+
+
 class ThreadCalculator:
     """Berechnet Thread-IDs aus verschiedenen Quellen (Phase 12)"""
 
@@ -241,10 +268,13 @@ class MailFetcher:
         before: Optional[datetime] = None,
         unseen_only: bool = False,
         flagged_only: bool = False,
+        # Phase 13C Part 4: Delta-Sync UID-Range
+        uid_range: Optional[str] = None,
     ) -> List[Dict]:
         """
         Holt E-Mails mit Threading-Informationen (Phase 12)
         + Server-Side Filtering (Phase 13C Part 2)
+        + Delta-Sync (Phase 13C Part 4)
 
         Args:
             folder: IMAP-Ordner (Standard: "INBOX")
@@ -253,6 +283,7 @@ class MailFetcher:
             before: Nur Mails vor diesem Datum (IMAP SEARCH BEFORE)
             unseen_only: Nur ungelesene Mails (IMAP SEARCH UNSEEN)
             flagged_only: Nur geflaggte Mails (IMAP SEARCH FLAGGED)
+            uid_range: UID-Range für Delta-Sync (z.B. "123:*" = alle ab UID 123)
 
         Returns:
             Liste von E-Mail-Dicts mit erweiterten Metadaten
@@ -266,29 +297,34 @@ class MailFetcher:
                 raise ConnectionError("IMAP connection failed")
             conn.select(folder, readonly=True)
 
-            # Phase 13C Part 2: Build IMAP SEARCH criteria
-            search_criteria = []
-            
-            if unseen_only:
-                search_criteria.append("UNSEEN")
-            
-            if flagged_only:
-                search_criteria.append("FLAGGED")
-            
-            if since:
-                # IMAP date format: DD-Mon-YYYY (e.g., "01-Jan-2024")
-                date_str = since.strftime("%d-%b-%Y")
-                search_criteria.append(f"SINCE {date_str}")
-            
-            if before:
-                date_str = before.strftime("%d-%b-%Y")
-                search_criteria.append(f"BEFORE {date_str}")
-            
-            # Build final search string
-            search_string = " ".join(search_criteria) if search_criteria else "ALL"
+            # Phase 13C Part 4: Delta-Sync via UID-Range
+            if uid_range:
+                # UID-Range suche: z.B. "123:*" = alle Mails ab UID 123
+                status, messages = conn.uid('search', None, f"UID {uid_range}")
+            else:
+                # Phase 13C Part 2: Build IMAP SEARCH criteria
+                search_criteria = []
+                
+                if unseen_only:
+                    search_criteria.append("UNSEEN")
+                
+                if flagged_only:
+                    search_criteria.append("FLAGGED")
+                
+                if since:
+                    # IMAP date format: DD-Mon-YYYY (e.g., "01-Jan-2024")
+                    date_str = since.strftime("%d-%b-%Y")
+                    search_criteria.append(f"SINCE {date_str}")
+                
+                if before:
+                    date_str = before.strftime("%d-%b-%Y")
+                    search_criteria.append(f"BEFORE {date_str}")
+                
+                # Build final search string
+                search_string = " ".join(search_criteria) if search_criteria else "ALL"
 
-            # BUG-002-FIX: Nutze UID-basierte Suche (stabil nach EXPUNGE)
-            status, messages = conn.uid('search', None, search_string)
+                # BUG-002-FIX: Nutze UID-basierte Suche (stabil nach EXPUNGE)
+                status, messages = conn.uid('search', None, search_string)
 
             if status != "OK":
                 print("⚠️  Keine Mails gefunden")
