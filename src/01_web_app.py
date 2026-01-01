@@ -955,23 +955,16 @@ def list_view():
                         )
                         fetcher.connect()
                         try:
-                            typ, mailboxes = fetcher.connection.list()
-                            if typ == "OK":
-                                for mailbox in mailboxes:
-                                    if not mailbox:
-                                        continue
-                                    mailbox_str = (
-                                        mailbox.decode("utf-8") if isinstance(mailbox, bytes) else str(mailbox)
-                                    )
-                                    parts = mailbox_str.split('" ')
-                                    if len(parts) >= 2:
-                                        folder_name = parts[1].strip()
-                                        if folder_name.startswith('"') and folder_name.endswith('"'):
-                                            folder_name = folder_name[1:-1]
-                                        # Phase 13C: Decode IMAP UTF-7 to UTF-8
-                                        folder_name = mail_fetcher_mod.decode_imap_folder_name(folder_name)
-                                        server_folders.append(folder_name)
-                                server_folders.sort()
+                            # IMAPClient.list_folders() returns (flags, delimiter, folder_name) tuples
+                            folders = fetcher.connection.list_folders()
+                            for flags, delimiter, folder_name in folders:
+                                # Skip \Noselect folders
+                                if b'\\Noselect' in flags or '\\Noselect' in [f.decode() if isinstance(f, bytes) else f for f in flags]:
+                                    continue
+                                # folder_name is bytes, decode UTF-7 to UTF-8
+                                folder_display = mail_fetcher_mod.decode_imap_folder_name(folder_name)
+                                server_folders.append(folder_display)
+                            server_folders.sort()
                         finally:
                             fetcher.disconnect()
             except Exception as e:
@@ -3878,48 +3871,17 @@ def get_account_folders(account_id):
                 logger.error(f"IMAP-Verbindung nicht initialisiert für Account {account_id}")
                 return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
 
-            typ, mailboxes = fetcher.connection.list()
-            if typ != "OK":
-                return jsonify({"error": "Folder-Listing fehlgeschlagen"}), 500
-
-            def decode_imap_folder_name(name):
-                """Modified UTF-7 Dekodierung (RFC 2060) für IMAP Ordnernamen"""
-                if not name or '&' not in name:
-                    return name
-                try:
-                    import base64
-                    def decode_match(match):
-                        encoded = match.group(1)
-                        if encoded == '':
-                            return '&'
-                        encoded = encoded.replace(',', '/')
-                        padding = (4 - len(encoded) % 4) % 4
-                        encoded += '=' * padding
-                        try:
-                            decoded_bytes = base64.b64decode(encoded)
-                            return decoded_bytes.decode('utf-16-be')
-                        except:
-                            return match.group(0)
-                    import re
-                    return re.sub(r'&([^-]*)-', decode_match, name)
-                except:
-                    return name
+            # IMAPClient.list_folders() returns (flags, delimiter, folder_name) tuples
+            mailboxes = fetcher.connection.list_folders()
 
             folders = []
-            for mailbox in mailboxes:
-                if not mailbox:
+            for flags, delimiter, folder_name in mailboxes:
+                # Skip \Noselect folders
+                if b'\\Noselect' in flags or '\\Noselect' in [f.decode() if isinstance(f, bytes) else f for f in flags]:
                     continue
-                mailbox_str = (
-                    mailbox.decode("utf-8") if isinstance(mailbox, bytes) else str(mailbox)
-                )
-
-                parts = mailbox_str.split('" ')
-                if len(parts) >= 2:
-                    folder_name = parts[1].strip()
-                    if folder_name.startswith('"') and folder_name.endswith('"'):
-                        folder_name = folder_name[1:-1]
-                    folder_name = decode_imap_folder_name(folder_name)
-                    folders.append(folder_name)
+                # folder_name is bytes, decode UTF-7 via mail_fetcher_mod
+                folder_display = mail_fetcher_mod.decode_imap_folder_name(folder_name)
+                folders.append(folder_display)
 
             folders.sort()
             return jsonify({"folders": folders})
