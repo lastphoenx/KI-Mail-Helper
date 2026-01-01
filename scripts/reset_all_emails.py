@@ -76,18 +76,26 @@ def reset_all_emails(account_id=None, user_id=None, force=False):
                 print("❌ Abgebrochen")
                 return False
         
-        # Erst ProcessedEmails löschen (wegen Foreign Key)
+        # Erst ProcessedEmails soft-deleten (haben deleted_at Field)
+        from datetime import datetime, UTC
         deleted_processed = session.query(models.ProcessedEmail).filter(
             models.ProcessedEmail.raw_email_id.in_(raw_ids)
-        ).delete(synchronize_session=False)
+        ).update(
+            {"deleted_at": datetime.now(UTC)},
+            synchronize_session=False
+        )
         session.flush()
         
-        # Dann RawEmails löschen
+        # Dann RawEmails soft-deleten (Soft-Delete Pattern!)
         deleted_raw = session.query(models.RawEmail).filter(
             models.RawEmail.id.in_(raw_ids)
-        ).delete(synchronize_session=False)
+        ).update(
+            {"deleted_at": datetime.now(UTC)},
+            synchronize_session=False
+        )
+        session.flush()
         
-        # Reset initial_sync_done Flag für betroffene Accounts
+        # Reset initial_sync_done Flag & UIDVALIDITY Cache für betroffene Accounts
         # Damit beim nächsten Fetch wieder 500 Mails geholt werden (initial sync)
         account_query = session.query(models.MailAccount)
         if account_id:
@@ -95,21 +103,29 @@ def reset_all_emails(account_id=None, user_id=None, force=False):
         elif user_id:
             account_query = account_query.filter(models.MailAccount.user_id == user_id)
         
-        reset_accounts = account_query.update(
-            {"initial_sync_done": False},
-            synchronize_session=False
-        )
+        # Reset flags + UIDVALIDITY Cache
+        affected_accounts = account_query.all()
+        reset_accounts = 0
+        for account in affected_accounts:
+            account.initial_sync_done = False
+            account.folder_uidvalidity = None  # Reset UIDVALIDITY cache
+            reset_accounts += 1
+        session.flush()
         
         session.commit()
         
         print()
-        print(f"✅ {deleted_processed} ProcessedEmail-Einträge gelöscht")
-        print(f"✅ {deleted_raw} RawEmail-Einträge gelöscht")
-        print(f"✅ {reset_accounts} Mail-Account(s) auf Initial-Sync zurückgesetzt")
+        print(f"✅ {deleted_processed} ProcessedEmail-Einträge soft-deleted (deleted_at)")
+        print(f"✅ {deleted_raw} RawEmail-Einträge soft-deleted (deleted_at)")
+        print(f"✅ {reset_accounts} Mail-Account(s) zurückgesetzt:")
+        print(f"   - initial_sync_done = False")
+        print(f"   - folder_uidvalidity = NULL (UIDVALIDITY Cache geleert)")
         print()
         print("🔄 Beim nächsten 'E-Mails abrufen':")
         print("   - Werden alle E-Mails neu abgerufen (initial sync: 500 Mails)")
-        print("   - Und komplett neu analysiert")
+        print("   - UIDVALIDITY wird neu vom Server geholt")
+        print("   - Keine Duplikate durch alte UIDs")
+        print("   - Komplett neu analysiert")
         return True
         
     except Exception as e:
