@@ -256,14 +256,29 @@ class MailSynchronizer:
             # 2. COPY zu target folder
             copy_response = self.conn.copy([uid], target_folder)
             
+            # 🔍 DEBUG: Was gibt copy() zurück?
+            self.logger.info(f"🔍 DEBUG copy() response type: {type(copy_response)}")
+            self.logger.info(f"🔍 DEBUG copy() response value: {copy_response}")
+            
             target_uid = None
             target_uidvalidity = None
             
-            # 3. COPYUID aus untagged_responses holen
-            # IMAPClient nutzt intern self._imap (imaplib), dort sind die untagged_responses
-            if hasattr(self.conn, '_imap'):
+            # 3a. Prüfe ob copy_response selbst die COPYUID enthält (idealer Fall)
+            if isinstance(copy_response, dict) and 'COPYUID' in copy_response:
+                self.logger.info("✅ COPYUID direkt in copy_response gefunden!")
+                # IMAPClient könnte COPYUID als dict zurückgeben
+                copyuid = copy_response['COPYUID']
+                if isinstance(copyuid, (list, tuple)) and len(copyuid) >= 3:
+                    target_uidvalidity = int(copyuid[0])
+                    target_uid = int(copyuid[2])
+            
+            # 3b. Fallback: COPYUID aus untagged_responses holen
+            if not target_uid and hasattr(self.conn, '_imap'):
                 untagged = self.conn._imap.untagged_responses
+                self.logger.info(f"🔍 DEBUG untagged_responses keys: {list(untagged.keys())}")
+                
                 if 'COPYUID' in untagged and untagged['COPYUID']:
+                    self.logger.info(f"✅ COPYUID in untagged_responses gefunden: {untagged['COPYUID']}")
                     # Format: [b'1 443 8'] → uidvalidity old_uid new_uid
                     copyuid_data = untagged['COPYUID'][0]
                     if isinstance(copyuid_data, bytes):
@@ -272,7 +287,9 @@ class MailSynchronizer:
                         if len(parts) >= 3:
                             target_uidvalidity = int(parts[0])
                             target_uid = int(parts[2])
-                            self.logger.debug(f"COPYUID parsed: UIDVAL={target_uidvalidity}, new UID={target_uid}")
+                            self.logger.info(f"✅ COPYUID parsed: UIDVAL={target_uidvalidity}, new UID={target_uid}")
+                else:
+                    self.logger.warning(f"⚠️ Kein COPYUID gefunden! Server unterstützt kein UIDPLUS oder Error")
             
             # 4. DELETE aus source (mark + expunge)
             try:
