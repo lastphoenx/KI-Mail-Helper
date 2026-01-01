@@ -3768,56 +3768,37 @@ def get_account_mail_count(account_id):
         fetcher.connect()
 
         try:
-            # Liste alle Ordner
-            typ, mailboxes = fetcher.connection.list()
-            if typ != "OK":
-                return jsonify({"error": "Folder-Listing fehlgeschlagen"}), 500
-
+            # IMAPClient.list_folders() gibt schon Tupel zurück
+            folders = fetcher.connection.list_folders()
+            
             folder_counts = {}
             total_remote = 0
             total_unseen = 0
-
-            for mailbox in mailboxes:
-                if not mailbox:
+            
+            for flags, delimiter, folder_name in folders:
+                # folder_name ist bytes, decode UTF-7
+                folder_display = mail_fetcher_mod.decode_imap_folder_name(folder_name)
+                
+                # Prüfe ob Folder selectable ist
+                if b'\\Noselect' in flags or '\\Noselect' in [f.decode() if isinstance(f, bytes) else f for f in flags]:
                     continue
-                mailbox_str = (
-                    mailbox.decode("utf-8") if isinstance(mailbox, bytes) else str(mailbox)
-                )
-                parts = mailbox_str.split('" ')
-                if len(parts) >= 2:
-                    folder_name_raw = parts[1].strip()
-                    if folder_name_raw.startswith('"') and folder_name_raw.endswith('"'):
-                        folder_name_raw = folder_name_raw[1:-1]
+                
+                try:
+                    # Status gibt direkt Dict zurück!
+                    status_dict = fetcher.connection.folder_status(folder_name, ['MESSAGES', 'UNSEEN'])
                     
-                    # Decode UTF-7 for display
-                    folder_name_display = mail_fetcher_mod.decode_imap_folder_name(folder_name_raw)
+                    messages_count = status_dict.get(b'MESSAGES', 0)
+                    unseen_count = status_dict.get(b'UNSEEN', 0)
                     
-                    # STATUS command braucht ORIGINAL UTF-7 Namen!
-                    try:
-                        status = fetcher.connection.status(
-                            f'"{folder_name_raw}"',  # WICHTIG: Original UTF-7 Name!
-                            "(MESSAGES UNSEEN)"
-                        )
-                        if status[0] == "OK":
-                            # Parse: ['OK', [b'"INBOX" (MESSAGES 20 UNSEEN 2)']]
-                            status_str = status[1][0].decode() if isinstance(status[1][0], bytes) else status[1][0]
-                            import re
-                            messages_match = re.search(r'MESSAGES (\d+)', status_str)
-                            unseen_match = re.search(r'UNSEEN (\d+)', status_str)
-                            
-                            messages_count = int(messages_match.group(1)) if messages_match else 0
-                            unseen_count = int(unseen_match.group(1)) if unseen_match else 0
-                            
-                            # Nutze decoded Name für Response (user-sichtbar)
-                            folder_counts[folder_name_display] = {
-                                "total": messages_count,
-                                "unseen": unseen_count
-                            }
-                            total_remote += messages_count
-                            total_unseen += unseen_count
-                    except Exception as e:
-                        logger.warning(f"Konnte Status nicht abrufen für {folder_name_display}: {e}")
-                        continue
+                    folder_counts[folder_display] = {
+                        "total": messages_count,
+                        "unseen": unseen_count
+                    }
+                    total_remote += messages_count
+                    total_unseen += unseen_count
+                except Exception as e:
+                    logger.warning(f"Status fehlgeschlagen für {folder_display}: {e}")
+                    continue
 
             # Zähle lokale Mails in DB
             total_local = db.query(models.RawEmail).filter(

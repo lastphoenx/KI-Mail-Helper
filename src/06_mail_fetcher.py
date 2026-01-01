@@ -3,7 +3,8 @@ Mail Helper - Mail Fetcher (IMAP + OAuth)
 Holt E-Mails von IMAP-Servern (GMX, Gmail, etc.) & Google OAuth
 """
 
-import imaplib
+from imapclient import IMAPClient
+from imapclient.exceptions import IMAPClientError
 import email
 from email.header import decode_header
 from datetime import datetime
@@ -237,15 +238,20 @@ class MailFetcher:
         self.username = username
         self.password = password
         self.port = port
-        self.connection: Optional[imaplib.IMAP4_SSL] = None
+        self.connection: Optional[IMAPClient] = None
 
     def connect(self):
-        """Stellt Verbindung zum IMAP-Server her"""
+        """Stellt Verbindung zum IMAP-Server her (IMAPClient)"""
         try:
-            self.connection = imaplib.IMAP4_SSL(self.server, self.port)
+            self.connection = IMAPClient(
+                host=self.server,
+                port=self.port,
+                ssl=True,
+                timeout=30.0
+            )
             self.connection.login(self.username, self.password)
             print(f"✅ Verbunden mit {self.server}")
-        except Exception as e:
+        except (IMAPClientError, Exception) as e:
             logger.debug(f"Connection error details: {e}")
             print("❌ Verbindungsfehler: Authentifizierung fehlgeschlagen")
             raise ConnectionError("IMAP connection failed") from None
@@ -334,59 +340,23 @@ class MailFetcher:
             if conn is None:
                 raise ConnectionError("IMAP connection failed")
             
-            # Phase 14b: SELECT folder → UIDVALIDITY extrahieren
-            status, folder_info = conn.select(folder, readonly=True)
-            if status != "OK":
-                print(f"⚠️  Ordner {folder} nicht gefunden")
-                return []
+            # Phase 14b: SELECT folder → UIDVALIDITY extrahieren (IMAPClient!)
+            # IMAPClient gibt UIDVALIDITY direkt im Dict zurück - VIEL EINFACHER!
+            folder_info = conn.select_folder(folder, readonly=True)
             
-            # UIDVALIDITY vom Server (in untagged responses nach SELECT)
-            # imaplib speichert untagged responses in conn.untagged_responses dict
+            # IMAPClient gibt Dict zurück: {b'UIDVALIDITY': 1352540700, b'EXISTS': 42, ...}
             server_uidvalidity = None
+            if folder_info:
+                # Direkt aus Dict holen - IMAPClient macht das Parsing!
+                uidvalidity_val = folder_info.get(b'UIDVALIDITY')
+                if uidvalidity_val is not None:
+                    # Kann int oder list sein - normalisieren
+                    if isinstance(uidvalidity_val, list):
+                        server_uidvalidity = int(uidvalidity_val[0])
+                    else:
+                        server_uidvalidity = int(uidvalidity_val)
+                    logger.debug(f"✅ UIDVALIDITY from select_folder: {server_uidvalidity}")
             
-            # 1) Prüfe untagged responses (primär bei imaplib)
-            # GMX, Yahoo und die meisten Server geben UIDVALIDITY hier zurück
-            try:
-                untagged = getattr(conn, 'untagged_responses', {})
-                
-                # UIDVALIDITY ist typischerweise in 'OK' responses
-                # Format: [b'[UIDVALIDITY 1352540700] UIDs valid']
-                if 'OK' in untagged and untagged['OK']:
-                    for resp in untagged['OK']:
-                        resp_str = resp.decode('utf-8', errors='ignore') if isinstance(resp, bytes) else str(resp)
-                        if 'UIDVALIDITY' in resp_str:
-                            match = re.search(r'UIDVALIDITY\s+(\d+)', resp_str)
-                            if match:
-                                server_uidvalidity = int(match.group(1))
-                                break
-            except Exception as e:
-                pass  # Try fallbacks
-            
-            # 2) Fallback: Prüfe folder_info (manche Server geben es dort)
-            if not server_uidvalidity and isinstance(folder_info, list):
-                for response in folder_info:
-                    if isinstance(response, bytes):
-                        response_str = response.decode('utf-8', errors='ignore')
-                        if 'UIDVALIDITY' in response_str:
-                            match = re.search(r'UIDVALIDITY\s+(\d+)', response_str)
-                            if match:
-                                server_uidvalidity = int(match.group(1))
-                                break
-            
-            # 3) Fallback: STATUS command (RFC 3501 - funktioniert überall!)
-            if not server_uidvalidity:
-                try:
-                    status, status_resp = conn.status(folder, '(UIDVALIDITY)')
-                    if status == 'OK' and status_resp:
-                        resp_str = status_resp[0].decode('utf-8', errors='ignore') if isinstance(status_resp[0], bytes) else str(status_resp[0])
-                        match = re.search(r'UIDVALIDITY\s+(\d+)', resp_str)
-                        if match:
-                            server_uidvalidity = int(match.group(1))
-                            logger.debug(f"✅ UIDVALIDITY via STATUS: {server_uidvalidity}")
-                except Exception as e:
-                    logger.debug(f"STATUS fallback auch fehlgeschlagen: {e}")
-            
-            # 4) Letzter Fallback: Ohne UIDVALIDITY weitermachen (suboptimal)
             if not server_uidvalidity:
                 logger.warning(f"⚠️  Konnte UIDVALIDITY für {folder} nicht abrufen!")
                 # Continue ohne UIDVALIDITY (Mails werden skipped in persistence)
@@ -417,56 +387,55 @@ class MailFetcher:
             # Phase 14b FIX: Setze als Instance-Variable für _fetch_email_by_id()
             self._current_folder_uidvalidity = folder_uidvalidity
 
-            # Phase 13C Part 4: Delta-Sync via UID-Range
-            search_criteria = []  # Initialisiere immer (auch für uid_range Branch)
+            # Phase 13C Part 4: Delta-Sync via UID-Range (IMAPClient)
+            search_criteria = []
             
             if uid_range:
-                # UID-Range suche: z.B. "123:*" = alle Mails ab UID 123
-                status, messages = conn.uid('search', None, f"UID {uid_range}")
+                # UID-Range suche: z.B. "8:*" = alle Mails ab UID 8
+                # IMAPClient: search() braucht ['UID', '8:*'] als SEPARATE Elemente!
+                messages = conn.search(['UID', uid_range])
             else:
                 # Phase 13C Part 2: Build IMAP SEARCH criteria
                 if unseen_only:
-                    search_criteria.append("UNSEEN")
+                    search_criteria.append('UNSEEN')
                 
                 if flagged_only:
-                    search_criteria.append("FLAGGED")
+                    search_criteria.append('FLAGGED')
                 
                 if since:
-                    # IMAP date format: DD-Mon-YYYY (e.g., "01-Jan-2024")
+                    # IMAP date format: DD-Mon-YYYY
                     date_str = since.strftime("%d-%b-%Y")
-                    search_criteria.append(f"SINCE {date_str}")
+                    search_criteria.append('SINCE')
+                    search_criteria.append(date_str)
                 
                 if before:
                     date_str = before.strftime("%d-%b-%Y")
-                    search_criteria.append(f"BEFORE {date_str}")
+                    search_criteria.append('BEFORE')
+                    search_criteria.append(date_str)
                 
-                # Build final search string
-                search_string = " ".join(search_criteria) if search_criteria else "ALL"
+                # IMAPClient: search() gibt direkt Liste von UIDs zurück
+                messages = conn.search(search_criteria if search_criteria else ['ALL'])
 
-                # BUG-002-FIX: Nutze UID-basierte Suche (stabil nach EXPUNGE)
-                status, messages = conn.uid('search', None, search_string)
-
-            if status != "OK":
-                print("⚠️  Keine Mails gefunden")
-                return []
-
-            mail_ids = messages[0].split()
-            
-            # Phase 13C Part 4 FIX: Leeres Ergebnis ist OK (keine neuen Mails)
-            # Bei Delta-Sync mit UID-Range kann messages[0] leer sein = keine neuen Mails
-            if not mail_ids:
+            # IMAPClient gibt direkt Liste von UIDs, nicht bytes string
+            if not messages:
                 if uid_range:
-                    # Bei Delta-Sync: Keine neuen Mails ist normal
+                    print(f"📧 0 Mails gefunden (keine neuen seit UID {uid_range.split(':')[0]})")
+                else:
+                    print("📧 0 Mails gefunden")
+# IMAPClient gibt direkt Liste von UIDs, nicht bytes string
+            if not messages:
+                if uid_range:
                     print(f"📧 0 Mails gefunden (keine neuen seit UID {uid_range.split(':')[0]})")
                 else:
                     print("📧 0 Mails gefunden")
                 return []
             
-            mail_ids = list(reversed(mail_ids))
+            # messages ist bereits List[int], kein parsing nötig!
+            mail_ids = list(reversed(messages))
             mail_ids = mail_ids[:limit]
 
             if not uid_range and search_criteria:
-                print(f"🔍 Filter: {search_string}")
+                print(f"🔍 Filter: {' '.join(str(c) for c in search_criteria)}")
             print(f"📧 {len(mail_ids)} Mails gefunden")
 
             emails = []
@@ -504,115 +473,144 @@ class MailFetcher:
             email_item['parent_uid'] = parent_uids.get(uid)
 
     def _fetch_email_by_id(
-        self, mail_id: bytes, folder: str = "INBOX"
+        self, mail_id: int, folder: str = "INBOX"
     ) -> Optional[Dict]:
-        """Holt eine einzelne E-Mail mit erweiterten Metadaten (Phase 12)
+        """Holt eine einzelne E-Mail mit erweiterten Metadaten (IMAPClient)
         
-        FINDING-002/003: Optimierte zwei-Phasen-Strategie:
-        - Phase 1: BODYSTRUCTURE + RFC822.SIZE + FLAGS + UID (schnell, <1KB)
-        - Phase 2: RFC822 nur für Body-Extraktion (wenn benötigt)
-        
-        BUG-002-FIX: Nutzt conn.uid('FETCH') für stabile UIDs (imaplib)
-        Performance: 10-100x schneller bei großen Emails mit Attachments
+        IMAPClient macht FETCH viel einfacher:
+        - fetch() gibt direkt Dict zurück
+        - FLAGS als Liste
+        - ENVELOPE als Objekt
+        - Keine Response-Parsing-Hölle mehr!
         """
         try:
             if self.connection is None:
                 return None
             conn = self.connection
-            mail_id_str = mail_id.decode(errors="ignore")
             
-            # BUG-002-FIX: UID-basierter Fetch (mail_id ist bereits UID von uid-search)
-            # PHASE 1: Metadaten ohne Body-Download
-            status, meta_data = conn.uid(
-                'fetch',
-                mail_id_str, 
-                "(BODYSTRUCTURE RFC822.SIZE FLAGS UID BODY.PEEK[HEADER])"
-            )
-
-            if status != "OK":
+            # IMAPClient: fetch() gibt Dict zurück: {uid: {b'FLAGS': [...], b'RFC822': ...}}
+            # PHASE 1: Metadaten + Header
+            meta_data = conn.fetch([mail_id], ['FLAGS', 'RFC822.SIZE', 'ENVELOPE', 'BODYSTRUCTURE'])
+            
+            if not meta_data or mail_id not in meta_data:
                 return None
-
-            meta = meta_data[0][0]
-            meta_str = meta.decode("utf-8", errors="ignore")
-
-            imap_flags = self._parse_imap_flags(meta_str)
-            imap_uid = self._parse_imap_uid(meta_str)
-            flags_dict = self._parse_flags_dict(imap_flags)
             
-            # RFC822.SIZE aus Response extrahieren (FINDING-003)
-            message_size = self._parse_rfc822_size(meta_str)
+            msg_data = meta_data[mail_id]
             
-            # BODYSTRUCTURE parsen (FINDING-002)
-            bodystructure_info = self._parse_bodystructure_from_response(meta_str)
+            # FLAGS extrahieren (bereits als Liste!)
+            imap_flags_list = msg_data.get(b'FLAGS', [])
+            imap_flags = ' '.join(str(f.decode() if isinstance(f, bytes) else f) for f in imap_flags_list)
             
-            # BUG-002-FIX: Phase 2 auch UID-basiert
-            # PHASE 2: Body laden (nur für Text-Extraktion)
-            status, body_data = conn.uid('fetch', mail_id_str, "(RFC822)")
-            if status != "OK":
-                return None
+            # Flags dict
+            flags_dict = {
+                'imap_is_seen': b'\\Seen' in imap_flags_list,
+                'imap_is_answered': b'\\Answered' in imap_flags_list,
+                'imap_is_flagged': b'\\Flagged' in imap_flags_list,
+                'imap_is_deleted': b'\\Deleted' in imap_flags_list,
+                'imap_is_draft': b'\\Draft' in imap_flags_list,
+            }
+            
+            # Message Size
+            message_size = msg_data.get(b'RFC822.SIZE', 0)
+            
+            # ENVELOPE extrahieren (IMAPClient parsed das schon!)
+            envelope = msg_data.get(b'ENVELOPE')
+            
+            subject = 'N/A'
+            sender = 'N/A'
+            message_id_val = None
+            received_at = datetime.now()
+            
+            if envelope:
+                # Subject
+                if envelope.subject:
+                    try:
+                        subject = envelope.subject.decode('utf-8', errors='replace')[:200]
+                    except:
+                        subject = str(envelope.subject)[:200]
                 
-            raw_email = body_data[0][1]
-            msg = email.message_from_bytes(raw_email)
-
-            subject = self._decode_header(msg.get("Subject", ""))
-            sender = self._decode_header(msg.get("From", ""))
-            date_str = msg.get("Date", "")
-
-            body = self._extract_body(msg)
-
-            try:
-                received_at = email.utils.parsedate_to_datetime(date_str)
-            except Exception as e:
-                logger.debug(f"Failed to parse date '{date_str}': {e}")
-                received_at = datetime.now()
-
-            # Envelope mit BODYSTRUCTURE-Daten anreichern (FINDING-002/003)
-            envelope = self._parse_envelope(msg, bodystructure_info, message_size)
-
+                # Sender (from)
+                if envelope.from_ and envelope.from_[0]:
+                    try:
+                        from_tuple = envelope.from_[0]
+                        name = from_tuple[0].decode() if from_tuple[0] else ""
+                        mailbox = from_tuple[2].decode() if from_tuple[2] else ""
+                        domain = from_tuple[3].decode() if from_tuple[3] else ""
+                        if name:
+                            sender = f"\"{name}\" <{mailbox}@{domain}>"
+                        else:
+                            sender = f"{mailbox}@{domain}" if mailbox and domain else "N/A"
+                    except:
+                        sender = 'N/A'
+                
+                # Message-ID
+                if envelope.message_id:
+                    try:
+                        message_id_val = envelope.message_id.decode('ascii', errors='replace')
+                    except:
+                        message_id_val = str(envelope.message_id)
+                
+                # Date
+                if envelope.date:
+                    try:
+                        date_str = envelope.date.decode() if isinstance(envelope.date, bytes) else str(envelope.date)
+                        received_at = email.utils.parsedate_to_datetime(date_str)
+                    except:
+                        received_at = datetime.now()
+            
+            # PHASE 2: RFC822 für Body
+            body_data = conn.fetch([mail_id], ['RFC822'])
+            body = 'N/A'
+            
+            if body_data and mail_id in body_data:
+                msg_bytes = body_data[mail_id].get(b'RFC822')
+                if msg_bytes:
+                    msg = email.message_from_bytes(msg_bytes)
+                    body = self._extract_body(msg)
+            
+            # BODYSTRUCTURE parsen
+            bodystructure = msg_data.get(b'BODYSTRUCTURE')
+            has_attachments = self._check_attachments_in_bodystructure(bodystructure) if bodystructure else False
+            
             # Phase 13C: Decode IMAP UTF-7 folder names to UTF-8
             folder_utf8 = decode_imap_folder_name(folder)
             
-            # Phase 14b: UIDVALIDITY aus Closure (von fetch_new_emails gesetzt)
+            # Phase 14b: UIDVALIDITY aus Closure
             uidvalidity = getattr(self, '_current_folder_uidvalidity', None)
 
             return {
-                "uid": mail_id_str,
+                "uid": str(mail_id),
                 "sender": sender,
                 "subject": subject,
                 "body": body,
                 "received_at": received_at,
-                "imap_uid": imap_uid,
-                "imap_folder": folder_utf8,  # UTF-8 decoded
-                "imap_uidvalidity": uidvalidity,  # Phase 14b
+                "imap_uid": mail_id,
+                "imap_folder": folder_utf8,
+                "imap_uidvalidity": uidvalidity,
                 "imap_flags": imap_flags,
-                "message_id": envelope.get("message_id"),
-                "in_reply_to": envelope.get("in_reply_to"),
-                "to": envelope.get("to"),
-                "cc": envelope.get("cc"),
-                "bcc": envelope.get("bcc"),
-                "reply_to": envelope.get("reply_to"),
-                "references": envelope.get("references"),
-                "message_size": envelope.get("message_size"),
-                "content_type": envelope.get("content_type"),
-                "charset": envelope.get("charset"),
-                "has_attachments": envelope.get("has_attachments"),
-                "imap_is_seen": flags_dict.get("imap_is_seen"),
-                "imap_is_answered": flags_dict.get("imap_is_answered"),
-                "imap_is_flagged": flags_dict.get("imap_is_flagged"),
-                "imap_is_deleted": flags_dict.get("imap_is_deleted"),
-                "imap_is_draft": flags_dict.get("imap_is_draft"),
+                "message_id": message_id_val,
+                "in_reply_to": None,  # TODO: Extract from envelope
+                "to": None,  # TODO: Extract from envelope
+                "cc": None,
+                "bcc": None,
+                "reply_to": None,
+                "references": None,
+                "message_size": message_size,
+                "content_type": None,  # TODO: Extract from bodystructure
+                "charset": None,
+                "has_attachments": has_attachments,
+                "imap_is_seen": flags_dict["imap_is_seen"],
+                "imap_is_answered": flags_dict["imap_is_answered"],
+                "imap_is_flagged": flags_dict["imap_is_flagged"],
+                "imap_is_deleted": flags_dict["imap_is_deleted"],
+                "imap_is_draft": flags_dict["imap_is_draft"],
                 "thread_id": None,
                 "parent_uid": None,
             }
 
         except Exception as e:
-            logger.debug(
-                f"Fetch mail error for ID {mail_id.decode(errors='ignore')}: {e}"
-            )
-            print(
-                f"⚠️  Fehler bei Mail-ID {mail_id.decode(errors='ignore')}: "
-                f"Abruf fehlgeschlagen"
-            )
+            logger.debug(f"Fetch mail error for ID {mail_id}: {e}")
+            print(f"⚠️  Fehler bei Mail-ID {mail_id}: Abruf fehlgeschlagen")
             return None
 
     def _decode_header(self, header: str) -> str:
@@ -658,6 +656,28 @@ class MailFetcher:
                 body = str(msg.get_payload())
 
         return body.strip()
+
+    def _check_attachments_in_bodystructure(self, bodystructure) -> bool:
+        """Prüft ob BODYSTRUCTURE Attachments enthält (IMAPClient)"""
+        if not bodystructure:
+            return False
+        
+        # Rekursiv durch BODYSTRUCTURE gehen und nach "attachment" disposition suchen
+        def check_part(part):
+            if isinstance(part, (list, tuple)):
+                for item in part:
+                    if check_part(item):
+                        return True
+            elif isinstance(part, bytes):
+                part_str = part.decode('utf-8', errors='ignore').lower()
+                if 'attachment' in part_str:
+                    return True
+            elif isinstance(part, str):
+                if 'attachment' in part.lower():
+                    return True
+            return False
+        
+        return check_part(bodystructure)
 
     def _parse_envelope(self, msg, bodystructure_info: Optional[Dict], message_size: Optional[int]) -> Dict:
         """Extrahiert erweiterte Envelope-Daten aus RFC822-Message

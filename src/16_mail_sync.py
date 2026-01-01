@@ -7,7 +7,8 @@ Phase 14c: RFC 4315 UIDPLUS Support
 - MoveResult dataclass mit neuer UID + UIDVALIDITY
 """
 
-import imaplib
+from imapclient import IMAPClient
+from imapclient.exceptions import IMAPClientError
 import logging
 import re
 from typing import Optional, Tuple
@@ -51,10 +52,10 @@ class SyncAction(Enum):
 class MailSynchronizer:
     """Synchronisiert Änderungen mit IMAP-Server"""
 
-    def __init__(self, connection: imaplib.IMAP4_SSL, logger_instance=None):
+    def __init__(self, connection: IMAPClient, logger_instance=None):
         """
         Args:
-            connection: Aktive IMAP4_SSL Verbindung
+            connection: Aktive IMAPClient Verbindung
             logger_instance: Optional logger instance
         """
         self.conn = connection
@@ -166,7 +167,7 @@ class MailSynchronizer:
             self.logger.error(f"Fehler beim Parsen von untagged COPYUID: {e}")
             return None, None, None
 
-    def delete_email(self, uid: str, folder: str = "INBOX") -> Tuple[bool, str]:
+    def delete_email(self, uid: int, folder: str = "INBOX") -> Tuple[bool, str]:
         """
         Löscht Mail auf Server (markiert als gelöscht + expunge)
         
@@ -178,15 +179,13 @@ class MailSynchronizer:
             (success, message)
         """
         try:
-            self.conn.select(folder)
+            self.conn.select_folder(folder)
             
-            typ, resp = self.conn.uid('store', uid, '+FLAGS', '\\Deleted')
-            if typ != 'OK':
-                return False, f"Fehler beim Setzen von \\Deleted Flag: {resp}"
+            # IMAPClient: set_flags() statt uid('store')
+            self.conn.set_flags([uid], ['\\Deleted'])
             
-            typ, resp = self.conn.expunge()
-            if typ != 'OK':
-                return False, f"Fehler beim Expunge: {resp}"
+            # Expunge
+            self.conn.expunge()
             
             self.logger.info(f"Email {uid} aus {folder} gelöscht")
             return True, "Email gelöscht"
@@ -197,20 +196,14 @@ class MailSynchronizer:
 
     def find_trash_folder(self) -> Optional[str]:
         try:
-            typ, mailboxes = self.conn.list()
-            if typ != 'OK':
-                return None
-            for mailbox in mailboxes:
-                if not mailbox:
-                    continue
-                mailbox_str = mailbox.decode('utf-8') if isinstance(mailbox, bytes) else str(mailbox)
-                if '\\Trash' in mailbox_str:
-                    parts = mailbox_str.split('" ', 1)
-                    if len(parts) > 1:
-                        folder_name = parts[1].strip()
-                        if folder_name.startswith('"') and folder_name.endswith('"'):
-                            folder_name = folder_name[1:-1]
-                        return folder_name
+            # IMAPClient: list_folders() gibt (flags, delimiter, name) tuples
+            mailboxes = self.conn.list_folders()
+            
+            for flags, delimiter, folder_name in mailboxes:
+                # Check for \\Trash flag
+                if b'\\Trash' in flags or '\\Trash' in str(flags):
+                    return folder_name
+            
             return None
         except Exception as e:
             self.logger.error(f"Fehler beim Suchen von Trash-Folder: {e}")
@@ -242,87 +235,51 @@ class MailSynchronizer:
                 message=f"Fehler: {str(e)}"
             )
 
-    def move_to_folder(
-        self, uid: str, target_folder: str, source_folder: str = "INBOX"
-    ) -> MoveResult:
+    def move_to_folder(self, uid: int, target_folder: str, source_folder: str = "INBOX") -> MoveResult:
         """Phase 14c: Verschiebt Email in anderen Ordner (mit COPYUID Support)
         
-        RFC 4315 UIDPLUS: Nach COPY gibt Server neue UID zurük:
-        * OK [COPYUID <uidvalidity> <old-uid> <new-uid>]
+        RFC 4315 UIDPLUS: IMAPClient parsed COPYUID automatisch!
         
         Args:
-            uid: IMAP UID (kann str oder int sein)
-            target_folder: Ziel-Ordner (z.B. "Spam", "[Gmail]/Spam")
+            uid: IMAP UID
+            target_folder: Ziel-Ordner
             source_folder: Quell-Ordner (default: INBOX)
             
         Returns:
             MoveResult mit success, target_uid, target_uidvalidity, message
         """
         try:
-            # Sicherstellen dass UID ein String ist
-            uid_str = str(uid)
-            
             # 1. SELECT source folder
-            self.conn.select(source_folder)
+            self.conn.select_folder(source_folder)
             
-            # 2. COPY to target folder (oder MOVE wenn Server unterstützt)
-            # Zuerst versuchen wir MOVE (RFC 6851) - atomarer als COPY+DELETE
-            typ, move_resp = self.conn.uid('move', uid_str, target_folder)
-            self.logger.info(
-                f"📡 IMAP MOVE Response: typ={typ}, response={move_resp}"
-            )
+            # 2. COPY zu target folder
+            # IMAPClient gibt copy_set zurück: (uidvalidity, [old_uids], [new_uids])
+            copy_response = self.conn.copy([uid], target_folder)
             
-            if typ != 'OK':
-                # Fallback zu COPY+DELETE wenn MOVE nicht unterstützt
-                self.logger.info(f"⚠️ MOVE nicht unterstützt, Fallback zu COPY+DELETE")
-                typ, copy_resp = self.conn.uid('copy', uid_str, target_folder)
-                self.logger.info(
-                    f"📡 IMAP COPY Response: typ={typ}, response={copy_resp}"
-                )
-                
-                if typ != 'OK':
-                    return MoveResult(
-                        success=False,
-                        target_folder=target_folder,
-                        message=f"Fehler beim Copy nach {target_folder}: {copy_resp}"
-                    )
-                
-                # Parse COPYUID aus untagged_responses (imaplib versteckt es dort!)
-                self.logger.info(f"🔍 Checking untagged_responses: {self.conn.untagged_responses}")
-                target_uidvalidity, old_uid, target_uid = self._parse_copyuid_from_untagged()
-                
-                # 4. DELETE from source (mark + expunge) - nur bei COPY!
-                typ, store_resp = self.conn.uid('store', uid_str, '+FLAGS', '\\Deleted')
-                if typ != 'OK':
-                    self.logger.warning(
-                        f"Copy erfolgreich aber Deleted-Flag setzen fehlgeschlagen: {store_resp}"
-                    )
-                    return MoveResult(
-                        success=False,
-                        target_folder=target_folder,
-                        target_uid=target_uid,
-                        target_uidvalidity=target_uidvalidity,
-                        message=f"Fehler beim Setzen von \\Deleted: {store_resp}"
-                    )
-                
-                typ, expunge_resp = self.conn.expunge()
-                if typ != 'OK':
-                    self.logger.warning(f"Expunge fehlgeschlagen: {expunge_resp}")
-            else:
-                # MOVE erfolgreich! Parse COPYUID aus untagged_responses
-                self.logger.info(f"🔍 Checking untagged_responses after MOVE: {self.conn.untagged_responses}")
-                target_uidvalidity, old_uid, target_uid = self._parse_copyuid_from_untagged()
+            target_uid = None
+            target_uidvalidity = None
             
-            # 3. Log parsed values
-            self.logger.info(
-                f"✅ COPYUID geparst: UIDVALIDITY={target_uidvalidity}, "
-                f"old_uid={old_uid}, target_uid={target_uid}"
-            )
+            if copy_response:
+                # copy_response ist: (uidvalidity, [old_uids], [new_uids])
+                # Format: (1702396800, [424], [17])
+                if isinstance(copy_response, tuple) and len(copy_response) >= 3:
+                    target_uidvalidity = copy_response[0]
+                    if len(copy_response[2]) > 0:
+                        target_uid = copy_response[2][0]
+                
+                self.logger.debug(f"COPYUID: {copy_response}")
+            
+            # 3. DELETE aus source (mark + expunge)
+            try:
+                self.conn.set_flags([uid], ['\\Deleted'])
+                self.conn.expunge()
+            except Exception as e:
+                self.logger.warning(f"Expunge fehlgeschlagen (Mail ist aber schon kopiert): {e}")
             
             # 5. Erfolgreich!
             if target_uid and target_uidvalidity:
                 self.logger.info(
-                    f"Email {uid_str} verschoben: {source_folder} → {target_folder} "
+                    f"Email {uid} verschoben: {source_folder} → {target_folder} "
                     f"(neue UID: {target_uid}, UIDVALIDITY: {target_uidvalidity})"
                 )
                 return MoveResult(
@@ -333,10 +290,10 @@ class MailSynchronizer:
                     message=f"Email zu {target_folder} verschoben (UID: {target_uid})"
                 )
             else:
-                # COPYUID nicht verfügbar (Server ohne UIDPLUS)
+                # COPYUID nicht verfügbar
                 self.logger.info(
-                    f"Email {uid_str} verschoben: {source_folder} → {target_folder} "
-                    f"(COPYUID nicht verfügbar, Server unterstützt UIDPLUS nicht)"
+                    f"Email {uid} verschoben: {source_folder} → {target_folder} "
+                    f"(COPYUID nicht verfügbar)"
                 )
                 return MoveResult(
                     success=True,
@@ -352,7 +309,7 @@ class MailSynchronizer:
                 message=f"Fehler: {str(e)}"
             )
 
-    def mark_as_read(self, uid: str, folder: str = "INBOX") -> Tuple[bool, str]:
+    def mark_as_read(self, uid: int, folder: str = "INBOX") -> Tuple[bool, str]:
         """
         Markiert Email als gelesen
         
@@ -364,11 +321,8 @@ class MailSynchronizer:
             (success, message)
         """
         try:
-            self.conn.select(folder)
-            
-            typ, resp = self.conn.uid('store', uid, '+FLAGS', '\\Seen')
-            if typ != 'OK':
-                return False, f"Fehler beim Setzen von \\Seen: {resp}"
+            self.conn.select_folder(folder)
+            self.conn.set_flags([uid], ['\\Seen'])
             
             self.logger.info(f"Email {uid} als gelesen markiert")
             return True, "Als gelesen markiert"
@@ -377,7 +331,7 @@ class MailSynchronizer:
             self.logger.error(f"MARK_READ fehlgeschlagen für UID {uid}: {e}")
             return False, f"Fehler: {str(e)}"
 
-    def mark_as_unread(self, uid: str, folder: str = "INBOX") -> Tuple[bool, str]:
+    def mark_as_unread(self, uid: int, folder: str = "INBOX") -> Tuple[bool, str]:
         """
         Markiert Email als ungelesen
         
@@ -389,11 +343,8 @@ class MailSynchronizer:
             (success, message)
         """
         try:
-            self.conn.select(folder)
-            
-            typ, resp = self.conn.uid('store', uid, '-FLAGS', '\\Seen')
-            if typ != 'OK':
-                return False, f"Fehler beim Entfernen von \\Seen: {resp}"
+            self.conn.select_folder(folder)
+            self.conn.remove_flags([uid], ['\\Seen'])
             
             self.logger.info(f"Email {uid} als ungelesen markiert")
             return True, "Als ungelesen markiert"
@@ -402,51 +353,27 @@ class MailSynchronizer:
             self.logger.error(f"MARK_UNREAD fehlgeschlagen für UID {uid}: {e}")
             return False, f"Fehler: {str(e)}"
 
-    def set_flag(self, uid: str, folder: str = "INBOX") -> Tuple[bool, str]:
-        """
-        Markiert Email als wichtig (\\Flagged)
-        
-        Args:
-            uid: IMAP UID
-            folder: IMAP Folder
-            
-        Returns:
-            (success, message)
-        """
+    def set_flag(self, uid: int, folder: str = "INBOX") -> Tuple[bool, str]:
+        """Markiert Email als wichtig (\\Flagged)"""
         try:
-            self.conn.select(folder)
+            self.conn.select_folder(folder)
+            self.conn.set_flags([uid], ['\\Flagged'])
             
-            typ, resp = self.conn.uid('store', uid, '+FLAGS', '\\Flagged')
-            if typ != 'OK':
-                return False, f"Fehler beim Setzen von \\Flagged: {resp}"
-            
-            self.logger.info(f"Email {uid} als wichtig markiert")
+            self.logger.info(f"Email {uid} geflaggt")
             return True, "Als wichtig markiert"
             
         except Exception as e:
             self.logger.error(f"SET_FLAG fehlgeschlagen für UID {uid}: {e}")
             return False, f"Fehler: {str(e)}"
 
-    def unset_flag(self, uid: str, folder: str = "INBOX") -> Tuple[bool, str]:
-        """
-        Entfernt wichtig-Markierung (\\Flagged)
-        
-        Args:
-            uid: IMAP UID
-            folder: IMAP Folder
-            
-        Returns:
-            (success, message)
-        """
+    def unset_flag(self, uid: int, folder: str = "INBOX") -> Tuple[bool, str]:
+        """Entfernt wichtig-Flag von Email"""
         try:
-            self.conn.select(folder)
+            self.conn.select_folder(folder)
+            self.conn.remove_flags([uid], ['\\Flagged'])
             
-            typ, resp = self.conn.uid('store', uid, '-FLAGS', '\\Flagged')
-            if typ != 'OK':
-                return False, f"Fehler beim Entfernen von \\Flagged: {resp}"
-            
-            self.logger.info(f"Email {uid} als nicht-wichtig markiert")
-            return True, "Wichtig-Markierung entfernt"
+            self.logger.info(f"Email {uid} entflaggt")
+            return True, "Flagge entfernt"
             
         except Exception as e:
             self.logger.error(f"UNSET_FLAG fehlgeschlagen für UID {uid}: {e}")

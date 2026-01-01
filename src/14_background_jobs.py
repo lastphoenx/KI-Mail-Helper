@@ -298,30 +298,21 @@ class BackgroundJobQueue:
             # Phase 13C: Fetch aus ALLEN Ordnern, nicht nur INBOX
             all_emails = []
             
-            # 1. Liste alle Ordner
-            typ, mailboxes = fetcher.connection.list()
-            if typ != "OK":
-                logger.warning("Konnte Ordner nicht listen, falle zurück auf INBOX")
-                return fetcher.fetch_new_emails(folder="INBOX", limit=limit, unseen_only=False)
+            # 1. Liste alle Ordner (IMAPClient: list_folders() gibt direkt Liste zurück!)
+            mailboxes = fetcher.connection.list_folders()
             
-            # Phase 13C Part 4 FIX: Speichere RAW + DECODED Namen
-            # WICHTIG: IMAP Commands (SELECT, STATUS) brauchen RAW UTF-7 Namen!
-            #          Aber DB und Logs nutzen DECODED UTF-8 Namen!
-            folders = []  # Liste von (raw_name, decoded_name) Tuples
-            for mailbox in mailboxes:
-                if not mailbox:
-                    continue
-                mailbox_str = (
-                    mailbox.decode("utf-8") if isinstance(mailbox, bytes) else str(mailbox)
-                )
-                parts = mailbox_str.split('" ')
-                if len(parts) >= 2:
-                    folder_name_raw = parts[1].strip()
-                    if folder_name_raw.startswith('"') and folder_name_raw.endswith('"'):
-                        folder_name_raw = folder_name_raw[1:-1]
-                    # Decode für Display/DB
-                    folder_name_decoded = mail_fetcher_mod.decode_imap_folder_name(folder_name_raw)
-                    folders.append((folder_name_raw, folder_name_decoded))
+            # mailboxes ist Liste von (flags, delimiter, name) Tuples
+            # Format: [(flags, b'/', 'INBOX'), (flags, b'/', 'Sent'), ...]
+            folders = []
+            for flags, delimiter, folder_name in mailboxes:
+                # IMAPClient gibt Namen schon decoded zurück!
+                folders.append(folder_name)
+            # mailboxes ist Liste von (flags, delimiter, name) Tuples
+            # Format: [(flags, b'/', 'INBOX'), (flags, b'/', 'Sent'), ...]
+            folders = []
+            for flags, delimiter, folder_name in mailboxes:
+                # IMAPClient gibt Namen schon decoded zurück!
+                folders.append(folder_name)
             
             # Phase 13C Part 4: Delta-Sync wenn aktiviert
             user_use_delta = getattr(account.user, 'fetch_use_delta_sync', True)
@@ -358,19 +349,19 @@ class BackgroundJobQueue:
                 folder_max_uids = {folder: max_uid for folder, max_uid in results if max_uid}
                 logger.info(f"  📊 Max UIDs: {folder_max_uids}")
             
-            for folder_raw, folder_decoded in folders:
+            for folder_name in folders:
                 try:
                     # Delta-Sync: Fetch nur Mails mit UID > last_known_uid
                     uid_range = None
-                    if user_use_delta and folder_decoded in folder_max_uids:
-                        last_uid = folder_max_uids[folder_decoded]
+                    if user_use_delta and folder_name in folder_max_uids:
+                        last_uid = folder_max_uids[folder_name]
                         # UID-Range: (last_uid+1):* = Alle neuen Mails
                         uid_range = f"{last_uid + 1}:*"
-                        logger.info(f"  🔄 {folder_decoded}: Delta ab UID {last_uid + 1}")
+                        logger.info(f"  🔄 {folder_name}: Delta ab UID {last_uid + 1}")
                     
-                    # WICHTIG: IMAP SELECT braucht RAW UTF-7 Name!
+                    # IMAPClient braucht einfach den folder_name!
                     folder_emails = fetcher.fetch_new_emails(
-                        folder=folder_raw,  # RAW UTF-7 für IMAP Command
+                        folder=folder_name,  # IMAPClient handled Namen automatisch
                         limit=mails_per_folder,
                         unseen_only=False,  # Immer alle Mails!
                         uid_range=uid_range,  # Phase 13C Part 4: Delta-Filter
@@ -378,9 +369,9 @@ class BackgroundJobQueue:
                         session=session  # Phase 14b: DB-Session für UIDVALIDITY
                     )
                     all_emails.extend(folder_emails)
-                    logger.info(f"  ✓ {folder_decoded}: {len(folder_emails)} Mails")
+                    logger.info(f"  ✓ {folder_name}: {len(folder_emails)} Mails")
                 except Exception as e:
-                    logger.warning(f"  ⚠️ Fehler in Ordner '{folder_decoded}': {e}")
+                    logger.warning(f"  ⚠️ Fehler in Ordner '{folder_name}': {e}")
                     continue
             
             logger.info(f"📧 Gesamt: {len(all_emails)} Mails aus {len(folders)} Ordnern")
