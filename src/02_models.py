@@ -579,7 +579,12 @@ class RawEmail(Base):
         Integer, ForeignKey("mail_accounts.id"), nullable=False, index=True
     )
 
-    uid = Column(String(255), nullable=False)
+    # ===== DEPRECATED (Phase 14f) =====
+    # uid war unser selbst-generierter Identifier (UUID/String)
+    # Wurde durch RFC-konformen Key ersetzt: (folder, uidvalidity, imap_uid)
+    # Feld bleibt für Backward-Compatibility, wird aber nicht mehr befüllt
+    # TODO: Kann in Zukunft entfernt werden wenn alle Emails migriert sind
+    uid = Column(String(255), nullable=True)
 
     # Zero-Knowledge: Verschlüsselte persönliche Daten
     encrypted_sender = Column(Text, nullable=False)

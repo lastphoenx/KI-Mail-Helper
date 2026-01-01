@@ -219,19 +219,33 @@ def fetch_and_process(
                             f"📥 {len(raw_emails)} neue Mails in {mail_account.name}"
                         )
                         for raw_email_data in raw_emails:
+                            # Phase 14f: RFC-konformer Lookup (folder, uidvalidity, imap_uid)
+                            imap_folder = raw_email_data.get("imap_folder")
+                            imap_uid = raw_email_data.get("imap_uid")
+                            imap_uidvalidity = raw_email_data.get("imap_uidvalidity")
+                            
+                            if not imap_folder or not imap_uid or not imap_uidvalidity:
+                                logger.warning(
+                                    f"⚠️  Mail ohne folder/uid/uidvalidity: "
+                                    f"{raw_email_data.get('subject', 'N/A')[:30]}"
+                                )
+                                continue
+                            
                             existing = (
                                 session.query(models.RawEmail)
                                 .filter_by(
                                     user_id=user.id,
                                     mail_account_id=mail_account.id,
-                                    uid=raw_email_data["uid"],
+                                    imap_folder=imap_folder,
+                                    imap_uidvalidity=imap_uidvalidity,
+                                    imap_uid=imap_uid,
                                 )
                                 .first()
                             )
 
                             if existing:
                                 logger.info(
-                                    f"⏭️  Mail {raw_email_data['uid']} bereits gespeichert"
+                                    f"⏭️  Mail {imap_folder}/{imap_uid} bereits gespeichert"
                                 )
                                 continue
 
@@ -275,13 +289,14 @@ def fetch_and_process(
                             raw_email = models.RawEmail(
                                 user_id=user.id,
                                 mail_account_id=mail_account.id,
-                                uid=raw_email_data["uid"],
+                                uid=None,  # Phase 14f: Deprecated
                                 encrypted_sender=encrypted_sender,
                                 encrypted_subject=encrypted_subject,
                                 encrypted_body=encrypted_body,
                                 received_at=raw_email_data["received_at"],
                                 imap_uid=raw_email_data.get("imap_uid"),
                                 imap_folder=raw_email_data.get("imap_folder"),
+                                imap_uidvalidity=raw_email_data.get("imap_uidvalidity"),  # Phase 14f
                                 imap_flags=raw_email_data.get("imap_flags"),
                                 message_id=raw_email_data.get("message_id"),
                                 thread_id=raw_email_data.get("thread_id"),
