@@ -76,23 +76,19 @@ def reset_all_emails(account_id=None, user_id=None, force=False):
                 print("❌ Abgebrochen")
                 return False
         
-        # Erst ProcessedEmails soft-deleten (haben deleted_at Field)
-        from datetime import datetime, UTC
+        # Erst ProcessedEmails HARD DELETE (wegen Foreign Key)
+        # Grund: Bei Reset will User wirklich ALLES weg haben
+        # Soft-delete würde UniqueConstraint blockieren (UIDs bleiben in DB)
         deleted_processed = session.query(models.ProcessedEmail).filter(
             models.ProcessedEmail.raw_email_id.in_(raw_ids)
-        ).update(
-            {"deleted_at": datetime.now(UTC)},
-            synchronize_session=False
-        )
+        ).delete(synchronize_session=False)
         session.flush()
         
-        # Dann RawEmails soft-deleten (Soft-Delete Pattern!)
+        # Dann RawEmails HARD DELETE
+        # WICHTIG: Hard-delete notwendig, sonst blockieren soft-deleted UIDs den Re-Fetch
         deleted_raw = session.query(models.RawEmail).filter(
             models.RawEmail.id.in_(raw_ids)
-        ).update(
-            {"deleted_at": datetime.now(UTC)},
-            synchronize_session=False
-        )
+        ).delete(synchronize_session=False)
         session.flush()
         
         # Reset initial_sync_done Flag & UIDVALIDITY Cache für betroffene Accounts
@@ -115,8 +111,8 @@ def reset_all_emails(account_id=None, user_id=None, force=False):
         session.commit()
         
         print()
-        print(f"✅ {deleted_processed} ProcessedEmail-Einträge soft-deleted (deleted_at)")
-        print(f"✅ {deleted_raw} RawEmail-Einträge soft-deleted (deleted_at)")
+        print(f"✅ {deleted_processed} ProcessedEmail-Einträge gelöscht (HARD DELETE)")
+        print(f"✅ {deleted_raw} RawEmail-Einträge gelöscht (HARD DELETE)")
         print(f"✅ {reset_accounts} Mail-Account(s) zurückgesetzt:")
         print(f"   - initial_sync_done = False")
         print(f"   - folder_uidvalidity = NULL (UIDVALIDITY Cache geleert)")
@@ -124,7 +120,7 @@ def reset_all_emails(account_id=None, user_id=None, force=False):
         print("🔄 Beim nächsten 'E-Mails abrufen':")
         print("   - Werden alle E-Mails neu abgerufen (initial sync: 500 Mails)")
         print("   - UIDVALIDITY wird neu vom Server geholt")
-        print("   - Keine Duplikate durch alte UIDs")
+        print("   - Keine UID-Konflikte (alte Records komplett gelöscht)")
         print("   - Komplett neu analysiert")
         return True
         
