@@ -902,8 +902,9 @@
             if (data.test_mail_found) {
                 html += `
                     <div class="alert ${data.test_mail_synced ? 'alert-success' : 'alert-danger'}">
-                        <strong>🎯 Test-Mail "${data.test_mail_uid}":</strong>
+                        <strong>🎯 Test-Mail (UID ${data.test_mail_uid}):</strong>
                         ${data.test_mail_in_db ? '✅ Korrekt in DB synchronisiert' : '❌ NICHT in DB gefunden!'}
+                        ${!data.test_mail_in_db ? '<br><small class="text-muted">Hinweis: Mail könnte mit alter UIDVALIDITY in DB sein (rot markiert in Tabelle)</small>' : ''}
                     </div>
                 `;
             }
@@ -918,6 +919,7 @@
                                 <tr>
                                     <th>Status</th>
                                     <th>Herkunft</th>
+                                    <th>Ordner</th>
                                     <th>UID</th>
                                     <th>UIDVAL</th>
                                     <th>Betreff</th>
@@ -946,8 +948,13 @@
                         herkunft = '<small><strong class="text-danger">Nur DB</strong></small>';
                     }
                     
-                    // Highlight Test-Mail
-                    const rowClass = (data.test_mail_uid === mail.uid) ? 'table-warning' : '';
+                    // Highlight Test-Mail ODER unterschiedliche UIDVALIDITY
+                    let rowClass = '';
+                    if (data.test_mail_uid === mail.uid) {
+                        rowClass = 'table-warning';
+                    } else if (mail.uidvalidity && mail.uidvalidity !== data.uidvalidity) {
+                        rowClass = 'table-danger';  // Alte UIDVALIDITY = Mail aus altem State
+                    }
                     
                     // Flags
                     const seenIcon = mail.is_seen ? '✅' : '—';
@@ -963,12 +970,19 @@
                     // Message-ID kürzen
                     const msgIdShort = mail.message_id.length > 30 ? mail.message_id.substring(0, 27) + '...' : mail.message_id;
                     
+                    // UIDVALIDITY Warning
+                    let uidvalDisplay = mail.uidvalidity || '—';
+                    if (mail.uidvalidity && mail.uidvalidity !== data.uidvalidity) {
+                        uidvalDisplay = `<span class="text-danger" title="Alte UIDVALIDITY! Ordner wurde invalidiert.">${mail.uidvalidity} ⚠️</span>`;
+                    }
+                    
                     html += `
                         <tr class="${rowClass}">
                             <td>${statusBadge}</td>
                             <td>${herkunft}</td>
+                            <td><small><strong>${mail.folder || 'Archiv'}</strong></small></td>
                             <td><strong>${mail.uid}</strong></td>
-                            <td><small>${mail.uidvalidity || '—'}</small></td>
+                            <td><small>${uidvalDisplay}</small></td>
                             <td title="${mail.subject}">${subjectShort}</td>
                             <td><small><code title="${mail.message_id}">${msgIdShort}</code></small></td>
                             <td class="text-center">${seenIcon}</td>
@@ -993,7 +1007,8 @@
                             <span class="badge bg-success">✅</span> = In IMAP & DB |
                             <span class="badge bg-warning">📡</span> = Nur auf Server |
                             <span class="badge bg-danger">💾</span> = Nur in DB |
-                            👁️ = Gelesen | 🚩 = Markiert | ↩️ = Beantwortet
+                            👁️ = Gelesen | 🚩 = Markiert | ↩️ = Beantwortet<br>
+                            <strong class="text-danger">Rot hinterlegt:</strong> Alte UIDVALIDITY (Ordner wurde invalidiert, Mail sollte neu gefetcht werden)
                         </small>
                     </div>
                 `;
