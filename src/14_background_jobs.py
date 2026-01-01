@@ -373,7 +373,9 @@ class BackgroundJobQueue:
                         folder=folder_raw,  # RAW UTF-7 für IMAP Command
                         limit=mails_per_folder,
                         unseen_only=False,  # Immer alle Mails!
-                        uid_range=uid_range  # Phase 13C Part 4: Delta-Filter
+                        uid_range=uid_range,  # Phase 13C Part 4: Delta-Filter
+                        account_id=account.id,  # Phase 14b: UIDVALIDITY-Check
+                        session=session  # Phase 14b: DB-Session für UIDVALIDITY
                     )
                     all_emails.extend(folder_emails)
                     logger.info(f"  ✓ {folder_decoded}: {len(folder_emails)} Mails")
@@ -399,140 +401,163 @@ class BackgroundJobQueue:
     ) -> int:
         """Speichert RawEmails verschlüsselt in der Datenbank
 
-        Phase 13C Part 3 FINAL: Korrekte IMAP-Sync-Logik
-        - IMAP UID ist eindeutig pro (account, folder, uid)
-        - INBOX/UID=123 ≠ Archiv/UID=123 (verschiedene IMAP-Objekte!)
-        - Für jedes Mail: SELECT by (account_id, imap_folder, imap_uid)
-          * Exists? → UPDATE (Flags können sich geändert haben)
-          * Not Exists? → INSERT (neues Mail)
-        - KEINE MESSAGE-ID-basierte Deduplizierung!
+        Phase 14e: RFC-konform Unique Key (account, folder, uidvalidity, uid)
+        - KEINE Deduplizierungs-Checks mehr!
+        - Der Unique Constraint uq_raw_emails_rfc_unique verhindert automatisch Duplikate
+        - Für jedes Mail: INSERT mit (folder, uidvalidity, uid)
+          * Success: Neues Mail gespeichert
+          * IntegrityError: Mail existiert bereits (skip)
+        - UPDATE nur bei bestehenden Mails (Flags-Änderungen)
         
         Args:
             master_key: Master-Key für Verschlüsselung (Zero-Knowledge!)
         """
         saved = 0
+        skipped = 0
         updated = 0
         
-        # Phase 13C CRITICAL FIX: no_autoflush verhindert IntegrityError
-        # Problem: SQLAlchemy flusht neue Objekte VOR der Query → Constraint-Fehler
-        # Lösung: Autoflush deaktivieren während der Lookup-Phase
-        with session.no_autoflush:
-            for raw_email_data in raw_emails:
-                # Phase 13C: Lookup per (account, folder, imap_uid) - das ist die IMAP-Identität!
-                imap_folder = raw_email_data.get("imap_folder")
-                imap_uid = raw_email_data.get("imap_uid")
-                
-                if not imap_folder or not imap_uid:
-                    logger.warning(f"⚠️ Mail ohne folder/uid: {raw_email_data.get('subject', 'N/A')[:30]}")
-                    continue
-                
-                existing = (
-                    session.query(models.RawEmail)
-                    .filter_by(
-                        user_id=user.id,
-                        mail_account_id=account.id,
-                        imap_folder=imap_folder,
-                        imap_uid=imap_uid,
-                    )
-                    .first()
+        for raw_email_data in raw_emails:
+            # Phase 14e: RFC-konform Unique Key
+            imap_folder = raw_email_data.get("imap_folder")
+            imap_uid = raw_email_data.get("imap_uid")
+            imap_uidvalidity = raw_email_data.get("imap_uidvalidity")
+            
+            if not imap_folder or not imap_uid or not imap_uidvalidity:
+                logger.warning(
+                    f"⚠️ Mail ohne folder/uid/uidvalidity: "
+                    f"{raw_email_data.get('subject', 'N/A')[:30]}"
                 )
-                
-                if existing:
-                    # UPDATE: Mail existiert bereits, aktualisiere Flags/Status
-                    existing.imap_flags = raw_email_data.get("imap_flags")
-                    existing.imap_is_seen = raw_email_data.get("imap_is_seen", False)
-                    existing.imap_is_flagged = raw_email_data.get("imap_is_flagged", False)
-                    existing.imap_is_answered = raw_email_data.get("imap_is_answered", False)
-                    existing.imap_last_seen_at = datetime.now(UTC)
-                    updated += 1
-                    logger.debug(f"🔄 UPDATE: {imap_folder}/{imap_uid}")
-                    continue
-                
-                # INSERT: Neues Mail, verschlüssele und speichere
-
-                encrypted_sender = encryption.EmailDataManager.encrypt_email_sender(
-                    raw_email_data["sender"], master_key
-                )
-                encrypted_subject = encryption.EmailDataManager.encrypt_email_subject(
-                    raw_email_data["subject"], master_key
-                )
-                encrypted_body = encryption.EmailDataManager.encrypt_email_body(
-                    raw_email_data["body"], master_key
-                )
-
-                encrypted_in_reply_to = None
-                if raw_email_data.get("in_reply_to"):
-                    encrypted_in_reply_to = encryption.EncryptionManager.encrypt_data(
-                        raw_email_data["in_reply_to"], master_key
-                    )
-
-                encrypted_to = None
-                if raw_email_data.get("to"):
-                    encrypted_to = encryption.EncryptionManager.encrypt_data(
-                        raw_email_data["to"], master_key
-                    )
-
-                encrypted_cc = None
-                if raw_email_data.get("cc"):
-                    encrypted_cc = encryption.EncryptionManager.encrypt_data(
-                        raw_email_data["cc"], master_key
-                    )
-
-                encrypted_bcc = None
-                if raw_email_data.get("bcc"):
-                    encrypted_bcc = encryption.EncryptionManager.encrypt_data(
-                        raw_email_data["bcc"], master_key
-                    )
-
-                encrypted_reply_to = None
-                if raw_email_data.get("reply_to"):
-                    encrypted_reply_to = encryption.EncryptionManager.encrypt_data(
-                        raw_email_data["reply_to"], master_key
-                    )
-
-                encrypted_references = None
-                if raw_email_data.get("references"):
-                    encrypted_references = encryption.EncryptionManager.encrypt_data(
-                        raw_email_data["references"], master_key
-                    )
-
-                raw_email = models.RawEmail(
+                continue
+            
+            # Phase 14e: Optional - Check if exists for UPDATE (Flags)
+            # Nur wenn wir Flags updaten wollen, sonst einfach INSERT versuchen
+            existing = (
+                session.query(models.RawEmail)
+                .filter_by(
                     user_id=user.id,
                     mail_account_id=account.id,
-                    uid=raw_email_data["uid"],
-                    encrypted_sender=encrypted_sender,
-                    encrypted_subject=encrypted_subject,
-                    encrypted_body=encrypted_body,
-                    received_at=raw_email_data["received_at"],
-                    imap_uid=raw_email_data.get("imap_uid"),
-                    imap_folder=raw_email_data.get("imap_folder"),
-                    imap_flags=raw_email_data.get("imap_flags"),
-                    message_id=raw_email_data.get("message_id"),
-                    encrypted_in_reply_to=encrypted_in_reply_to,
-                    parent_uid=raw_email_data.get("parent_uid"),
-                    thread_id=raw_email_data.get("thread_id"),
-                    imap_is_seen=raw_email_data.get("imap_is_seen"),
-                    imap_is_answered=raw_email_data.get("imap_is_answered"),
-                    imap_is_flagged=raw_email_data.get("imap_is_flagged"),
-                    imap_is_deleted=raw_email_data.get("imap_is_deleted"),
-                    imap_is_draft=raw_email_data.get("imap_is_draft"),
-                    encrypted_to=encrypted_to,
-                    encrypted_cc=encrypted_cc,
-                    encrypted_bcc=encrypted_bcc,
-                    encrypted_reply_to=encrypted_reply_to,
-                    message_size=raw_email_data.get("message_size"),
-                    encrypted_references=encrypted_references,
-                    content_type=raw_email_data.get("content_type"),
-                    charset=raw_email_data.get("charset"),
-                    has_attachments=raw_email_data.get("has_attachments"),
+                    imap_folder=imap_folder,
+                    imap_uidvalidity=imap_uidvalidity,
+                    imap_uid=imap_uid,
                 )
-                session.add(raw_email)
-                saved += 1
+                .filter(models.RawEmail.deleted_at.is_(None))
+                .first()
+            )
+            
+            if existing:
+                # UPDATE: Mail existiert bereits, aktualisiere Flags/Status
+                existing.imap_flags = raw_email_data.get("imap_flags")
+                existing.imap_is_seen = raw_email_data.get("imap_is_seen", False)
+                existing.imap_is_flagged = raw_email_data.get("imap_is_flagged", False)
+                existing.imap_is_answered = raw_email_data.get("imap_is_answered", False)
+                existing.imap_last_seen_at = datetime.now(UTC)
+                updated += 1
+                logger.debug(f"🔄 UPDATE: {imap_folder}/{imap_uid}")
+                continue
+            
+            # INSERT: Neues Mail, verschlüssele und speichere
 
-        if saved or updated:
+            encrypted_sender = encryption.EmailDataManager.encrypt_email_sender(
+                raw_email_data["sender"], master_key
+            )
+            encrypted_subject = encryption.EmailDataManager.encrypt_email_subject(
+                raw_email_data["subject"], master_key
+            )
+            encrypted_body = encryption.EmailDataManager.encrypt_email_body(
+                raw_email_data["body"], master_key
+            )
+
+            encrypted_in_reply_to = None
+            if raw_email_data.get("in_reply_to"):
+                encrypted_in_reply_to = encryption.EncryptionManager.encrypt_data(
+                    raw_email_data["in_reply_to"], master_key
+                )
+
+            encrypted_to = None
+            if raw_email_data.get("to"):
+                encrypted_to = encryption.EncryptionManager.encrypt_data(
+                    raw_email_data["to"], master_key
+                )
+
+            encrypted_cc = None
+            if raw_email_data.get("cc"):
+                encrypted_cc = encryption.EncryptionManager.encrypt_data(
+                    raw_email_data["cc"], master_key
+                )
+
+            encrypted_bcc = None
+            if raw_email_data.get("bcc"):
+                encrypted_bcc = encryption.EncryptionManager.encrypt_data(
+                    raw_email_data["bcc"], master_key
+                )
+
+            encrypted_reply_to = None
+            if raw_email_data.get("reply_to"):
+                encrypted_reply_to = encryption.EncryptionManager.encrypt_data(
+                    raw_email_data["reply_to"], master_key
+                )
+
+            encrypted_references = None
+            if raw_email_data.get("references"):
+                encrypted_references = encryption.EncryptionManager.encrypt_data(
+                    raw_email_data["references"], master_key
+                )
+
+            raw_email = models.RawEmail(
+                user_id=user.id,
+                mail_account_id=account.id,
+                uid=raw_email_data["uid"],
+                encrypted_sender=encrypted_sender,
+                encrypted_subject=encrypted_subject,
+                encrypted_body=encrypted_body,
+                received_at=raw_email_data["received_at"],
+                imap_uid=raw_email_data.get("imap_uid"),
+                imap_folder=raw_email_data.get("imap_folder"),
+                imap_uidvalidity=raw_email_data.get("imap_uidvalidity"),  # Phase 14e
+                imap_flags=raw_email_data.get("imap_flags"),
+                message_id=raw_email_data.get("message_id"),
+                encrypted_in_reply_to=encrypted_in_reply_to,
+                parent_uid=raw_email_data.get("parent_uid"),
+                thread_id=raw_email_data.get("thread_id"),
+                imap_is_seen=raw_email_data.get("imap_is_seen"),
+                imap_is_answered=raw_email_data.get("imap_is_answered"),
+                imap_is_flagged=raw_email_data.get("imap_is_flagged"),
+                imap_is_deleted=raw_email_data.get("imap_is_deleted"),
+                imap_is_draft=raw_email_data.get("imap_is_draft"),
+                encrypted_to=encrypted_to,
+                encrypted_cc=encrypted_cc,
+                encrypted_bcc=encrypted_bcc,
+                encrypted_reply_to=encrypted_reply_to,
+                message_size=raw_email_data.get("message_size"),
+                encrypted_references=encrypted_references,
+                content_type=raw_email_data.get("content_type"),
+                charset=raw_email_data.get("charset"),
+                has_attachments=raw_email_data.get("has_attachments"),
+            )
+            try:
+                session.add(raw_email)
+                session.flush()  # Force insert to trigger IntegrityError if duplicate
+                saved += 1
+            except Exception as e:
+                session.rollback()
+                # Phase 14e: IntegrityError = Duplikat (Unique Constraint)
+                if "UNIQUE constraint failed" in str(e) or "IntegrityError" in str(type(e).__name__):
+                    skipped += 1
+                    logger.debug(
+                        f"⏭️  Duplikat übersprungen: {imap_folder}/{imap_uid} "
+                        f"(UIDVALIDITY={imap_uidvalidity})"
+                    )
+                else:
+                    logger.error(f"❌ Fehler beim Speichern: {e}")
+                    raise
+
+        if saved or updated or skipped:
             session.commit()
-            if updated > 0:
-                logger.info(f"💾 {saved} neue Mails, {updated} aktualisiert (Flags/Status)")
+            if updated > 0 or skipped > 0:
+                logger.info(
+                    f"💾 {saved} neue Mails, {updated} aktualisiert, "
+                    f"{skipped} Duplikate übersprungen"
+                )
             else:
                 logger.info(f"💾 {saved} neue Mails gespeichert")
         else:

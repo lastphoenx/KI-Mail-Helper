@@ -258,6 +258,38 @@ class MailFetcher:
                 print("🔌 Verbindung geschlossen")
             except Exception as e:
                 logger.debug(f"Error closing IMAP connection: {e}")
+    
+    def _invalidate_folder(self, session, account_id: int, folder: str) -> None:
+        """Phase 14b: Invalidiert alle Emails eines Ordners bei UIDVALIDITY-Change
+        
+        RFC 3501: "If UIDVALIDITY changes, the client MUST empty its cache of
+        that mailbox and get new UIDs."
+        
+        Args:
+            session: SQLAlchemy Session
+            account_id: MailAccount-ID
+            folder: IMAP Folder name (UTF-8 decoded)
+        """
+        from src import models_02 as models
+        from datetime import datetime, UTC
+        
+        # Soft-Delete aller Emails dieses Folders
+        deleted_count = (
+            session.query(models.RawEmail)
+            .filter_by(
+                mail_account_id=account_id,
+                imap_folder=folder,
+            )
+            .filter(models.RawEmail.deleted_at.is_(None))
+            .update({
+                'deleted_at': datetime.now(UTC)
+            })
+        )
+        
+        session.commit()
+        logger.warning(
+            f"🗑️  UIDVALIDITY CHANGE: {deleted_count} Emails in {folder} invalidiert"
+        )
 
     def fetch_new_emails(
         self, 
@@ -270,11 +302,15 @@ class MailFetcher:
         flagged_only: bool = False,
         # Phase 13C Part 4: Delta-Sync UID-Range
         uid_range: Optional[str] = None,
+        # Phase 14b: UIDVALIDITY Support
+        account_id: Optional[int] = None,
+        session = None,
     ) -> List[Dict]:
         """
         Holt E-Mails mit Threading-Informationen (Phase 12)
         + Server-Side Filtering (Phase 13C Part 2)
         + Delta-Sync (Phase 13C Part 4)
+        + UIDVALIDITY-Check (Phase 14b)
 
         Args:
             folder: IMAP-Ordner (Standard: "INBOX")
@@ -284,6 +320,8 @@ class MailFetcher:
             unseen_only: Nur ungelesene Mails (IMAP SEARCH UNSEEN)
             flagged_only: Nur geflaggte Mails (IMAP SEARCH FLAGGED)
             uid_range: UID-Range für Delta-Sync (z.B. "123:*" = alle ab UID 123)
+            account_id: MailAccount-ID für UIDVALIDITY-Check (Phase 14b)
+            session: SQLAlchemy Session für UIDVALIDITY-Lookup (Phase 14b)
 
         Returns:
             Liste von E-Mail-Dicts mit erweiterten Metadaten
@@ -295,7 +333,48 @@ class MailFetcher:
             conn = self.connection
             if conn is None:
                 raise ConnectionError("IMAP connection failed")
-            conn.select(folder, readonly=True)
+            
+            # Phase 14b: SELECT folder → UIDVALIDITY extrahieren
+            status, folder_info = conn.select(folder, readonly=True)
+            if status != "OK":
+                print(f"⚠️  Ordner {folder} nicht gefunden")
+                return []
+            
+            # UIDVALIDITY vom Server (aus SELECT Response)
+            server_uidvalidity = None
+            if isinstance(folder_info, list):
+                for response in folder_info:
+                    if isinstance(response, bytes):
+                        response_str = response.decode('utf-8', errors='ignore')
+                        if 'UIDVALIDITY' in response_str:
+                            import re
+                            match = re.search(r'UIDVALIDITY\s+(\d+)', response_str)
+                            if match:
+                                server_uidvalidity = int(match.group(1))
+                                break
+            
+            # Phase 14b: UIDVALIDITY-Check wenn account_id + session gegeben
+            if account_id and session and server_uidvalidity:
+                from src import models_02 as models
+                
+                account = session.query(models.MailAccount).get(account_id)
+                if account:
+                    db_uidvalidity = account.get_uidvalidity(folder)
+                    
+                    if db_uidvalidity and db_uidvalidity != server_uidvalidity:
+                        # UIDVALIDITY hat sich geändert! → Ordner invalidieren
+                        logger.warning(
+                            f"⚠️  UIDVALIDITY CHANGED: {folder} "
+                            f"(DB: {db_uidvalidity} → Server: {server_uidvalidity})"
+                        )
+                        self._invalidate_folder(session, account_id, folder)
+                    
+                    # UIDVALIDITY speichern (auch beim ersten Mal)
+                    account.set_uidvalidity(folder, server_uidvalidity)
+                    session.commit()
+            
+            # E-Mails mit UIDVALIDITY anreichern
+            folder_uidvalidity = server_uidvalidity
 
             # Phase 13C Part 4: Delta-Sync via UID-Range
             search_criteria = []  # Initialisiere immer (auch für uid_range Branch)
@@ -449,6 +528,9 @@ class MailFetcher:
 
             # Phase 13C: Decode IMAP UTF-7 folder names to UTF-8
             folder_utf8 = decode_imap_folder_name(folder)
+            
+            # Phase 14b: UIDVALIDITY aus Closure (von fetch_new_emails gesetzt)
+            uidvalidity = getattr(self, '_current_folder_uidvalidity', None)
 
             return {
                 "uid": mail_id_str,
@@ -458,6 +540,7 @@ class MailFetcher:
                 "received_at": received_at,
                 "imap_uid": imap_uid,
                 "imap_folder": folder_utf8,  # UTF-8 decoded
+                "imap_uidvalidity": uidvalidity,  # Phase 14b
                 "imap_flags": imap_flags,
                 "message_id": envelope.get("message_id"),
                 "in_reply_to": envelope.get("in_reply_to"),
