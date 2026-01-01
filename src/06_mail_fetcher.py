@@ -18,6 +18,36 @@ import uuid
 logger = logging.getLogger(__name__)
 
 
+def decode_imap_folder_name(folder_name: str) -> str:
+    """Dekodiert IMAP UTF-7 Ordnernamen zu UTF-8
+    
+    IMAP nutzt modified UTF-7 für Ordnernamen (RFC 3501):
+    - 'Entw&APw-rfe' → 'Entwürfe'
+    - 'Gel&APY-scht' → 'Gelöscht'
+    
+    Args:
+        folder_name: IMAP folder name in UTF-7
+        
+    Returns:
+        UTF-8 decoded folder name
+    """
+    try:
+        # Python's decode mit 'imap4-utf-7' unterstützt modified UTF-7
+        import codecs
+        # Registriere IMAP4-UTF-7 codec falls nicht vorhanden
+        try:
+            codecs.lookup('imap4-utf-7')
+        except LookupError:
+            # Fallback: manuelles Decoding
+            return folder_name.replace('&APw-', 'ü').replace('&APY-', 'ö').replace('&AOQ-', 'ä').replace('&ANY-', 'Ä').replace('&APY-', 'Ö').replace('&APs-', 'Ü')
+        
+        # Decode UTF-7
+        return folder_name.encode('latin1').decode('imap4-utf-7')
+    except Exception as e:
+        logger.debug(f"Konnte Ordnername nicht dekodieren: {folder_name} - {e}")
+        return folder_name
+
+
 class ThreadCalculator:
     """Berechnet Thread-IDs aus verschiedenen Quellen (Phase 12)"""
 
@@ -370,6 +400,9 @@ class MailFetcher:
             # Envelope mit BODYSTRUCTURE-Daten anreichern (FINDING-002/003)
             envelope = self._parse_envelope(msg, bodystructure_info, message_size)
 
+            # Phase 13C: Decode IMAP UTF-7 folder names to UTF-8
+            folder_utf8 = decode_imap_folder_name(folder)
+
             return {
                 "uid": mail_id_str,
                 "sender": sender,
@@ -377,7 +410,7 @@ class MailFetcher:
                 "body": body,
                 "received_at": received_at,
                 "imap_uid": imap_uid,
-                "imap_folder": folder,
+                "imap_folder": folder_utf8,  # UTF-8 decoded
                 "imap_flags": imap_flags,
                 "message_id": envelope.get("message_id"),
                 "in_reply_to": envelope.get("in_reply_to"),

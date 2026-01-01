@@ -968,6 +968,8 @@ def list_view():
                                         folder_name = parts[1].strip()
                                         if folder_name.startswith('"') and folder_name.endswith('"'):
                                             folder_name = folder_name[1:-1]
+                                        # Phase 13C: Decode IMAP UTF-7 to UTF-8
+                                        folder_name = mail_fetcher_mod.decode_imap_folder_name(folder_name)
                                         server_folders.append(folder_name)
                                 server_folders.sort()
                         finally:
