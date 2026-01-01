@@ -131,6 +131,49 @@ def generate_markdown(commits: list[dict], repo_name: str = "Repository") -> str
     return "\n".join(lines)
 
 
+def categorize_commits(commits: list[dict]) -> dict:
+    """Kategorisiert Commits dynamisch basierend auf Keywords + Patterns."""
+    
+    categories = {}
+    
+    # Pattern-Definitionen (Reihenfolge wichtig - spezifisch zuerst)
+    patterns = [
+        # Spezifische technische Themen
+        ("UIDPLUS/COPYUID", ["UIDPLUS", "COPYUID", "untagged_responses"]),
+        ("IMAPClient Migration", ["IMAPClient", "imaplib migration", "imapclient"]),
+        ("Phase", ["Phase", "PHASE"]),
+        
+        # Allgemeine Kategorien
+        ("Features", ["FEATURE", "ADD", "NEW", "Implement"]),
+        ("Bugfixes", ["FIX", "BUG", "HOTFIX", "Repair"]),
+        ("Refactoring", ["REFACTOR", "CLEAN", "Improve", "Optimize"]),
+        ("Debug", ["DEBUG", "Log", "Logging"]),
+        ("Tests", ["TEST", "Testing"]),
+        ("Documentation", ["DOC", "CHANGELOG", "README"]),
+    ]
+    
+    for commit in commits:
+        text = f"{commit['subject']} {commit['body']}".upper()
+        categorized = False
+        
+        # Pattern-Matching
+        for category_name, keywords in patterns:
+            if any(kw.upper() in text for kw in keywords):
+                if category_name not in categories:
+                    categories[category_name] = []
+                categories[category_name].append(commit)
+                categorized = True
+                break  # Nur erste Kategorie zählt
+        
+        # Fallback: "Other"
+        if not categorized:
+            if "Other" not in categories:
+                categories["Other"] = []
+            categories["Other"].append(commit)
+    
+    return categories
+
+
 def generate_simple_markdown(commits: list[dict], repo_name: str = "Repository") -> str:
     """Generiert ein einfacheres Markdown-Format (kompakter)."""
     
@@ -158,6 +201,55 @@ def generate_simple_markdown(commits: list[dict], repo_name: str = "Repository")
     return "\n".join(lines)
 
 
+def generate_structured_markdown(commits: list[dict], repo_name: str = "Repository") -> str:
+    """Generiert strukturiertes Markdown nach Kategorien."""
+    
+    categories = categorize_commits(commits)
+    
+    lines = [
+        f"# {repo_name} - Strukturierte Entwicklungshistorie",
+        "",
+        f"*{len(commits)} Commits in {len(categories)} Kategorien | Generiert am {datetime.now().strftime('%d.%m.%Y')}*",
+        "",
+        "## Übersicht",
+        ""
+    ]
+    
+    # Inhaltsverzeichnis
+    for category_name, cat_commits in categories.items():
+        lines.append(f"- **{category_name}:** {len(cat_commits)} Commits")
+    
+    lines.extend(["", "---", ""])
+    
+    # Kategorien ausgeben
+    for category_name, cat_commits in categories.items():
+        lines.append(f"## {category_name}")
+        lines.append("")
+        lines.append(f"*{len(cat_commits)} Commits*")
+        lines.append("")
+        
+        for i, commit in enumerate(cat_commits, 1):
+            date_str = format_date(commit["date"])
+            lines.append(f"### {i}. {commit['subject']}")
+            lines.append("")
+            lines.append(f"- **Commit:** `{commit['short_hash']}`")
+            lines.append(f"- **Datum:** {date_str}")
+            
+            if commit["body"]:
+                lines.append("")
+                lines.append("**Details:**")
+                lines.append("")
+                for body_line in commit["body"].split("\n"):
+                    if body_line.strip():
+                        lines.append(f"> {body_line}")
+            
+            lines.extend(["", ""])
+        
+        lines.extend(["---", ""])
+    
+    return "\n".join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Extrahiert Git-Commits für Dokumentation"
@@ -180,7 +272,12 @@ def main():
     parser.add_argument(
         "--simple", "-s",
         action="store_true",
-        help="Einfacheres, kompakteres Format verwenden"
+        help="Einfacheres, kompakteres Format (chronologisch)"
+    )
+    parser.add_argument(
+        "--structured", "-t",
+        action="store_true",
+        help="Strukturiert nach Kategorien (dynamisch erkannt)"
     )
     
     args = parser.parse_args()
@@ -194,10 +291,16 @@ def main():
     
     print(f"Gefunden: {len(commits)} Commits")
     
-    if args.simple:
+    # Format wählen
+    if args.structured:
+        markdown = generate_structured_markdown(commits, args.name)
+        print("✅ Strukturiertes Format (nach Kategorien)")
+    elif args.simple:
         markdown = generate_simple_markdown(commits, args.name)
+        print("✅ Einfaches Format (chronologisch, kompakt)")
     else:
         markdown = generate_markdown(commits, args.name)
+        print("✅ Standard-Format (chronologisch, mit Monaten)")
     
     output_path = Path(args.output)
     output_path.write_text(markdown, encoding="utf-8")
