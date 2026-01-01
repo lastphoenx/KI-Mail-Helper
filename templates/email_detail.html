@@ -45,6 +45,7 @@
 
 <div class="card">
     <div class="card-header bg-light">
+        <input type="hidden" name="account_id" value="{{ email.raw_email.mail_account_id }}">
         <div class="row align-items-center">
             <div class="col">
                 <h4 class="mb-0">{{ decrypted_subject|default('Kein Betreff') }}</h4>
@@ -322,6 +323,10 @@
                         </button>
                     </div>
                     <div class="btn-group w-100 mt-2" role="group">
+                        <button type="button" class="btn btn-outline-info sync-action-btn" id="moveFolderBtn" 
+                                data-action="move-folder" title="In einen anderen Ordner verschieben">
+                            📁 In Ordner verschieben
+                        </button>
                         <button type="button" class="btn btn-outline-warning sync-action-btn" id="moveTrashBtn" 
                                 data-action="move-trash" title="In Papierkorb verschieben">
                             🗑️ In Papierkorb
@@ -869,7 +874,100 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Phase 13: Server-Sync Action Buttons (DELETE, MARK_READ, MARK_FLAG, MOVE_TRASH, TOGGLE_READ)
+    // Phase C Part 1: Load available folders for move action
+    async function loadFolders() {
+        try {
+            const accountId = document.querySelector('input[name="account_id"]').value;
+            const response = await fetch(`/account/${accountId}/folders`, {
+                method: 'GET',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Folder-Listing fehlgeschlagen');
+            }
+            
+            const data = await response.json();
+            return data.folders || [];
+        } catch (error) {
+            console.error('Fehler beim Laden von Ordnern:', error);
+            return [];
+        }
+    }
+
+    async function showMoveDialog() {
+        const folders = await loadFolders();
+        
+        if (folders.length === 0) {
+            alert('❌ Keine Ordner gefunden oder Fehler beim Abrufen der Ordner');
+            return null;
+        }
+        
+        return new Promise((resolve) => {
+            let folderOptions = folders.map(f => `<option value="${f}">${f}</option>`).join('');
+            
+            // Check if modal exists, if not create it
+            let modal = document.getElementById('moveFolderModal');
+            if (!modal) {
+                const modalHtml = `
+                    <div class="modal fade" id="moveFolderModal" tabindex="-1">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">📁 Email verschieben</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <label for="moveFolderSelect" class="form-label">Ziel-Ordner wählen:</label>
+                                    <select id="moveFolderSelect" class="form-select">
+                                        <option value="">-- Ordner wählen --</option>
+                                    </select>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                                    <button type="button" class="btn btn-primary" id="confirmMoveBtn">Verschieben</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+                modal = document.getElementById('moveFolderModal');
+            }
+            
+            // Update folder options
+            const select = modal.querySelector('#moveFolderSelect');
+            select.innerHTML = '<option value="">-- Ordner wählen --</option>' + folderOptions;
+            
+            // Show modal
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+            
+            // Handle confirm button
+            const confirmBtn = modal.querySelector('#confirmMoveBtn');
+            const handleConfirm = () => {
+                const selectedFolder = select.value;
+                if (selectedFolder) {
+                    bsModal.hide();
+                    resolve(selectedFolder);
+                } else {
+                    alert('⚠️ Bitte wählen Sie einen Ordner aus');
+                }
+            };
+            
+            // Remove old listener and add new one
+            const newConfirmBtn = confirmBtn.cloneNode(true);
+            confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+            newConfirmBtn.addEventListener('click', handleConfirm);
+            
+            // Handle modal close (Escape, X button)
+            modal.addEventListener('hidden.bs.modal', () => {
+                resolve(null);
+            }, { once: true });
+        });
+    }
+
+    // Phase 13: Server-Sync Action Buttons (DELETE, MARK_READ, MARK_FLAG, MOVE_TRASH, TOGGLE_READ, MOVE_FOLDER)
     document.querySelectorAll('.sync-action-btn').forEach(btn => {
         btn.addEventListener('click', async function(e) {
             e.preventDefault();
@@ -880,6 +978,41 @@ document.addEventListener('DOMContentLoaded', function() {
                 confirmMsg = '🗑️ Email wirklich PERMANENT LÖSCHEN? Diese Aktion kann nicht rückgängig gemacht werden.';
             } else if (action === 'move-trash') {
                 confirmMsg = '🗑️ Email in Papierkorb verschieben?';
+            } else if (action === 'move-folder') {
+                // Separate handling für move-folder (with folder selection)
+                const targetFolder = await showMoveDialog();
+                if (!targetFolder) return;
+                
+                const btn = this;
+                const originalText = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '⏳...';
+                
+                try {
+                    const response = await fetch(`/email/${emailId}/move-to-folder`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCsrfToken()
+                        },
+                        body: JSON.stringify({ target_folder: targetFolder })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        window.location.href = '/list';
+                    } else {
+                        alert('❌ ' + (data.error || 'Fehler beim Verschieben'));
+                        btn.disabled = false;
+                        btn.innerHTML = originalText;
+                    }
+                } catch (error) {
+                    alert('❌ Fehler: ' + error.message);
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                }
+                return;
             } else if (action === 'toggle-read') {
                 const isCurrentlySeen = document.getElementById('toggleReadBtn').innerHTML.includes('Ungelesen');
                 if (isCurrentlySeen) {
