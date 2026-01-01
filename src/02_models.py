@@ -399,6 +399,9 @@ class MailAccount(Base):
     initial_sync_done = Column(Boolean, default=False, nullable=False)
 
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # ===== PHASE 14A: UIDVALIDITY TRACKING =====
+    folder_uidvalidity = Column(Text, nullable=True)  # JSON: {"INBOX": 1352540700, ...}
 
     # ===== PHASE 12: NICE-TO-HAVE (Server Metadata) =====
     detected_provider = Column(String(50), nullable=True)
@@ -411,6 +414,36 @@ class MailAccount(Base):
         "RawEmail", back_populates="mail_account", cascade="all, delete-orphan"
     )
 
+    def get_uidvalidity(self, folder: str) -> Optional[int]:
+        """Gibt gespeicherte UIDVALIDITY für Ordner zurück
+        
+        Args:
+            folder: IMAP Ordner (z.B. 'INBOX', 'Gesendet')
+            
+        Returns:
+            UIDVALIDITY Integer oder None
+        """
+        if not self.folder_uidvalidity:
+            return None
+        try:
+            import json
+            data = json.loads(self.folder_uidvalidity)
+            return data.get(folder)
+        except (json.JSONDecodeError, AttributeError):
+            return None
+    
+    def set_uidvalidity(self, folder: str, value: int) -> None:
+        """Speichert UIDVALIDITY für Ordner
+        
+        Args:
+            folder: IMAP Ordner (z.B. 'INBOX', 'Gesendet')
+            value: UIDVALIDITY Integer vom Server
+        """
+        import json
+        data = json.loads(self.folder_uidvalidity or "{}")
+        data[folder] = int(value)
+        self.folder_uidvalidity = json.dumps(data)
+    
     def validate_auth_fields(self) -> tuple[bool, str]:
         """Validiert ob die richtigen Felder für auth_type gesetzt sind
 
@@ -556,8 +589,10 @@ class RawEmail(Base):
     deleted_at = Column(DateTime, nullable=True)
     deleted_verm = Column(Boolean, default=False)
 
-    imap_uid = Column(String(100), nullable=True, index=True)
-    imap_folder = Column(String(200), nullable=True)
+    # ===== PHASE 14A: RFC-KONFORMER KEY (folder, uidvalidity, uid) =====
+    imap_uid = Column(Integer, nullable=True, index=True)  # Phase 14a: String → Integer
+    imap_folder = Column(String(200), nullable=False, default='INBOX')  # Phase 14a: NOT NULL
+    imap_uidvalidity = Column(Integer, nullable=True, index=True)  # Phase 14a: RFC 3501
     imap_flags = Column(String(500), nullable=True)
     imap_last_seen_at = Column(DateTime, nullable=True)
 
@@ -602,12 +637,18 @@ class RawEmail(Base):
     )
 
     __table_args__ = (
-        # Phase 13C Part 3 FIX: IMAP UID ist eindeutig pro (account, folder, uid)
-        # Nicht nur pro (account, uid)! Ein Mail kann in mehreren Ordnern sein.
-        # INBOX/UID=123 ≠ Archiv/UID=123 (verschiedene IMAP-Objekte!)
+        # Phase 14a: RFC-konformer Unique Key (RFC 3501 / RFC 9051)
+        # "The combination of mailbox name, UIDVALIDITY, and UID must refer to
+        #  a single, immutable message on that server forever."
+        # EINDEUTIGER KEY: (user_id, account_id, folder, uidvalidity, uid)
         UniqueConstraint(
-            "user_id", "mail_account_id", "imap_folder", "imap_uid",
-            name="uq_raw_emails_folder_uid"
+            "user_id", "mail_account_id", "imap_folder", "imap_uidvalidity", "imap_uid",
+            name="uq_raw_emails_rfc_unique"
+        ),
+        # Performance-Index für Lookups
+        Index(
+            "ix_raw_emails_account_folder_uid",
+            "mail_account_id", "imap_folder", "imap_uid"
         ),
     )
 
