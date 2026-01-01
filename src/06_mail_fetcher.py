@@ -375,6 +375,8 @@ class MailFetcher:
             
             # E-Mails mit UIDVALIDITY anreichern
             folder_uidvalidity = server_uidvalidity
+            # Phase 14b FIX: Setze als Instance-Variable für _fetch_email_by_id()
+            self._current_folder_uidvalidity = folder_uidvalidity
 
             # Phase 13C Part 4: Delta-Sync via UID-Range
             search_criteria = []  # Initialisiere immer (auch für uid_range Branch)
