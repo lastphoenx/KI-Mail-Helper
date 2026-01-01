@@ -29,8 +29,7 @@ class FetchJob:
     job_id: str
     user_id: int
     account_id: int
-    # Security: master_key NICHT hier speichern - Memory-Leak-Risiko!
-    # Wird stattdessen zur Laufzeit aus Session des Users geholt
+    master_key: str
     provider: str
     model: str
     max_mails: int = 50
@@ -77,12 +76,16 @@ class BackgroundJobQueue:
         *,
         user_id: int,
         account_id: int,
+        master_key: str,
         provider: str,
         model: str,
         max_mails: int,
         sanitize_level: int,
         meta: Optional[Dict[str, Any]] = None,
     ) -> str:
+        if not master_key:
+            raise ValueError("master_key ist erforderlich")
+        
         if max_mails > MAX_EMAILS_PER_REQUEST:
             raise ValueError(
                 f"max_mails darf maximal {MAX_EMAILS_PER_REQUEST} sein (gegeben: {max_mails})"
@@ -93,6 +96,7 @@ class BackgroundJobQueue:
             job_id=job_id,
             user_id=user_id,
             account_id=account_id,
+            master_key=master_key,
             provider=provider,
             model=model,
             max_mails=max_mails,
@@ -100,7 +104,7 @@ class BackgroundJobQueue:
             meta=meta or {},
         )
         try:
-            self.queue.put(job, block=False)  # Don't block if queue is full
+            self.queue.put(job, block=False)
         except Exception:
             raise ValueError(
                 f"Job-Queue ist voll ({self.MAX_QUEUE_SIZE} Jobs). Bitte warten..."
@@ -142,7 +146,7 @@ class BackgroundJobQueue:
             try:
                 self._update_status(job.job_id, {"state": "running"})
                 self._execute_job(job)
-            except Exception:  # pragma: no cover - defensive
+            except Exception:
                 logger.exception("Unerwarteter Fehler im Worker")
             finally:
                 self.queue.task_done()
@@ -164,22 +168,9 @@ class BackgroundJobQueue:
             if not account:
                 raise ValueError("Mail-Account nicht gefunden")
 
-            # Security: Lade master_key aus Service-Token statt aus Job-Memory
-            # Job speichert keine Secrets im RAM → Memory-Dump-Safe
-            service_token = (
-                session.query(models.ServiceToken)
-                .filter_by(user_id=job.user_id)
-                .filter(models.ServiceToken.expires_at > datetime.now(UTC))
-                .first()
-            )
-            if not service_token:
-                raise ValueError(
-                    "Service-Token nicht gefunden oder abgelaufen - Background-Jobs benötigen gültigen Token"
-                )
-
-            master_key = service_token.master_key
+            master_key = job.master_key
             if not master_key:
-                raise ValueError("Master-Key fehlt im Service-Token")
+                raise ValueError("Master-Key fehlt im Job")
 
             raw_emails = self._fetch_raw_emails(account, master_key, job.max_mails)
             if raw_emails:
@@ -210,6 +201,14 @@ class BackgroundJobQueue:
                 progress_callback=progress_callback,
             )
 
+            account.last_fetch_at = datetime.now(UTC)
+            
+            if not account.initial_sync_done:
+                account.initial_sync_done = True
+                logger.info(f"🎉 Initialer Sync für Account {account.id} abgeschlossen")
+            
+            session.commit()
+
             self._update_status(
                 job.job_id,
                 {
@@ -225,14 +224,14 @@ class BackgroundJobQueue:
                 saved,
                 processed,
             )
-        except Exception as exc:  # pragma: no cover - heavy IO
+        except Exception as exc:
             session.rollback()
             logger.error("❌ Job %s fehlgeschlagen: %s", job.job_id, exc, exc_info=True)
             self._update_status(
                 job.job_id,
                 {
                     "state": "error",
-                    "message": "Verarbeitung fehlgeschlagen (siehe Server-Logs)",  # Layer 4: Exception Sanitization
+                    "message": "Verarbeitung fehlgeschlagen (siehe Server-Logs)",
                 },
             )
         finally:
@@ -251,7 +250,6 @@ class BackgroundJobQueue:
         if not account.encrypted_imap_password:
             raise ValueError("Kein IMAP-Passwort gespeichert")
 
-        # Zero-Knowledge: Entschlüssele alle IMAP-Credentials
         imap_server = encryption.CredentialManager.decrypt_server(
             account.encrypted_imap_server, master_key
         )
@@ -295,7 +293,6 @@ class BackgroundJobQueue:
             if existing:
                 continue
 
-            # Zero-Knowledge: Verschlüssele E-Mail-Inhalte
             encrypted_sender = encryption.EmailDataManager.encrypt_email_sender(
                 raw_email_data["sender"], master_key
             )

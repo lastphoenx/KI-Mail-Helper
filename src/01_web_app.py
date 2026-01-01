@@ -501,24 +501,6 @@ def login():
             ] = dek  # Session-Key heißt "master_key" aus Kompatibilität
             logger.info("✅ DEK erfolgreich in Session geladen")
 
-            # Service-Token für Background-Jobs erstellen (mit master_key)
-            # Lösche alte Tokens für diesen User
-            db.query(models.ServiceToken).filter_by(user_id=user.id).delete()
-            service_token = models.ServiceToken(
-                user_id=user.id,
-                token_hash=models.ServiceToken.hash_token(
-                    models.ServiceToken.generate_token()
-                ),
-                master_key=dek,  # DEK für Background-Jobs
-                expires_at=__import__("datetime").datetime.now(
-                    __import__("datetime").UTC
-                )
-                + __import__("datetime").timedelta(days=7),
-            )
-            db.add(service_token)
-            db.commit()
-            logger.info("✅ Service-Token für Background-Jobs erstellt")
-
             # Zero-Knowledge: Disable remember-me (verhindert DEK-Loss nach Session-Expire)
             login_user(UserWrapper(user), remember=False)
             # Audit Log für erfolgreichen Login
@@ -684,24 +666,6 @@ def verify_2fa():
 
                 session["master_key"] = dek
                 logger.info("✅ DEK nach 2FA in Session geladen")
-
-                # Service-Token für Background-Jobs erstellen (mit master_key)
-                # Lösche alte Tokens für diesen User
-                db.query(models.ServiceToken).filter_by(user_id=user.id).delete()
-                service_token = models.ServiceToken(
-                    user_id=user.id,
-                    token_hash=models.ServiceToken.hash_token(
-                        models.ServiceToken.generate_token()
-                    ),
-                    master_key=dek,  # DEK für Background-Jobs
-                    expires_at=__import__("datetime").datetime.now(
-                        __import__("datetime").UTC
-                    )
-                    + __import__("datetime").timedelta(days=7),
-                )
-                db.add(service_token)
-                db.commit()
-                logger.info("✅ Service-Token für Background-Jobs erstellt")
 
                 login_user(UserWrapper(user), remember=remember)
                 # Audit Log für erfolgreichen Login mit 2FA
@@ -3311,7 +3275,7 @@ def fetch_mails(account_id):
         user = get_current_user_model(db)
         if not user:
             return jsonify({"error": "Nicht authentifiziert"}), 401
-        fetch_limit = 50
+
         account = (
             db.query(models.MailAccount)
             .filter_by(id=account_id, user_id=user.id)
@@ -3323,30 +3287,13 @@ def fetch_mails(account_id):
 
         master_key = session.get("master_key")
         if not master_key:
-            return jsonify({"error": "Master-Key nicht im Session"}), 401
+            return jsonify({
+                "error": "Session abgelaufen - bitte neu einloggen",
+                "code": "SESSION_EXPIRED"
+            }), 401
 
-        existing_token = (
-            db.query(models.ServiceToken)
-            .filter_by(user_id=user.id)
-            .filter(models.ServiceToken.expires_at > datetime.now(UTC))
-            .first()
-        )
-        
-        if not existing_token:
-            db.query(models.ServiceToken).filter_by(user_id=user.id).delete()
-            service_token = models.ServiceToken(
-                user_id=user.id,
-                token_hash=models.ServiceToken.hash_token(
-                    models.ServiceToken.generate_token()
-                ),
-                master_key=master_key,
-                expires_at=datetime.now(UTC) + timedelta(hours=24),
-            )
-            db.add(service_token)
-            db.commit()
-            logger.info(f"Neuer ServiceToken für User {user.id} erstellt")
-        else:
-            logger.debug(f"Bestehender ServiceToken für User {user.id} wird wiederverwendet")
+        is_initial = not account.initial_sync_done
+        fetch_limit = 500 if is_initial else 50
 
         provider = (user.preferred_ai_provider or "ollama").lower()
         resolved_model = ai_client.resolve_model(provider, user.preferred_ai_model)
@@ -3357,12 +3304,16 @@ def fetch_mails(account_id):
             job_id = job_queue.enqueue_fetch_job(
                 user_id=user.id,
                 account_id=account.id,
+                master_key=master_key,
                 provider=provider,
                 model=resolved_model,
                 max_mails=fetch_limit,
                 sanitize_level=sanitize_level,
-                meta={"trigger": "settings"},
+                meta={"trigger": "settings", "is_initial": is_initial},
             )
+        except ValueError as exc:
+            logger.error(f"Job-Fehler: {exc}")
+            return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             logger.error(f"Konnte Hintergrundjob nicht anlegen: {type(exc).__name__}")
             return jsonify({"error": "Hintergrundjob fehlgeschlagen"}), 500
@@ -3373,6 +3324,8 @@ def fetch_mails(account_id):
                 "job_id": job_id,
                 "provider": provider,
                 "model": resolved_model,
+                "is_initial": is_initial,
+                "max_mails": fetch_limit,
             }
         )
 

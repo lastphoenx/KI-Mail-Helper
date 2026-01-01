@@ -8,6 +8,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added - Phase 13, Session 4: Option D ServiceToken Refactor + Initial Sync Detection (2026-01-01)
+
+#### Architecture & Security
+**ServiceToken Elimination (Option D - Zero-Knowledge)**
+- ✅ DEK never stored in database: Master key copied as value into FetchJob, not referenced
+- ✅ Session-independent background jobs: Jobs work even if user session expires
+- ✅ Solves "mail fetch fails after server restart unless re-login" 
+- Root cause: DEK in plaintext in database violating zero-knowledge principle
+- Files: src/14_background_jobs.py (FetchJob.master_key), src/01_web_app.py (removed ServiceToken), src/02_models.py
+
+**Initial Sync Detection (Intelligent Fetch Limits)**
+- ✅ initial_sync_done flag on MailAccount (default=False)
+- ✅ Initial fetch: 500 mails | Regular fetch: 50 mails
+- ✅ Flag set only once after successful processing
+- Solves "is_initial always True" bug (last_fetch_at never updated)
+- Files: src/02_models.py (line 394), src/14_background_jobs.py (lines 206-208), src/01_web_app.py (lines 3295-3296)
+
+#### Migration
+- Command: `alembic upgrade head`
+- Adds initial_sync_done column, sets existing accounts = True
+- Rollback: `alembic downgrade -1`
+- Status: ✅ Complete and verified
+
+---
+
 ### Added - Phase 12: Thread-basierte Conversations (2025-12-31)
 
 #### Features

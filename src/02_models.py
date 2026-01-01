@@ -391,6 +391,7 @@ class MailAccount(Base):
 
     enabled = Column(Boolean, default=True)
     last_fetch_at = Column(DateTime)
+    initial_sync_done = Column(Boolean, default=False, nullable=False)
 
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
