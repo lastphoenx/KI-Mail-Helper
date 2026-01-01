@@ -1466,7 +1466,8 @@ class IMAPDiagnostics:
                 
                 db_mails_raw = session.query(models.RawEmail).filter(
                     models.RawEmail.imap_folder == 'Archiv',
-                    models.RawEmail.mail_account_id == account_id
+                    models.RawEmail.mail_account_id == account_id,
+                    models.RawEmail.deleted_at.is_(None)  # Filter soft-deleted mails
                 ).order_by(models.RawEmail.imap_uid).all()
                 
                 for m in db_mails_raw:
