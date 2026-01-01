@@ -6,6 +6,7 @@ Phase 2: User, MailAccount, ServiceToken, RecoveryCode
 
 from datetime import datetime, timedelta, UTC
 from enum import Enum
+from typing import Optional
 from sqlalchemy import (
     create_engine,
     Column,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     UniqueConstraint,
+    Index,
     event,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship

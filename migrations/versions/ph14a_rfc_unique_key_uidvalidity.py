@@ -30,7 +30,7 @@ import sqlalchemy as sa
 from sqlalchemy import text
 
 revision = 'ph14a_rfc_unique_key_uidvalidity'
-down_revision = 'ph13c_fix_unique_constraint_folder_uid'
+down_revision = 'c16e532f436d'  # Phase 13C Part 4 User Prefs
 branch_labels = None
 depends_on = None
 
@@ -38,75 +38,114 @@ depends_on = None
 def upgrade():
     """Migriert zu RFC-konformem Unique Key mit UIDVALIDITY"""
     
+    conn = op.get_bind()
+    
     # =================================================================
-    # 1. RAWEMAIL: NEUE SPALTEN
+    # 1. RAWEMAIL: Table Recreation (SQLite Standard Pattern)
     # =================================================================
     
-    # 1a. imap_uidvalidity hinzufügen (nullable erstmal, wird später gefüllt)
-    op.add_column('raw_emails',
-        sa.Column('imap_uidvalidity', sa.Integer(), nullable=True))
+    # Check if imap_uidvalidity exists (idempotent)
+    inspector = sa.inspect(conn)
+    columns = [col['name'] for col in inspector.get_columns('raw_emails')]
+    has_uidvalidity = 'imap_uidvalidity' in columns
     
-    # 1b. imap_folder NOT NULL machen (bestehende NULL → 'INBOX')
-    # SQLite unterstützt kein ALTER COLUMN, daher mit UPDATE + neuer Spalte
+    # Update imap_folder NULLs to 'INBOX'
     op.execute(text("UPDATE raw_emails SET imap_folder = 'INBOX' WHERE imap_folder IS NULL"))
     
-    # =================================================================
-    # 2. RAWEMAIL: imap_uid zu Integer konvertieren
-    # =================================================================
-    
-    # SQLite: Spalte neu erstellen (String → Integer)
-    # Bestehende Daten konvertieren (nur numerische Werte)
-    with op.batch_alter_table('raw_emails', schema=None) as batch_op:
-        # Temporäre Spalte für Integer UID
-        batch_op.add_column(sa.Column('imap_uid_int', sa.Integer(), nullable=True))
-    
-    # Numerische UIDs konvertieren (ignoriere non-numeric)
-    # CAST in SQLite: nur Zahlen werden konvertiert, Rest wird NULL
+    # Create new table with correct schema
     op.execute(text("""
-        UPDATE raw_emails 
-        SET imap_uid_int = CAST(imap_uid AS INTEGER)
-        WHERE imap_uid IS NOT NULL 
-          AND imap_uid != '' 
-          AND imap_uid NOT LIKE '%[^0-9]%'
+        CREATE TABLE raw_emails_new (
+            id INTEGER NOT NULL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            mail_account_id INTEGER NOT NULL,
+            uid VARCHAR(255) NOT NULL,
+            encrypted_sender TEXT NOT NULL,
+            encrypted_subject TEXT,
+            encrypted_body TEXT,
+            received_at DATETIME NOT NULL,
+            created_at DATETIME,
+            deleted_at DATETIME,
+            deleted_verm BOOLEAN,
+            imap_uid INTEGER,
+            imap_folder VARCHAR(200) NOT NULL DEFAULT 'INBOX',
+            imap_uidvalidity INTEGER,
+            imap_flags VARCHAR(500),
+            imap_last_seen_at DATETIME,
+            message_id VARCHAR(255),
+            encrypted_in_reply_to TEXT,
+            parent_uid VARCHAR(255),
+            thread_id VARCHAR(36),
+            imap_is_seen BOOLEAN,
+            imap_is_answered BOOLEAN,
+            imap_is_flagged BOOLEAN,
+            imap_is_deleted BOOLEAN DEFAULT 0,
+            imap_is_draft BOOLEAN DEFAULT 0,
+            encrypted_to TEXT,
+            encrypted_cc TEXT,
+            encrypted_bcc TEXT,
+            encrypted_reply_to TEXT,
+            message_size INTEGER,
+            encrypted_references TEXT,
+            content_type VARCHAR(100),
+            charset VARCHAR(50),
+            has_attachments BOOLEAN DEFAULT 0,
+            last_flag_sync_at DATETIME,
+            CONSTRAINT uq_raw_emails_rfc_unique UNIQUE (user_id, mail_account_id, imap_folder, imap_uidvalidity, imap_uid),
+            FOREIGN KEY(user_id) REFERENCES users (id),
+            FOREIGN KEY(mail_account_id) REFERENCES mail_accounts (id)
+        )
     """))
     
-    # Alte String-Spalte droppen, neue Integer-Spalte umbenennen
-    with op.batch_alter_table('raw_emails', schema=None) as batch_op:
-        batch_op.drop_column('imap_uid')
-        batch_op.alter_column('imap_uid_int', new_column_name='imap_uid')
+    # Copy data (convert imap_uid String → Integer)
+    op.execute(text("""
+        INSERT INTO raw_emails_new
+        SELECT 
+            id, user_id, mail_account_id, uid,
+            encrypted_sender, encrypted_subject, encrypted_body,
+            received_at, created_at, deleted_at, deleted_verm,
+            CAST(imap_uid AS INTEGER),
+            COALESCE(imap_folder, 'INBOX'),
+            """ + ('imap_uidvalidity' if has_uidvalidity else 'NULL') + """,
+            imap_flags, imap_last_seen_at,
+            message_id, encrypted_in_reply_to, parent_uid, thread_id,
+            imap_is_seen, imap_is_answered, imap_is_flagged,
+            imap_is_deleted, imap_is_draft,
+            encrypted_to, encrypted_cc, encrypted_bcc, encrypted_reply_to,
+            message_size, encrypted_references,
+            content_type, charset, has_attachments, last_flag_sync_at
+        FROM raw_emails
+    """))
+    
+    # Drop old table
+    op.execute(text("DROP TABLE raw_emails"))
+    
+    # Rename new table
+    op.execute(text("ALTER TABLE raw_emails_new RENAME TO raw_emails"))
+    
+    # Recreate indexes
+    op.create_index('ix_raw_emails_user_id', 'raw_emails', ['user_id'])
+    op.create_index('ix_raw_emails_mail_account_id', 'raw_emails', ['mail_account_id'])
+    op.create_index('ix_raw_emails_imap_uid', 'raw_emails', ['imap_uid'])
+    op.create_index('ix_raw_emails_imap_uidvalidity', 'raw_emails', ['imap_uidvalidity'])
+    op.create_index('ix_raw_emails_received_at', 'raw_emails', ['received_at'])
+    op.create_index('ix_raw_emails_message_id', 'raw_emails', ['message_id'])
+    op.create_index('ix_raw_emails_parent_uid', 'raw_emails', ['parent_uid'])
+    op.create_index('ix_raw_emails_thread_id', 'raw_emails', ['thread_id'])
+    op.create_index('ix_raw_emails_imap_is_seen', 'raw_emails', ['imap_is_seen'])
+    
+    # Performance index (account, folder, uid)
+    op.create_index('ix_raw_emails_account_folder_uid', 'raw_emails', 
+                   ['mail_account_id', 'imap_folder', 'imap_uid'])
     
     # =================================================================
-    # 3. MAILACCOUNT: folder_uidvalidity (JSON)
+    # 2. MAILACCOUNT: folder_uidvalidity (JSON)
     # =================================================================
     
-    op.add_column('mail_accounts',
-        sa.Column('folder_uidvalidity', sa.Text(), nullable=True))
-    
-    # =================================================================
-    # 4. UNIQUE CONSTRAINT: RFC-konform (mit UIDVALIDITY)
-    # =================================================================
-    
-    # Alten Constraint droppen
-    with op.batch_alter_table('raw_emails', schema=None) as batch_op:
-        batch_op.drop_constraint('uq_raw_emails_folder_uid', type_='unique')
-        
-        # Neuen RFC-konformen Constraint erstellen
-        # WICHTIG: Erst wenn imap_uidvalidity gefüllt ist!
-        # Für jetzt: Nur wenn beide Felder NOT NULL sind
-        batch_op.create_unique_constraint(
-            'uq_raw_emails_rfc_unique',
-            ['user_id', 'mail_account_id', 'imap_folder', 'imap_uidvalidity', 'imap_uid']
-        )
-    
-    # =================================================================
-    # 5. PERFORMANCE INDEX
-    # =================================================================
-    
-    op.create_index(
-        'ix_raw_emails_account_folder_uid',
-        'raw_emails',
-        ['mail_account_id', 'imap_folder', 'imap_uid']
-    )
+    # Check if column exists
+    columns = [col['name'] for col in inspector.get_columns('mail_accounts')]
+    if 'folder_uidvalidity' not in columns:
+        op.add_column('mail_accounts',
+            sa.Column('folder_uidvalidity', sa.Text(), nullable=True))
     
     # =================================================================
     # HINWEIS FÜR BESTEHENDE DATEN
