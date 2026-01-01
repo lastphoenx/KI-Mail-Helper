@@ -257,9 +257,17 @@ class MailSynchronizer:
             if hasattr(self.conn, '_imap'):
                 self.conn._imap.untagged_responses.clear()
                 self.logger.info("🧹 Cleared untagged_responses before copy()")
+                
+                # 🔥 ENABLE RAW IMAP DEBUG MODE (zeigt ORIGINAL Server-Response)
+                self.conn._imap.debug = 4
+                self.logger.info("🔥 IMAP RAW DEBUG MODE ENABLED - Zeige Original Server-Response:")
             
             # 3. COPY zu target folder
             copy_response = self.conn.copy([uid], target_folder)
+            
+            # 🔥 DISABLE DEBUG MODE
+            if hasattr(self.conn, '_imap'):
+                self.conn._imap.debug = 0
             
             # 4. VOLLSTÄNDIGES LOGGING der copy() Response
             self.logger.info(f"📡 copy() response:")
