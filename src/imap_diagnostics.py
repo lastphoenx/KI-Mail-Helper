@@ -441,13 +441,13 @@ class IMAPDiagnostics:
     
     def test_flags(self, client=None) -> Dict[str, Any]:
         """
-        Test flag detection on sample messages from INBOX
+        Test flag detection on sample messages from all folders
         
         Args:
             client: Optional pre-existing IMAPClient connection
         
         Returns:
-            Dict with flag statistics and sample messages
+            Dict with flag statistics and sample messages (max 50 total)
         """
         should_close = False
         try:
@@ -456,35 +456,16 @@ class IMAPDiagnostics:
                 client.login(self.username, self.password)
                 should_close = True
             
-            # Select INBOX
-            client.select_folder('INBOX', readonly=True)
+            # Get all folders first
+            folders_raw = client.list_folders()
+            folders = []
+            for flags_raw, delimiter, folder_name in folders_raw:
+                flags_str = [f.decode('ascii') if isinstance(f, bytes) else str(f) for f in flags_raw]
+                # Skip Noselect folders
+                if '\\Noselect' not in flags_str:
+                    folders.append(folder_name)
             
-            # Search for all messages
-            all_msgs = client.search()
-            
-            if not all_msgs:
-                return {
-                    'success': True,
-                    'message': 'INBOX is empty - no messages to test',
-                    'total_messages': 0,
-                    'flags_found': [],
-                    'statistics': {
-                        'seen': 0,
-                        'unseen': 0,
-                        'flagged': 0,
-                        'answered': 0,
-                        'deleted': 0
-                    },
-                    'sample_messages': []
-                }
-            
-            # Get the last 10 messages (most recent)
-            sample_ids = sorted(all_msgs)[-10:] if len(all_msgs) > 10 else all_msgs
-            
-            # Fetch flags for these messages
-            flags_data = client.get_flags(sample_ids)
-            
-            # Collect statistics
+            # Collect statistics across all folders
             unique_flags = set()
             stats = {
                 'seen': 0,
@@ -495,44 +476,109 @@ class IMAPDiagnostics:
             }
             
             sample_messages = []
+            total_messages_all_folders = 0
+            max_samples = 50  # Max 50 sample messages total
             
-            for msg_id, flags_raw in flags_data.items():
-                # Decode flags from bytes to strings
-                flags_str = [f.decode('ascii') if isinstance(f, bytes) else str(f) 
-                           for f in flags_raw]
+            for folder in folders:
+                if len(sample_messages) >= max_samples:
+                    break
                 
-                # Collect unique flags
-                for flag in flags_str:
-                    unique_flags.add(flag)
+                try:
+                    # Select folder (readonly)
+                    client.select_folder(folder, readonly=True)
+                    
+                    # Search for all messages in this folder
+                    all_msgs = client.search()
+                    
+                    if not all_msgs:
+                        continue
+                    
+                    total_messages_all_folders += len(all_msgs)
+                    
+                    # Get samples from this folder (up to remaining quota)
+                    remaining_quota = max_samples - len(sample_messages)
+                    sample_count = min(len(all_msgs), remaining_quota)
+                    sample_ids = sorted(all_msgs)[-sample_count:] if len(all_msgs) > sample_count else all_msgs
+                    
+                    # Fetch flags AND envelope for subject/message-id
+                    flags_data = client.get_flags(sample_ids)
+                    envelope_data = client.fetch(sample_ids, ['ENVELOPE'])
+                    
+                    for msg_id in sample_ids:
+                        flags_raw = flags_data.get(msg_id, [])
+                        flags_str = [f.decode('ascii') if isinstance(f, bytes) else str(f) 
+                                   for f in flags_raw]
+                        
+                        # Collect unique flags
+                        for flag in flags_str:
+                            unique_flags.add(flag)
+                        
+                        # Update statistics
+                        if b'\\Seen' in flags_raw or '\\Seen' in flags_str:
+                            stats['seen'] += 1
+                        else:
+                            stats['unseen'] += 1
+                        
+                        if b'\\Flagged' in flags_raw or '\\Flagged' in flags_str:
+                            stats['flagged'] += 1
+                        
+                        if b'\\Answered' in flags_raw or '\\Answered' in flags_str:
+                            stats['answered'] += 1
+                        
+                        if b'\\Deleted' in flags_raw or '\\Deleted' in flags_str:
+                            stats['deleted'] += 1
+                        
+                        # Extract envelope data (subject + message-id)
+                        envelope = envelope_data.get(msg_id, {}).get(b'ENVELOPE')
+                        subject = '(no subject)'
+                        message_id = '(no message-id)'
+                        
+                        if envelope:
+                            # Subject is in envelope.subject (bytes)
+                            if envelope.subject:
+                                try:
+                                    subject = envelope.subject.decode('utf-8', errors='replace')[:100]
+                                except:
+                                    subject = str(envelope.subject)[:100]
+                            
+                            # Message-ID is in envelope.message_id (bytes)
+                            if envelope.message_id:
+                                try:
+                                    message_id = envelope.message_id.decode('ascii', errors='replace')
+                                except:
+                                    message_id = str(envelope.message_id)
+                        
+                        # Add sample message with extended info
+                        sample_messages.append({
+                            'uid': msg_id,
+                            'folder': folder,
+                            'message_id': message_id,
+                            'subject': subject,
+                            'flags': flags_str,
+                            'is_seen': b'\\Seen' in flags_raw or '\\Seen' in flags_str,
+                            'is_flagged': b'\\Flagged' in flags_raw or '\\Flagged' in flags_str,
+                            'is_answered': b'\\Answered' in flags_raw or '\\Answered' in flags_str
+                        })
                 
-                # Update statistics
-                if b'\\Seen' in flags_raw or '\\Seen' in flags_str:
-                    stats['seen'] += 1
-                else:
-                    stats['unseen'] += 1
-                
-                if b'\\Flagged' in flags_raw or '\\Flagged' in flags_str:
-                    stats['flagged'] += 1
-                
-                if b'\\Answered' in flags_raw or '\\Answered' in flags_str:
-                    stats['answered'] += 1
-                
-                if b'\\Deleted' in flags_raw or '\\Deleted' in flags_str:
-                    stats['deleted'] += 1
-                
-                # Add sample message
-                sample_messages.append({
-                    'uid': msg_id,
-                    'flags': flags_str,
-                    'is_seen': b'\\Seen' in flags_raw or '\\Seen' in flags_str,
-                    'is_flagged': b'\\Flagged' in flags_raw or '\\Flagged' in flags_str,
-                    'is_answered': b'\\Answered' in flags_raw or '\\Answered' in flags_str
-                })
+                except Exception as folder_error:
+                    logger.warning(f"Fehler beim Zugriff auf Ordner '{folder}': {folder_error}")
+                    continue
+            
+            if not sample_messages:
+                return {
+                    'success': True,
+                    'message': 'Keine Mails gefunden - alle Ordner leer',
+                    'total_messages': 0,
+                    'flags_found': [],
+                    'statistics': stats,
+                    'sample_messages': []
+                }
             
             return {
                 'success': True,
-                'total_messages': len(all_msgs),
-                'sample_count': len(sample_ids),
+                'total_messages': total_messages_all_folders,
+                'sample_count': len(sample_messages),
+                'folders_checked': len(folders),
                 'flags_found': sorted(unique_flags),
                 'statistics': stats,
                 'sample_messages': sample_messages,

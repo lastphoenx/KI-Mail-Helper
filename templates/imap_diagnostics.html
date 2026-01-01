@@ -542,20 +542,32 @@
             html += `</div>`;
             
             if (data.sample_messages && data.sample_messages.length > 0) {
-                html += `<p class="mb-2"><strong>📧 Sample-Emails (neueste ${data.sample_messages.length}):</strong></p>`;
-                html += `<div style="max-height: 200px; overflow-y: auto; font-size: 0.9em;">`;
-                html += `<table class="table table-sm mb-0">`;
-                html += `<thead class="table-light"><tr><th>UID</th><th>Seen</th><th>Flagged</th><th>Answered</th></tr></thead><tbody>`;
+                html += `<p class="mb-2"><strong>📧 Sample-Emails (${data.sample_messages.length} von max 50):</strong></p>`;
+                html += `<div style="max-height: 400px; overflow-y: auto; font-size: 0.85em;">`;
+                html += `<table class="table table-sm table-striped mb-0">`;
+                html += `<thead class="table-dark sticky-top"><tr>`;
+                html += `  <th style="width: 60px;">UID</th>`;
+                html += `  <th style="width: 120px;">Ordner</th>`;
+                html += `  <th style="width: 200px;">Message-ID</th>`;
+                html += `  <th>Betreff</th>`;
+                html += `  <th style="width: 50px;">Seen</th>`;
+                html += `  <th style="width: 50px;">Flag</th>`;
+                html += `  <th style="width: 50px;">Reply</th>`;
+                html += `</tr></thead><tbody>`;
                 data.sample_messages.forEach(msg => {
                     html += `<tr>`;
                     html += `  <td>${msg.uid}</td>`;
-                    html += `  <td>${msg.is_seen ? '✅' : '❌'}</td>`;
-                    html += `  <td>${msg.is_flagged ? '⭐' : '−'}</td>`;
-                    html += `  <td>${msg.is_answered ? '✉️' : '−'}</td>`;
+                    html += `  <td><small>${msg.folder || 'INBOX'}</small></td>`;
+                    html += `  <td><small style="word-break: break-all;">${msg.message_id || '(keine)'}</small></td>`;
+                    html += `  <td><small>${msg.subject || '(kein Betreff)'}</small></td>`;
+                    html += `  <td class="text-center">${msg.is_seen ? '✅' : '❌'}</td>`;
+                    html += `  <td class="text-center">${msg.is_flagged ? '⭐' : '−'}</td>`;
+                    html += `  <td class="text-center">${msg.is_answered ? '✉️' : '−'}</td>`;
                     html += `</tr>`;
                 });
                 html += `</tbody></table>`;
                 html += `</div>`;
+                html += `<p class="text-muted mt-2 mb-0"><small>💡 Zeigt max 50 Mails aus allen Ordnern (ohne Filterung)</small></p>`;
             }
             
             detailsEl.innerHTML = html;
