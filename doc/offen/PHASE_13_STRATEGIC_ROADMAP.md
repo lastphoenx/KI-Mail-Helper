@@ -322,46 +322,262 @@ class MailSynchronizer:
         return True
 ```
 
-### **Phase D: KI Thread-Context (4-6h)**
+### **Phase E: KI Thread-Context ✅ GEPLANT (4-6h)**
+
+**Ziel:** Verbesserte KI-Klassifizierung durch Kontext-Enrichment
+
+#### **E.1: Thread-Context für KI (2-3h)**
+
+**Problem:** KI sieht nur einzelne Mail, keine Konversations-Historie
+**Lösung:** Thread-Historie als Kontext an KI übergeben
 
 ```python
 # 12_processing.py - analyze_email() erweitern
 
-def analyze_email_with_context(
+def build_thread_context(session, raw_email: RawEmail, master_key: str) -> str:
+    """Baut Thread-Kontext für KI-Analyse"""
+    if not raw_email.thread_id:
+        return ""
+    
+    # Hole vorherige Mails im Thread (max 5, chronologisch)
+    thread_emails = session.query(RawEmail).filter(
+        RawEmail.thread_id == raw_email.thread_id,
+        RawEmail.id != raw_email.id,
+        RawEmail.deleted_at.is_(None)
+    ).order_by(RawEmail.received_at.desc()).limit(5).all()
+    
+    if not thread_emails:
+        return ""
+    
+    context = f"📧 KONVERSATIONS-KONTEXT (Mail {len(thread_emails) + 1} im Thread):\n\n"
+    
+    encryption = importlib.import_module(".08_encryption", "src")
+    for i, prev in enumerate(reversed(thread_emails), 1):
+        try:
+            sender = encryption.EmailDataManager.decrypt_email_sender(
+                prev.encrypted_sender, master_key
+            )
+            subject = encryption.EmailDataManager.decrypt_email_subject(
+                prev.encrypted_subject, master_key
+            )
+            body = encryption.EmailDataManager.decrypt_email_body(
+                prev.encrypted_body, master_key
+            )
+            
+            # Kürze Body auf 150 Zeichen
+            body_preview = body[:150].replace("\n", " ") + "..." if len(body) > 150 else body
+            
+            context += f"{i}. Von: {sender}\n"
+            context += f"   Betreff: {subject}\n"
+            context += f"   Inhalt: {body_preview}\n\n"
+        except Exception as e:
+            logger.warning(f"Thread-Mail {prev.id} nicht entschlüsselbar: {e}")
+            continue
+    
+    return context
+
+
+# In process_pending_raw_emails():
+thread_context = build_thread_context(session, raw_email, master_key)
+
+ai_result = active_ai.analyze_email(
+    subject=decrypted_subject or "",
+    body=clean_body,
+    sender=decrypted_sender or "",
+    context=thread_context  # NEU!
+)
+```
+
+**Impact:**
+- ✅ KI versteht Konversations-Kontext (Follow-ups, Antworten)
+- ✅ Bessere Dringlichkeit-Einschätzung (z.B. 3. Mahnung)
+- ✅ Spam-Erkennung: Newsletter-Thread = alle Mails Spam
+
+---
+
+#### **E.2: Sender-Intelligence (1-2h)**
+
+**Problem:** KI kennt Absender-Historie nicht
+**Lösung:** Sender-Pattern Detection (bereits vorhanden, erweitern!)
+
+```python
+# Bereits vorhanden in 12_processing.py:
+# get_sender_hint_from_patterns()
+
+# ERWEITERN um Thread-Awareness:
+def get_sender_hint_from_patterns(
     session, 
-    raw_email: RawEmail, 
-    master_key: str,
-    ai_client
-) -> Dict:
-    """KI-Analyse mit Thread-Kontext"""
+    user_id: int, 
+    sender: str,
+    thread_id: Optional[str] = None,  # NEU
+    min_confidence: int = 70,
+    min_emails: int = 3
+) -> Optional[Dict]:
+    """Analysiert Sender-Pattern + Thread-Pattern"""
     
-    # Thread-Mails laden
-    thread_emails = []
-    if raw_email.thread_id:
-        thread_emails = session.query(RawEmail).filter(
-            RawEmail.thread_id == raw_email.thread_id,
-            RawEmail.id != raw_email.id
-        ).order_by(RawEmail.received_at).all()
+    # 1) Bestehende Sender-Pattern-Logik (wie bisher)
+    sender_stats = get_sender_stats(session, user_id, sender, min_emails)
     
-    # Kontext für KI bauen
-    context = f"Dies ist Mail {len(thread_emails) + 1} in einer Konversation.\n"
-    if thread_emails:
-        context += "Vorherige Mails in diesem Thread:\n"
-        for prev in thread_emails[-3:]:  # Letzte 3 Mails
-            decrypted = decrypt_raw_email(prev, master_key)
-            context += f"- {decrypted['sender']}: {decrypted['subject'][:50]}\n"
+    # 2) NEU: Thread-Pattern Detection
+    if thread_id:
+        thread_stats = get_thread_stats(session, user_id, thread_id)
+        if thread_stats and thread_stats["email_count"] >= 3:
+            # Wenn 80%+ der Thread-Mails Newsletter sind → ganzer Thread Spam
+            if thread_stats["spam_rate"] > 0.8:
+                return {
+                    "category": "nur_information",
+                    "priority": 1,
+                    "is_newsletter": True,
+                    "reason": f"Thread-Pattern: {thread_stats['spam_rate']:.0%} Newsletter"
+                }
     
-    # Attachment-Info
-    if raw_email.has_attachments:
-        context += f"Diese Mail hat Anhänge.\n"
+    return sender_stats  # Fallback zu Sender-Pattern
+
+
+def get_thread_stats(session, user_id: int, thread_id: str) -> Dict:
+    """Analysiert Thread-Statistiken"""
+    thread_emails = session.query(ProcessedEmail).join(RawEmail).filter(
+        RawEmail.user_id == user_id,
+        RawEmail.thread_id == thread_id,
+        RawEmail.deleted_at.is_(None)
+    ).all()
     
-    # An KI senden mit erweitertem Kontext
-    result = ai_client.analyze_email(
-        subject=decrypted_subject,
-        body=decrypted_body,
-        sender=decrypted_sender,
-        context=context,  # NEU
-    )
+    if not thread_emails:
+        return None
+    
+    spam_count = sum(1 for e in thread_emails if e.spam_flag)
+    
+    return {
+        "email_count": len(thread_emails),
+        "spam_rate": spam_count / len(thread_emails),
+        "avg_score": sum(e.score for e in thread_emails) / len(thread_emails)
+    }
+```
+
+**Impact:**
+- ✅ Newsletter-Thread-Erkennung (ganzer Thread als Spam)
+- ✅ Sender-Historie fließt in Klassifizierung ein
+- ✅ Weniger False-Positives bei bekannten Absendern
+
+---
+
+#### **E.3: Attachment-Awareness (0.5-1h)**
+
+**Problem:** KI weiß nicht, ob Mail Anhänge hat
+**Lösung:** Attachment-Info an KI übergeben
+
+```python
+# In process_pending_raw_emails():
+
+attachment_context = ""
+if raw_email.has_attachments:
+    attachment_context = "\n\n📎 ANHANG-INFO: Diese Mail hat Anhänge."
+    # Optional: Attachment-Typen analysieren (wenn vorhanden)
+    # attachment_types = parse_attachment_types(raw_email)
+    # attachment_context += f" Typen: {', '.join(attachment_types)}"
+
+full_context = thread_context + attachment_context
+
+ai_result = active_ai.analyze_email(
+    subject=decrypted_subject or "",
+    body=clean_body,
+    sender=decrypted_sender or "",
+    context=full_context
+)
+```
+
+**Impact:**
+- ✅ Mails mit Anhängen bekommen höhere Wichtigkeit
+- ✅ KI kann besser zwischen Info-Mail und Action-Mail unterscheiden
+
+---
+
+#### **E.4: AI Client Context-Parameter (1h)**
+
+**Problem:** `analyze_email()` hat kein `context` Parameter
+**Lösung:** API erweitern
+
+```python
+# src/03_ai_client.py - AIClient.analyze_email() erweitern
+
+class AIClient(ABC):
+    @abstractmethod
+    def analyze_email(
+        self, 
+        subject: str, 
+        body: str, 
+        sender: str = "",
+        language: str = "de",
+        context: str = ""  # NEU!
+    ) -> Dict[str, Any]:
+        """Analysiert Mail mit optionalem Kontext"""
+        pass
+
+
+# In LocalOllamaClient, OpenAIClient, AnthropicClient:
+
+def analyze_email(
+    self, 
+    subject: str, 
+    body: str, 
+    sender: str = "",
+    language: str = "de",
+    context: str = ""
+) -> Dict[str, Any]:
+    # Wenn context vorhanden, an Prompt anhängen
+    full_prompt = f"{SYSTEM_PROMPT}\n\n"
+    
+    if context:
+        full_prompt += f"ZUSÄTZLICHER KONTEXT:\n{context}\n\n"
+    
+    full_prompt += f"BETREFF: {subject}\nABSENDER: {sender}\n\nTEXT:\n{body}"
+    
+    # ... Rest wie bisher
+```
+
+**Files zu ändern:**
+- `src/03_ai_client.py`: AIClient Interface + alle 3 Implementierungen
+- `src/12_processing.py`: `process_pending_raw_emails()` erweitern
+- `src/01_web_app.py`: `/email/<id>/reprocess` und `/email/<id>/optimize` erweitern
+
+**Testing:**
+- Unit-Test: `build_thread_context()` mit Mock-Daten
+- Integration: Test mit echter 5-Mail-Konversation
+- Performance: Kontext sollte < 1000 Zeichen sein
+
+---
+
+#### **Aufwands-Breakdown:**
+
+| Task | Aufwand | Schwierigkeit |
+|------|---------|---------------|
+| E.1: Thread-Context Builder | 2h | Mittel (DB-Query + Encryption) |
+| E.2: Sender-Intelligence erweitern | 1.5h | Einfach (Pattern bereits da) |
+| E.3: Attachment-Awareness | 0.5h | Einfach (Flag bereits in DB) |
+| E.4: AI Client API erweitern | 1h | Einfach (Parameter + String-Concat) |
+| Testing & Integration | 1h | Mittel |
+
+**Total:** 4-6 Stunden
+
+---
+
+#### **Expected Impact:**
+
+**Vorher:**
+- KI sieht nur einzelne Mail isoliert
+- Newsletter-Follow-ups werden nicht erkannt
+- Konversations-Kontext fehlt
+
+**Nachher:**
+- ✅ KI versteht Thread-Historie (bis zu 5 vorherige Mails)
+- ✅ Newsletter-Threads automatisch als Spam
+- ✅ Dringlichkeit basiert auf Konversations-Kontext
+- ✅ Bessere Kategorisierung (z.B. "3. Mahnung" → dringend)
+- ✅ Attachment-Flag beeinflusst Wichtigkeit
+
+**Performance:**
+- +200-500ms pro Mail (Thread-Query + Decryption)
+- Akzeptabel, da nur bei Processing (nicht bei jedem View)
 ```
 
 ---
@@ -376,14 +592,15 @@ def analyze_email_with_context(
 | ✅ DONE | 3 | Server MOVE | 2-3h | Spam-Ordner etc. | Phase C Part 1 |
 | ✅ DONE | 4 | Multi-Folder FULL SYNC | 6-8h | Korrekte IMAP-Architektur | Phase C Part 3 |
 | ✅ DONE | 4a | Delta-Sync + Fetch Config | 8-10h | 30-60x Speedup, Quick Count | Phase C Part 4 COMPLETE |
+| ✅ DONE | 4b | RFC-Compliant IMAP UIDs | 4-6h | Eliminiert Race-Conditions | Phase 14 (a-f) COMPLETE |
 | 🟡 TODO | 5 | KI Thread-Context | 4-6h | Bessere Klassifizierung | Phase E |
 | 🟡 TODO | 6 | SMTP Antworten | 6-8h | Vollständige Automation | Phase F |
 | 🟢 TODO | 7 | Conversation UI | 8-10h | Nice-to-have | Phase G |
 | 🟢 TODO | 8 | Bulk Email Operations | 15-20h | Produktive Batch-Verarbeitung | Phase H |
 
-**Abgeschlossen:** 26-34h (Phase A + B + C + D)  
+**Abgeschlossen:** 30-40h (Phase A + B + C + D + 14)  
 **Geplant Phase 13 (E-H):** ~33-44 Stunden  
-**Phase 13 Gesamt:** ~59-78 Stunden
+**Phase 13 Gesamt:** ~63-84 Stunden
 
 **Phase D Justification (Critical Infrastructure):**
 - Moved ahead of Phase C due to critical nature

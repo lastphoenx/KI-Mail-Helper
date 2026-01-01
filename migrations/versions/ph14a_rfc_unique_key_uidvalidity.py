@@ -155,17 +155,26 @@ def upgrade():
     ║  PHASE 14A MIGRATION ERFOLGREICH                              ║
     ╠═══════════════════════════════════════════════════════════════╣
     ║                                                               ║
-    ║  ⚠️  WICHTIG: Bestehende Daten müssen migriert werden!        ║
+    ║  🚨 KRITISCH: Unique Constraint ist UNWIRKSAM ohne UIDVALIDITY║
     ║                                                               ║
-    ║  Nächster Schritt:                                            ║
+    ║  Problem: NULL != NULL in SQL → Duplikate möglich!           ║
+    ║  Lösung: UIDVALIDITY-Daten vom Server holen                  ║
+    ║                                                               ║
+    ║  ⚠️⚠️⚠️ NÄCHSTER SCHRITT ZWINGEND ERFORDERLICH: ⚠️⚠️⚠️         ║
+    ║                                                               ║
     ║  python scripts/migrate_uidvalidity_data.py                   ║
     ║                                                               ║
     ║  Das Script:                                                  ║
     ║  1. Fragt UIDVALIDITY vom Server für alle Ordner ab          ║
     ║  2. Befüllt raw_emails.imap_uidvalidity                       ║
     ║  3. Befüllt mail_accounts.folder_uidvalidity                  ║
+    ║  4. Aktiviert Unique Constraint vollständig                   ║
     ║                                                               ║
-    ║  Ohne Migration: Alte Mails haben NULL UIDVALIDITY!          ║
+    ║  Ohne Migration:                                              ║
+    ║  ❌ Alte Mails haben NULL UIDVALIDITY                         ║
+    ║  ❌ Unique Constraint ineffektiv                              ║
+    ║  ❌ Duplikate möglich                                         ║
+    ║  ❌ Daten-Integrität gefährdet                                ║
     ║                                                               ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
