@@ -92,11 +92,13 @@ def generate_embedding_for_email(
             logger.debug("Leerer Text, kein Embedding generiert")
             return None, None, None
         
+        logger.info(f"📝 Generiere Embedding für Text ({len(text)} Zeichen)...")
+        
         # Embedding von AI-Client holen
         embedding_list = ai_client._get_embedding(text)
         
         if not embedding_list:
-            logger.debug("AI-Client lieferte kein Embedding")
+            logger.warning("❌ AI-Client lieferte kein Embedding")
             return None, None, None
         
         # Zu numpy array konvertieren und als bytes speichern
@@ -106,7 +108,7 @@ def generate_embedding_for_email(
         dimension = embedding_array.shape[0]
         
         # Log Dimension für Debugging
-        logger.debug(f"Embedding generiert: {dimension} Dimensionen")
+        logger.info(f"✅ Embedding generiert: {dimension} Dimensionen, {len(embedding_array.tobytes())} bytes")
         
         # WARNING nur wenn stark abweicht von DEFAULT
         if dimension != DEFAULT_EMBEDDING_DIM:

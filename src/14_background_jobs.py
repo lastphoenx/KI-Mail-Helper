@@ -742,6 +742,8 @@ class BackgroundJobQueue:
                         },
                     )
                     
+                    logger.info(f"🔄 [{idx}/{total}] Verarbeite: {decrypted_subject[:50] if decrypted_subject else 'Kein Betreff'}...")
+                    
                     # Embedding generieren
                     embedding_bytes, model_name, timestamp = generate_embedding_for_email(
                         subject=decrypted_subject,
@@ -751,11 +753,16 @@ class BackgroundJobQueue:
                     )
                     
                     if embedding_bytes:
+                        old_embedding = raw_email.email_embedding
                         raw_email.email_embedding = embedding_bytes
                         raw_email.embedding_model = model_name or resolved_model
                         raw_email.embedding_generated_at = timestamp
+                        
+                        # Commit nach jedem Email für bessere Fehlertoleranz
+                        session.flush()
+                        
                         processed += 1
-                        logger.debug(f"✅ [{idx}/{total}] Email {raw_email.id} embedded")
+                        logger.info(f"✅ [{idx}/{total}] Email {raw_email.id} embedded ({len(embedding_bytes)} bytes, Model: {model_name or resolved_model})")
                     else:
                         failed += 1
                         logger.warning(f"⚠️  [{idx}/{total}] Embedding failed for email {raw_email.id}")
