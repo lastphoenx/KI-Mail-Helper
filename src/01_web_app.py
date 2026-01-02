@@ -2992,10 +2992,10 @@ def api_reprocess_email(email_id):
             
             if processed and result:
                 processed.score = result.get("score", processed.score)
-                processed.color = result.get("color", processed.color)
-                processed.action_category = result.get("action_category", processed.action_category)
+                processed.farbe = result.get("farbe", processed.farbe)
+                processed.kategorie_aktion = result.get("kategorie_aktion", processed.kategorie_aktion)
                 ai_score = processed.score
-                logger.info(f"✅ Score regenerated: {processed.score} ({processed.color})")
+                logger.info(f"✅ Score regenerated: {processed.score} ({processed.farbe})")
             
         except Exception as score_err:
             logger.error(f"Score regeneration error: {score_err}")

@@ -94,11 +94,12 @@ def generate_embedding_for_email(
         
         # Validierung
         if embedding_array.shape[0] != EMBEDDING_DIM:
-            logger.warning(
-                f"Unerwartete Embedding-Dimension: {embedding_array.shape[0]} "
-                f"(erwartet: {EMBEDDING_DIM})"
+            logger.error(
+                f"⚠️  ACHTUNG: Embedding-Dimension {embedding_array.shape[0]} passt nicht zu "
+                f"bestehenden Emails ({EMBEDDING_DIM})! Semantic Search wird nicht funktionieren! "
+                f"Alle Emails müssen mit dem gleichen Embedding-Model verarbeitet werden."
             )
-            # Trotzdem speichern, könnte anderes Modell sein
+            # Trotzdem speichern, aber User MUSS alle anderen Emails neu embedden
         
         return (
             embedding_array.tobytes(),

@@ -667,7 +667,7 @@ async function updateModels(pass) {
             // Nur Embedding-Modelle
             models = models.filter(m => m.type === 'embedding');
         } else {
-            // Nur Chat-Modelle (für Base & Optimize)
+            // BASE & OPTIMIZE: Nur Chat-Modelle
             models = models.filter(m => m.type === 'chat');
         }
         
@@ -688,6 +688,7 @@ async function updateModels(pass) {
                 // Formatierung mit Typ-Hinweis
                 const displayName = m.display_name || m.name || m.id;
                 const typeLabel = m.type === 'embedding' ? '🔍' : '💬';
+                option.textContent = `${typeLabel} ${displayName}`;
                 option.textContent = `${typeLabel} ${displayName}`;
                 
                 if (savedModel && m.id === savedModel) {
