@@ -50,9 +50,11 @@ class TagEmbeddingCache:
     
     @classmethod
     def _get_ai_client_for_user(cls, user_id: int, db: Session = None):
-        """Holt AI-Client basierend auf User-Settings (optimize model)
+        """Holt AI-Client für Tag-Embeddings
         
-        Phase F.2: Settings-basiert (NICHT hardcoded!)
+        WICHTIG: Muss GLEICHE Dimension wie Email-Embeddings haben!
+        Email-Embeddings: all-minilm:22m (384-dim)
+        Tag-Embeddings: MUSS AUCH all-minilm:22m sein!
         """
         # Cache Check
         if user_id in cls._ai_client_cache:
@@ -61,28 +63,11 @@ class TagEmbeddingCache:
         try:
             ai_client_mod = import_module(".03_ai_client", "src")
             
-            # User-Settings laden (falls DB verfügbar)
-            if db:
-                user = db.query(models.User).filter_by(id=user_id).first()
-                if user:
-                    provider = user.preferred_ai_provider_optimize or "ollama"
-                    model = user.preferred_ai_model_optimize or "llama3.2:1b"
-                    
-                    if provider == "ollama":
-                        client = ai_client_mod.LocalOllamaClient(model=model)
-                    elif provider == "openai":
-                        client = ai_client_mod.OpenAIClient(model=model)
-                    else:
-                        # Fallback
-                        client = ai_client_mod.LocalOllamaClient(model="llama3.2:1b")
-                    
-                    cls._ai_client_cache[user_id] = client
-                    logger.info(f"✅ Tag-Embeddings nutzen: {provider}/{model} (aus Settings)")
-                    return client
+            # FEST: all-minilm:22m (MUSS mit Email-Embeddings kompatibel sein!)
+            client = ai_client_mod.LocalOllamaClient(model="all-minilm:22m")
             
-            # Fallback wenn keine DB/Settings
-            client = ai_client_mod.LocalOllamaClient(model="llama3.2:1b")
             cls._ai_client_cache[user_id] = client
+            logger.debug(f"✅ Tag-Embeddings: all-minilm:22m (384-dim, kompatibel)")
             return client
             
         except Exception as e:
