@@ -57,7 +57,7 @@ def generate_embedding_for_email(
     subject: str,
     body: str,
     ai_client,
-    max_body_length: int = 500,
+    max_body_length: int = 1000,  # Erhöht von 500 → 1000 für besseren Context
     model_name: Optional[str] = None
 ) -> Tuple[Optional[bytes], Optional[str], Optional[datetime]]:
     """
