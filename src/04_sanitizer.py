@@ -24,8 +24,15 @@ def regex_timeout(seconds=2):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            # WSL2/Windows Kompatibilität: signal.SIGALRM funktioniert nicht
-            if sys.platform == "win32" or "microsoft" in sys.platform.lower():
+            # signal.alarm() funktioniert nur im Haupt-Thread
+            # In Flask-Requests (Worker-Threads) oder Windows nutzen wir Threading-Fallback
+            use_threading = (
+                sys.platform == "win32" 
+                or "microsoft" in sys.platform.lower()
+                or threading.current_thread() != threading.main_thread()
+            )
+            
+            if use_threading:
                 result = [None]
                 exception = [None]
 
@@ -49,7 +56,7 @@ def regex_timeout(seconds=2):
                     raise exception[0]
                 return result[0]
             else:
-                # Unix/Linux: Nutze signal.SIGALRM für präzisere Timeouts
+                # Unix/Linux Haupt-Thread: Nutze signal.SIGALRM für präzisere Timeouts
                 def timeout_handler(signum, frame):
                     raise TimeoutError(f"Regex timeout in {func.__name__}")
 
