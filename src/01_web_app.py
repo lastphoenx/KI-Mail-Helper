@@ -2235,6 +2235,8 @@ def api_get_tag_suggestions(email_id):
                     .filter_by(email_id=email_id).all()
                 ]
                 
+                logger.info(f"Phase F.2: Email {email_id} - Assigned tags: {assigned_tag_ids}")
+                
                 # Phase F.2: Email-Embedding-basierte Suggestions
                 tag_suggestions = tag_manager_mod.TagManager.suggest_tags_by_email_embedding(
                     db=db,
@@ -2254,6 +2256,10 @@ def api_get_tag_suggestions(email_id):
                     }
                     for tag, similarity in tag_suggestions
                 ]
+                
+                logger.info(f"Phase F.2: Email {email_id} - Found {len(suggestions)} suggestions")
+                if suggestions:
+                    logger.info(f"Phase F.2: Top suggestion: {suggestions[0]['name']} ({suggestions[0]['similarity']})")
                 
                 return jsonify({
                     "suggestions": suggestions, 

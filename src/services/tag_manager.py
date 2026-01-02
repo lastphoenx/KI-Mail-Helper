@@ -509,7 +509,10 @@ class TagManager:
         ).all()
         
         if not tags:
+            logger.info(f"⚠️  Phase F.2: User {user_id} has no tags")
             return []
+        
+        logger.info(f"🔍 Phase F.2: Checking {len(tags)} tags for user {user_id}")
         
         # Email-Embedding konvertieren
         try:
@@ -522,6 +525,8 @@ class TagManager:
         similarities: List[Tuple[models.EmailTag, float]] = []
         exclude_set = set(exclude_tag_ids or [])
         
+        logger.info(f"🔍 Phase F.2: Excluding {len(exclude_set)} already assigned tags")
+        
         for tag in tags:
             # Skip bereits zugewiesene Tags
             if tag.id in exclude_set:
@@ -530,6 +535,7 @@ class TagManager:
             # Tag-Embedding holen
             tag_embedding = TagEmbeddingCache.get_tag_embedding(tag.name, user_id)
             if tag_embedding is None:
+                logger.warning(f"⚠️  Phase F.2: Could not get embedding for tag '{tag.name}'")
                 continue
             
             # Cosine Similarity berechnen
@@ -537,11 +543,15 @@ class TagManager:
             
             if similarity >= min_similarity:
                 similarities.append((tag, similarity))
+                logger.info(f"✅ Phase F.2: Tag '{tag.name}' matched with {similarity:.3f} similarity")
         
         # Nach Ähnlichkeit sortieren (höchste zuerst)
         similarities.sort(key=lambda x: x[1], reverse=True)
         
-        return similarities[:top_k]
+        result = similarities[:top_k]
+        logger.info(f"📊 Phase F.2: Returning {len(result)} suggestions (threshold={min_similarity})")
+        
+        return result
     
     @staticmethod
     def get_tag_suggestions_for_email(
