@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import importlib
-from typing import Callable, Optional
+from typing import Callable, Optional, List, Dict
+from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
 
@@ -15,6 +16,209 @@ scoring = importlib.import_module(".05_scoring", "src")
 imap_flags_mod = importlib.import_module(".16_imap_flags", "src")
 
 logger = logging.getLogger(__name__)
+
+
+def build_thread_context(
+    session,
+    raw_email,
+    master_key: str,
+    max_context_emails: int = 5
+) -> str:
+    """Build conversation context from previous emails in the same thread.
+    
+    Phase E: Thread-Context Builder
+    
+    Collects previous emails in the same thread, decrypts them, and formats
+    them into a context string for AI analysis. This helps the AI understand
+    the conversation flow and improve classification accuracy.
+    
+    Args:
+        session: SQLAlchemy session for DB queries
+        raw_email: The current RawEmail being processed
+        master_key: Master key for decryption (from Flask session)
+        max_context_emails: Maximum number of previous emails to include (default: 5)
+    
+    Returns:
+        Formatted context string with previous emails, or empty string if no context
+    
+    Example output:
+        '''
+        CONVERSATION CONTEXT (3 previous emails):
+        
+        [1] 2025-01-01 10:00 | From: alice@example.com
+        Subject: Project Update
+        Body: Initial project status update...
+        
+        [2] 2025-01-01 14:30 | From: bob@example.com  
+        Subject: Re: Project Update
+        Body: Thanks for the update. I have a question...
+        
+        [3] 2025-01-01 16:00 | From: alice@example.com
+        Subject: Re: Project Update  
+        Body: Sure, let me answer that...
+        '''
+    """
+    if not raw_email.thread_id:
+        logger.debug(f"RawEmail {raw_email.id} has no thread_id - no context available")
+        return ""
+    
+    try:
+        # Query previous emails in same thread (older than current email)
+        thread_emails = (
+            session.query(models.RawEmail)
+            .filter(
+                models.RawEmail.thread_id == raw_email.thread_id,
+                models.RawEmail.id < raw_email.id,  # Only older emails
+                models.RawEmail.deleted_at.is_(None),
+                models.RawEmail.deleted_verm.is_(False)
+            )
+            .order_by(models.RawEmail.received_at.asc())
+            .limit(max_context_emails)
+            .all()
+        )
+        
+        if not thread_emails:
+            logger.debug(f"Thread {raw_email.thread_id} has no previous emails")
+            return ""
+        
+        # Decrypt and format context
+        encryption_mod = importlib.import_module(".08_encryption", "src")
+        context_lines = [
+            f"CONVERSATION CONTEXT ({len(thread_emails)} previous email{'s' if len(thread_emails) > 1 else ''}):",
+            ""
+        ]
+        
+        for idx, email in enumerate(thread_emails, 1):
+            try:
+                # Decrypt email data
+                sender = encryption_mod.EmailDataManager.decrypt_email_sender(
+                    email.encrypted_sender or "", master_key
+                )
+                subject = encryption_mod.EmailDataManager.decrypt_email_subject(
+                    email.encrypted_subject or "", master_key
+                )
+                body = encryption_mod.EmailDataManager.decrypt_email_body(
+                    email.encrypted_body or "", master_key
+                )
+                
+                # Format timestamp
+                timestamp = email.received_at.strftime("%Y-%m-%d %H:%M") if email.received_at else "unknown"
+                
+                # Truncate body for context (max 300 chars)
+                body_preview = body[:300] + "..." if len(body) > 300 else body
+                
+                context_lines.extend([
+                    f"[{idx}] {timestamp} | From: {sender}",
+                    f"Subject: {subject}",
+                    f"Body: {body_preview}",
+                    ""  # Empty line between emails
+                ])
+                
+            except Exception as e:
+                logger.warning(f"Failed to decrypt email {email.id} for context: {e}")
+                context_lines.extend([
+                    f"[{idx}] (Decryption failed for previous email)",
+                    ""
+                ])
+        
+        context_str = "\n".join(context_lines)
+        logger.info(f"Built thread context for {raw_email.id}: {len(thread_emails)} emails, {len(context_str)} chars")
+        return context_str
+        
+    except Exception as e:
+        logger.error(f"Failed to build thread context for {raw_email.id}: {e}", exc_info=True)
+        return ""
+
+
+def get_sender_hint_from_patterns(
+    session,
+    raw_email,
+    master_key: str
+) -> str:
+    """Analyze sender behavior patterns from thread history.
+    
+    Phase E: Sender-Intelligence
+    
+    Examines previous emails from the same sender in this thread to detect:
+    - Newsletter/automated email patterns
+    - Notification patterns (e.g., GitHub, Jira)
+    - Conversational vs. transactional style
+    - Response patterns
+    
+    Args:
+        session: SQLAlchemy session for DB queries
+        raw_email: The current RawEmail being analyzed
+        master_key: Master key for decryption
+    
+    Returns:
+        Hint string for AI classifier, or empty string if no patterns detected
+    
+    Example outputs:
+        "SENDER PATTERN: This sender typically sends newsletters (3/3 previous emails)"
+        "SENDER PATTERN: This sender is conversational - expects replies (2/3 emails have responses)"
+        ""
+    """
+    if not raw_email.thread_id:
+        return ""
+    
+    try:
+        encryption_mod = importlib.import_module(".08_encryption", "src")
+        
+        # Decrypt current sender
+        current_sender = encryption_mod.EmailDataManager.decrypt_email_sender(
+            raw_email.encrypted_sender or "", master_key
+        )
+        
+        if not current_sender:
+            return ""
+        
+        # Query previous emails from same sender in this thread
+        sender_emails = (
+            session.query(models.RawEmail)
+            .filter(
+                models.RawEmail.thread_id == raw_email.thread_id,
+                models.RawEmail.id < raw_email.id,
+                models.RawEmail.deleted_at.is_(None),
+                models.RawEmail.deleted_verm.is_(False)
+            )
+            .order_by(models.RawEmail.received_at.desc())
+            .limit(5)
+            .all()
+        )
+        
+        if len(sender_emails) < 2:
+            # Need at least 2 emails to detect patterns
+            return ""
+        
+        # Count sender's emails vs. others
+        sender_count = 0
+        total_count = len(sender_emails)
+        has_responses = False
+        
+        for email in sender_emails:
+            email_sender = encryption_mod.EmailDataManager.decrypt_email_sender(
+                email.encrypted_sender or "", master_key
+            )
+            
+            if email_sender == current_sender:
+                sender_count += 1
+            else:
+                has_responses = True
+        
+        # Pattern detection
+        if sender_count == total_count and total_count >= 3:
+            # All emails from same sender → likely newsletter/automation
+            return f"SENDER PATTERN: This sender typically sends automated emails (no conversation, {total_count}/{total_count} from same sender)"
+        
+        if has_responses and sender_count >= 2:
+            # Mix of sender and responses → conversational
+            return f"SENDER PATTERN: This sender is conversational - thread has {total_count} emails with responses"
+        
+        return ""
+        
+    except Exception as e:
+        logger.warning(f"Failed to analyze sender patterns for {raw_email.id}: {e}")
+        return ""
 
 
 def process_pending_raw_emails(
@@ -143,11 +347,26 @@ def process_pending_raw_emails(
             if progress_callback:
                 progress_callback(idx, total_emails, subject_preview)
 
+            # Phase E: Build thread context for AI
+            thread_context = build_thread_context(session, raw_email, master_key)
+            sender_hint = get_sender_hint_from_patterns(session, raw_email, master_key)
+            
+            # Combine context and hint
+            context_str = ""
+            if thread_context:
+                context_str += thread_context + "\n\n"
+            if sender_hint:
+                context_str += sender_hint + "\n\n"
+            
+            if context_str:
+                logger.info(f"📧 Thread-Context: {len(thread_context)} chars, Sender-Hint: {'Yes' if sender_hint else 'No'}")
+
             logger.info("🤖 Analysiere gespeicherte Mail: %s...", subject_preview)
             ai_result = active_ai.analyze_email(
                 subject=decrypted_subject or "",
                 body=clean_body,
                 sender=decrypted_sender or "",
+                context=context_str if context_str else None  # Phase E: Pass context to AI
             )
             
             # Phase 11d: Sender-Pattern-Hinweis anwenden (wenn vorhanden)

@@ -69,9 +69,16 @@ class AIClient(ABC):
 
     @abstractmethod
     def analyze_email(
-        self, subject: str, body: str, language: str = "de"
+        self, subject: str, body: str, language: str = "de", context: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Analysiert eine Mail und liefert strukturierte Ergebnisse."""
+        """Analysiert eine Mail und liefert strukturierte Ergebnisse.
+        
+        Args:
+            subject: Email subject
+            body: Email body (sanitized)
+            language: Target language for analysis
+            context: Optional thread context (Phase E) with previous emails
+        """
         raise NotImplementedError
 
 
@@ -189,11 +196,22 @@ def _build_user_payload(subject: str, body: str, language: str) -> str:
 
 
 def _build_standard_messages(
-    subject: str, body: str, language: str
+    subject: str, body: str, language: str, context: Optional[str] = None
 ) -> List[Dict[str, str]]:
+    """Build messages for AI analysis, optionally prepending thread context.
+    
+    Phase E: If context is provided, it's prepended to the user message to give
+    the AI conversation history for better classification.
+    """
+    user_content = _build_user_payload(subject, body, language)
+    
+    # Phase E: Prepend thread context if available
+    if context:
+        user_content = f"{context}\n\n---\n\nCURRENT EMAIL TO ANALYZE:\n{user_content}"
+    
     return [
         {"role": "system", "content": OLLAMA_SYSTEM_PROMPT},
-        {"role": "user", "content": _build_user_payload(subject, body, language)},
+        {"role": "user", "content": user_content},
     ]
 
 
@@ -793,24 +811,26 @@ class LocalOllamaClient(AIClient):
         }
 
     def analyze_email(
-        self, subject: str, body: str, language: str = "de", sender: str = ""
+        self, subject: str, body: str, language: str = "de", sender: str = "", context: Optional[str] = None
     ) -> Dict[str, Any]:
         """Dispatcher: nutzt Embedding-Heuristiken oder Chat-LLM je nach Modelltyp."""
         # Security: Sanitize inputs before API calls
         subject = _sanitize_email_input(subject, max_length=500)
         body = _sanitize_email_input(body, max_length=50000)
         sender = _sanitize_email_input(sender, max_length=200)
+        if context:
+            context = _sanitize_email_input(context, max_length=5000)
 
         if self._is_embedding_model:
             return self._analyze_with_embeddings(subject, body, sender=sender)
-        return self._analyze_with_chat(subject, body, language)
+        return self._analyze_with_chat(subject, body, language, context=context)
 
     def _analyze_with_chat(
-        self, subject: str, body: str, language: str = "de"
+        self, subject: str, body: str, language: str = "de", context: Optional[str] = None
     ) -> Dict[str, Any]:
         """Analysiert eine Mail mit Chat-LLM (Standard)."""
         messages = _build_standard_messages(
-            subject=subject, body=body, language=language
+            subject=subject, body=body, language=language, context=context
         )
 
         try:
@@ -908,15 +928,17 @@ class OpenAIClient(AIClient):
         self.retry_delay = 2  # Sekunden
 
     def analyze_email(
-        self, subject: str, body: str, language: str = "de"
+        self, subject: str, body: str, language: str = "de", context: Optional[str] = None
     ) -> Dict[str, Any]:
         # Security: Sanitize inputs before API calls
         subject = _sanitize_email_input(subject, max_length=500)
         body = _sanitize_email_input(body, max_length=50000)
+        if context:
+            context = _sanitize_email_input(context, max_length=5000)
 
         payload = {
             "model": self.model,
-            "messages": _build_standard_messages(subject, body, language),
+            "messages": _build_standard_messages(subject, body, language, context=context),
             "temperature": 0.1,
             "response_format": {"type": "json_object"},
         }
@@ -1049,11 +1071,18 @@ class AnthropicClient(AIClient):
         self.retry_delay = 2  # Sekunden
 
     def analyze_email(
-        self, subject: str, body: str, language: str = "de"
+        self, subject: str, body: str, language: str = "de", context: Optional[str] = None
     ) -> Dict[str, Any]:
         # Security: Sanitize inputs before API calls
         subject = _sanitize_email_input(subject, max_length=500)
         body = _sanitize_email_input(body, max_length=50000)
+        if context:
+            context = _sanitize_email_input(context, max_length=5000)
+
+        # Prepend context to user payload
+        user_text = _build_user_payload(subject, body, language)
+        if context:
+            user_text = f"{context}\n\n---\n\nCURRENT EMAIL TO ANALYZE:\n{user_text}"
 
         payload = {
             "model": self.model,
@@ -1065,7 +1094,7 @@ class AnthropicClient(AIClient):
                     "content": [
                         {
                             "type": "text",
-                            "text": _build_user_payload(subject, body, language),
+                            "text": user_text,
                         }
                     ],
                 }
