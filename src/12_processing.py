@@ -108,8 +108,13 @@ def build_thread_context(
                 # Truncate body for context (max 300 chars)
                 body_preview = body[:300] + "..." if len(body) > 300 else body
                 
+                # Attachment awareness
+                attachment_info = ""
+                if email.imap_has_attachments:
+                    attachment_info = " 📎 (has attachments)"
+                
                 context_lines.extend([
-                    f"[{idx}] {timestamp} | From: {sender}",
+                    f"[{idx}] {timestamp} | From: {sender}{attachment_info}",
                     f"Subject: {subject}",
                     f"Body: {body_preview}",
                     ""  # Empty line between emails
@@ -123,6 +128,12 @@ def build_thread_context(
                 ])
         
         context_str = "\n".join(context_lines)
+        
+        # Limit context size early (before AI sanitization)
+        max_context_chars = 4500  # Leave room for current email info
+        if len(context_str) > max_context_chars:
+            context_str = context_str[:max_context_chars] + "\n\n[Context truncated due to size]"
+        
         logger.info(f"Built thread context for {raw_email.id}: {len(thread_emails)} emails, {len(context_str)} chars")
         return context_str
         
@@ -365,6 +376,10 @@ def process_pending_raw_emails(
                 context_str += thread_context + "\n\n"
             if sender_hint:
                 context_str += sender_hint + "\n\n"
+            
+            # Add current email attachment info
+            if raw_email.imap_has_attachments:
+                context_str += "📎 CURRENT EMAIL: This email has attachments.\n\n"
             
             # Bug #4: Improved logging with char counts
             if context_str:
