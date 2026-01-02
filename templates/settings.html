@@ -25,12 +25,33 @@
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                         <div class="col-12">
                             <div class="alert alert-info small mb-3">
-                                <strong>Two-Pass System:</strong> Base-Pass (schnell) → Optimize-Pass (optional, bessere Kategorisierung)
+                                <strong>3-Settings System:</strong> Embedding (Vektoren) → Base (schnell) → Optimize (optional, bessere Kategorisierung)
                             </div>
                         </div>
                         
+                        <!-- EMBEDDING MODEL (NEU!) -->
                         <div class="col-12">
-                            <h6 class="border-bottom pb-2">⚡ Base-Pass (Schnelle erste Analyse)</h6>
+                            <h6 class="border-bottom pb-2">🔍 Embedding-Model (Vektorisierung für Semantic Search & Tags)</h6>
+                            <p class="small text-muted mb-3">Nur für Embeddings - nicht für Chat! Ollama, OpenAI, Mistral (Anthropic hat keine Embedding-API)</p>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiProviderSelectEmbedding" class="form-label">Provider</label>
+                            <select class="form-select" id="aiProviderSelectEmbedding" name="ai_provider_embedding" required>
+                                <option value="">-- Wird geladen --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiModelSelectEmbedding" class="form-label">Modell</label>
+                            <select class="form-select" id="aiModelSelectEmbedding" name="ai_model_embedding" required>
+                                <option value="">-- Bitte Provider wählen --</option>
+                            </select>
+                            <small class="text-muted d-block mt-1">z.B. all-minilm:22m, text-embedding-3-small, mistral-embed</small>
+                        </div>
+                        
+                        <!-- BASE MODEL -->
+                        <div class="col-12">
+                            <h6 class="border-bottom pb-2 mt-3">⚡ Base-Model (Schnelle Klassifikation)</h6>
+                            <p class="small text-muted mb-3">Erste Analyse mit schnellem Chat-Modell</p>
                         </div>
                         <div class="col-md-6">
                             <label for="aiProviderSelectBase" class="form-label">Provider</label>
@@ -43,11 +64,13 @@
                             <select class="form-select" id="aiModelSelectBase" name="ai_model_base" required>
                                 <option value="">-- Bitte Provider wählen --</option>
                             </select>
-                            <small class="text-muted d-block mt-1">Oder eintippen für custom Modell</small>
+                            <small class="text-muted d-block mt-1">z.B. llama3.2:1b, gpt-4o-mini, haiku</small>
                         </div>
                         
+                        <!-- OPTIMIZE MODEL -->
                         <div class="col-12">
-                            <h6 class="border-bottom pb-2 mt-3">🔧 Optimize-Pass (Optional, für Scores 8-9)</h6>
+                            <h6 class="border-bottom pb-2 mt-3">🔧 Optimize-Model (Tiefe Analyse für Scores 8-9)</h6>
+                            <p class="small text-muted mb-3">Zweiter Pass mit besserem Chat-Modell bei Bedarf</p>
                         </div>
                         <div class="col-md-6">
                             <label for="aiProviderSelectOptimize" class="form-label">Provider</label>
@@ -60,7 +83,7 @@
                             <select class="form-select" id="aiModelSelectOptimize" name="ai_model_optimize" required>
                                 <option value="">-- Bitte Provider wählen --</option>
                             </select>
-                            <small class="text-muted d-block mt-1">Oder eintippen für custom Modell</small>
+                            <small class="text-muted d-block mt-1">z.B. llama3.2:3b, gpt-4o, sonnet</small>
                         </div>
                         
                         <div class="col-12">
@@ -579,11 +602,13 @@ async function initializeProviders() {
         const providers = data.providers || [];
         
         const savedValues = window.savedAIValues || {
-            Base: { provider: 'ollama', model: 'all-minilm:22m' },
-            Optimize: { provider: 'ollama', model: 'llama3.2:1b' }
+            Embedding: { provider: 'ollama', model: 'all-minilm:22m' },
+            Base: { provider: 'ollama', model: 'llama3.2:1b' },
+            Optimize: { provider: 'ollama', model: 'llama3.2:3b' }
         };
         
-        ['Base', 'Optimize'].forEach(pass => {
+        // Provider-Dropdowns für alle 3 Settings füllen
+        ['Embedding', 'Base', 'Optimize'].forEach(pass => {
             const select = document.getElementById(`aiProviderSelect${pass}`);
             if (select) {
                 select.innerHTML = '';
@@ -591,6 +616,11 @@ async function initializeProviders() {
                     select.innerHTML = '<option value="">Keine Provider verfügbar</option>';
                 } else {
                     providers.forEach(p => {
+                        // Anthropic hat keine Embedding-API → ausblenden für Embedding
+                        if (pass === 'Embedding' && p.id === 'anthropic') {
+                            return; // Skip Anthropic für Embedding
+                        }
+                        
                         const option = document.createElement('option');
                         option.value = p.id;
                         option.textContent = `${p.name} - ${p.description}`;
@@ -626,39 +656,41 @@ async function updateModels(pass) {
     
     try {
         modelSelect.innerHTML = '<option value="">Modelle werden geladen...</option>';
-        const response = await fetch(`/api/available-models/${provider}?kind=${pass.toLowerCase()}`, {credentials: 'include'});
+        
+        // NEU: Nutze dynamische Model Discovery
+        const response = await fetch(`/api/models/${provider}`, {credentials: 'include'});
         const data = await response.json();
         let models = data.models || [];
+        
+        // Filter nach Model-Typ
+        if (pass === 'Embedding') {
+            // Nur Embedding-Modelle
+            models = models.filter(m => m.type === 'embedding');
+        } else {
+            // Nur Chat-Modelle (für Base & Optimize)
+            models = models.filter(m => m.type === 'chat');
+        }
         
         const savedModel = (window.savedAIValues && window.savedAIValues[pass]) ? window.savedAIValues[pass].model : null;
         
         modelSelect.innerHTML = '';
         if (models.length === 0) {
-            modelSelect.innerHTML = '<option value="">Keine Modelle verfügbar</option>';
+            if (pass === 'Embedding' && provider === 'anthropic') {
+                modelSelect.innerHTML = '<option value="">⚠️ Anthropic hat keine Embedding-API</option>';
+            } else {
+                modelSelect.innerHTML = '<option value="">Keine Modelle verfügbar</option>';
+            }
         } else {
             models.forEach(m => {
                 const option = document.createElement('option');
+                option.value = m.id;
                 
-                if (typeof m === 'object' && m.name) {
-                    option.value = m.name;
-                    const icon = m.icon || '?';
-                    const type = m.type || 'unknown';
-                    const hint = pass === 'Base' && type === 'embedding' ? ' (Empfohlen)' : 
-                                 pass === 'Optimize' && type === 'chat' ? ' (Empfohlen)' : '';
-                    option.textContent = `${icon} ${m.name} (${type})${hint}`;
-                    if (m.type === 'embedding' && pass === 'Optimize') {
-                        option.disabled = true;
-                        option.textContent += ' ⚠️ Nur für Base geeignet';
-                    }
-                    if (m.type === 'chat' && pass === 'Base') {
-                        option.textContent += ' (aber Heuristiken effizienter)';
-                    }
-                } else {
-                    option.value = m;
-                    option.textContent = m;
-                }
+                // Formatierung mit Typ-Hinweis
+                const displayName = m.display_name || m.name || m.id;
+                const typeLabel = m.type === 'embedding' ? '🔍' : '💬';
+                option.textContent = `${typeLabel} ${displayName}`;
                 
-                if (savedModel && (typeof m === 'object' ? m.name : m) === savedModel) {
+                if (savedModel && m.id === savedModel) {
                     option.selected = true;
                 }
                 modelSelect.appendChild(option);
@@ -763,25 +795,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // Security: Parse JSON safely to prevent XSS via provider/model names
     try {
         window.savedAIValues = {{ {
+            'Embedding': {'provider': ai_selected_provider_embedding|default('ollama'), 'model': ai_selected_model_embedding|default('all-minilm:22m')},
             'Base': {'provider': ai_selected_provider_base, 'model': ai_selected_model_base},
             'Optimize': {'provider': ai_selected_provider_optimize, 'model': ai_selected_model_optimize}
         }|tojson|safe }};
     } catch(e) {
         console.error('Failed to parse AI values:', e);
         window.savedAIValues = {
-            Base: {provider: 'ollama', model: 'all-minilm:22m'},
-            Optimize: {provider: 'ollama', model: 'llama3.2:1b'}
+            Embedding: {provider: 'ollama', model: 'all-minilm:22m'},
+            Base: {provider: 'ollama', model: 'llama3.2:1b'},
+            Optimize: {provider: 'ollama', model: 'llama3.2:3b'}
         };
     }
     initializeProviders();
     loadTrainingStats();
     
-    // CSP-compliant event listeners (no inline handlers)
+    // CSP-compliant event listeners (no inline handlers) - 3 Settings!
+    const providerEmbeddingSelect = document.getElementById('aiProviderSelectEmbedding');
     const providerBaseSelect = document.getElementById('aiProviderSelectBase');
     const providerOptimizeSelect = document.getElementById('aiProviderSelectOptimize');
     const retrainBtn = document.getElementById('retrainBtn');
     const regenerateForm = document.getElementById('regenerateRecoveryForm');
     
+    if (providerEmbeddingSelect) {
+        providerEmbeddingSelect.addEventListener('change', () => updateModels('Embedding'));
+    }
     if (providerBaseSelect) {
         providerBaseSelect.addEventListener('change', () => updateModels('Base'));
     }

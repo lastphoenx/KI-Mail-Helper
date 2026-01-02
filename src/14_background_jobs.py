@@ -413,11 +413,16 @@ class BackgroundJobQueue:
         skipped = 0
         updated = 0
         
-        # Phase 17: AI-Client für Embeddings (einmal pro Batch initialisieren)
+        # Phase 17: AI-Client für Embeddings (User Settings EMBEDDING Model!)
         embedding_ai_client = None
         try:
-            embedding_ai_client = ai_client.LocalOllamaClient(model="all-minilm:22m")
-            logger.debug("✅ Embedding AI-Client (all-minilm:22m) initialisiert")
+            # WICHTIG: Nutze EMBEDDING Settings (nicht BASE!)
+            provider_embedding = (user.preferred_embedding_provider or "ollama").lower()
+            model_embedding = user.preferred_embedding_model or "all-minilm:22m"
+            resolved_model = ai_client.resolve_model(provider_embedding, model_embedding)
+            
+            embedding_ai_client = ai_client.build_client(provider_embedding, model=resolved_model)
+            logger.debug(f"✅ Embedding AI-Client ({resolved_model}) initialisiert")
         except Exception as e:
             logger.warning(f"⚠️ Embedding AI-Client nicht verfügbar: {e}")
         

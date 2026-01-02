@@ -93,6 +93,11 @@
             </div>
             
             <button type="button" class="btn btn-sm btn-outline-secondary" id="addTagBtn">+ Tag hinzufügen</button>
+            <button type="button" class="btn btn-sm btn-outline-info" id="reprocessEmailBtn" 
+                    data-email-id="{{ email.id }}" 
+                    title="Embedding & KI-Score neu generieren (nutzt aktuelles Base Model aus Settings)">
+                🔄 Email neu verarbeiten
+            </button>
 
             <!-- Current Flags Display -->
             <div id="flagsCurrent" class="mt-2" style="display: none;"></div>
@@ -648,6 +653,52 @@ document.addEventListener('DOMContentLoaded', function() {
         const modal = new bootstrap.Modal(document.getElementById('addTagModal'));
         modal.show();
     });
+    
+    // Reprocess email button (regenerate embedding + AI score with current base model)
+    const reprocessBtn = document.getElementById('reprocessEmailBtn');
+    if (reprocessBtn) {
+        reprocessBtn.addEventListener('click', async function() {
+            if (!confirm('Email neu verarbeiten?\n\n' +
+                        'Dies regeneriert:\n' +
+                        '• Embedding (mit aktuellem Base Model)\n' +
+                        '• KI-Score & Kategorie\n' +
+                        '• Tag-Vorschläge werden aktualisiert')) {
+                return;
+            }
+            
+            const originalText = reprocessBtn.innerHTML;
+            reprocessBtn.disabled = true;
+            reprocessBtn.innerHTML = '⏳ Verarbeite...';
+            
+            try {
+                const response = await fetch(`/api/emails/${emailId}/reprocess`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    credentials: 'include'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('✅ Email erfolgreich neu verarbeitet!\n\n' +
+                          `Embedding Model: ${data.embedding_model || 'unbekannt'}\n` +
+                          `KI-Score: ${data.ai_score !== undefined ? data.ai_score.toFixed(3) : 'n/a'}`);
+                    location.reload(); // Reload to show updated data
+                } else {
+                    alert('❌ Fehler: ' + (data.error || 'Verarbeitung fehlgeschlagen'));
+                    reprocessBtn.disabled = false;
+                    reprocessBtn.innerHTML = originalText;
+                }
+            } catch (error) {
+                alert('❌ Netzwerkfehler: ' + error.message);
+                reprocessBtn.disabled = false;
+                reprocessBtn.innerHTML = originalText;
+            }
+        });
+    }
     
     // Phase F.2: Load and display smart tag suggestions
     async function loadTagSuggestions() {

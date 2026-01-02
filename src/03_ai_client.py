@@ -1082,6 +1082,55 @@ class OpenAIClient(AIClient):
             return _fallback_response()
 
         return _validate_ai_payload(parsed)
+    
+    def _get_embedding(self, text: str) -> list[float] | None:
+        """
+        Generiert Embedding via OpenAI Embeddings API.
+        
+        Nutzt text-embedding-3-small, text-embedding-3-large oder text-embedding-ada-002
+        
+        Returns:
+            Liste von Floats (Embedding-Vektor) oder None bei Fehler
+        """
+        if not text or not text.strip():
+            return None
+        
+        embeddings_url = "https://api.openai.com/v1/embeddings"
+        payload = {
+            "model": self.model,  # z.B. "text-embedding-3-small"
+            "input": text.strip(),
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        
+        try:
+            response = requests.post(
+                embeddings_url, 
+                json=payload, 
+                headers=headers, 
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            embeddings = data.get("data", [])
+            
+            if not embeddings:
+                logger.warning(f"OpenAI Embeddings: Keine Daten für model={self.model}")
+                return None
+            
+            return embeddings[0].get("embedding")
+            
+        except requests.exceptions.HTTPError as exc:
+            logger.error(
+                f"OpenAI Embeddings HTTP Error (model={self.model}): {exc.response.status_code}"
+            )
+            return None
+        except Exception as exc:
+            logger.error(f"OpenAI Embeddings Error: {exc}")
+            return None
 
 
 class AnthropicClient(AIClient):
@@ -1242,6 +1291,123 @@ class AnthropicClient(AIClient):
         return _validate_ai_payload(parsed)
 
 
+class MistralClient(AIClient):
+    """Mistral AI Chat & Embeddings API."""
+    
+    API_URL_CHAT = "https://api.mistral.ai/v1/chat/completions"
+    API_URL_EMBEDDINGS = "https://api.mistral.ai/v1/embeddings"
+    
+    def __init__(self, api_key: str, model: str = "mistral-small-latest"):
+        if not api_key:
+            raise ValueError("Mistral API Key fehlt")
+        self.api_key = api_key
+        self.model = model or PROVIDER_REGISTRY["mistral"]["default_model"]
+        self.timeout = int(os.getenv("MISTRAL_TIMEOUT", "300"))
+        self.max_retries = 3
+        self.retry_delay = 2
+    
+    def analyze_email(
+        self, subject: str, body: str, language: str = "de", context: Optional[str] = None
+    ) -> Dict[str, Any]:
+        # Security: Sanitize inputs before API calls
+        subject = _sanitize_email_input(subject, max_length=500)
+        body = _sanitize_email_input(body, max_length=50000)
+        if context:
+            context = _sanitize_email_input(context, max_length=5000)
+        
+        payload = {
+            "model": self.model,
+            "messages": _build_standard_messages(subject, body, language, context=context),
+            "temperature": 0.1,
+            "response_format": {"type": "json_object"},
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        
+        for attempt in range(self.max_retries):
+            try:
+                response = requests.post(
+                    self.API_URL_CHAT, json=payload, headers=headers, timeout=self.timeout
+                )
+                
+                if response.status_code == 429:
+                    wait_time = self.retry_delay ** attempt
+                    logger.warning(f"Mistral Rate Limit - Retry {attempt+1}/{self.max_retries} nach {wait_time}s")
+                    if attempt < self.max_retries - 1:
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        return _fallback_response()
+                
+                response.raise_for_status()
+                break
+                
+            except requests.exceptions.HTTPError as exc:
+                logger.error(f"Mistral HTTP Error: {exc.response.status_code}")
+                return _fallback_response()
+            except Exception as exc:
+                logger.error(f"Mistral Request Error: {type(exc).__name__}")
+                if attempt == self.max_retries - 1:
+                    return _fallback_response()
+                time.sleep(self.retry_delay ** attempt)
+        
+        try:
+            data = response.json()
+            choices = data.get("choices") or []
+            if not choices:
+                return _fallback_response()
+            
+            content = ((choices[0].get("message") or {}).get("content") or "").strip()
+            if not content:
+                return _fallback_response()
+            
+            parsed = _parse_model_json(content)
+            if not parsed:
+                return _fallback_response()
+            
+            return _validate_ai_payload(parsed)
+        except Exception:
+            return _fallback_response()
+    
+    def _get_embedding(self, text: str) -> list[float] | None:
+        """Generiert Embedding via Mistral Embeddings API (mistral-embed, 1024 dim)."""
+        if not text or not text.strip():
+            return None
+        
+        payload = {
+            "model": "mistral-embed",
+            "input": [text.strip()],  # Mistral erwartet Array
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        
+        try:
+            response = requests.post(
+                self.API_URL_EMBEDDINGS,
+                json=payload,
+                headers=headers,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            embeddings = data.get("data", [])
+            
+            if not embeddings:
+                logger.warning("Mistral Embeddings: Keine Daten")
+                return None
+            
+            return embeddings[0].get("embedding")
+            
+        except Exception as exc:
+            logger.error(f"Mistral Embeddings Error: {exc}")
+            return None
+
+
 def resolve_model(
     provider: str, requested_model: Optional[str], kind: str = "base"
 ) -> str:
@@ -1350,8 +1516,7 @@ def build_client(
         )
         if not api_key:
             raise RuntimeError("MISTRAL_API_KEY ist nicht gesetzt")
-        # TODO: Implementiere MistralClient wenn benötigt
-        raise NotImplementedError("Mistral Client noch nicht implementiert")
+        return MistralClient(api_key=api_key, model=resolved_model)
 
     raise ValueError(f"Provider {provider} wird nicht unterstützt")
 

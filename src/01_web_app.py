@@ -1882,6 +1882,42 @@ def get_training_stats():
         db.close()
 
 
+@app.route("/api/models/<provider>")
+@login_required
+def api_get_models_for_provider(provider: str):
+    """
+    API: Dynamische Model-Abfrage für Provider.
+    
+    Returns:
+        JSON: {
+            "provider": "ollama",
+            "models": [
+                {"id": "llama3.2:1b", "name": "Llama 3.2 1B", "type": "chat"},
+                {"id": "all-minilm:22m", "name": "All-MiniLM 22M", "type": "embedding"},
+                ...
+            ]
+        }
+    """
+    try:
+        from src import model_discovery
+        
+        # Modelle dynamisch von Provider abrufen
+        models_list = model_discovery.get_available_models(provider)
+        
+        return jsonify({
+            "provider": provider,
+            "models": models_list
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Model discovery failed for {provider}: {e}")
+        return jsonify({
+            "provider": provider,
+            "models": [],
+            "error": str(e)
+        }), 500
+
+
 @app.route("/settings")
 @login_required
 def settings():
@@ -1931,13 +1967,17 @@ def settings():
                     account.imap_server = "***verschlüsselt***"
                     account.imap_username = "***verschlüsselt***"
 
+        # 3 AI Settings (Embedding / Base / Optimize)
+        selected_provider_embedding = (user.preferred_embedding_provider or "ollama").lower()
+        selected_model_embedding = user.preferred_embedding_model or "all-minilm:22m"
+        
         selected_provider_base = (user.preferred_ai_provider or "ollama").lower()
-        selected_model_base = user.preferred_ai_model or "all-minilm:22m"
+        selected_model_base = user.preferred_ai_model or "llama3.2:1b"
 
         selected_provider_optimize = (
             user.preferred_ai_provider_optimize or "ollama"
         ).lower()
-        selected_model_optimize = user.preferred_ai_model_optimize or "llama3.2:1b"
+        selected_model_optimize = user.preferred_ai_model_optimize or "llama3.2:3b"
 
         # Phase 13C Part 4: User Fetch Preferences
         user_prefs = {
@@ -1951,6 +1991,8 @@ def settings():
             user=user,
             mail_accounts=mail_accounts,
             totp_enabled=user.totp_enabled,
+            ai_selected_provider_embedding=selected_provider_embedding,
+            ai_selected_model_embedding=selected_model_embedding,
             ai_selected_provider_base=selected_provider_base,
             ai_selected_model_base=selected_model_base,
             ai_selected_provider_optimize=selected_provider_optimize,
@@ -2837,6 +2879,153 @@ def api_get_reply_tones():
 # ===== End Phase G.1 =====
 
 
+@app.route("/api/emails/<int:email_id>/reprocess", methods=["POST"])
+@login_required
+def api_reprocess_email(email_id):
+    """
+    API: Email neu verarbeiten (Phase F.2 Enhanced)
+    
+    Regeneriert:
+    - Email-Embedding (mit aktuellem Base Model aus Settings)
+    - AI-Score + Kategorie
+    - Tag-Suggestions (automatisch mit neuem Embedding)
+    
+    Use Case: Model-Wechsel (z.B. all-minilm → bge-large)
+    """
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"success": False, "error": "Unauthorized"}), 401
+        
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"success": False, "error": "Master-Key nicht verfügbar"}), 401
+        
+        # Validiere Email-Zugriff
+        raw_email = (
+            db.query(models.RawEmail)
+            .filter(
+                models.RawEmail.id == email_id,
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.deleted_at == None
+            )
+            .first()
+        )
+        
+        if not raw_email:
+            return jsonify({"success": False, "error": "Email nicht gefunden"}), 404
+        
+        # Entschlüssele für Reprocessing
+        try:
+            decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
+                raw_email.encrypted_subject or "", master_key
+            )
+            decrypted_body = encryption.EmailDataManager.decrypt_email_body(
+                raw_email.encrypted_body or "", master_key
+            )
+        except Exception as e:
+            logger.error(f"Decryption failed for email {email_id}: {e}")
+            return jsonify({"success": False, "error": "Entschlüsselung fehlgeschlagen"}), 500
+        
+        # 1. EMBEDDING neu generieren (mit EMBEDDING Model aus Settings!)
+        try:
+            from src.semantic_search import generate_embedding_for_email
+            
+            # WICHTIG: Nutze EMBEDDING Settings (nicht BASE!)
+            provider_embedding = (user.preferred_embedding_provider or "ollama").lower()
+            model_embedding = user.preferred_embedding_model or "all-minilm:22m"
+            resolved_model_embedding = ai_client.resolve_model(provider_embedding, model_embedding)
+            
+            embedding_client = ai_client.build_client(provider_embedding, model=resolved_model_embedding)
+            
+            embedding_bytes, model_name, timestamp = generate_embedding_for_email(
+                subject=decrypted_subject,
+                body=decrypted_body,
+                ai_client=embedding_client
+            )
+            
+            if embedding_bytes:
+                raw_email.email_embedding = embedding_bytes
+                raw_email.embedding_model = model_name or resolved_model_embedding
+                raw_email.embedding_generated_at = timestamp
+                logger.info(f"✅ Embedding regenerated: {model_name} ({len(embedding_bytes)} bytes)")
+            else:
+                logger.warning("⚠️  Embedding regeneration failed")
+        except Exception as emb_err:
+            logger.error(f"Embedding regeneration error: {emb_err}")
+            # Nicht kritisch, fahre fort
+        
+        # 2. AI-SCORE + KATEGORIE neu berechnen
+        ai_score = None
+        try:
+            processing_mod = importlib.import_module(".12_processing", "src")
+            
+            # Build Thread-Context
+            thread_context = processing_mod.build_thread_context(
+                session=db,
+                raw_email=raw_email,
+                master_key=master_key,
+                max_context_emails=5
+            )
+            
+            # Nutze Optimize Model für Processing (nicht Base Model!)
+            provider_optimize = (user.preferred_ai_provider_optimize or "ollama").lower()
+            model_optimize = user.preferred_ai_model_optimize or "llama3.2:1b"
+            resolved_model_optimize = ai_client.resolve_model(provider_optimize, model_optimize)
+            
+            optimize_client = ai_client.build_client(provider_optimize, model=resolved_model_optimize)
+            
+            result = optimize_client.analyze_email(
+                subject=decrypted_subject,
+                body=decrypted_body,
+                language="de",
+                context=thread_context if thread_context else None
+            )
+            
+            # Update ProcessedEmail
+            processed = db.query(models.ProcessedEmail).filter_by(
+                raw_email_id=raw_email.id
+            ).first()
+            
+            if processed and result:
+                processed.score = result.get("score", processed.score)
+                processed.color = result.get("color", processed.color)
+                processed.action_category = result.get("action_category", processed.action_category)
+                ai_score = processed.score
+                logger.info(f"✅ Score regenerated: {processed.score} ({processed.color})")
+            
+        except Exception as score_err:
+            logger.error(f"Score regeneration error: {score_err}")
+        
+        # 3. TAG-SUGGESTIONS werden automatisch neu berechnet (via neues Embedding)
+        # → Keine extra Action nötig, Frontend reload holt neue Suggestions
+        
+        db.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Email erfolgreich neu verarbeitet",
+            "embedding_model": raw_email.embedding_model,
+            "ai_score": ai_score,
+            "timestamp": datetime.now(UTC).isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Reprocess failed for email {email_id}: {e}")
+        db.rollback()
+        return jsonify({
+            "success": False,
+            "error": f"Neuverarbeitung fehlgeschlagen: {str(e)}"
+        }), 500
+    finally:
+        db.close()
+
+
+# ===== End Phase F.2 Enhanced =====
+
+
 def _trigger_online_learning(email, data: dict):
     """Phase 11b: Online-Learning nach User-Korrektur.
 
@@ -2924,7 +3113,7 @@ def _trigger_online_learning(email, data: dict):
 @app.route("/settings/ai", methods=["POST"])
 @login_required
 def save_ai_preferences():
-    """Speichert KI-Provider- und Modellpräferenzen für Base + Optimize Pass."""
+    """Speichert KI-Provider- und Modellpräferenzen für Embedding + Base + Optimize Pass."""
     db = get_db_session()
 
     try:
@@ -2932,35 +3121,43 @@ def save_ai_preferences():
         if not user:
             return redirect(url_for("login"))
 
+        # 1. EMBEDDING Settings
+        provider_embedding = (request.form.get("ai_provider_embedding") or "ollama").lower()
+        model_embedding = (request.form.get("ai_model_embedding") or "").strip()
+        
+        # 2. BASE Settings
         provider_base = (request.form.get("ai_provider_base") or "ollama").lower()
         model_base = (request.form.get("ai_model_base") or "").strip()
 
+        # 3. OPTIMIZE Settings
         provider_optimize = (
             request.form.get("ai_provider_optimize") or "ollama"
         ).lower()
         model_optimize = (request.form.get("ai_model_optimize") or "").strip()
 
-        ok, resolved_base, error = ai_client.validate_provider_choice(
-            provider_base, model_base, kind="base"
-        )
-        if not ok:
-            flash(f"Base-Pass: {error or 'Ungültige Auswahl'}", "danger")
+        # Validierung (basic - kann erweitert werden)
+        if not model_embedding:
+            flash("Embedding-Model ist erforderlich!", "danger")
+            return redirect(url_for("settings"))
+        
+        if not model_base:
+            flash("Base-Model ist erforderlich!", "danger")
+            return redirect(url_for("settings"))
+            
+        if not model_optimize:
+            flash("Optimize-Model ist erforderlich!", "danger")
             return redirect(url_for("settings"))
 
-        ok, resolved_optimize, error = ai_client.validate_provider_choice(
-            provider_optimize, model_optimize, kind="optimize"
-        )
-        if not ok:
-            flash(f"Optimize-Pass: {error or 'Ungültige Auswahl'}", "danger")
-            return redirect(url_for("settings"))
-
+        # Speichern
+        user.preferred_embedding_provider = provider_embedding
+        user.preferred_embedding_model = model_embedding
         user.preferred_ai_provider = provider_base
-        user.preferred_ai_model = resolved_base
+        user.preferred_ai_model = model_base
         user.preferred_ai_provider_optimize = provider_optimize
-        user.preferred_ai_model_optimize = resolved_optimize
+        user.preferred_ai_model_optimize = model_optimize
         db.commit()
 
-        flash("KI-Präferenzen gespeichert (Base + Optimize).", "success")
+        flash("✅ KI-Präferenzen gespeichert (Embedding + Base + Optimize).", "success")
     except Exception as exc:
         db.rollback()
         logger.error(f"Fehler beim Speichern der KI-Präferenz: {type(exc).__name__}")

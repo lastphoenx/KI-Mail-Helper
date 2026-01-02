@@ -214,15 +214,25 @@ class User(Base):
     totp_secret = Column(String(32))
     totp_enabled = Column(Boolean, default=False)
 
-    # KI-Präferenzen
+    # KI-Präferenzen (3 Settings: EMBEDDING / BASE / OPTIMIZE)
+    
+    # 1. EMBEDDING Model (Vektorisierung für Semantic Search, Tags)
+    preferred_embedding_provider = Column(String(20), default=AIProvider.OLLAMA.value)
+    preferred_embedding_model = Column(
+        String(100), default="all-minilm:22m"
+    )  # Nur Embedding-Modelle: all-minilm, nomic-embed, bge, text-embedding-3-small
+    
+    # 2. BASE Model (Schnelle Klassifikation, erster Pass)
     preferred_ai_provider = Column(String(20), default=AIProvider.OLLAMA.value)
     preferred_ai_model = Column(
-        String(100), default="all-minilm:22m"
-    )  # Base-Pass: schnelles Embedding-Modell
+        String(100), default="llama3.2:1b"
+    )  # Chat-Modelle: llama3.2:1b, gpt-4o-mini, haiku
+    
+    # 3. OPTIMIZE Model (Tiefe Analyse, zweiter Pass)
     preferred_ai_provider_optimize = Column(String(20), default=AIProvider.OLLAMA.value)
     preferred_ai_model_optimize = Column(
-        String(100), default="llama3.2:1b"
-    )  # Optimize-Pass: besseres LLM
+        String(100), default="llama3.2:3b"
+    )  # Bessere Chat-Modelle: llama3.2:3b, gpt-4o, sonnet
 
     # Phase 13C Part 4: Fetch-Konfiguration (User-steuerbar)
     fetch_mails_per_folder = Column(Integer, default=100)  # Limit pro Ordner
