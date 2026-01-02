@@ -51,8 +51,10 @@ logs/
 # Code Reviews (SENSIBEL - nicht auf GitHub!)
 review_output/
 
-# Internal Documentation (development notes, not for GitHub)
-doc/
+# Internal Documentation (nur spezifische Unterordner ausschließen)
+doc/development/               # Privat: Instruction_&_goal.md, Reorganization-Notizen
+doc/AI-model-discovery/        # Privat: Prototypen, nicht in Produktion
+doc/semantic_search_examples/  # Privat: Code-Beispiele & Patches
 
 # OS
 .DS_Store
