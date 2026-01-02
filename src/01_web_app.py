@@ -1440,11 +1440,11 @@ def reprocess_email(email_id):
                 decrypted["body"], level=sanitize_level
             )
 
+            # Phase E: analyze_email() hat keinen sender Parameter mehr
             result = client.analyze_email(
                 subject=decrypted["subject"],
                 body=sanitized_body,
-                language="de",
-                sender=decrypted["sender"],
+                language="de"
             )
 
             priority = scoring.analyze_priority(
@@ -1475,6 +1475,8 @@ def reprocess_email(email_id):
             email.farbe = priority["farbe"]
             email.base_model = resolved_model
             email.base_provider = provider
+            email.processed_at = datetime.now(UTC)  # Aktualisiere Analyse-Zeit
+            email.rebase_at = datetime.now(UTC)  # Neue Verarbeitung = Rebase
             email.updated_at = datetime.now(UTC)
             email.optimization_status = models.OptimizationStatus.PENDING.value
 
@@ -1555,6 +1557,7 @@ def optimize_email(email_id):
 
         try:
             client = ai_client.build_client(provider_optimize, model=resolved_model)
+            logger.info(f"🤖 Optimize-Pass mit {provider_optimize.upper()}/{resolved_model}")
             sanitized_body = sanitizer.sanitize_email(
                 decrypted["body"], level=sanitize_level
             )
@@ -1581,17 +1584,17 @@ def optimize_email(email_id):
                 ",".join(result.get("tags", [])), master_key
             )
 
-            email.dringlichkeit = result["dringlichkeit"]
-            email.wichtigkeit = result["wichtigkeit"]
-            email.kategorie_aktion = result["kategorie_aktion"]
-            email.encrypted_tags = encrypted_tags
-            email.spam_flag = result["spam_flag"]
-            email.encrypted_summary_de = encrypted_summary
-            email.encrypted_text_de = encrypted_text
-            email.score = priority["score"]
-            email.matrix_x = priority["matrix_x"]
-            email.matrix_y = priority["matrix_y"]
-            email.farbe = priority["farbe"]
+            email.optimize_dringlichkeit = result["dringlichkeit"]
+            email.optimize_wichtigkeit = result["wichtigkeit"]
+            email.optimize_kategorie_aktion = result["kategorie_aktion"]
+            email.optimize_encrypted_tags = encrypted_tags
+            email.optimize_spam_flag = result["spam_flag"]
+            email.optimize_encrypted_summary_de = encrypted_summary
+            email.optimize_encrypted_text_de = encrypted_text
+            email.optimize_score = priority["score"]
+            email.optimize_matrix_x = priority["matrix_x"]
+            email.optimize_matrix_y = priority["matrix_y"]
+            email.optimize_farbe = priority["farbe"]
             email.optimize_model = resolved_model
             email.optimize_provider = provider_optimize
             email.optimization_status = models.OptimizationStatus.DONE.value
@@ -1599,14 +1602,17 @@ def optimize_email(email_id):
             email.updated_at = datetime.now(UTC)
 
             db.commit()
-            logger.info(f"✅ Mail {email_id} optimiert: Score={email.score}")
+            logger.info(f"✅ Mail {email_id} optimiert: Score={email.optimize_score}")
 
             return jsonify(
                 {
                     "status": "success",
                     "message": "Email erfolgreich optimiert",
-                    "score": email.score,
-                    "farbe": email.farbe,
+                    "score": email.optimize_score,
+                    "farbe": email.optimize_farbe,
+                    "kategorie_aktion": email.optimize_kategorie_aktion,
+                    "dringlichkeit": email.optimize_dringlichkeit,
+                    "wichtigkeit": email.optimize_wichtigkeit,
                 }
             )
 

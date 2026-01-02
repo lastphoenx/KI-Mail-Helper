@@ -1,8 +1,8 @@
 ﻿# CHANGELOG - Phase 15: UIDPLUS COPYUID & Multi-Folder DB Sync
 
 **Date:** 02. Januar 2026  
-**Duration:** ~2 hours  
-**Status:** ✅ COMPLETE  
+**Duration:** ~4 hours  
+**Status:** ✅ COMPLETE + Phase 16 Bugfixes  
 
 ---
 
@@ -396,3 +396,32 @@ attachFolderDetailsToggleListeners()         // CSP-compliant event binding
 **Phase 15 Complete!** 🎉
 
 All changes tested and validated with real IMAP server operations.
+
+---
+
+## 🐛 Phase 16: Bugfixes & UI Improvements (02.01.2026)
+
+**Issues Found During Testing:**
+
+### Issue 1: Optimize-Pass überschreibt Initial-Analyse
+**Problem:** Optimize-Pass überschrieb `email.dringlichkeit`, `email.wichtigkeit`, `email.score` etc. → Initial-Analyse-Daten gingen verloren
+
+**Solution:** Separate Felder für Optimize-Ergebnisse
+- Neue DB-Spalten: `optimize_dringlichkeit`, `optimize_wichtigkeit`, `optimize_kategorie_aktion`, `optimize_spam_flag`, `optimize_score`, `optimize_matrix_x`, `optimize_matrix_y`, `optimize_farbe`, `optimize_encrypted_summary_de`, `optimize_encrypted_text_de`, `optimize_encrypted_tags`
+- Migration: `ph16_separate_optimize_results.py`
+
+### Issue 2-8: Weitere Bugfixes
+- UTC+1 Zeitkonvertierung (Log vs UI)
+- Score-Sichtbarkeit (CSS-Klasse statt inline-style)
+- Zeitbasierte Logik (neuerer Lauf gewinnt)
+- Modal-Close + Timer für Reprocess/Optimize
+- Logging + Navigation verbessert
+- Kategorie bei Initial-Analyse angezeigt
+
+**Files Changed:**
+- `src/01_web_app.py`, `src/02_models.py`
+- `templates/email_detail.html`, `templates/list_view.html`
+- `migrations/versions/ph15_add_rebase_timestamp.py`
+- `migrations/versions/ph16_separate_optimize_results.py`
+
+✅ **Phase 15 + 16 Complete!** All tested with real IMAP operations.

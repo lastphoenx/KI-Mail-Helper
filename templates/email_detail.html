@@ -263,6 +263,104 @@
                             {% endif %}
                         </td>
                     </tr>
+                    <tr>
+                        <td colspan="2"><hr class="my-2"></td>
+                    </tr>
+                    <tr>
+                        <td><strong>🤖 Initial Analyse:</strong></td>
+                        <td>
+                            {% if email.base_provider and email.base_model %}
+                            <span class="badge bg-info">{{ email.base_provider|upper }}</span>
+                            <code>{{ email.base_model }}</code>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% if email.processed_at %}
+                    <tr>
+                        <td><strong>📅 Analysiert am:</strong></td>
+                        <td>
+                            {% set utc_time = email.processed_at %}
+                            {% set hour = utc_time.hour + 1 %}
+                            {% if hour >= 24 %}{% set hour = hour - 24 %}{% endif %}
+                            {{ '%02d'|format(utc_time.day) }}.{{ '%02d'|format(utc_time.month) }}.{{ utc_time.year }} {{ '%02d'|format(hour) }}:{{ '%02d'|format(utc_time.minute) }}:{{ '%02d'|format(utc_time.second) }}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <td><strong>📊 Initial Einstufung:</strong></td>
+                        <td>
+                            <span class="badge bg-secondary">D: {{ email.dringlichkeit if email.dringlichkeit is not none else '?' }}</span>
+                            <span class="badge bg-secondary">W: {{ email.wichtigkeit if email.wichtigkeit is not none else '?' }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>🎯 Score:</strong></td>
+                        <td>
+                            {% if email.score is not none %}
+                            <span class="badge priority-{{ email.farbe }} fs-4">{{ email.score }}</span>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>🎯 Kategorie:</strong></td>
+                        <td>
+                            <code>{{ email.kategorie_aktion if email.kategorie_aktion else 'N/A' }}</code>
+                        </td>
+                    </tr>
+                    {% if email.optimization_status and email.optimization_status != 'pending' %}
+                    <tr>
+                        <td colspan="2"><hr class="my-2"></td>
+                    </tr>
+                    <tr>
+                        <td><strong>⚙️ Optimize Pass:</strong></td>
+                        <td>
+                            {% if email.optimize_provider and email.optimize_model %}
+                            <span class="badge bg-success">{{ email.optimize_provider|upper }}</span>
+                            <code>{{ email.optimize_model }}</code>
+                            {% else %}
+                            <span class="text-muted">Nicht durchgeführt</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% if email.optimization_completed_at %}
+                    <tr>
+                        <td><strong>📅 Optimiert am:</strong></td>
+                        <td>
+                            {% set utc_time = email.optimization_completed_at %}
+                            {% set hour = utc_time.hour + 1 %}
+                            {% if hour >= 24 %}{% set hour = hour - 24 %}{% endif %}
+                            {{ '%02d'|format(utc_time.day) }}.{{ '%02d'|format(utc_time.month) }}.{{ utc_time.year }} {{ '%02d'|format(hour) }}:{{ '%02d'|format(utc_time.minute) }}:{{ '%02d'|format(utc_time.second) }}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <td><strong>📊 Neue Einstufung:</strong></td>
+                        <td>
+                            <span class="badge bg-secondary">D: {{ email.optimize_dringlichkeit if email.optimize_dringlichkeit is not none else '?' }}</span>
+                            <span class="badge bg-secondary">W: {{ email.optimize_wichtigkeit if email.optimize_wichtigkeit is not none else '?' }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>🎯 Neuer Score:</strong></td>
+                        <td>
+                            {% if email.optimize_score is not none %}
+                            <span class="badge priority-{{ email.optimize_farbe }} fs-4">{{ email.optimize_score }}</span>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>🎯 Neue Kategorie:</strong></td>
+                        <td>
+                            <code>{{ email.optimize_kategorie_aktion if email.optimize_kategorie_aktion else 'N/A' }}</code>
+                        </td>
+                    </tr>
+                    {% endif %}
                 </tbody>
             </table>
         </div>
@@ -274,7 +372,7 @@
                     🔄 Neu verarbeiten
                 </button>
                 <button class="btn btn-outline-secondary w-100 mt-2" id="optimizeBtn">
-                    🔧 Optimize-Pass (bessere Kategorisierung)
+                    🔧 Präzisiere Kategorisierung
                 </button>
                 <button class="btn btn-outline-primary todo-btn w-100 mt-2" data-action="reply">
                     ✍️ Antwort-Entwurf generieren
@@ -356,7 +454,13 @@ function reprocessEmail(emailId) {
     document.getElementById('statusMessage').style.display = 'none';
     document.getElementById('closeAnalysisBtn').style.display = 'none';
     
+    // Timer für elapsed time
     const startTime = Date.now();
+    const timerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('elapsedTime').textContent = elapsed + 's';
+    }, 1000);
+    
     let progress = 0;
     const progressInterval = setInterval(() => {
         progress = Math.min(90, progress + Math.random() * 30);
@@ -374,6 +478,7 @@ function reprocessEmail(emailId) {
     .then(response => response.json())
     .then(data => {
         clearInterval(progressInterval);
+        clearInterval(timerInterval);
         document.getElementById('progressBar').style.width = '100%';
         if (data.status === 'success') {
             document.getElementById('progressPercent').textContent = '100%';
@@ -381,24 +486,34 @@ function reprocessEmail(emailId) {
             document.getElementById('statusMessage').style.display = 'block';
             document.getElementById('statusMessage').className = 'alert alert-success';
             document.getElementById('statusMessage').textContent = 'Email wurde erfolgreich neu verarbeitet!';
-            document.getElementById('closeAnalysisBtn').style.display = 'block';
+            const closeBtn = document.getElementById('closeAnalysisBtn');
+            closeBtn.style.display = 'block';
+            closeBtn.onclick = () => {
+                modal.hide();
+                location.reload();  // Seite neu laden um aktualisierte Daten zu zeigen
+            };
         } else {
             document.getElementById('progressBar').classList.add('bg-danger');
             document.getElementById('progressText').textContent = 'Fehler beim Reprocessing';
             document.getElementById('statusMessage').style.display = 'block';
             document.getElementById('statusMessage').className = 'alert alert-danger';
             document.getElementById('statusMessage').textContent = data.error || 'Fehler beim Reprocessing';
-            document.getElementById('closeAnalysisBtn').style.display = 'block';
+            const closeBtn = document.getElementById('closeAnalysisBtn');
+            closeBtn.style.display = 'block';
+            closeBtn.onclick = () => { modal.hide(); };
         }
     })
     .catch(error => {
         clearInterval(progressInterval);
+        clearInterval(timerInterval);
         document.getElementById('progressBar').classList.add('bg-danger');
         document.getElementById('progressText').textContent = 'Fehler';
         document.getElementById('statusMessage').style.display = 'block';
         document.getElementById('statusMessage').className = 'alert alert-danger';
         document.getElementById('statusMessage').textContent = error.message;
-        document.getElementById('closeAnalysisBtn').style.display = 'block';
+        const closeBtn = document.getElementById('closeAnalysisBtn');
+        closeBtn.style.display = 'block';
+        closeBtn.onclick = () => { modal.hide(); };
     });
 }
 
@@ -437,6 +552,13 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('progressPercent').textContent = '0%';
         document.getElementById('progressText').textContent = 'Optimize-Pass läuft...';
         
+        // Timer für elapsed time
+        const startTime = Date.now();
+        const timerInterval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            document.getElementById('elapsedTime').textContent = elapsed + 's';
+        }, 1000);
+        
         let progress = 0;
         const progressInterval = setInterval(() => {
             progress = Math.min(90, progress + Math.random() * 25);
@@ -454,6 +576,7 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             clearInterval(progressInterval);
+            clearInterval(timerInterval);
             document.getElementById('progressBar').style.width = '100%';
             document.getElementById('progressPercent').textContent = '100%';
             
@@ -461,8 +584,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('progressText').textContent = 'Optimize-Pass abgeschlossen!';
                 document.getElementById('statusMessage').style.display = 'block';
                 document.getElementById('statusMessage').className = 'alert alert-success';
-                document.getElementById('statusMessage').innerHTML = `✓ Neue Kategorie: <strong>${data.new_classification}</strong>`;
-                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('statusMessage').innerHTML = `✓ Neue Kategorie: <strong>${data.kategorie_aktion || 'undefined'}</strong>`;
+                const closeBtn = document.getElementById('closeAnalysisBtn');
+                closeBtn.style.display = 'block';
+                closeBtn.onclick = () => {
+                    modal.hide();
+                    // Bleibe auf Detail-Seite und lade neu für aktualisierte Daten
+                    location.reload();
+                };
                 btn.disabled = false;
                 btn.textContent = '🔧 Optimize-Pass (bessere Kategorisierung)';
             } else {
@@ -471,19 +600,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('statusMessage').style.display = 'block';
                 document.getElementById('statusMessage').className = 'alert alert-danger';
                 document.getElementById('statusMessage').textContent = data.error || 'Fehler beim Optimize';
-                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                const closeBtn = document.getElementById('closeAnalysisBtn');
+                closeBtn.style.display = 'block';
+                closeBtn.onclick = () => { modal.hide(); };
                 btn.disabled = false;
                 btn.textContent = '🔧 Optimize-Pass (bessere Kategorisierung)';
             }
         })
         .catch(error => {
             clearInterval(progressInterval);
+            clearInterval(timerInterval);
             document.getElementById('progressBar').classList.add('bg-danger');
             document.getElementById('progressText').textContent = 'Fehler';
             document.getElementById('statusMessage').style.display = 'block';
             document.getElementById('statusMessage').className = 'alert alert-danger';
             document.getElementById('statusMessage').textContent = error.message;
-            document.getElementById('closeAnalysisBtn').style.display = 'block';
+            const closeBtn = document.getElementById('closeAnalysisBtn');
+            closeBtn.style.display = 'block';
+            closeBtn.onclick = () => { modal.hide(); };
             btn.disabled = false;
             btn.textContent = '🔧 Optimize-Pass (bessere Kategorisierung)';
         });

@@ -698,6 +698,7 @@ class ProcessedEmail(Base):
     done = Column(Boolean, default=False)
     done_at = Column(DateTime, nullable=True)
     processed_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    rebase_at = Column(DateTime, nullable=True)
     updated_at = Column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
@@ -712,6 +713,19 @@ class ProcessedEmail(Base):
     base_model = Column(String(100), nullable=True)
     optimize_provider = Column(String(50), nullable=True)
     optimize_model = Column(String(100), nullable=True)
+
+    # Optimize-Pass Ergebnisse (separate Felder, überschreiben nicht die Initial-Analyse)
+    optimize_dringlichkeit = Column(Integer, nullable=True)
+    optimize_wichtigkeit = Column(Integer, nullable=True)
+    optimize_kategorie_aktion = Column(String(50), nullable=True)
+    optimize_spam_flag = Column(Boolean, nullable=True)
+    optimize_encrypted_summary_de = Column(Text, nullable=True)
+    optimize_encrypted_text_de = Column(Text, nullable=True)
+    optimize_encrypted_tags = Column(Text, nullable=True)
+    optimize_score = Column(Integer, nullable=True)
+    optimize_matrix_x = Column(Integer, nullable=True)
+    optimize_matrix_y = Column(Integer, nullable=True)
+    optimize_farbe = Column(String(10), nullable=True)
 
     # User-Korrektionen für ML-Training (Phase 8)
     # Diese Spalten speichern Nutzer-Feedback zur manuellen Korrektur von AI-Ergebnissen

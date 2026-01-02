@@ -182,9 +182,15 @@
         <li class="list-group-item">
             <div class="row align-items-center">
                 <div class="col-md-1 text-center">
+                    {% if email.optimization_status == 'done' and email.optimize_score is not none and email.optimization_completed_at and email.processed_at and email.optimization_completed_at > email.processed_at %}
+                    <span class="badge priority-{{ email.optimize_farbe }} fs-5">
+                        {{ email.optimize_score }}
+                    </span>
+                    {% else %}
                     <span class="badge priority-{{ email.farbe }} fs-5">
                         {{ email.score }}
                     </span>
+                    {% endif %}
                 </div>
                 <div class="col-md-8">
                     <h6 class="mb-1">
@@ -198,8 +204,13 @@
                     </small>
                     <p class="mb-2 mt-2">{{ email._decrypted_summary_de|default('Keine Zusammenfassung verfügbar')|truncate(200) }}</p>
                     <div class="small text-muted mb-2">
+                        {% if email.optimization_status == 'done' and email.optimize_dringlichkeit is not none and email.optimization_completed_at and email.processed_at and email.optimization_completed_at > email.processed_at %}
+                        Dringlichkeit: {{ email.optimize_dringlichkeit }} | Wichtigkeit: {{ email.optimize_wichtigkeit }} |
+                        Aktion: {{ email.optimize_kategorie_aktion|replace('_',' ') if email.optimize_kategorie_aktion else email.kategorie_aktion|replace('_',' ') }} | Spam: {{ 'Ja' if email.optimize_spam_flag else 'Nein' }}
+                        {% else %}
                         Dringlichkeit: {{ email.dringlichkeit }} | Wichtigkeit: {{ email.wichtigkeit }} |
                         Aktion: {{ email.kategorie_aktion|replace('_',' ') }} | Spam: {{ 'Ja' if email.spam_flag else 'Nein' }}
+                        {% endif %}
                     </div>
                     {% if email.email_tags %}
                     <div class="mt-2">
