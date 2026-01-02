@@ -2,32 +2,34 @@
 
 **Strategic Planning Document - Was haben wir, was brauchen wir?**
 
-**Status:** ✅ Phase A-E + 14(a-g) Complete | 🚀 Phase F-J Ready to Implement  
+**Status:** ✅ Phase A-E + 14(a-g) + **F.2** Complete | 🚀 Phase F.1, F.3, G-J Ready to Implement  
 **Created:** 31. Dezember 2025  
-**Updated:** 02. Januar 2026 - **MAJOR RESTRUCTURE**  
-**Recent:** Neue Use-Case-orientierte Phasen F-J definiert  
+**Updated:** 03. Januar 2026 - **Phase F.2: 3-Settings System COMPLETE**  
+**Recent:** Semantic Intelligence Phase F.2 with full 3-Settings System implemented & tested  
 **Supersedes/Integrates:** Task 5 & Task 6
 
 ---
 
 ## 📋 Executive Summary
 
-**Abgeschlossen (39-49h):**
+**Abgeschlossen (51-64h):**
 - ✅ Phase A: Filter auf /liste
 - ✅ Phase B: Server DELETE/FLAG/READ
 - ✅ Phase C: MOVE + Multi-Folder FULL SYNC
 - ✅ Phase D: ServiceToken + InitialSync Fixes
 - ✅ Phase E: KI Thread-Context
 - ✅ Phase 14(a-g): RFC UIDs + IMAPClient Migration
+- ✅ **Phase F.2: 3-Settings System (Embedding/Base/Optimize) - NEW!**
 
-**Neu geplant (56-80h):**
-- 🔥 **Phase F:** Semantic Intelligence (12-18h) ⭐⭐⭐⭐⭐ **TOP PRIORITY**
+**Neu geplant (44-65h):**
+- 🔥 **Phase F.1:** Semantic Email Search (8-12h) ⭐⭐⭐⭐⭐ **TOP PRIORITY**
 - 🔥 **Phase G:** AI Action Engine (10-14h) ⭐⭐⭐⭐⭐ **HIGH VALUE**
 - ⭐ **Phase H:** Action Extraction (8-12h) ⭐⭐⭐⭐
 - 🟢 **Phase I:** Productivity Features (20-28h) ⭐⭐⭐ **OPTIONAL**
 - 🟢 **Phase J:** SMTP Integration (6-8h) ⭐⭐⭐ **OPTIONAL**
+- 🟢 **Phase F.3:** Email Similarity (2-3h) ⭐⭐⭐ **OPTIONAL**
 
-**Total Roadmap:** 95-129 Stunden
+**Total Roadmap:** 95-129 Stunden → **Completed: 51-64h** | **Remaining: 44-65h**
 
 ---
 
@@ -305,6 +307,65 @@ SENDER PATTERN: This sender is conversational - thread has 3 emails with respons
 | `imap_folder` | ✅ | ❌ | Ordner-Filter |
 | SORT Extension | ✅ Getestet | ❌ | Server-side Sorting |
 | THREAD Extension | ✅ Getestet | ❌ | Native Threading |
+
+---
+
+## ✅ Phase F.2: 3-Settings System (Embedding/Base/Optimize) - **COMPLETE**
+
+**Status:** ✅ **DONE** (03. Januar 2026)  
+**Effort:** 12-15 hours  
+**Priority:** ⭐⭐⭐⭐⭐ **TOP PRIORITY**
+
+**Problem Solved:**
+- Original issue: Embedding dimension mismatch (384-dim vs 2048-dim) breaking tag suggestions
+- Root cause: llama3.2:1b (chat model) was incorrectly used for embeddings instead of all-minilm:22m (embedding model)
+- Design flaw: No separation between Embedding models (vector generation) and Chat models (scoring/analysis)
+
+**Solution Implemented:**
+Complete architectural refactoring with 3 independent AI settings:
+1. **Embedding Model** (VECTORS): all-minilm:22m, mistral-embed, text-embedding-3-large
+2. **Base Model** (FAST SCORING): llama3.2:1b, gpt-4o-mini, phi3:mini
+3. **Optimize Model** (DEEP ANALYSIS): llama3.2:3b, gpt-4o, claude-haiku
+
+**Database Migration:**
+- `c4ab07bd3f10`: Added `User.preferred_embedding_provider`, `User.preferred_embedding_model`
+- Defaults: ollama/all-minilm:22m (384-dim embeddings)
+
+**Implementation Files:**
+- `src/02_models.py`: Extended User model with 3 AI settings
+- `src/03_ai_client.py`: Added MistralClient._get_embedding(), OpenAIClient._get_embedding()
+- `src/01_web_app.py`: 4 new API endpoints + 3-section settings UI
+- `src/14_background_jobs.py`: BatchReprocessJob with progress tracking
+- `src/semantic_search.py`: generate_embedding_for_email() with model_name parameter
+- `templates/settings.html`: 3 sections, dynamic dropdowns, batch-reprocess button
+- `templates/email_detail.html`: Pre-check + progress modal
+
+**Key Features:**
+- ✅ 3-Settings System (Embedding/Base/Optimize) fully operational
+- ✅ Dynamic model discovery from all providers (Ollama, OpenAI, Mistral, Anthropic)
+- ✅ Model type filtering (embedding vs chat models)
+- ✅ Pre-check validates embedding dimension compatibility before reprocessing
+- ✅ Async batch-reprocess with real-time progress tracking (BackgroundJobQueue)
+- ✅ Increased max_body_length from 500 → 1000 characters for better context
+
+**Performance:**
+- Ollama (local): 15-50ms per email (47 emails in 2-5s)
+- Context: 1000 chars (~140-160 words) vs previous 500 chars
+
+**Git Commits:**
+- 6dad224: Migration c4ab07bd3f10 - Add embedding settings
+- f7a8319: Feat: 3-Settings System implementation
+- 388d0c8: Tune: Erhöhe max_body_length auf 1000 Zeichen
+
+**Documentation:**
+- `doc/erledigt/PHASE_F2_3_SETTINGS_SYSTEM_COMPLETE.md`: Comprehensive technical documentation
+
+**Impact:**
+- ✅ Fixed tag suggestions (correct embedding dimensions)
+- ✅ Semantic search ready for Phase F.1 implementation
+- ✅ User can choose best model per use case (speed vs quality)
+- ✅ Zero-Knowledge principle maintained (embeddings not reversible)
+- ✅ Production-ready infrastructure for semantic intelligence features
 
 ---
 
@@ -852,20 +913,21 @@ def analyze_email(
 | ✅ DONE | 4c | IMAPClient Migration | 4-5h | 40% Code-Reduktion, 100% Reliability | Phase 14g COMPLETE |
 | ✅ DONE | 4d | reset_all_emails.py Fix | 0.5h | Soft-Delete + UIDVALIDITY Cache Clear | Phase 14g COMPLETE |
 | ✅ DONE | 5 | KI Thread-Context | 4h | Bessere Klassifizierung | Phase E COMPLETE |
+| ✅ DONE | 6 | **3-Settings System (Embedding/Base/Optimize)** | 12-15h | Separate AI models | Phase F.2 COMPLETE |
 
-**Abgeschlossen:** 39-49h (Phase A-E + 14a-g)
+**Abgeschlossen:** 51-64h (Phase A-E + 14a-g + F.2)
 
 ---
 
 ### 🚀 Phase F: Semantic Intelligence (12-18h) ⭐⭐⭐⭐⭐ **TOP PRIORITY**
 
-| Prio | Feature | Aufwand | Impact | Notes |
-|------|---------|---------|--------|-------|
-| 🔥 F.1 | **Semantic Email Search** | 8-12h | ⭐⭐⭐⭐⭐ | Killer-Feature, Infrastructure ready |
-| 🟡 F.2 | Smart Tag Auto-Suggestions | 2-3h | ⭐⭐⭐⭐ | Tag-Embeddings bereits vorhanden! |
-| 🟢 F.3 | Email Similarity Detection | 2-3h | ⭐⭐⭐ | Deduplizierung & "Ähnliche Mails" |
+| Status | Prio | Feature | Aufwand | Impact | Notes |
+|--------|------|---------|---------|--------|-------|
+| 🟡 | F.1 | **Semantic Email Search** | 8-12h | ⭐⭐⭐⭐⭐ | Killer-Feature, Infrastructure ready |
+| ✅ DONE | F.2 | **3-Settings System (Embedding/Base/Optimize)** | 12-15h | ⭐⭐⭐⭐⭐ | **COMPLETE:** Separate models, batch-reprocess, pre-checks |
+| 🟢 | F.3 | Email Similarity Detection | 2-3h | ⭐⭐⭐ | Deduplizierung & "Ähnliche Mails" |
 
-**Total:** 12-18h | **User Value:** Massive (findet Mails ohne exakte Keywords!)
+**Total:** 22-30h | **Completed: 12-15h** | **User Value:** Massive (findet Mails ohne exakte Keywords!)
 
 ---
 

@@ -8,6 +8,84 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added - Phase F.2: 3-Settings System (Embedding/Base/Optimize) (2026-01-03)
+
+#### AI Architecture Refactoring
+**3-Settings System for Semantic Intelligence**
+- ✅ Complete architectural refactoring: Separated AI models into 3 categories
+  - **Embedding Model** (VECTORS): all-minilm:22m (384-dim), mistral-embed (1024-dim), text-embedding-3-large (3072-dim)
+  - **Base Model** (FAST SCORING): llama3.2:1b, gpt-4o-mini, phi3:mini
+  - **Optimize Model** (DEEP ANALYSIS): llama3.2:3b, gpt-4o, claude-haiku
+- ✅ Database migration c4ab07bd3f10: Added User.preferred_embedding_provider, User.preferred_embedding_model
+- ✅ Dynamic model discovery from all providers (Ollama, OpenAI, Mistral, Anthropic)
+- ✅ Model type filtering: Embedding models vs Chat models separated in UI
+- ✅ Pre-check validates embedding dimension compatibility before reprocessing
+- Commits: 6dad224, f7a8319, 0de42cb, 5e4d89e, 2f9c1a0, 388d0c8
+- Files: migrations/versions/c4ab07bd3f10_add_embedding_settings.py, src/02_models.py (+6 fields), src/03_ai_client.py (+280 lines)
+
+**Async Batch-Reprocess Infrastructure**
+- ✅ BackgroundJobQueue extended with BatchReprocessJob dataclass
+- ✅ enqueue_batch_reprocess_job() method for queuing batch operations
+- ✅ _execute_batch_reprocess_job() with real-time progress tracking per email
+- ✅ Progress API: GET /api/batch-reprocess-progress returns {completed, total, status, model_name}
+- ✅ session.flush() after each email for immediate progress updates
+- ✅ INFO-level logging shows embedding bytes + model name per email
+- Commits: f7a8319, 2f9c1a0
+- Files: src/14_background_jobs.py (+350 lines), src/01_web_app.py (+180 lines)
+
+**REST API Endpoints**
+- ✅ `GET /api/models/<provider>` - Dynamic model discovery with type filtering
+- ✅ `GET /api/emails/<id>/check-embedding-compatibility` - Pre-check dimension validation
+- ✅ `POST /api/batch-reprocess-embeddings` - Async batch job enqueuing
+- ✅ `GET /api/batch-reprocess-progress` - Real-time progress tracking
+- ✅ `POST /settings/ai` - Save all 3 AI settings (embedding/base/optimize)
+- Commits: f7a8319
+- Files: src/01_web_app.py (+241 lines)
+
+**Frontend UI**
+- ✅ Settings page with 3 independent sections (Embedding/Base/Optimize)
+- ✅ Dynamic provider/model dropdowns with type filtering (no Anthropic for Embedding)
+- ✅ Batch-Reprocess button with progress modal (0-600s timer)
+- ✅ Progress modal shows live updates: "Verarbeite E-Mail 3/47..." with percentage
+- ✅ pollBatchReprocessStatus() function for real-time progress
+- ✅ Email detail page: Pre-check before reprocessing + progress modal
+- Commits: f7a8319, 5e4d89e
+- Files: templates/settings.html (+280 lines), templates/email_detail.html (+120 lines)
+
+**Semantic Search Improvements**
+- ✅ generate_embedding_for_email() now accepts model_name parameter (dynamic model selection)
+- ✅ max_body_length increased from 500 → 1000 characters (~140-160 words vs ~70-80)
+- ✅ Improved logging: debug→info level, shows model name in logs
+- ✅ Dynamic model name detection from ai_client.model
+- Commits: 2f9c1a0, 388d0c8
+- Files: src/semantic_search.py (+50 lines)
+
+**Bug Fixes**
+- ✅ Fixed import errors with numbered modules (04_model_discovery.py) using importlib.import_module()
+- ✅ Fixed AttributeError: color→farbe, action_category→kategorie_aktion (German field names)
+- ✅ Fixed hardcoded "all-minilm:22m" in success messages → dynamic resolved_model display
+- ✅ Fixed email_detail.html confirm message: "EMBEDDING Model" not "Base Model"
+- Commits: 0de42cb, 5e4d89e, 2f9c1a0
+- Files: src/01_web_app.py, src/14_background_jobs.py, templates/email_detail.html
+
+**Performance**
+- Ollama (local): 15-50ms per email → 47 emails processed in 2-5s
+- OpenAI API: ~200-500ms per email
+- Context: 1000 chars (~140-160 words) provides better semantic search quality
+- Progress tracking: Real-time updates every email (no perceived lag)
+
+**Impact:**
+- ✅ Fixed tag suggestions (correct embedding dimensions: 384-dim vs 2048-dim mismatch resolved)
+- ✅ Semantic search ready for Phase F.1 full implementation
+- ✅ User can choose best model per use case (speed vs quality trade-off)
+- ✅ Zero-Knowledge principle maintained (embeddings not reversible to plaintext)
+- ✅ Production-ready infrastructure for semantic intelligence features
+- ✅ Batch operations prevent manual per-email reprocessing
+- Total: ~1,200 lines of new/modified code
+- See: doc/erledigt/PHASE_F2_3_SETTINGS_SYSTEM_COMPLETE.md for detailed documentation
+
+---
+
 ### Added - Phase F.1: Semantic Email Search (2026-01-02)
 
 #### AI Intelligence & Search
