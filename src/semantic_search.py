@@ -30,7 +30,9 @@ import numpy as np
 from datetime import datetime, UTC
 from typing import Optional, List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
-from src import models
+import importlib
+
+models = importlib.import_module(".02_models", "src")
 
 logger = logging.getLogger(__name__)
 
