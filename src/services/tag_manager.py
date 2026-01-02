@@ -530,6 +530,7 @@ class TagManager:
         for tag in tags:
             # Skip bereits zugewiesene Tags
             if tag.id in exclude_set:
+                logger.debug(f"⏭️  Phase F.2: Skipping already assigned tag '{tag.name}'")
                 continue
             
             # Tag-Embedding holen
@@ -541,9 +542,12 @@ class TagManager:
             # Cosine Similarity berechnen
             similarity = TagEmbeddingCache.compute_similarity(email_embedding, tag_embedding)
             
+            # LOG ALLE Similarities (nicht nur matches!)
+            logger.info(f"📊 Phase F.2: Tag '{tag.name}' → similarity={similarity:.4f} (threshold={min_similarity})")
+            
             if similarity >= min_similarity:
                 similarities.append((tag, similarity))
-                logger.info(f"✅ Phase F.2: Tag '{tag.name}' matched with {similarity:.3f} similarity")
+                logger.info(f"✅ Phase F.2: Tag '{tag.name}' MATCHED!")
         
         # Nach Ähnlichkeit sortieren (höchste zuerst)
         similarities.sort(key=lambda x: x[1], reverse=True)
