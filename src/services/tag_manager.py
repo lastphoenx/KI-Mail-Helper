@@ -52,9 +52,10 @@ class TagEmbeddingCache:
     def _get_ai_client_for_user(cls, user_id: int, db: Session = None):
         """Holt AI-Client für Tag-Embeddings
         
-        WICHTIG: Muss GLEICHE Dimension wie Email-Embeddings haben!
-        Email-Embeddings: all-minilm:22m (384-dim)
-        Tag-Embeddings: MUSS AUCH all-minilm:22m sein!
+        STRATEGIE: Verwendet das GLEICHE Embedding-Model wie die Emails!
+        - Liest embedding_model aus vorhandenen Emails des Users
+        - Garantiert Dimensions-Kompatibilität (384, 768, 1536, etc.)
+        - Model-Wechsel: Settings ändern + Emails neu verarbeiten
         """
         # Cache Check
         if user_id in cls._ai_client_cache:
@@ -63,11 +64,29 @@ class TagEmbeddingCache:
         try:
             ai_client_mod = import_module(".03_ai_client", "src")
             
-            # FEST: all-minilm:22m (MUSS mit Email-Embeddings kompatibel sein!)
-            client = ai_client_mod.LocalOllamaClient(model="all-minilm:22m")
+            # 1. Ermittle Embedding-Model aus vorhandenen Emails
+            embedding_model = "all-minilm:22m"  # Default-Fallback
+            
+            if db:
+                # Sample: Erste Email mit Embedding holen
+                sample_email = db.query(models.RawEmail).filter(
+                    models.RawEmail.user_id == user_id,
+                    models.RawEmail.email_embedding.isnot(None),
+                    models.RawEmail.embedding_model.isnot(None)
+                ).first()
+                
+                if sample_email:
+                    embedding_model = sample_email.embedding_model
+                    logger.info(f"🔍 Tag-Embeddings: Using model from emails: {embedding_model}")
+                else:
+                    logger.warning(f"⚠️  No emails with embeddings found for user {user_id}, using default: {embedding_model}")
+            
+            # 2. AI-Client mit dem ermittelten Model erstellen
+            # WICHTIG: Dies MUSS ein Embedding-Model sein (nicht Chat!)
+            client = ai_client_mod.LocalOllamaClient(model=embedding_model)
             
             cls._ai_client_cache[user_id] = client
-            logger.debug(f"✅ Tag-Embeddings: all-minilm:22m (384-dim, kompatibel)")
+            logger.debug(f"✅ Tag-Embeddings: {embedding_model} (auto-detected from emails)")
             return client
             
         except Exception as e:

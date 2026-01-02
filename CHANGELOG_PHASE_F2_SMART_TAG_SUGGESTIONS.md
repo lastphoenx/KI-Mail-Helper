@@ -311,3 +311,60 @@ Email: "Projektbudget Q1 2026 - Finanzplanung"
 - ✅ **Beste Impact/Aufwand Ratio** in der gesamten Roadmap
 
 **Nächster Schritt:** Phase G.1 (Reply Draft Generator) oder Phase F.3 (Email Similarity)
+---
+
+## 🔧 Embedding-Model Management
+
+### **WICHTIG: Dimensions-Kompatibilität**
+
+**Constraint:** Tag-Embeddings MÜSSEN gleiche Dimension wie Email-Embeddings haben!
+- Email: `all-minilm:22m` (384-dim) ← gespeichert in `RawEmail.embedding_model`
+- Tags: **Automatisch gleiches Model** ← aus DB ausgelesen
+
+**Implementierung:**
+```python
+# src/services/tag_manager.py - _get_ai_client_for_user()
+sample_email = db.query(RawEmail).filter_by(
+    user_id=user_id,
+    email_embedding__isnot=None
+).first()
+
+embedding_model = sample_email.embedding_model  # z.B. "all-minilm:22m"
+client = LocalOllamaClient(model=embedding_model)
+```
+
+### **Model-Wechsel Strategie**
+
+#### ⚠️ Wichtige Regel
+**Nur Embedding-Modelle für Embeddings verwenden!**
+- ✅ `all-minilm:22m`, `bge-large-en-v1.5`, `text-embedding-3-small`
+- ❌ `llama3.2:1b`, `gpt-4`, `claude-3` (Chat-Modelle haben andere Dimensionen!)
+
+#### Option A: Globaler Model-Wechsel
+1. **Settings:** Base Model auf neues Embedding-Model ändern
+2. **Script:** `python scripts/regenerate_embeddings.py --model "bge-large-en-v1.5"`
+3. **Effekt:** ALLE Email-Embeddings neu generiert (kann Stunden dauern!)
+
+#### Option B: Inkrementeller Wechsel (EMPFOHLEN)
+1. **Settings:** Base Model auf neues Embedding-Model ändern
+2. **Email Detail:** Button "🔄 Email neu verarbeiten" (zukünftig)
+3. **Effekt:** Nur diese Email bekommt neues Embedding
+4. **Auto-Kompatibilität:** Tag-Suggestions nutzen automatisch das Model der Email
+
+**Vorteil Option B:**
+- Kein Breaking Change
+- Schrittweiser Übergang (alte + neue Embeddings koexistieren)
+- Learned Embeddings aggregieren nur Emails mit GLEICHER Dimension
+
+### **Troubleshooting**
+
+**Fehler: `shapes (384,) and (2048,) not aligned`**
+- **Ursache:** Email hat 384-dim, Tag-System versucht 2048-dim zu verwenden
+- **Lösung:** Cache invalidieren (Server restart) → System erkennt automatisch 384-dim
+
+**Keine Tag-Suggestions?**
+- **Check:** `RawEmail.embedding_model` vorhanden?
+- **Check:** `embedding_model` ist Embedding-Model (nicht Chat-Model)?
+- **Check:** Similarity-Threshold zu hoch? (Standard: 0.10-0.18)
+
+---
