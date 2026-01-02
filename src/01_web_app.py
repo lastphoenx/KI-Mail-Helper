@@ -2646,6 +2646,166 @@ def api_embedding_stats():
 # ===== End Phase F.1 Semantic Search =====
 
 
+# ===== Phase G.1: Reply Draft Generator =====
+
+@app.route("/api/emails/<int:email_id>/generate-reply", methods=["POST"])
+@login_required
+def api_generate_reply(email_id):
+    """
+    API: Generiert Antwort-Entwurf auf eine Email (Phase G.1)
+    
+    Request Body:
+    {
+        "tone": "formal|friendly|brief|decline"  // Optional, default: "formal"
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "reply_text": "Sehr geehrte Frau Müller,\n\n...",
+        "tone_used": "formal",
+        "tone_name": "Formell",
+        "tone_icon": "📜",
+        "timestamp": "2026-01-02T10:30:00"
+    }
+    """
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"success": False, "error": "Unauthorized"}), 401
+        
+        # Parse request body
+        data = request.get_json() or {}
+        tone = data.get("tone", "formal")
+        
+        # Validiere Email-Zugriff
+        processed = (
+            db.query(models.ProcessedEmail)
+            .join(models.RawEmail)
+            .filter(
+                models.ProcessedEmail.id == email_id,
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.deleted_at == None,
+                models.ProcessedEmail.deleted_at == None
+            )
+            .first()
+        )
+        
+        if not processed or not processed.raw_email:
+            return jsonify({
+                "success": False,
+                "error": "Email nicht gefunden"
+            }), 404
+        
+        raw_email = processed.raw_email
+        
+        # Zero-Knowledge: Entschlüssele Email-Daten
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({
+                "success": False,
+                "error": "Master-Key nicht verfügbar"
+            }), 401
+        
+        try:
+            decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
+                raw_email.encrypted_subject or "", master_key
+            )
+            decrypted_body = encryption.EmailDataManager.decrypt_email_body(
+                raw_email.encrypted_body or "", master_key
+            )
+            decrypted_sender = encryption.EmailDataManager.decrypt_email_sender(
+                raw_email.encrypted_sender or "", master_key
+            )
+        except Exception as e:
+            logger.error(f"Decryption failed for email {email_id}: {e}")
+            return jsonify({
+                "success": False,
+                "error": "Entschlüsselung fehlgeschlagen"
+            }), 500
+        
+        # Phase E: Build Thread-Context für bessere Antworten
+        thread_context = ""
+        try:
+            processing_mod = importlib.import_module(".12_processing", "src")
+            thread_context = processing_mod.build_thread_context(
+                session=db,
+                raw_email=raw_email,
+                master_key=master_key,
+                max_context_emails=3  # Nur 3 für Reply (nicht 5 wie bei Processing)
+            )
+        except Exception as ctx_err:
+            logger.warning(f"Thread-Context build failed: {ctx_err}")
+            # Nicht kritisch, fahre ohne Context fort
+        
+        # Generate Reply
+        try:
+            reply_generator_mod = importlib.import_module("src.reply_generator")
+            
+            # Get AI Client (gleicher wie für Processing)
+            ai_client = get_active_ai_client()
+            
+            generator = reply_generator_mod.ReplyGenerator(ai_client=ai_client)
+            result = generator.generate_reply(
+                original_subject=decrypted_subject,
+                original_body=decrypted_body,
+                original_sender=decrypted_sender,
+                tone=tone,
+                thread_context=thread_context if thread_context else None
+            )
+            
+            if result["success"]:
+                logger.info(
+                    f"✅ Reply-Entwurf generiert für Email {email_id} "
+                    f"(Ton: {result['tone_used']}, {len(result['reply_text'])} chars)"
+                )
+            
+            return jsonify(result), 200 if result["success"] else 500
+            
+        except Exception as gen_err:
+            logger.error(f"Reply generation failed: {gen_err}")
+            return jsonify({
+                "success": False,
+                "error": f"Generierung fehlgeschlagen: {str(gen_err)}",
+                "reply_text": "",
+                "tone_used": tone,
+                "timestamp": datetime.now(UTC).isoformat()
+            }), 500
+            
+    finally:
+        db.close()
+
+
+@app.route("/api/reply-tones", methods=["GET"])
+@login_required
+def api_get_reply_tones():
+    """
+    API: Gibt verfügbare Reply-Töne zurück (Phase G.1)
+    
+    Returns:
+    {
+        "tones": {
+            "formal": {"name": "Formell", "icon": "📜"},
+            "friendly": {"name": "Freundlich", "icon": "😊"},
+            ...
+        }
+    }
+    """
+    try:
+        reply_generator_mod = importlib.import_module("src.reply_generator")
+        tones = reply_generator_mod.ReplyGenerator.get_available_tones()
+        
+        return jsonify({"tones": tones}), 200
+    except Exception as e:
+        logger.error(f"Failed to get reply tones: {e}")
+        return jsonify({"tones": {}}), 500
+
+
+# ===== End Phase G.1 =====
+
+
 def _trigger_online_learning(email, data: dict):
     """Phase 11b: Online-Learning nach User-Korrektur.
 

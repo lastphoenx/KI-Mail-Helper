@@ -1117,4 +1117,207 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
+<!-- Phase G.1: Reply Draft Generator Modal -->
+<div class="modal fade" id="replyDraftModal" tabindex="-1" aria-labelledby="replyDraftModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="replyDraftModalLabel">✍️ Antwort-Entwurf generieren</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Ton-Auswahl -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Ton der Antwort:</label>
+                    <div class="btn-group w-100" role="group" id="toneButtonGroup">
+                        <button type="button" class="btn btn-outline-primary tone-btn" data-tone="formal">
+                            📜 Formell
+                        </button>
+                        <button type="button" class="btn btn-outline-primary tone-btn" data-tone="friendly">
+                            😊 Freundlich
+                        </button>
+                        <button type="button" class="btn btn-outline-primary tone-btn" data-tone="brief">
+                            ⚡ Kurz & Knapp
+                        </button>
+                        <button type="button" class="btn btn-outline-primary tone-btn" data-tone="decline">
+                            ❌ Höflich ablehnen
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Loading Indicator -->
+                <div id="replyLoading" class="text-center py-4" style="display: none;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Generiere Antwort...</span>
+                    </div>
+                    <p class="mt-2 text-muted">KI generiert Antwort-Entwurf...</p>
+                </div>
+                
+                <!-- Generated Reply -->
+                <div id="replyContent" style="display: none;">
+                    <div class="alert alert-info mb-3">
+                        <small><strong>💡 Hinweis:</strong> Dies ist ein KI-generierter Entwurf. Bitte überprüfen und ggf. anpassen!</small>
+                    </div>
+                    <label class="form-label fw-bold">Generierter Antwort-Text:</label>
+                    <textarea id="replyText" class="form-control" rows="10" 
+                              placeholder="Antwort-Entwurf wird hier erscheinen..."
+                              style="font-family: inherit;"></textarea>
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <span id="replyCharCount">0</span> Zeichen • 
+                            Ton: <strong id="replyToneName">-</strong>
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Error Message -->
+                <div id="replyError" class="alert alert-danger" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Schließen</button>
+                <button type="button" class="btn btn-primary" id="copyReplyBtn" style="display: none;">
+                    📋 In Zwischenablage kopieren
+                </button>
+                <!-- Future: SMTP Send Button (Phase J) -->
+                <!-- <button type="button" class="btn btn-success" id="sendReplyBtn" style="display: none;">
+                    ✉️ Per E-Mail senden
+                </button> -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Phase G.1: Reply Generator JavaScript -->
+<script nonce="{{ csp_nonce() }}">
+document.addEventListener('DOMContentLoaded', function() {
+    const emailId = {{ email.id }};
+    const replyModal = new bootstrap.Modal(document.getElementById('replyDraftModal'));
+    
+    let currentTone = 'formal';
+    let generatedReply = '';
+    
+    // Connect "Antwort-Entwurf generieren" button
+    const replyBtn = document.querySelector('.todo-btn[data-action="reply"]');
+    if (replyBtn) {
+        replyBtn.addEventListener('click', function() {
+            // Reset modal state
+            resetReplyModal();
+            // Show modal
+            replyModal.show();
+        });
+    }
+    
+    // Tone button handlers
+    document.querySelectorAll('.tone-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            // Update active state
+            document.querySelectorAll('.tone-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            
+            currentTone = this.dataset.tone;
+            
+            // Generate reply with selected tone
+            await generateReply(currentTone);
+        });
+    });
+    
+    // Copy to clipboard button
+    document.getElementById('copyReplyBtn').addEventListener('click', function() {
+        const replyText = document.getElementById('replyText').value;
+        
+        navigator.clipboard.writeText(replyText).then(() => {
+            // Visual feedback
+            const btn = this;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '✅ Kopiert!';
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-success');
+            
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-primary');
+            }, 2000);
+        }).catch(err => {
+            alert('Fehler beim Kopieren: ' + err.message);
+        });
+    });
+    
+    // Auto-generate with "formal" tone when modal opens
+    document.getElementById('replyDraftModal').addEventListener('shown.bs.modal', function() {
+        // Select first tone button
+        const firstToneBtn = document.querySelector('.tone-btn[data-tone="formal"]');
+        if (firstToneBtn) {
+            firstToneBtn.click();
+        }
+    });
+    
+    function resetReplyModal() {
+        document.getElementById('replyLoading').style.display = 'none';
+        document.getElementById('replyContent').style.display = 'none';
+        document.getElementById('replyError').style.display = 'none';
+        document.getElementById('copyReplyBtn').style.display = 'none';
+        document.getElementById('replyText').value = '';
+        document.querySelectorAll('.tone-btn').forEach(b => b.classList.remove('active'));
+        generatedReply = '';
+    }
+    
+    async function generateReply(tone) {
+        // Show loading
+        document.getElementById('replyLoading').style.display = 'block';
+        document.getElementById('replyContent').style.display = 'none';
+        document.getElementById('replyError').style.display = 'none';
+        document.getElementById('copyReplyBtn').style.display = 'none';
+        
+        try {
+            const response = await fetch(`/api/emails/${emailId}/generate-reply`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                credentials: 'include',
+                body: JSON.stringify({ tone: tone })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success && data.reply_text) {
+                // Show reply
+                generatedReply = data.reply_text;
+                document.getElementById('replyText').value = generatedReply;
+                document.getElementById('replyToneName').textContent = data.tone_name || tone;
+                updateCharCount();
+                
+                document.getElementById('replyLoading').style.display = 'none';
+                document.getElementById('replyContent').style.display = 'block';
+                document.getElementById('copyReplyBtn').style.display = 'inline-block';
+            } else {
+                // Show error
+                showReplyError(data.error || 'Generierung fehlgeschlagen');
+            }
+            
+        } catch (error) {
+            console.error('Reply generation error:', error);
+            showReplyError('Netzwerk-Fehler: ' + error.message);
+        }
+    }
+    
+    function showReplyError(message) {
+        document.getElementById('replyLoading').style.display = 'none';
+        document.getElementById('replyContent').style.display = 'none';
+        document.getElementById('replyError').textContent = message;
+        document.getElementById('replyError').style.display = 'block';
+    }
+    
+    function updateCharCount() {
+        const text = document.getElementById('replyText').value;
+        document.getElementById('replyCharCount').textContent = text.length;
+    }
+    
+    // Update char count on edit
+    document.getElementById('replyText').addEventListener('input', updateCharCount);
+});
+</script>
+
 {% endblock %}

@@ -1,0 +1,307 @@
+﻿"""
+Reply Draft Generator Service (Phase G.1)
+==========================================
+
+Generiert KI-basierte Antwort-Entwürfe mit wählbarem Ton.
+
+Features:
+- Tone-Auswahl: formal, friendly, brief, decline
+- Thread-Context Integration (Phase E)
+- Automatische Anrede basierend auf Sender
+- Deutsche Antworten für deutsche Emails
+
+Usage:
+    from src.reply_generator import ReplyGenerator
+    
+    generator = ReplyGenerator(ai_client)
+    draft = generator.generate_reply(
+        original_subject="Angebot Anfrage",
+        original_body="Können Sie mir ein Angebot schicken?",
+        original_sender="kunde@example.com",
+        tone="formal",
+        thread_context="..."  # Optional
+    )
+"""
+
+import logging
+from typing import Dict, Any, Optional
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+# Tone-Definitions mit spezifischen Prompts
+TONE_PROMPTS = {
+    "formal": {
+        "name": "Formell",
+        "icon": "📜",
+        "instructions": """
+Schreibe eine FORMELLE geschäftliche Antwort:
+- Verwende "Sie" (nicht "Du")
+- Förmliche Anrede: "Sehr geehrte/r Frau/Herr [Name]" oder "Sehr geehrte Damen und Herren"
+- Höflicher, professioneller Ton
+- Vollständige Sätze, korrekte Grammatik
+- Abschluss: "Mit freundlichen Grüßen"
+- Keine Emojis, keine umgangssprachlichen Ausdrücke
+"""
+    },
+    "friendly": {
+        "name": "Freundlich",
+        "icon": "😊",
+        "instructions": """
+Schreibe eine FREUNDLICHE, aber trotzdem professionelle Antwort:
+- Verwende "Sie" oder "Du" je nach Kontext (wenn Original-Email "Du" nutzt)
+- Lockere Anrede: "Hallo [Vorname]" oder "Liebe/r [Name]"
+- Warmer, persönlicher Ton
+- Gerne ein Emoji verwenden (nicht übertreiben!)
+- Abschluss: "Viele Grüße" oder "Beste Grüße"
+- Natürlich und menschlich klingen
+"""
+    },
+    "brief": {
+        "name": "Kurz & Knapp",
+        "icon": "⚡",
+        "instructions": """
+Schreibe eine KURZE, prägnante Antwort:
+- Maximal 3-4 Sätze
+- Direkt auf den Punkt kommen
+- Keine ausschweifenden Erklärungen
+- Einfache Anrede: "Hallo" oder nur Name
+- Kurzer Abschluss: "Grüße" oder "VG"
+- Effizienz über Höflichkeit (aber nicht unhöflich!)
+"""
+    },
+    "decline": {
+        "name": "Höfliche Ablehnung",
+        "icon": "❌",
+        "instructions": """
+Schreibe eine HÖFLICHE ABLEHNUNG:
+- Bedanke dich für die Anfrage/das Interesse
+- Erkläre kurz (1 Satz), warum eine Absage nötig ist (z.B. "leider keine Kapazitäten")
+- Biete ggf. Alternativen an (falls sinnvoll)
+- Höflicher, entschuldigender Ton
+- Verwende "Sie"
+- Abschluss: "Mit freundlichen Grüßen"
+- Lasse die Tür für zukünftige Zusammenarbeit offen
+"""
+    }
+}
+
+REPLY_GENERATION_SYSTEM_PROMPT = """
+Du bist ein professioneller E-Mail-Assistent. Deine Aufgabe ist es, Antwort-Entwürfe auf E-Mails zu schreiben.
+
+WICHTIGE REGELN:
+1. Schreibe NUR den E-Mail-Text (Body), KEINE Betreffzeile
+2. Verwende die GLEICHE SPRACHE wie die Original-E-Mail (Deutsch für deutsche Mails)
+3. Beziehe dich auf den Inhalt der Original-E-Mail
+4. Halte dich an den vorgegebenen TON (formal/friendly/brief/decline)
+5. Nutze Thread-Context falls vorhanden um bessere Antworten zu schreiben
+6. Erfinde KEINE Fakten - bleibe bei dem was in der Original-Email steht
+7. Formatiere den Text mit Absätzen (\\n\\n) für bessere Lesbarkeit
+
+ANREDE-EXTRAKTION:
+- Wenn Absender-Name vorhanden: Nutze "Frau/Herr [Nachname]" (formal) oder "Vorname" (friendly/brief)
+- Wenn kein Name: Nutze "Sehr geehrte Damen und Herren" (formal) oder "Hallo" (friendly/brief)
+
+LÄNGE:
+- Formal: 4-6 Sätze
+- Friendly: 4-6 Sätze
+- Brief: 2-3 Sätze (maximal!)
+- Decline: 3-5 Sätze
+
+Gib NUR den E-Mail-Text zurück, keine Metadaten, keine Erklärungen!
+""".strip()
+
+
+class ReplyGenerator:
+    """Service zum Generieren von Antwort-Entwürfen"""
+    
+    def __init__(self, ai_client=None):
+        """
+        Args:
+            ai_client: AI Client mit chat/completion API (LocalOllama, OpenAI, Anthropic)
+        """
+        self.ai_client = ai_client
+    
+    def generate_reply(
+        self,
+        original_subject: str,
+        original_body: str,
+        original_sender: str = "",
+        tone: str = "formal",
+        thread_context: Optional[str] = None,
+        language: str = "de"
+    ) -> Dict[str, Any]:
+        """
+        Generiert einen Antwort-Entwurf.
+        
+        Args:
+            original_subject: Betreff der Original-Email
+            original_body: Body der Original-Email
+            original_sender: Absender (für Anrede-Extraktion)
+            tone: Ton der Antwort (formal/friendly/brief/decline)
+            thread_context: Optional - Thread-Context aus Phase E
+            language: Sprache (de/en)
+            
+        Returns:
+            Dict mit:
+            - reply_text: Generierter Antwort-Text
+            - tone_used: Verwendeter Ton
+            - timestamp: Generierungs-Zeitpunkt
+            - success: True/False
+            - error: Fehlermeldung falls success=False
+        """
+        if not self.ai_client:
+            return {
+                "success": False,
+                "error": "AI-Client nicht verfügbar",
+                "reply_text": "",
+                "tone_used": tone,
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Validiere Ton
+        if tone not in TONE_PROMPTS:
+            logger.warning(f"Unknown tone '{tone}', falling back to 'formal'")
+            tone = "formal"
+        
+        tone_config = TONE_PROMPTS[tone]
+        
+        # Baue User-Prompt
+        user_prompt = self._build_user_prompt(
+            original_subject=original_subject,
+            original_body=original_body,
+            original_sender=original_sender,
+            tone_instructions=tone_config["instructions"],
+            thread_context=thread_context,
+            language=language
+        )
+        
+        # Rufe AI auf
+        try:
+            logger.info(f"🤖 Generiere Reply-Entwurf (Ton: {tone})")
+            
+            # Verwende _call_model wenn vorhanden, sonst analyze_email Fallback
+            if hasattr(self.ai_client, '_call_model'):
+                reply_text = self.ai_client._call_model([
+                    {"role": "system", "content": REPLY_GENERATION_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
+                ])
+            elif hasattr(self.ai_client, 'chat_completion'):
+                response = self.ai_client.chat_completion([
+                    {"role": "system", "content": REPLY_GENERATION_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
+                ])
+                reply_text = response.get("content", "")
+            else:
+                # Fallback: Nutze analyze_email (nicht ideal, aber funktioniert)
+                logger.warning("AI-Client hat keine _call_model Methode, nutze Fallback")
+                result = self.ai_client.analyze_email(
+                    subject=original_subject,
+                    body=f"GENERATE REPLY:\n{user_prompt}",
+                    context=thread_context
+                )
+                reply_text = result.get("summary_de", "")
+            
+            # Cleanup: Entferne mögliche Metadaten
+            reply_text = self._cleanup_reply_text(reply_text)
+            
+            logger.info(f"✅ Reply-Entwurf generiert ({len(reply_text)} chars)")
+            
+            return {
+                "success": True,
+                "reply_text": reply_text,
+                "tone_used": tone,
+                "tone_name": tone_config["name"],
+                "tone_icon": tone_config["icon"],
+                "timestamp": datetime.now().isoformat(),
+                "error": None
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Reply-Generierung fehlgeschlagen: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "reply_text": "",
+                "tone_used": tone,
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    def _build_user_prompt(
+        self,
+        original_subject: str,
+        original_body: str,
+        original_sender: str,
+        tone_instructions: str,
+        thread_context: Optional[str],
+        language: str
+    ) -> str:
+        """Baut den User-Prompt für die Reply-Generierung"""
+        
+        prompt = f"""
+{tone_instructions}
+
+ORIGINAL E-MAIL:
+Von: {original_sender or "Unbekannt"}
+Betreff: {original_subject or "(Kein Betreff)"}
+
+{original_body[:2000]}  
+"""
+        
+        # Thread-Context hinzufügen falls vorhanden
+        if thread_context:
+            prompt += f"\n\nKONVERSATIONS-KONTEXT (frühere E-Mails im Thread):\n{thread_context[:1000]}\n"
+        
+        prompt += """
+
+AUFGABE:
+Schreibe JETZT die Antwort-E-Mail (nur Body-Text, keine Betreffzeile!).
+Beziehe dich auf den Inhalt der Original-E-Mail und halte den vorgegebenen Ton ein.
+"""
+        
+        return prompt.strip()
+    
+    def _cleanup_reply_text(self, text: str) -> str:
+        """
+        Bereinigt generierten Text von möglichen Metadaten oder Formatierungs-Artefakten.
+        """
+        if not text:
+            return ""
+        
+        # Entferne mögliche "Subject:" oder "Betreff:" Zeilen (falls AI sie hinzufügt)
+        lines = text.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            line_lower = line.lower().strip()
+            # Skip Subject/Betreff Zeilen
+            if line_lower.startswith('subject:') or line_lower.startswith('betreff:'):
+                continue
+            # Skip "Von:" oder "To:" Zeilen
+            if line_lower.startswith('von:') or line_lower.startswith('to:') or line_lower.startswith('an:'):
+                continue
+            cleaned_lines.append(line)
+        
+        cleaned = '\n'.join(cleaned_lines).strip()
+        
+        # Entferne führende/trailing Quotes falls vorhanden
+        if cleaned.startswith('"') and cleaned.endswith('"'):
+            cleaned = cleaned[1:-1]
+        
+        return cleaned
+    
+    @staticmethod
+    def get_available_tones() -> Dict[str, Dict[str, str]]:
+        """
+        Gibt alle verfügbaren Töne zurück (für UI-Dropdown).
+        
+        Returns:
+            Dict mit tone_key -> {name, icon}
+        """
+        return {
+            key: {
+                "name": config["name"],
+                "icon": config["icon"]
+            }
+            for key, config in TONE_PROMPTS.items()
+        }
