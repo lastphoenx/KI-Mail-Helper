@@ -167,9 +167,8 @@ PROVIDER_REGISTRY: Dict[str, Dict[str, Any]] = {
             "gpt-4o-mini",
             "gpt-4o",
             "gpt-4-turbo",
-            "gpt-4",
             "gpt-3.5-turbo",
-        ],
+        ],  # Alle verfügbaren Modelle (werden nach base/optimize gefiltert)
         "requires_api_key": True,
         "env_key": "OPENAI_API_KEY",
         "needs_cloud_sanitization": True,
@@ -183,9 +182,23 @@ PROVIDER_REGISTRY: Dict[str, Dict[str, Any]] = {
         "default_model_optimize": "claude-3-5-sonnet-20240620",
         "models_base": ["claude-3-5-sonnet-20240620", "claude-3-haiku-20240307"],
         "models_optimize": ["claude-3-5-sonnet-20240620", "claude-3-haiku-20240307"],
-        "models": ["claude-3-5-sonnet-20240620", "claude-3-haiku-20240307"],
+        "models": ["claude-3-5-sonnet-20240620", "claude-3-haiku-20240307"],  # Nur erlaubte Modelle
         "requires_api_key": True,
         "env_key": "ANTHROPIC_API_KEY",
+        "needs_cloud_sanitization": True,
+    },
+    "mistral": {
+        "label": "Mistral AI (Cloud)",
+        "is_cloud": True,
+        "supports_base": True,
+        "supports_optimize": True,
+        "default_model_base": "mistral-small-latest",
+        "default_model_optimize": "mistral-large-latest",
+        "models_base": ["mistral-small-latest", "mistral-tiny"],
+        "models_optimize": ["mistral-large-latest", "mistral-small-latest"],
+        "models": ["mistral-large-latest", "mistral-small-latest", "mistral-tiny"],
+        "requires_api_key": True,
+        "env_key": "MISTRAL_API_KEY",
         "needs_cloud_sanitization": True,
     },
 }
@@ -1315,6 +1328,15 @@ def build_client(
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY ist nicht gesetzt")
         return AnthropicClient(api_key=api_key, model=resolved_model)
+
+    if provider_key == "mistral":
+        api_key = kwargs.get("api_key") or os.getenv(
+            PROVIDER_REGISTRY["mistral"]["env_key"], ""
+        )
+        if not api_key:
+            raise RuntimeError("MISTRAL_API_KEY ist nicht gesetzt")
+        # TODO: Implementiere MistralClient wenn benötigt
+        raise NotImplementedError("Mistral Client noch nicht implementiert")
 
     raise ValueError(f"Provider {provider} wird nicht unterstützt")
 
