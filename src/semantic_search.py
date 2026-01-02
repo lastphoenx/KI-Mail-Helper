@@ -57,7 +57,8 @@ def generate_embedding_for_email(
     subject: str,
     body: str,
     ai_client,
-    max_body_length: int = 500
+    max_body_length: int = 500,
+    model_name: Optional[str] = None
 ) -> Tuple[Optional[bytes], Optional[str], Optional[datetime]]:
     """
     Generiert Embedding aus Subject + Body.
@@ -69,6 +70,7 @@ def generate_embedding_for_email(
         body: Email-Body (Klartext)
         ai_client: AI Client mit _get_embedding() Methode
         max_body_length: Maximale Body-Länge für Embedding
+        model_name: Optional - Name des verwendeten Models (z.B. "text-embedding-3-large")
         
     Returns:
         Tuple (embedding_bytes, model_name, timestamp)
@@ -113,9 +115,20 @@ def generate_embedding_for_email(
                 f"Stelle sicher, dass ALLE Emails mit dem gleichen Model embedded werden!"
             )
         
+        # Model-Name: Verwende übergebenen Namen oder versuche von Client zu holen
+        actual_model = model_name
+        if not actual_model:
+            # Versuche Model-Name vom Client zu holen
+            if hasattr(ai_client, 'model'):
+                actual_model = ai_client.model
+            elif hasattr(ai_client, '_model'):
+                actual_model = ai_client._model
+            else:
+                actual_model = EMBEDDING_MODEL  # Fallback
+        
         return (
             embedding_array.tobytes(),
-            EMBEDDING_MODEL,
+            actual_model,
             datetime.now(UTC)
         )
         

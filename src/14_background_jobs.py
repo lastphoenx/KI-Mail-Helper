@@ -548,7 +548,8 @@ class BackgroundJobQueue:
                         generate_embedding_for_email(
                             subject=subject_plain,
                             body=body_plain,
-                            ai_client=embedding_ai_client
+                            ai_client=embedding_ai_client,
+                            model_name=resolved_model  # Übergebe explizit das Model
                         )
                     if embedding_bytes:
                         logger.debug(f"🔍 Embedding generiert für: {subject_plain[:50]}...")
@@ -745,7 +746,8 @@ class BackgroundJobQueue:
                     embedding_bytes, model_name, timestamp = generate_embedding_for_email(
                         subject=decrypted_subject,
                         body=decrypted_body,
-                        ai_client=embedding_client
+                        ai_client=embedding_client,
+                        model_name=resolved_model  # Übergebe explizit das Model
                     )
                     
                     if embedding_bytes:

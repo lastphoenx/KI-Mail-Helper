@@ -3022,7 +3022,8 @@ def api_reprocess_email(email_id):
             embedding_bytes, model_name, timestamp = generate_embedding_for_email(
                 subject=decrypted_subject,
                 body=decrypted_body,
-                ai_client=embedding_client
+                ai_client=embedding_client,
+                model_name=resolved_model_embedding  # Übergebe explizit das Model
             )
             
             if embedding_bytes:
