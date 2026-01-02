@@ -18,6 +18,7 @@ from sqlalchemy import (
     ForeignKey,
     UniqueConstraint,
     Index,
+    LargeBinary,
     event,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
@@ -628,6 +629,14 @@ class RawEmail(Base):
     charset = Column(String(50), nullable=True)
     has_attachments = Column(Boolean, default=False, nullable=True)
     last_flag_sync_at = Column(DateTime, nullable=True)
+
+    # ===== PHASE 17: SEMANTIC SEARCH =====
+    # Embedding für semantische Suche (NICHT verschlüsselt!)
+    # Embeddings sind nicht zu Klartext reversibel → Zero-Knowledge OK
+    # 384 floats × 4 bytes = 1536 bytes pro Email (all-minilm:22m)
+    email_embedding = Column(LargeBinary, nullable=True)
+    embedding_model = Column(String(50), nullable=True)  # "all-minilm:22m"
+    embedding_generated_at = Column(DateTime, nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="raw_emails")

@@ -110,7 +110,7 @@ def build_thread_context(
                 
                 # Attachment awareness
                 attachment_info = ""
-                if email.imap_has_attachments:
+                if email.has_attachments:
                     attachment_info = " 📎 (has attachments)"
                 
                 context_lines.extend([
@@ -378,7 +378,7 @@ def process_pending_raw_emails(
                 context_str += sender_hint + "\n\n"
             
             # Add current email attachment info
-            if raw_email.imap_has_attachments:
+            if raw_email.has_attachments:
                 context_str += "📎 CURRENT EMAIL: This email has attachments.\n\n"
             
             # Bug #4: Improved logging with char counts

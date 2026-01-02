@@ -365,6 +365,17 @@
             </table>
         </div>
 
+        <!-- Phase F.1: Similar Emails -->
+        <div class="card bg-light p-3 mt-3">
+            <h6 class="mb-2">🧠 Ähnliche E-Mails</h6>
+            <div id="similarEmailsContainer">
+                <div class="text-center text-muted small">
+                    <div class="spinner-border spinner-border-sm" role="status"></div>
+                    Lade ähnliche E-Mails...
+                </div>
+            </div>
+        </div>
+
         <!-- Action Buttons Section -->
         <div class="card bg-light p-3">
             <div class="action-buttons">
@@ -945,4 +956,65 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
     </div>
 </div>
+
+<!-- Phase F.1: Similar Emails Loader -->
+<script nonce="{{ csp_nonce() }}">
+document.addEventListener('DOMContentLoaded', function() {
+    const emailId = {{ email.id }};
+    const similarContainer = document.getElementById('similarEmailsContainer');
+    
+    if (!similarContainer) return;
+    
+    // Load similar emails
+    fetch(`/api/emails/${emailId}/similar?limit=5`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.similar_emails && data.similar_emails.length > 0) {
+                renderSimilarEmails(data.similar_emails);
+            } else {
+                similarContainer.innerHTML = '<div class="text-muted small">Keine ähnlichen E-Mails gefunden.</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Similar emails error:', error);
+            similarContainer.innerHTML = '<div class="text-danger small">Fehler beim Laden ähnlicher E-Mails</div>';
+        });
+    
+    function renderSimilarEmails(emails) {
+        let html = '<div class="list-group list-group-flush small">';
+        
+        emails.forEach(email => {
+            const date = email.date ? new Date(email.date).toLocaleDateString('de-DE', {month: 'short', day: 'numeric'}) : '';
+            const score = (email.similarity_score * 100).toFixed(0);
+            
+            html += `
+                <a href="/email/${email.email_id}" class="list-group-item list-group-item-action p-2">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="fw-bold small">${escapeHtml(email.subject || '(Kein Betreff)')}</div>
+                            <div class="text-muted" style="font-size: 0.75rem;">${escapeHtml(email.from)} • ${date}</div>
+                        </div>
+                        <span class="badge bg-primary ms-2" style="font-size: 0.65rem;">${score}%</span>
+                    </div>
+                </a>
+            `;
+        });
+        
+        html += '</div>';
+        similarContainer.innerHTML = html;
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+});
+</script>
+
 {% endblock %}

@@ -8,6 +8,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added - Phase F.1: Semantic Email Search (2026-01-02)
+
+#### AI Intelligence & Search
+**Vector-Based Semantic Email Search**
+- ✅ Embedding generation during IMAP fetch (plaintext available, before encryption)
+- ✅ 384-dim embeddings via Ollama all-minilm:22m model (1.5KB/email)
+- ✅ Database schema: 3 new columns (email_embedding BLOB, embedding_model VARCHAR, embedding_generated_at DATETIME)
+- ✅ Migration ph17 (merge migration: ph15+ph16→ph17)
+- ✅ Cosine similarity search with configurable thresholds (0.25 default, 0.5 for similar emails)
+- ✅ Zero-Knowledge compliance: embeddings unencrypted but non-reversible
+- ✅ 100% embedding coverage on all emails (47/47)
+- Commit: [pending]
+- Files: migrations/versions/ph17_semantic_search.py, src/02_models.py, src/semantic_search.py (NEW), src/14_background_jobs.py
+
+**REST API Endpoints**
+- ✅ `GET /api/search/semantic?q=Budget&limit=20&threshold=0.25` - Semantic search with query string
+- ✅ `GET /api/emails/<id>/similar?limit=5` - Find similar emails to given email
+- ✅ `GET /api/embeddings/stats` - Embedding coverage statistics
+- ✅ AI Client integration: LocalOllamaClient(model="all-minilm:22m") for embedding generation
+- ✅ Ownership validation for security
+- Commit: [pending]
+- Files: src/01_web_app.py (+241 lines)
+
+**Frontend UI**
+- ✅ Search mode toggle: "Text" / "Semantisch" in list view
+- ✅ Live AJAX semantic search with loading spinner
+- ✅ Similarity score display with brain emoji (🧠 87%)
+- ✅ Similar emails card in detail view (auto-loaded, top 5 with scores)
+- ✅ Container selector fix: proper `.list-group` targeting
+- Commit: [pending]
+- Files: templates/list_view.html (+180 lines), templates/email_detail.html (+70 lines)
+
+**Bug Fixes & Improvements**
+- ✅ MIME header decoding: Fixed `=?UTF-8?Q?...?=` encoding in subjects/senders
+- ✅ Field name fix: `imap_has_attachments` → `has_attachments` (pre-existing bug)
+- ✅ Import error fix: `importlib.import_module` for dynamic model loading
+- ✅ API parameter fixes: threshold, dict access, field names
+- ✅ JavaScript integration: mode toggle integrated into updateFilters()
+- Commit: [pending]
+- Files: src/06_mail_fetcher.py (+40 lines MIME fix), src/12_processing.py (+2 lines field fix)
+
+**Impact:**
+- Semantic search finds related emails: "Budget" → "Kostenplanung", "Finanzübersicht"
+- No more raw MIME-encoded subjects in UI
+- ~1,091 lines of new/modified code
+- Search time: <50ms for 47 emails
+- See: CHANGELOG_PHASE_F1_SEMANTIC_SEARCH.md for detailed documentation
+
+---
+
 ### Added - Phase 14g: Complete IMAPClient Migration (2026-01-01)
 
 #### Infrastructure & Reliability

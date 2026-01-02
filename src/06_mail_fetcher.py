@@ -522,25 +522,51 @@ class MailFetcher:
             received_at = datetime.now()
             
             if envelope:
-                # Subject
+                # Subject (MIME-Header Dekodierung!)
                 if envelope.subject:
                     try:
-                        subject = envelope.subject.decode('utf-8', errors='replace')[:200]
-                    except:
+                        # 1. Bytes → String
+                        subject_raw = envelope.subject.decode('utf-8', errors='replace') if isinstance(envelope.subject, bytes) else str(envelope.subject)
+                        
+                        # 2. MIME-Header dekodieren (z.B. =?UTF-8?Q?...?=)
+                        decoded_parts = decode_header(subject_raw)
+                        subject_parts = []
+                        for part, charset in decoded_parts:
+                            if isinstance(part, bytes):
+                                subject_parts.append(part.decode(charset or 'utf-8', errors='replace'))
+                            else:
+                                subject_parts.append(part)
+                        subject = ''.join(subject_parts)[:200]
+                    except Exception as e:
                         subject = str(envelope.subject)[:200]
                 
-                # Sender (from)
+                # Sender (from) - mit MIME-Header Dekodierung
                 if envelope.from_ and envelope.from_[0]:
                     try:
                         from_tuple = envelope.from_[0]
-                        name = from_tuple[0].decode() if from_tuple[0] else ""
+                        
+                        # Name dekodieren (kann MIME-Header enthalten!)
+                        name_raw = from_tuple[0].decode() if from_tuple[0] else ""
+                        if name_raw:
+                            decoded_parts = decode_header(name_raw)
+                            name_parts = []
+                            for part, charset in decoded_parts:
+                                if isinstance(part, bytes):
+                                    name_parts.append(part.decode(charset or 'utf-8', errors='replace'))
+                                else:
+                                    name_parts.append(part)
+                            name = ''.join(name_parts)
+                        else:
+                            name = ""
+                        
                         mailbox = from_tuple[2].decode() if from_tuple[2] else ""
                         domain = from_tuple[3].decode() if from_tuple[3] else ""
+                        
                         if name:
                             sender = f"\"{name}\" <{mailbox}@{domain}>"
                         else:
                             sender = f"{mailbox}@{domain}" if mailbox and domain else "N/A"
-                    except:
+                    except Exception as e:
                         sender = 'N/A'
                 
                 # Message-ID

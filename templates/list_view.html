@@ -86,8 +86,25 @@
                     <!-- Suche -->
                     <div class="col-md-3">
                         <label class="form-label small mb-1">🔍 Suche</label>
-                        <input type="text" class="form-control form-control-sm filter-search" placeholder="Betreff, Absender..." 
-                               value="{{ search_term }}">
+                        <div class="input-group input-group-sm">
+                            <input type="text" class="form-control form-control-sm filter-search" placeholder="Betreff, Absender..." 
+                                   value="{{ search_term }}" id="searchInput">
+                            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" 
+                                    aria-expanded="false" id="searchModeBtn" title="Suchmodus">
+                                <span id="searchModeLabel">Text</span>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item search-mode-option" href="#" data-mode="text">
+                                    <i class="bi bi-search"></i> Text-Suche
+                                </a></li>
+                                <li><a class="dropdown-item search-mode-option" href="#" data-mode="semantic">
+                                    <i class="bi bi-lightbulb"></i> Semantisch
+                                </a></li>
+                            </ul>
+                        </div>
+                        <small class="text-muted" id="searchModeHint" style="display:none;">
+                            🧠 Findet ähnliche Bedeutungen
+                        </small>
                     </div>
 
                     <!-- Datums-Range -->
@@ -298,7 +315,112 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Phase F.1: Semantic Search Mode (global variable)
+    window.searchMode = 'text'; // 'text' or 'semantic'
+    
+    function performSemanticSearch(query) {
+        const emailListContainer = document.querySelector('.card:last-of-type .list-group');
+        if (!emailListContainer) {
+            console.error('[ERROR] Email list container not found!');
+            return;
+        }
+        
+        console.log('[DEBUG] performSemanticSearch starting for:', query);
+        
+        // Show loading state
+        emailListContainer.innerHTML = '<li class="list-group-item"><div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Semantische Suche läuft...</p></div></li>';
+        
+        // Build API URL
+        const params = new URLSearchParams({
+            q: query,
+            limit: 50,
+            threshold: 0.25
+        });
+        
+        fetch(`/api/search/semantic?${params}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('[DEBUG] Semantic search results:', data);
+                if (data.results && data.results.length > 0) {
+                    renderSemanticResults(data.results);
+                } else {
+                    emailListContainer.innerHTML = '<li class="list-group-item"><div class="alert alert-info m-3">Keine semantischen Ergebnisse gefunden. Versuche Text-Suche oder andere Begriffe.</div></li>';
+                }
+            })
+            .catch(error => {
+                console.error('Semantic search error:', error);
+                emailListContainer.innerHTML = `<li class="list-group-item"><div class="alert alert-danger m-3">Fehler bei semantischer Suche: ${error.message}</div></li>`;
+            });
+    }
+    
+    function renderSemanticResults(results) {
+        const emailListContainer = document.querySelector('.card:last-of-type .list-group');
+        if (!emailListContainer) {
+            console.error('[ERROR] Email list container not found for rendering!');
+            return;
+        }
+        
+        console.log('[DEBUG] Rendering', results.length, 'semantic results');
+        
+        let html = '';
+        
+        results.forEach(result => {
+            const date = result.date ? new Date(result.date).toLocaleDateString('de-DE') : 'N/A';
+            const score = (result.similarity_score * 100).toFixed(0);
+            
+            html += `
+                <li class="list-group-item">
+                    <a href="/email/${result.email_id}" class="text-decoration-none">
+                        <div class="d-flex w-100 justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">${escapeHtml(result.subject || '(Kein Betreff)')}</h6>
+                                <p class="mb-1 text-muted small">
+                                    <strong>Von:</strong> ${escapeHtml(result.from)} | ${date}
+                                </p>
+                                <p class="mb-2 small">${escapeHtml(result.snippet)}</p>
+                            </div>
+                            <span class="badge bg-primary ms-3" title="Semantic Similarity Score">
+                                🧠 ${score}%
+                            </span>
+                        </div>
+                    </a>
+                </li>
+            `;
+        });
+        
+        emailListContainer.innerHTML = html;
+        
+        // Update count
+        const emailListCount = document.getElementById('emailListCount');
+        if (emailListCount) {
+            emailListCount.textContent = results.length;
+        }
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
     function updateFilters() {
+        // Phase F.1: Check if semantic search mode is active
+        const searchInput = document.getElementById('searchInput');
+        console.log('[DEBUG] updateFilters called, searchMode:', window.searchMode, 'value:', searchInput?.value);
+        
+        if (window.searchMode === 'semantic' && searchInput && searchInput.value.trim()) {
+            console.log('[DEBUG] Triggering semantic search for:', searchInput.value.trim());
+            performSemanticSearch(searchInput.value.trim());
+            return;
+        }
+        
+        console.log('[DEBUG] Using normal text-based filtering');
+        // Normal text-based filtering
         const params = new URLSearchParams();
 
         filterSelects.forEach(select => {
@@ -450,6 +572,35 @@ document.addEventListener('DOMContentLoaded', function() {
             updateFilters();
         });
     }
+
+    // ===== Phase F.1: Semantic Search Toggle =====
+    const searchModeOptions = document.querySelectorAll('.search-mode-option');
+    const searchModeLabel = document.getElementById('searchModeLabel');
+    const searchModeHint = document.getElementById('searchModeHint');
+    
+    searchModeOptions.forEach(option => {
+        option.addEventListener('click', function(e) {
+            e.preventDefault();
+            window.searchMode = this.dataset.mode;
+            console.log('[DEBUG] Search mode changed to:', window.searchMode);
+            
+            if (window.searchMode === 'semantic') {
+                searchModeLabel.textContent = 'Semantisch';
+                searchModeHint.style.display = 'block';
+            } else {
+                searchModeLabel.textContent = 'Text';
+                searchModeHint.style.display = 'none';
+            }
+            
+            // Re-trigger search if there's a query
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput && searchInput.value.trim()) {
+                console.log('[DEBUG] Re-triggering search with existing query');
+                updateFilters();
+            }
+        });
+    });
+    // ===== End Phase F.1 =====
 
     attachActionFormListeners();
 

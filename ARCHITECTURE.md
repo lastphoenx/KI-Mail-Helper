@@ -1,6 +1,6 @@
 ﻿# 🏗️ KI-Mail-Helper – Architektur & Entwicklungsprinzipien
 
-**Letztes Update:** 29. Dezember 2025  
+**Letztes Update:** 02. Januar 2026  
 **Zweck:** Grundlegende Architektur-Entscheidungen für neue Chat-Sessions und Context-Loss-Situationen
 
 ---
@@ -21,6 +21,12 @@
   - `MailAccount`: `encrypted_imap_server`, `encrypted_imap_username`, `encrypted_imap_password`
   - `RawEmail`: Body, Betreff, Absender (verschlüsselt)
 - 🔍 **Hash-Felder für Suche:** `imap_server_hash`, `imap_username_hash` (ermöglichen Suche ohne Klartext)
+- 🧠 **Semantic Search Exception (Phase F.1):**
+  - **Email Embeddings:** Unverschlüsselt in DB (als BLOB)
+  - **Grund:** Embeddings sind nicht reversibel → keine Klartext-Rekonstruktion möglich
+  - **Generierung:** Beim IMAP-Fetch (Klartext verfügbar) VOR Encryption
+  - **Zero-Knowledge Compliance:** Embeddings sind mathematische Vektoren, kein Klartext
+  - **Speicherplatz:** 1.5KB/Email (384-dim float32 vector)
 
 ### 3. **Authentifizierung**
 ```
@@ -45,6 +51,7 @@ Login-Flow: Username → Master-Password → 2FA → UI-Zugriff
 │   ├── 06_encryption.py     # Verschlüsselungs-Manager
 │   ├── 07_auth.py           # Master-Key-Manager, 2FA
 │   ├── 12_processing.py     # Email-Verarbeitung
+│   ├── semantic_search.py   # Semantic Email Search (Phase F.1)
 │   └── services/            # Service-Layer (Tag-Manager, Sender-Patterns, etc.)
 │
 ├── templates/               # Jinja2-HTML-Templates (UI)

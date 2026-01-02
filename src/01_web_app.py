@@ -60,6 +60,7 @@ provider_utils = importlib.import_module(".15_provider_utils", "src")
 password_validator = importlib.import_module(".09_password_validator", "src")
 mail_fetcher_mod = importlib.import_module(".06_mail_fetcher", "src")
 mail_sync = importlib.import_module(".16_mail_sync", "src")
+semantic_search = importlib.import_module(".semantic_search", "src")
 
 logger = logging.getLogger(__name__)
 
@@ -2323,6 +2324,261 @@ def _update_user_override_tags(db, email_id: int, user_id: int, tag_manager_mod)
     except Exception as e:
         logger.warning(f"⚠️  Fehler beim Update von user_override_tags: {e}")
         db.rollback()
+
+
+# ===== Phase F.1: Semantic Search API Endpoints =====
+
+
+@app.route("/api/search/semantic", methods=["GET"])
+@login_required
+def api_semantic_search():
+    """
+    API: Semantische E-Mail-Suche (Phase F.1)
+    
+    Query Parameters:
+    - q: Suchbegriff (required)
+    - limit: Max. Anzahl Ergebnisse (default: 20)
+    - threshold: Min. Similarity Score 0-1 (default: 0.25)
+    
+    Returns:
+    {
+        "results": [
+            {
+                "email_id": 123,
+                "subject": "Budget Q4",
+                "from": "boss@company.com",
+                "date": "2024-01-15T10:30:00Z",
+                "similarity_score": 0.87,
+                "snippet": "...text excerpt..."
+            }
+        ],
+        "query": "Budget",
+        "total": 5,
+        "has_embeddings": true
+    }
+    """
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+            
+        query = request.args.get("q", "").strip()
+        if not query:
+            return jsonify({"error": "Query parameter 'q' is required"}), 400
+            
+        try:
+            limit = int(request.args.get("limit", 20))
+            threshold = float(request.args.get("threshold", 0.25))
+        except ValueError:
+            return jsonify({"error": "Invalid limit or threshold parameter"}), 400
+            
+        # Semantic Search durchführen
+        try:
+            # AI-Client für Query-Embedding generieren (Ollama mit all-minilm:22m)
+            query_ai_client = ai_client.LocalOllamaClient(model="all-minilm:22m")
+            
+            search_service = semantic_search.SemanticSearchService(db, query_ai_client)
+            results = search_service.search(
+                query=query,
+                user_id=user.id,
+                limit=limit,
+                threshold=threshold
+            )
+            
+            # Ergebnisse formatieren (mit Decryption)
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Master key not in session"}), 401
+                
+            formatted_results = []
+            for result in results:
+                # Decrypt Subject
+                try:
+                    subject_plain = encryption.EmailDataManager.decrypt_email_subject(
+                        result["encrypted_subject"], master_key
+                    ) if result.get("encrypted_subject") else ""
+                    
+                    # Sender ist unverschlüsselt (encrypted_sender ist ein Misnomer)
+                    sender = result.get("encrypted_sender", "")
+                    
+                    # Datum formatieren
+                    date_str = result["received_at"].isoformat() if result.get("received_at") else None
+                    
+                    formatted_results.append({
+                        "email_id": result["id"],
+                        "subject": subject_plain,
+                        "from": sender,
+                        "date": date_str,
+                        "similarity_score": result["similarity_score"],
+                        "snippet": subject_plain[:150] + "..." if len(subject_plain) > 150 else subject_plain
+                    })
+                except Exception as decrypt_err:
+                    logger.warning(f"Decryption failed for email {result['id']}: {decrypt_err}")
+                    continue
+                    
+            return jsonify({
+                "results": formatted_results,
+                "query": query,
+                "total": len(formatted_results),
+                "has_embeddings": len(results) > 0
+            }), 200
+            
+        except Exception as search_err:
+            logger.error(f"Semantic search failed: {search_err}")
+            return jsonify({
+                "results": [],
+                "query": query,
+                "total": 0,
+                "error": "Search service unavailable"
+            }), 500
+            
+    finally:
+        db.close()
+
+
+@app.route("/api/emails/<int:email_id>/similar", methods=["GET"])
+@login_required
+def api_find_similar_emails(email_id):
+    """
+    API: Ähnliche E-Mails finden (Phase F.1)
+    
+    Query Parameters:
+    - limit: Max. Anzahl Ergebnisse (default: 5)
+    
+    Returns:
+    {
+        "similar_emails": [
+            {
+                "email_id": 456,
+                "subject": "Budget Q3",
+                "from": "cfo@company.com",
+                "date": "2023-12-10T14:20:00Z",
+                "similarity_score": 0.92
+            }
+        ],
+        "reference_email_id": 123,
+        "total": 3
+    }
+    """
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+            
+        try:
+            limit = int(request.args.get("limit", 5))
+        except ValueError:
+            return jsonify({"error": "Invalid limit parameter"}), 400
+            
+        # Ownership Check: User muss die Email besitzen
+        ref_email = db.query(models.RawEmail).filter_by(
+            id=email_id,
+            user_id=user.id
+        ).first()
+        
+        if not ref_email:
+            return jsonify({"error": "Email not found or access denied"}), 404
+            
+        # Similar Emails finden
+        try:
+            search_service = semantic_search.SemanticSearchService(db)
+            results = search_service.find_similar(
+                email_id=email_id,
+                limit=limit
+            )
+            
+            # Ergebnisse formatieren (mit Decryption)
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Master key not in session"}), 401
+                
+            formatted_results = []
+            for result in results:
+                try:
+                    subject_plain = encryption.EmailDataManager.decrypt_email_subject(
+                        result["encrypted_subject"], master_key
+                    ) if result.get("encrypted_subject") else ""
+                    
+                    sender = result.get("encrypted_sender", "")
+                    date_str = result["received_at"].isoformat() if result.get("received_at") else None
+                    
+                    formatted_results.append({
+                        "email_id": result["id"],
+                        "subject": subject_plain,
+                        "from": sender,
+                        "date": date_str,
+                        "similarity_score": result["similarity_score"]
+                    })
+                except Exception as decrypt_err:
+                    logger.warning(f"Decryption failed for email {result['id']}: {decrypt_err}")
+                    continue
+                    
+            return jsonify({
+                "similar_emails": formatted_results,
+                "reference_email_id": email_id,
+                "total": len(formatted_results)
+            }), 200
+            
+        except ValueError as ve:
+            return jsonify({"error": str(ve)}), 404
+        except Exception as search_err:
+            logger.error(f"Similar search failed: {search_err}")
+            return jsonify({
+                "similar_emails": [],
+                "reference_email_id": email_id,
+                "total": 0,
+                "error": "Search service unavailable"
+            }), 500
+            
+    finally:
+        db.close()
+
+
+@app.route("/api/embeddings/stats", methods=["GET"])
+@login_required
+def api_embedding_stats():
+    """
+    API: Embedding Coverage Statistics (Phase F.1)
+    
+    Returns:
+    {
+        "total_emails": 150,
+        "emails_with_embeddings": 120,
+        "coverage_percent": 80.0,
+        "embedding_model": "all-minilm:22m"
+    }
+    """
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+            
+        try:
+            search_service = semantic_search.SemanticSearchService(db)
+            stats = search_service.get_embedding_stats(user_id=user.id)
+            
+            return jsonify(stats), 200
+            
+        except Exception as stats_err:
+            logger.error(f"Stats retrieval failed: {stats_err}")
+            return jsonify({
+                "total_emails": 0,
+                "emails_with_embeddings": 0,
+                "coverage_percent": 0.0,
+                "error": "Stats unavailable"
+            }), 500
+            
+    finally:
+        db.close()
+
+
+# ===== End Phase F.1 Semantic Search =====
 
 
 def _trigger_online_learning(email, data: dict):

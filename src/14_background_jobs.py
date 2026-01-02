@@ -17,6 +17,8 @@ google_oauth = importlib.import_module(".10_google_oauth", "src")
 encryption = importlib.import_module(".08_encryption", "src")
 processing = importlib.import_module(".12_processing", "src")
 ai_client = importlib.import_module(".03_ai_client", "src")
+# Phase 17: Semantic Search
+from src.semantic_search import generate_embedding_for_email
 
 logger = logging.getLogger(__name__)
 
@@ -400,12 +402,24 @@ class BackgroundJobQueue:
           * IntegrityError: Mail existiert bereits (skip)
         - UPDATE nur bei bestehenden Mails (Flags-Änderungen)
         
+        Phase 17: Semantic Search - Embedding-Generierung
+        - Embedding wird VOR der Verschlüsselung generiert (Klartext verfügbar!)
+        - Embeddings sind NICHT verschlüsselt (nicht reversibel)
+        
         Args:
             master_key: Master-Key für Verschlüsselung (Zero-Knowledge!)
         """
         saved = 0
         skipped = 0
         updated = 0
+        
+        # Phase 17: AI-Client für Embeddings (einmal pro Batch initialisieren)
+        embedding_ai_client = None
+        try:
+            embedding_ai_client = ai_client.LocalOllamaClient(model="all-minilm:22m")
+            logger.debug("✅ Embedding AI-Client (all-minilm:22m) initialisiert")
+        except Exception as e:
+            logger.warning(f"⚠️ Embedding AI-Client nicht verfügbar: {e}")
         
         for raw_email_data in raw_emails:
             # Phase 14e: RFC-konform Unique Key
@@ -446,7 +460,32 @@ class BackgroundJobQueue:
                 logger.debug(f"🔄 UPDATE: {imap_folder}/{imap_uid}")
                 continue
             
-            # INSERT: Neues Mail, verschlüssele und speichere
+            # ════════════════════════════════════════════════════════════════
+            # PHASE 17: KLARTEXT IST HIER NOCH VERFÜGBAR!
+            # ════════════════════════════════════════════════════════════════
+            subject_plain = raw_email_data.get("subject", "")
+            body_plain = raw_email_data.get("body", "")
+            
+            # ════════════════════════════════════════════════════════════════
+            # NEU: Embedding generieren (VOR Verschlüsselung!)
+            # ════════════════════════════════════════════════════════════════
+            embedding_bytes = None
+            embedding_model = None
+            embedding_generated_at = None
+            
+            if embedding_ai_client and (subject_plain or body_plain):
+                try:
+                    embedding_bytes, embedding_model, embedding_generated_at = \
+                        generate_embedding_for_email(
+                            subject=subject_plain,
+                            body=body_plain,
+                            ai_client=embedding_ai_client
+                        )
+                    if embedding_bytes:
+                        logger.debug(f"🔍 Embedding generiert für: {subject_plain[:50]}...")
+                except Exception as e:
+                    logger.warning(f"⚠️ Embedding-Fehler: {e}")
+            
 
             encrypted_sender = encryption.EmailDataManager.encrypt_email_sender(
                 raw_email_data["sender"], master_key
@@ -523,6 +562,10 @@ class BackgroundJobQueue:
                 content_type=raw_email_data.get("content_type"),
                 charset=raw_email_data.get("charset"),
                 has_attachments=raw_email_data.get("has_attachments"),
+                # Phase 17: Semantic Search - Embeddings (NICHT verschlüsselt!)
+                email_embedding=embedding_bytes,
+                embedding_model=embedding_model,
+                embedding_generated_at=embedding_generated_at,
             )
             try:
                 session.add(raw_email)
