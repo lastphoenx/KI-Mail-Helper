@@ -2,10 +2,10 @@
 
 **Strategic Planning Document - Was haben wir, was brauchen wir?**
 
-**Status:** ✅ Phase A, B, C, D Abgeschlossen | ✅ Phase 14 Complete (a-g) | 🟡 Phase E-H In Planung  
+**Status:** ✅ Phase A, B, C, D Abgeschlossen | ✅ Phase 14 Complete (a-g) | ✅ Phase E Complete | 🟡 Phase F-H In Planung  
 **Created:** 31. Dezember 2025  
-**Updated:** 01. Januar 2026  
-**Recent:** Phase 14g Complete - IMAPClient Migration (imaplib → IMAPClient 3.0.1)  
+**Updated:** 02. Januar 2026  
+**Recent:** Phase E Complete - KI Thread-Context Implementation  
 **Supersedes/Integrates:** Task 5 & Task 6
 
 ---
@@ -73,6 +73,117 @@
 - ✅ reset_all_emails.py now uses soft-delete pattern
 
 📄 **Detailed Documentation:** [doc/erledigt/PHASE_14G_IMAPCLIENT_MIGRATION_COMPLETE.md](../erledigt/PHASE_14G_IMAPCLIENT_MIGRATION_COMPLETE.md)
+
+---
+
+## 🧠 Phase E: KI Thread-Context - COMPLETE
+
+**Duration:** ~4 Stunden | **Status:** ✅ **ABGESCHLOSSEN**
+
+**Problem gelöst:**
+- ❌ AI klassifiziert Emails ohne Conversation-Context
+- ❌ Newsletter-Threads nicht erkannt (einzelne Email scheint wichtig)
+- ❌ Follow-ups ohne Kontext (3. Mahnung wirkt wie normale Mail)
+- ❌ Attachment-Info nicht verfügbar für AI
+
+**Neue Architektur:**
+- ✅ Thread-Context Builder: Sammelt bis zu 5 vorherige Emails im Thread
+- ✅ Sender-Intelligence: Erkennt Newsletter vs. Conversational Patterns
+- ✅ AI Context Parameter: Alle 4 Clients (LocalOllama, OpenAI, Anthropic, Abstract)
+- ✅ Attachment-Awareness: 📎 Emoji + Info für previous & current emails
+- ✅ Early Context Limiting: 4500 chars (optimiert)
+
+**Implemented:**
+
+**Phase E.1: Thread-Context Builder (src/12_processing.py)**
+- `build_thread_context()`: Collects previous emails chronologically
+  - Queries by thread_id + received_at (time-based, not ID-based!)
+  - Decrypts up to 5 previous emails with master_key
+  - Format: `[1] 2025-01-01 10:00 | From: alice@example.com 📎`
+  - Truncates body to 300 chars per email
+  - Returns formatted string or empty if no history
+
+**Phase E.2: Sender-Intelligence (src/12_processing.py)**
+- `get_sender_hint_from_patterns()`: Analyzes sender behavior
+  - Newsletter detection: All emails from same sender, no responses
+  - Conversational detection: Mix of different senders in thread
+  - Case-insensitive email comparison (alice@x.com == Alice@X.com)
+  - Null-safety: Skips emails with failed decryption
+  - Returns hint string: "SENDER PATTERN: automated/conversational"
+
+**Phase E.3: AI Client Extensions (src/03_ai_client.py)**
+- Added `context: Optional[str] = None` parameter to all analyze_email() methods:
+  - Abstract AIClient base class (line 71)
+  - LocalOllamaClient (line 814) - chat dispatcher
+  - OpenAIClient (line 910) - API call
+  - AnthropicClient (line 1051) - message format
+- Context sanitized (max 5000 chars) for security
+- Context prepended to user message in all implementations
+
+**Phase E.4: Processing Integration (src/12_processing.py)**
+- `process_pending_raw_emails()` enhanced:
+  - Calls build_thread_context() + get_sender_hint_from_patterns()
+  - Combines both into context_str
+  - Adds current email attachment info: "📎 CURRENT EMAIL: has attachments"
+  - Passes context to ai.analyze_email()
+  - Logs: "📧 Thread-Context: X chars, Sender-Hint: Y chars"
+
+**Phase E.5: Attachment-Awareness**
+- Previous emails show: `📎 (has attachments)` indicator
+- Current email gets: `📎 CURRENT EMAIL: This email has attachments.`
+- Uses `RawEmail.imap_has_attachments` field
+- Helps AI classify invoices, contracts, reports with PDFs
+
+**Phase E.6: Early Context Limiting**
+- Context limited to 4500 chars BEFORE AI call (not 5000 during sanitization)
+- Saves processing time and memory
+- Adds `[Context truncated due to size]` marker if trimmed
+- Leaves room for current email info (~500 chars)
+
+**Bugs Fixed During Implementation:**
+1. ✅ Signature Consistency: Removed unused `sender` parameter from LocalOllamaClient
+2. ✅ Thread Query: Changed from `id <` to `received_at <` (chronological ordering)
+3. ✅ Case-Sensitivity: Email comparison now case-insensitive (.lower())
+4. ✅ Variable Shadowing: Renamed second `sender_hint` to `classification_hint`
+5. ✅ Null-Safety: Added check before email_sender.lower()
+6. ✅ Pattern Logic: Uses `decryptable_count` instead of `total_count` (after filtering)
+7. ✅ Logging: Improved to show char counts for both context components
+
+**Git Commits:**
+- edc5ab5: Thread calculation & IMAP diagnostics fixes
+- 24ec3fb: Phase E: KI Thread-Context Implementation
+- d9ebf90: Fix: Phase E bugs from code review (round 1)
+- 366f15a: Fix: 4 critical bugs found in code review
+- 67052b0: Fix: Pattern detection logic flaw (#5)
+- 746aa26: Add: Attachment awareness + early context limiting
+
+**Impact:**
+- ✅ AI understands conversation history (follow-ups, replies)
+- ✅ Better urgency detection (e.g., 3rd reminder)
+- ✅ Newsletter thread detection: entire thread flagged as spam
+- ✅ Attachment presence factored into classification
+- ✅ 4500 char context limit optimizes performance
+
+**Example Context Output:**
+```
+CONVERSATION CONTEXT (3 previous emails):
+
+[1] 2025-01-01 10:00 | From: alice@example.com 📎 (has attachments)
+Subject: Project Update
+Body: Here are the Q4 reports in PDF format...
+
+[2] 2025-01-01 14:30 | From: bob@example.com
+Subject: Re: Project Update
+Body: Thanks! I have a question about slide 5...
+
+[3] 2025-01-01 16:00 | From: alice@example.com
+Subject: Re: Project Update
+Body: Good question. Let me clarify...
+
+SENDER PATTERN: This sender is conversational - thread has 3 emails with responses
+
+📎 CURRENT EMAIL: This email has attachments.
+```
 
 ---
 
@@ -634,14 +745,14 @@ def analyze_email(
 | ✅ DONE | 4b | RFC-Compliant IMAP UIDs | 4-6h | Eliminiert Race-Conditions | Phase 14 (a-f) COMPLETE |
 | ✅ DONE | 4c | IMAPClient Migration | 4-5h | 40% Code-Reduktion, 100% Reliability | Phase 14g COMPLETE |
 | ✅ DONE | 4d | reset_all_emails.py Fix | 0.5h | Soft-Delete + UIDVALIDITY Cache Clear | Phase 14g COMPLETE |
-| 🟡 TODO | 5 | KI Thread-Context | 4-6h | Bessere Klassifizierung | Phase E |
+| ✅ DONE | 5 | KI Thread-Context | 4h | Bessere Klassifizierung | Phase E COMPLETE |
 | 🟡 TODO | 6 | SMTP Antworten | 6-8h | Vollständige Automation | Phase F |
 | 🟢 TODO | 7 | Conversation UI | 8-10h | Nice-to-have | Phase G |
 | 🟢 TODO | 8 | Bulk Email Operations | 15-20h | Produktive Batch-Verarbeitung | Phase H |
 
-**Abgeschlossen:** 35-45h (Phase A + B + C + D + 14a-g)  
-**Geplant Phase 13 (E-H):** ~33-44 Stunden  
-**Phase 13 Gesamt:** ~68-89 Stunden
+**Abgeschlossen:** 39-49h (Phase A + B + C + D + 14a-g + E)  
+**Geplant Phase 13 (F-H):** ~29-38 Stunden  
+**Phase 13 Gesamt:** ~68-87 Stunden
 
 **Phase D Justification (Critical Infrastructure):**
 - Moved ahead of Phase C due to critical nature
