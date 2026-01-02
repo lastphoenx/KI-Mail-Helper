@@ -3339,10 +3339,18 @@ def api_imap_diagnostics(account_id):
                 ssl=(account.imap_encryption == "SSL"),
             )
 
+            # Phase 15: Folder-Parameter für Test 12 aus Request-Body holen
+            target_folder = None
+            if request.is_json:
+                json_data = request.get_json(silent=True) or {}
+                target_folder = json_data.get("folder_name", None)
+                logger.info(f"📁 Test 12 folder selection: {target_folder or 'ALL folders'}")
+            
             result = diagnostics.run_diagnostics(
                 subscribed_only=subscribed_only,
                 account_id=account_id,
-                session=db
+                session=db,
+                folder_name=target_folder
             )
 
             return jsonify({"success": True, "diagnostics": result}), 200
@@ -3688,14 +3696,57 @@ def move_email_to_trash(email_id):
             uid_to_use = raw_email.imap_uid  # Phase 14f: uid Feld entfernt
             folder_to_use = raw_email.imap_folder or "INBOX"
 
-            success, message = synchronizer.move_to_trash(uid_to_use, folder_to_use)
+            # Phase 15: move_to_trash gibt MoveResult zurück (mit UIDPLUS COPYUID)
+            result = synchronizer.move_to_trash(uid_to_use, folder_to_use)
 
-            if success:
-                email.deleted_at = datetime.now(UTC)
-                db.commit()
-                return jsonify({"success": True, "message": message})
+            if result.success:
+                # Phase 15: DB DIREKT UPDATEN mit neuer UID vom Server (analog zu move_to_folder)
+                try:
+                    logger.info(
+                        f"📝 Starte DB-Update für Email {email_id} (raw_email.id={raw_email.id}): "
+                        f"UID {uid_to_use} → {result.target_uid}, "
+                        f"Folder {folder_to_use} → {result.target_folder}, "
+                        f"UIDVAL {raw_email.imap_uidvalidity} → {result.target_uidvalidity}"
+                    )
+                    
+                    raw_email.imap_folder = result.target_folder
+                    
+                    # Wenn COPYUID verfügbar: neue UID + UIDVALIDITY speichern
+                    if result.target_uid is not None:
+                        raw_email.imap_uid = result.target_uid
+                        logger.info(
+                            f"✅ Email {email_id}: UID {uid_to_use} → {result.target_uid} "
+                            f"({folder_to_use} → {result.target_folder})"
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠️ Email {email_id}: COPYUID nicht verfügbar (target_uid=None)"
+                        )
+                    
+                    if result.target_uidvalidity is not None:
+                        raw_email.imap_uidvalidity = result.target_uidvalidity
+                        logger.info(f"✅ Email {email_id}: UIDVALIDITY → {result.target_uidvalidity}")
+                    
+                    # Soft-delete Marker setzen
+                    email.deleted_at = datetime.now(UTC)
+                    db.commit()
+                    
+                    logger.info(f"✅ Email {email_id} erfolgreich in Papierkorb verschoben und DB aktualisiert")
+                    
+                    return jsonify({
+                        "success": True,
+                        "message": result.message,
+                        "target_folder": result.target_folder,
+                        "target_uid": result.target_uid,
+                        "target_uidvalidity": result.target_uidvalidity
+                    })
+                    
+                except Exception as db_error:
+                    logger.error(f"DB-Update fehlgeschlagen für Email {email_id}: {db_error}")
+                    db.rollback()
+                    return jsonify({"error": f"IMAP erfolgreich, DB-Update fehlgeschlagen: {str(db_error)}"}), 500
             else:
-                return jsonify({"error": message}), 500
+                return jsonify({"error": result.message}), 500
 
         finally:
             fetcher.disconnect()

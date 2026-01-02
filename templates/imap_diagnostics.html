@@ -28,6 +28,21 @@
                     </select>
                 </div>
 
+                <!-- Phase 15: Folder Selection für Test 12 (DB Sync Verification) -->
+                <div class="mb-4" id="folderSelectionContainer" style="display: none;">
+                    <label for="folderSelect" class="form-label">
+                        <strong>📁 Ordner für DB Sync-Check wählen (Test 12):</strong>
+                    </label>
+                    <select id="folderSelect" class="form-select">
+                        <option value="">-- Alle Ordner überprüfen --</option>
+                        <!-- Wird gefüllt nach erfolgreicher Diagnostics (aus folders-Liste) -->
+                    </select>
+                    <small class="text-muted">
+                        Test 12 checkt ob Mails korrekt zwischen DB und IMAP synchronisiert sind.
+                        Ordner auswählen für spezifischen Test, oder leer lassen für alle Ordner.
+                    </small>
+                </div>
+
                 <!-- Test Button -->
                 <div class="mb-4">
                     <button id="testBtn" class="btn btn-primary btn-lg" disabled>
@@ -200,9 +215,12 @@
         if (this.value) {
             testBtn.disabled = false;
             testHint.textContent = 'Bereit zum Testen';
+            // Phase 15: Folder-Auswahl anzeigen (wird nach Test gefüllt)
+            document.getElementById('folderSelectionContainer').style.display = 'none';
         } else {
             testBtn.disabled = true;
             testHint.textContent = 'Wähle einen Account';
+            document.getElementById('folderSelectionContainer').style.display = 'none';
         }
         
         // Hide previous results
@@ -223,6 +241,10 @@
             // CSRF Token
             const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
 
+            // Phase 15: Hole ausgewählten Ordner (für Test 12)
+            const folderSelect = document.getElementById('folderSelect');
+            const selectedFolder = folderSelect.value || null;  // null = alle Ordner
+
             // API Call with 150s timeout (max server wait + buffer)
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 150000);
@@ -233,7 +255,7 @@
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({ folder_name: selectedFolder }),  // Phase 15
                 signal: controller.signal
             });
             
@@ -326,6 +348,11 @@
         // 5. Folder Listing Test
         displayFoldersList(diagnostics.folders);
 
+        // Phase 15: Fülle Folder-Select für Test 12 nach erfolgreichem Folder-Listing
+        if (diagnostics.folders && diagnostics.folders.success && diagnostics.folders.folders) {
+            populateFolderSelect(diagnostics.folders.folders);
+        }
+
         // 6. Flag Detection Test
         displayFlagsTest(diagnostics.flags);
 
@@ -357,6 +384,247 @@
 
         // Summary
         displaySummary(diagnostics);
+    }
+
+    // Phase 15: Fülle Folder-Select Dropdown für Test 12
+    function populateFolderSelect(foldersArray) {
+        const folderSelect = document.getElementById('folderSelect');
+        const folderContainer = document.getElementById('folderSelectionContainer');
+        
+        // Clear existing options (except "Alle Ordner")
+        folderSelect.innerHTML = '<option value="">-- Alle Ordner überprüfen --</option>';
+        
+        // Add folder options
+        if (foldersArray && foldersArray.length > 0) {
+            foldersArray.forEach(folder => {
+                const option = document.createElement('option');
+                option.value = folder.name;
+                // Phase 15b: folder.count existiert nicht in list_all_folders() Response
+                option.textContent = folder.name;  // Nur Ordnername ohne Count
+                folderSelect.appendChild(option);
+            });
+            
+            // Show folder selection container
+            folderContainer.style.display = 'block';
+        } else {
+            folderContainer.style.display = 'none';
+        }
+    }
+
+    // Phase 15: Multi-Folder DB Sync Display
+    function displayMultiFolderDbSync(data, statusEl, detailsEl) {
+        const allSync = data.folders_with_issues === 0;
+        statusEl.innerHTML = allSync ? '1️⃣2️⃣ DB Sync Verification (Multi-Folder) ✅' : '1️⃣2️⃣ DB Sync Verification (Multi-Folder) ⚠️';
+        
+        let html = `
+            <div class="alert ${allSync ? 'alert-success' : 'alert-warning'}">
+                <strong>${data.summary}</strong><br>
+                <small class="text-muted">
+                    Geprüft: ${data.total_folders} Ordner | 
+                    ${allSync ? '✅ Alle synchronisiert' : `⚠️ ${data.folders_with_issues} mit Issues`}
+                </small>
+            </div>
+        `;
+        
+        // Übersichtstabelle mit allen Ordnern
+        html += `<h6 class="mt-3">📊 Übersicht:</h6>`;
+        html += `
+            <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Ordner</th>
+                            <th>IMAP</th>
+                            <th>DB</th>
+                            <th>Sync</th>
+                            <th>Details</th>
+                            <th>Aktion</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        let folderIndex = 0;
+        for (const [folderName, folderData] of Object.entries(data.folders)) {
+            if (!folderData.success) {
+                html += `
+                    <tr class="table-danger">
+                        <td><strong>${folderName}</strong></td>
+                        <td colspan="5"><span class="text-danger">❌ ${folderData.error || 'Fehler'}</span></td>
+                    </tr>
+                `;
+                continue;
+            }
+            
+            const isSync = folderData.sync_ok;
+            const rowClass = isSync ? '' : 'table-warning';
+            const syncIcon = isSync ? '✅' : '⚠️';
+            const hasMails = folderData.all_mails && folderData.all_mails.length > 0;
+            
+            html += `
+                <tr class="${rowClass}">
+                    <td><strong>${folderName}</strong></td>
+                    <td><span class="badge bg-primary">${folderData.imap_count || 0}</span></td>
+                    <td><span class="badge bg-info">${folderData.db_count || 0}</span></td>
+                    <td>${syncIcon}</td>
+                    <td><small>${folderData.message || '—'}</small></td>
+                    <td>
+                        ${hasMails ? `<button class="btn btn-sm btn-outline-primary toggle-folder-details" data-folder-id="folder_${folderIndex}">📋 Details</button>` : '—'}
+                    </td>
+                </tr>
+            `;
+            
+            // Phase 15a: Detaillierte Mail-Liste pro Ordner (expandierbar)
+            if (hasMails) {
+                html += `
+                    <tr id="folder_${folderIndex}" class="folder-details" style="display: none;">
+                        <td colspan="6" class="bg-light">
+                            ${renderFolderMailDetails(folderName, folderData)}
+                        </td>
+                    </tr>
+                `;
+            }
+            
+            folderIndex++;
+        }
+        
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        detailsEl.innerHTML = html;
+        
+        // Phase 15a: Event-Delegation für toggle-folder-details Buttons (CSP-konform)
+        attachFolderDetailsToggleListeners();
+    }
+    
+    // Phase 15a: Attach Event-Listeners für Folder-Details Toggle (CSP-konform)
+    function attachFolderDetailsToggleListeners() {
+        // Event-Delegation: Ein Listener für alle toggle-buttons
+        document.querySelectorAll('.toggle-folder-details').forEach(button => {
+            button.addEventListener('click', function() {
+                const folderId = this.getAttribute('data-folder-id');
+                toggleFolderDetails(folderId);
+            });
+        });
+    }
+    
+    // Phase 15a: Rendere detaillierte Mail-Liste für einen Ordner
+    function renderFolderMailDetails(folderName, folderData) {
+        let html = `
+            <h6 class="mt-2">📧 Mails in Ordner "${folderName}" (${folderData.all_mails.length}):</h6>
+            <div class="table-responsive">
+                <table class="table table-sm" style="font-size: 0.85em;">
+                    <thead class="table-secondary">
+                        <tr>
+                            <th rowspan="2">Status</th>
+                            <th colspan="2" class="text-center bg-primary text-white">📡 IMAP</th>
+                            <th colspan="2" class="text-center bg-info text-white">💾 DB</th>
+                            <th rowspan="2">Betreff</th>
+                            <th rowspan="2">👁️</th>
+                            <th rowspan="2">🚩</th>
+                            <th rowspan="2">↩️</th>
+                            <th rowspan="2">Datum</th>
+                        </tr>
+                        <tr>
+                            <th class="bg-primary text-white">UID</th>
+                            <th class="bg-primary text-white">UIDVAL</th>
+                            <th class="bg-info text-white">UID</th>
+                            <th class="bg-info text-white">UIDVAL</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        folderData.all_mails.forEach(mail => {
+            // Status Badge
+            let statusBadge = '';
+            if (mail.in_imap && mail.in_db) {
+                statusBadge = '<span class="badge bg-success">✅</span>';
+            } else if (mail.in_imap && !mail.in_db) {
+                statusBadge = '<span class="badge bg-warning">📡</span>';
+            } else if (!mail.in_imap && mail.in_db) {
+                statusBadge = '<span class="badge bg-danger">💾</span>';
+            }
+            
+            // Phase 15b: Getrennte IMAP/DB Werte
+            const imapUid = mail.imap_uid !== null && mail.imap_uid !== undefined ? mail.imap_uid : '—';
+            const imapUidval = mail.imap_uidvalidity !== null && mail.imap_uidvalidity !== undefined ? mail.imap_uidvalidity : '—';
+            const dbUid = mail.db_uid !== null && mail.db_uid !== undefined ? mail.db_uid : '—';
+            const dbUidval = mail.db_uidvalidity !== null && mail.db_uidvalidity !== undefined ? mail.db_uidvalidity : '—';
+            
+            // Highlight wenn UID oder UIDVAL unterschiedlich
+            let rowClass = '';
+            let uidMismatch = false;
+            let uidvalMismatch = false;
+            
+            if (mail.in_imap && mail.in_db) {
+                if (mail.imap_uid !== mail.db_uid) {
+                    uidMismatch = true;
+                    rowClass = 'table-danger';
+                }
+                if (mail.imap_uidvalidity !== mail.db_uidvalidity) {
+                    uidvalMismatch = true;
+                    rowClass = 'table-danger';
+                }
+            }
+            
+            // Flags
+            const seenIcon = mail.is_seen ? '✅' : '—';
+            const flagIcon = mail.is_flagged ? '🚩' : '—';
+            const replyIcon = mail.is_answered ? '↩️' : '—';
+            
+            // Datum kürzen
+            const dateShort = mail.received_at ? mail.received_at.substring(0, 16) : '—';
+            
+            // Subject kürzen
+            const subjectShort = mail.subject && mail.subject.length > 50 ? mail.subject.substring(0, 47) + '...' : (mail.subject || '(no subject)');
+            
+            // Styling für Mismatches
+            const uidStyle = uidMismatch ? 'style="background-color: #ffcccc; font-weight: bold;"' : '';
+            const uidvalStyle = uidvalMismatch ? 'style="background-color: #ffcccc; font-weight: bold;"' : '';
+            
+            html += `
+                <tr class="${rowClass}">
+                    <td>${statusBadge}</td>
+                    <td class="bg-light" ${uidStyle}><strong>${imapUid}</strong></td>
+                    <td class="bg-light" ${uidvalStyle}><small>${imapUidval}</small></td>
+                    <td class="bg-light" ${uidStyle}><strong>${dbUid}</strong></td>
+                    <td class="bg-light" ${uidvalStyle}><small>${dbUidval}</small></td>
+                    <td title="${mail.subject || ''}">${subjectShort}</td>
+                    <td class="text-center">${seenIcon}</td>
+                    <td class="text-center">${flagIcon}</td>
+                    <td class="text-center">${replyIcon}</td>
+                    <td><small>${dateShort}</small></td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                    </tbody>
+                </table>
+            </div>
+            <small class="text-muted">
+                <strong>Legende:</strong>
+                <span class="badge bg-success">✅</span> = IMAP & DB |
+                <span class="badge bg-warning">📡</span> = Nur IMAP |
+                <span class="badge bg-danger">💾</span> = Nur DB |
+                👁️ = Gelesen | 🚩 = Markiert | ↩️ = Beantwortet<br>
+                <strong class="text-danger">Rot hinterlegt:</strong> UID oder UIDVALIDITY unterschiedlich zwischen IMAP und DB (Sync-Problem!)
+            </small>
+        `;
+        
+        return html;
+    }
+    
+    // Phase 15a: Toggle Folder Details
+    function toggleFolderDetails(folderId) {
+        const detailsRow = document.getElementById(folderId);
+        if (detailsRow) {
+            detailsRow.style.display = detailsRow.style.display === 'none' ? 'table-row' : 'none';
+        }
     }
 
     function displayConnectionTest(data) {
@@ -876,6 +1144,13 @@
         const detailsEl = document.getElementById('dbSyncDetails');
 
         if (data.success) {
+            // Phase 15: Multi-Folder Mode?
+            if (data.multi_folder_mode && data.folders) {
+                displayMultiFolderDbSync(data, statusEl, detailsEl);
+                return;
+            }
+            
+            // Single-Folder Mode (wie bisher)
             const isSync = data.sync_ok;
             statusEl.innerHTML = isSync ? '1️⃣2️⃣ DB Sync Verification ✅' : '1️⃣2️⃣ DB Sync Verification ⚠️';
             

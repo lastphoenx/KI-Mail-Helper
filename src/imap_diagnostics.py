@@ -1515,19 +1515,76 @@ class IMAPDiagnostics:
         
         return addresses
     
-    def verify_db_sync(self, client=None, account_id: int = None, session=None) -> Dict[str, Any]:
-        """
-        Test 12: Vergleicht Archiv-Mails zwischen DB und IMAP-Server
+    def _verify_db_sync_multi_folder(self, client, folders: list, account_id: int, session) -> Dict[str, Any]:
+        """Phase 15: Helper für Multi-Folder DB Sync Check
         
-        Checkt ob verschobene Mails (z.B. "Test email verschieben") korrekt synchronisiert wurden.
+        Args:
+            client: Active IMAPClient connection
+            folders: List of folder names to check
+            account_id: Mail account ID
+            session: SQLAlchemy session
+            
+        Returns:
+            Multi-folder result structure
+        """
+        results = {}
+        total_issues = 0
+        
+        for folder in folders:
+            try:
+                # Rufe verify_db_sync für jeden Ordner einzeln auf
+                folder_result = self.verify_db_sync(
+                    client=client, 
+                    account_id=account_id, 
+                    session=session, 
+                    folder_name=folder
+                )
+                
+                # Extrahiere Sync-Status
+                if not folder_result.get('sync_ok', True):
+                    total_issues += 1
+                
+                results[folder] = folder_result
+                
+            except Exception as e:
+                logger.error(f"Fehler beim Checken von Ordner '{folder}': {e}")
+                results[folder] = {
+                    'success': False,
+                    'error': str(e),
+                    'message': f'Fehler: {str(e)}'
+                }
+                total_issues += 1
+        
+        # Summary erstellen
+        sync_status = "✅ Alle synchronisiert" if total_issues == 0 else f"⚠️ {total_issues} Ordner mit Sync-Issues"
+        
+        return {
+            'success': True,
+            'multi_folder_mode': True,
+            'folders': results,
+            'summary': f'Gecheckt: {len(folders)} Ordner, {sync_status}',
+            'total_folders': len(folders),
+            'folders_with_issues': total_issues
+        }
+    
+    def verify_db_sync(self, client=None, account_id: int = None, session=None, folder_name: str = None) -> Dict[str, Any]:
+        """
+        Test 12: Vergleicht Mails zwischen DB und IMAP-Server
+        
+        Phase 15: Erweitert auf Multi-Folder-Support
         
         Args:
             client: Optional pre-existing IMAPClient connection
             account_id: Mail account ID for DB lookup
             session: SQLAlchemy session for DB access
+            folder_name: Spezifischer Ordner zum Checken (optional)
+                        - Wenn gegeben: nur diesen Ordner prüfen
+                        - Wenn None: alle Ordner vom Server durchlaufen
         
         Returns:
-            Dict with sync verification results
+            Dict with sync verification results:
+            - Single folder: { success, folder, imap_count, db_count, ... }
+            - Multi-folder: { success, multi_folder_mode: True, folders: {...}, summary }
         """
         should_close = False
         try:
@@ -1536,6 +1593,23 @@ class IMAPDiagnostics:
                 client.login(self.username, self.password)
                 should_close = True
             
+            # Phase 15: Multi-Folder Support
+            if folder_name:
+                # Einzelner Ordner ausgewählt
+                folders_to_check = [folder_name]
+            else:
+                # Alle Ordner vom Server holen
+                all_folder_tuples = client.list_folders()
+                folders_to_check = [f[2] for f in all_folder_tuples]  # f[2] ist der Ordnername
+                logger.info(f"🔍 DB Sync Check: Prüfe alle {len(folders_to_check)} Ordner")
+            
+            # Phase 15: Multi-Folder-Mode
+            if len(folders_to_check) > 1:
+                return self._verify_db_sync_multi_folder(client, folders_to_check, account_id, session)
+            
+            # Single-Folder-Mode (wie bisher)
+            folder = folders_to_check[0]
+            
             # DB Mails holen (wenn session und account_id gegeben)
             db_mails = {}
             if session and account_id:
@@ -1543,7 +1617,7 @@ class IMAPDiagnostics:
                 models = importlib.import_module("src.02_models")
                 
                 db_mails_raw = session.query(models.RawEmail).filter(
-                    models.RawEmail.imap_folder == 'Archiv',
+                    models.RawEmail.imap_folder == folder,
                     models.RawEmail.mail_account_id == account_id,
                     models.RawEmail.deleted_at.is_(None)  # Filter soft-deleted mails
                 ).order_by(models.RawEmail.imap_uid).all()
@@ -1563,8 +1637,8 @@ class IMAPDiagnostics:
                         'in_imap': False  # Wird gleich gesetzt
                     }
             
-            # IMAP Archiv-Mails holen
-            folder_info = client.select_folder('Archiv', readonly=True)
+            # IMAP Mails holen (single folder)
+            folder_info = client.select_folder(folder, readonly=True)
             
             uidvalidity = folder_info.get(b'UIDVALIDITY')
             if uidvalidity:
@@ -1576,13 +1650,13 @@ class IMAPDiagnostics:
             if not all_msgs:
                 return {
                     'success': True,
-                    'folder': 'Archiv',
+                    'folder': folder,
                     'uidvalidity': uidvalidity,
                     'imap_count': 0,
                     'db_count': len(db_mails),
                     'sync_ok': len(db_mails) == 0,
                     'all_mails': list(db_mails.values()),
-                    'message': 'Archiv ist leer auf Server'
+                    'message': f'{folder} ist leer auf Server'
                 }
             
             # Fetch ALLE Details für jede Mail
@@ -1633,7 +1707,7 @@ class IMAPDiagnostics:
                 imap_mails[msg_id] = {
                     'uid': msg_id,
                     'uidvalidity': uidvalidity,
-                    'folder': 'Archiv',
+                    'folder': folder,
                     'message_id': message_id,
                     'subject': subject,
                     'is_seen': is_seen,
@@ -1641,7 +1715,12 @@ class IMAPDiagnostics:
                     'is_answered': is_answered,
                     'received_at': date_str,
                     'in_imap': True,
-                    'in_db': in_db
+                    'in_db': in_db,
+                    # Phase 15b: Separate IMAP/DB Werte für Vergleich
+                    'imap_uid': msg_id,
+                    'imap_uidvalidity': uidvalidity,
+                    'db_uid': db_mails[msg_id]['uid'] if in_db else None,
+                    'db_uidvalidity': db_mails[msg_id]['uidvalidity'] if in_db else None
                 }
                 
                 # Update DB entry wenn vorhanden
@@ -1650,6 +1729,9 @@ class IMAPDiagnostics:
                     # Überschreibe mit IMAP-Daten (die sind nicht verschlüsselt)
                     db_mails[msg_id]['message_id'] = message_id
                     db_mails[msg_id]['subject'] = subject
+                    # Phase 15b: Separate IMAP Werte hinzufügen
+                    db_mails[msg_id]['imap_uid'] = msg_id
+                    db_mails[msg_id]['imap_uidvalidity'] = uidvalidity
             
             # Merge beide Listen
             all_mails = {}
@@ -1661,6 +1743,11 @@ class IMAPDiagnostics:
             # Alle DB-only Mails (die nicht auf IMAP sind)
             for uid, mail in db_mails.items():
                 if not mail['in_imap']:
+                    # Phase 15b: Füge separate IMAP/DB Werte hinzu (IMAP=None)
+                    mail['imap_uid'] = None
+                    mail['imap_uidvalidity'] = None
+                    mail['db_uid'] = mail['uid']
+                    mail['db_uidvalidity'] = mail['uidvalidity']
                     all_mails[uid] = mail
             
             # Sortiere nach UID
@@ -1678,9 +1765,10 @@ class IMAPDiagnostics:
             
             sync_ok = only_imap == 0 and only_db == 0
             
+            # Single-Folder Result
             return {
                 'success': True,
-                'folder': 'Archiv',
+                'folder': folder,
                 'uidvalidity': uidvalidity,
                 'imap_count': len(imap_mails),
                 'db_count': len(db_mails),
@@ -1711,7 +1799,7 @@ class IMAPDiagnostics:
                 except:
                     pass
     
-    def run_diagnostics(self, subscribed_only: bool = False, account_id: int = None, session=None) -> Dict[str, Any]:
+    def run_diagnostics(self, subscribed_only: bool = False, account_id: int = None, session=None, folder_name: str = None) -> Dict[str, Any]:
         """
         Run complete diagnostics suite using a single connection
         
@@ -1719,6 +1807,9 @@ class IMAPDiagnostics:
             subscribed_only: If True, list only subscribed folders. If False, list all folders.
             account_id: Optional mail account ID for DB sync verification
             session: Optional SQLAlchemy session for DB access
+            folder_name: Optional folder name for Test 12 (DB sync)
+                        - If given: check only this folder
+                        - If None: check all folders
         
         Returns:
             Dict with all diagnostic results
@@ -1787,8 +1878,11 @@ class IMAPDiagnostics:
             
             # Test 12: DB Sync Verification (optional, nur wenn account_id + session gegeben)
             if account_id and session:
-                logger.info("Test 12/12: Verifying DB sync for Archiv folder...")
-                results['db_sync'] = self.verify_db_sync(client, account_id, session)
+                if folder_name:
+                    logger.info(f"Test 12/12: Verifying DB sync for folder '{folder_name}'...")
+                else:
+                    logger.info("Test 12/12: Verifying DB sync for ALL folders...")
+                results['db_sync'] = self.verify_db_sync(client, account_id, session, folder_name)
             else:
                 logger.info("Test 12/12: Skipping DB sync (no account_id/session)")
                 results['db_sync'] = {'success': False, 'message': 'Skipped (no DB access)'}
