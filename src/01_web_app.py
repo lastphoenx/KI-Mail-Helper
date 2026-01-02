@@ -2884,7 +2884,9 @@ def api_get_reply_tones():
 @login_required
 def api_check_embedding_compatibility(email_id):
     """
-    Pre-Check: Prüft ob Email-Embedding mit aktuellem Model kompatibel ist
+    Pre-Check: Prüft ob Email-Embedding mit GEWÄHLTEM Model kompatibel ist
+    
+    Vergleicht: current_email_dim VS selected_embedding_model_dim (aus Settings)
     
     Returns:
         {
@@ -2915,28 +2917,27 @@ def api_check_embedding_compatibility(email_id):
         if not raw_email:
             return jsonify({"compatible": False, "error": "Email nicht gefunden"}), 404
         
-        # Prüfe Embedding-Dimension
-        from src.semantic_search import get_embedding_dim_from_bytes, DEFAULT_EMBEDDING_DIM
+        # WICHTIG: Prüfe gegen GEWÄHLTES Embedding Model (aus Settings!)
+        from src.semantic_search import get_embedding_dim_from_bytes
         
         current_dim = get_embedding_dim_from_bytes(raw_email.email_embedding) if raw_email.email_embedding else 0
-        expected_dim = DEFAULT_EMBEDDING_DIM  # 384 für all-minilm
         
-        # Hol alle anderen Embeddings im System um zu checken ob konsistent
-        sample_emails = (
-            db.query(models.RawEmail)
-            .filter(
-                models.RawEmail.user_id == user.id,
-                models.RawEmail.email_embedding.isnot(None),
-                models.RawEmail.deleted_at == None
-            )
-            .limit(5)
-            .all()
-        )
+        # Hole erwartete Dimension vom GEWÄHLTEN Model
+        provider_embedding = (user.preferred_embedding_provider or "ollama").lower()
+        model_embedding = user.preferred_embedding_model or "all-minilm:22m"
         
-        if sample_emails:
-            # Nutze die häufigste Dimension als "expected"
-            dimensions = [get_embedding_dim_from_bytes(e.email_embedding) for e in sample_emails]
-            expected_dim = max(set(dimensions), key=dimensions.count)  # Most common
+        # Model-spezifische Dimensionen (hardcoded für bekannte Modelle)
+        MODEL_DIMENSIONS = {
+            "all-minilm:22m": 384,
+            "nomic-embed-text": 768,
+            "bge-large": 1024,
+            "text-embedding-3-small": 1536,
+            "text-embedding-3-large": 3072,
+            "text-embedding-ada-002": 1536,
+            "mistral-embed": 1024,
+        }
+        
+        expected_dim = MODEL_DIMENSIONS.get(model_embedding, 384)  # Default 384
         
         compatible = (current_dim == expected_dim) if current_dim > 0 else True
         
@@ -2944,7 +2945,8 @@ def api_check_embedding_compatibility(email_id):
             "compatible": compatible,
             "current_dim": current_dim,
             "expected_dim": expected_dim,
-            "message": f"Embedding-Dimension {current_dim} weicht von bestehenden Emails ({expected_dim}) ab. "
+            "selected_model": model_embedding,
+            "message": f"Embedding-Dimension {current_dim} weicht vom gewählten Model ({model_embedding}: {expected_dim}) ab. "
                       f"Bitte nutze 'Alle Emails neu embedden' in den Settings!"
                       if not compatible else "Embedding kompatibel"
         }), 200
@@ -3104,12 +3106,12 @@ def api_reprocess_email(email_id):
 @login_required
 def api_batch_reprocess_embeddings():
     """
-    Batch-Reprocess: Regeneriert Embeddings für ALLE Emails
+    Batch-Reprocess: Regeneriert Embeddings für ALLE Emails (async mit Progress)
     
     Use Case: User wechselt Embedding-Model (z.B. all-minilm → bge-large)
     → Alle Emails müssen neu embedded werden für konsistente Semantic Search!
     
-    Wichtig: Embeddings MÜSSEN vom gleichen Model stammen (Cosine Similarity)
+    Returns job_id für Progress-Tracking
     """
     db = get_db_session()
     
@@ -3125,81 +3127,26 @@ def api_batch_reprocess_embeddings():
         # Hole aktuelles Embedding-Model aus Settings
         provider_embedding = (user.preferred_embedding_provider or "ollama").lower()
         model_embedding = user.preferred_embedding_model or "all-minilm:22m"
-        resolved_model_embedding = ai_client.resolve_model(provider_embedding, model_embedding)
         
-        embedding_client = ai_client.build_client(provider_embedding, model=resolved_model_embedding)
-        
-        # Hole alle RawEmails des Users
-        raw_emails = (
-            db.query(models.RawEmail)
-            .filter(
-                models.RawEmail.user_id == user.id,
-                models.RawEmail.deleted_at == None
-            )
-            .all()
+        # Enqueue async job
+        job_id = job_queue.enqueue_batch_reprocess_job(
+            user_id=user.id,
+            master_key=master_key,
+            provider=provider_embedding,
+            model=model_embedding
         )
-        
-        if not raw_emails:
-            return jsonify({
-                "success": True,
-                "message": "Keine Emails vorhanden",
-                "processed": 0,
-                "failed": 0,
-                "model": resolved_model_embedding
-            }), 200
-        
-        from src.semantic_search import generate_embedding_for_email
-        
-        processed = 0
-        failed = 0
-        
-        logger.info(f"🔄 Batch-Reprocess: {len(raw_emails)} Emails mit {resolved_model_embedding}")
-        
-        for raw_email in raw_emails:
-            try:
-                # Entschlüsseln
-                decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
-                    raw_email.encrypted_subject or "", master_key
-                )
-                decrypted_body = encryption.EmailDataManager.decrypt_email_body(
-                    raw_email.encrypted_body or "", master_key
-                )
-                
-                # Embedding generieren
-                embedding_bytes, model_name, timestamp = generate_embedding_for_email(
-                    subject=decrypted_subject,
-                    body=decrypted_body,
-                    ai_client=embedding_client
-                )
-                
-                if embedding_bytes:
-                    raw_email.email_embedding = embedding_bytes
-                    raw_email.embedding_model = model_name or resolved_model_embedding
-                    raw_email.embedding_generated_at = timestamp
-                    processed += 1
-                else:
-                    failed += 1
-                    logger.warning(f"⚠️  Embedding failed for email {raw_email.id}")
-                    
-            except Exception as e:
-                failed += 1
-                logger.error(f"❌ Failed to reprocess email {raw_email.id}: {e}")
-        
-        db.commit()
-        
-        logger.info(f"✅ Batch-Reprocess complete: {processed} success, {failed} failed")
         
         return jsonify({
             "success": True,
-            "message": f"Batch-Reprocess abgeschlossen",
-            "processed": processed,
-            "failed": failed,
-            "model": resolved_model_embedding
+            "status": "queued",
+            "job_id": job_id,
+            "message": "Batch-Reprocess gestartet"
         }), 200
         
+    except ValueError as ve:
+        return jsonify({"success": False, "error": str(ve)}), 400
     except Exception as e:
-        logger.error(f"Batch-Reprocess failed: {e}")
-        db.rollback()
+        logger.error(f"Batch-Reprocess enqueue failed: {e}")
         return jsonify({
             "success": False,
             "error": f"Batch-Reprocess fehlgeschlagen: {str(e)}"

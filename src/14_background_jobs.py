@@ -39,6 +39,17 @@ class FetchJob:
     meta: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class BatchReprocessJob:
+    """Job für Batch-Reprocessing aller Emails (Embedding regeneration)"""
+    job_id: str
+    user_id: int
+    master_key: str
+    provider: str
+    model: str
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+
 class BackgroundJobQueue:
     """Kleiner in-memory Job-Queue mit einem Worker-Thread."""
 
@@ -47,7 +58,7 @@ class BackgroundJobQueue:
 
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self.queue: Queue[FetchJob] = Queue(maxsize=self.MAX_QUEUE_SIZE)
+        self.queue: Queue = Queue(maxsize=self.MAX_QUEUE_SIZE)  # Generic queue for all job types
         self._stop_event = threading.Event()
         self._worker: Optional[threading.Thread] = None
         self._status: Dict[str, Dict[str, Any]] = {}
@@ -126,6 +137,50 @@ class BackgroundJobQueue:
         )
         return job_id
 
+    def enqueue_batch_reprocess_job(
+        self,
+        *,
+        user_id: int,
+        master_key: str,
+        provider: str,
+        model: str,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Enqueue Batch-Reprocess Job (alle Emails neu embedden)"""
+        if not master_key:
+            raise ValueError("master_key ist erforderlich")
+
+        job_id = uuid.uuid4().hex
+        job = BatchReprocessJob(
+            job_id=job_id,
+            user_id=user_id,
+            master_key=master_key,
+            provider=provider,
+            model=model,
+            meta=meta or {},
+        )
+        try:
+            self.queue.put(job, block=False)
+        except Exception:
+            raise ValueError(
+                f"Job-Queue ist voll ({self.MAX_QUEUE_SIZE} Jobs). Bitte warten..."
+            )
+        self._update_status(
+            job_id,
+            {
+                "state": "queued",
+                "user_id": user_id,
+                "provider": provider,
+                "model": model,
+                "job_type": "batch_reprocess",
+            },
+        )
+        self.ensure_worker()
+        logger.info(
+            "🔄 Batch-Reprocess Job %s eingereiht (User %s)", job_id, user_id
+        )
+        return job_id
+
     def get_status(self, job_id: str, user_id: int) -> Optional[Dict[str, Any]]:
         with self._status_lock:
             status = self._status.get(job_id)
@@ -147,13 +202,22 @@ class BackgroundJobQueue:
                 continue
             try:
                 self._update_status(job.job_id, {"state": "running"})
-                self._execute_job(job)
+                
+                # Route zu spezifischer Execute-Methode basierend auf Job-Typ
+                if isinstance(job, BatchReprocessJob):
+                    self._execute_batch_reprocess_job(job)
+                elif isinstance(job, FetchJob):
+                    self._execute_fetch_job(job)
+                else:
+                    logger.error(f"Unknown job type: {type(job)}")
+                    
             except Exception:
                 logger.exception("Unerwarteter Fehler im Worker")
             finally:
                 self.queue.task_done()
 
-    def _execute_job(self, job: FetchJob) -> None:
+    def _execute_fetch_job(self, job: FetchJob) -> None:
+        """Execute Mail Fetch Job"""
         session = self._SessionFactory()
         saved = 0
         processed = 0
@@ -602,3 +666,130 @@ class BackgroundJobQueue:
             session.flush()
 
         return saved
+
+    def _execute_batch_reprocess_job(self, job: BatchReprocessJob) -> None:
+        """Execute Batch-Reprocess Job (regenerate embeddings for all emails)"""
+        session = self._SessionFactory()
+        processed = 0
+        failed = 0
+        
+        try:
+            user = session.query(models.User).filter_by(id=job.user_id).first()
+            if not user:
+                raise ValueError("User nicht gefunden")
+
+            master_key = job.master_key
+            if not master_key:
+                raise ValueError("Master-Key fehlt im Job")
+
+            # Hole alle RawEmails des Users
+            raw_emails = (
+                session.query(models.RawEmail)
+                .filter(
+                    models.RawEmail.user_id == user.id,
+                    models.RawEmail.deleted_at == None
+                )
+                .all()
+            )
+            
+            if not raw_emails:
+                self._update_status(
+                    job.job_id,
+                    {
+                        "state": "done",
+                        "processed": 0,
+                        "failed": 0,
+                        "total_emails": 0,
+                        "message": "Keine Emails vorhanden"
+                    },
+                )
+                return
+            
+            total = len(raw_emails)
+            logger.info(f"🔄 Batch-Reprocess: {total} Emails mit {job.model}")
+            
+            # Build AI Client
+            resolved_model = ai_client.resolve_model(job.provider, job.model)
+            embedding_client = ai_client.build_client(job.provider, model=resolved_model)
+            
+            # Update initial status
+            self._update_status(
+                job.job_id,
+                {
+                    "total_emails": total,
+                    "current_email_index": 0,
+                },
+            )
+            
+            # Process each email
+            for idx, raw_email in enumerate(raw_emails, start=1):
+                try:
+                    # Entschlüsseln
+                    decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
+                        raw_email.encrypted_subject or "", master_key
+                    )
+                    decrypted_body = encryption.EmailDataManager.decrypt_email_body(
+                        raw_email.encrypted_body or "", master_key
+                    )
+                    
+                    # Progress-Update
+                    self._update_status(
+                        job.job_id,
+                        {
+                            "current_email_index": idx,
+                            "current_subject": decrypted_subject[:50] if decrypted_subject else "Kein Betreff",
+                        },
+                    )
+                    
+                    # Embedding generieren
+                    embedding_bytes, model_name, timestamp = generate_embedding_for_email(
+                        subject=decrypted_subject,
+                        body=decrypted_body,
+                        ai_client=embedding_client
+                    )
+                    
+                    if embedding_bytes:
+                        raw_email.email_embedding = embedding_bytes
+                        raw_email.embedding_model = model_name or resolved_model
+                        raw_email.embedding_generated_at = timestamp
+                        processed += 1
+                        logger.debug(f"✅ [{idx}/{total}] Email {raw_email.id} embedded")
+                    else:
+                        failed += 1
+                        logger.warning(f"⚠️  [{idx}/{total}] Embedding failed for email {raw_email.id}")
+                        
+                except Exception as e:
+                    failed += 1
+                    logger.error(f"❌ [{idx}/{total}] Failed to reprocess email {raw_email.id}: {e}")
+            
+            session.commit()
+            
+            self._update_status(
+                job.job_id,
+                {
+                    "state": "done",
+                    "processed": processed,
+                    "failed": failed,
+                    "total_emails": total,
+                    "model": resolved_model,
+                },
+            )
+            logger.info(
+                "✅ Batch-Reprocess Job %s abgeschlossen (processed=%s, failed=%s)",
+                job.job_id,
+                processed,
+                failed,
+            )
+            
+        except Exception as exc:
+            session.rollback()
+            logger.error("❌ Batch-Reprocess Job %s fehlgeschlagen: %s", job.job_id, exc, exc_info=True)
+            self._update_status(
+                job.job_id,
+                {
+                    "state": "error",
+                    "message": f"Batch-Reprocess fehlgeschlagen: {str(exc)}",
+                },
+            )
+        finally:
+            session.close()
