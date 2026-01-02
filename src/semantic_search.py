@@ -36,13 +36,21 @@ models = importlib.import_module(".02_models", "src")
 
 logger = logging.getLogger(__name__)
 
-# Embedding-Dimension für all-minilm:22m
-EMBEDDING_DIM = 384
+# Default Embedding-Dimension für all-minilm:22m
+# WICHTIG: Alle Emails müssen vom gleichen Model embedded sein!
+DEFAULT_EMBEDDING_DIM = 384
 EMBEDDING_MODEL = "all-minilm:22m"
 
 # Similarity-Schwellenwert (0.0 - 1.0)
 DEFAULT_SIMILARITY_THRESHOLD = 0.25
 HIGH_SIMILARITY_THRESHOLD = 0.5
+
+
+def get_embedding_dim_from_bytes(embedding_bytes: bytes) -> int:
+    """Berechnet Dimension aus Bytes (float32 = 4 bytes)"""
+    if not embedding_bytes:
+        return 0
+    return len(embedding_bytes) // 4
 
 
 def generate_embedding_for_email(
@@ -92,14 +100,18 @@ def generate_embedding_for_email(
         # Zu numpy array konvertieren und als bytes speichern
         embedding_array = np.array(embedding_list, dtype=np.float32)
         
-        # Validierung
-        if embedding_array.shape[0] != EMBEDDING_DIM:
-            logger.error(
-                f"⚠️  ACHTUNG: Embedding-Dimension {embedding_array.shape[0]} passt nicht zu "
-                f"bestehenden Emails ({EMBEDDING_DIM})! Semantic Search wird nicht funktionieren! "
-                f"Alle Emails müssen mit dem gleichen Embedding-Model verarbeitet werden."
+        # Validierung: Check gegen erste Email im System (wenn vorhanden)
+        dimension = embedding_array.shape[0]
+        
+        # Log Dimension für Debugging
+        logger.debug(f"Embedding generiert: {dimension} Dimensionen")
+        
+        # WARNING nur wenn stark abweicht von DEFAULT
+        if dimension != DEFAULT_EMBEDDING_DIM:
+            logger.warning(
+                f"⚠️  Embedding-Dimension {dimension} weicht von Default ({DEFAULT_EMBEDDING_DIM}) ab. "
+                f"Stelle sicher, dass ALLE Emails mit dem gleichen Model embedded werden!"
             )
-            # Trotzdem speichern, aber User MUSS alle anderen Emails neu embedden
         
         return (
             embedding_array.tobytes(),
@@ -137,6 +149,14 @@ class SemanticSearchService:
     def cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
         """Berechnet Cosine Similarity zwischen zwei Vektoren"""
         try:
+            # Dimension-Check: Vektoren müssen gleiche Länge haben!
+            if vec1.shape[0] != vec2.shape[0]:
+                logger.error(
+                    f"❌ Dimension mismatch: vec1={vec1.shape[0]}, vec2={vec2.shape[0]}. "
+                    f"Semantic Search funktioniert nicht zwischen unterschiedlichen Embedding-Models!"
+                )
+                return 0.0
+            
             dot_product = np.dot(vec1, vec2)
             norm1 = np.linalg.norm(vec1)
             norm2 = np.linalg.norm(vec2)

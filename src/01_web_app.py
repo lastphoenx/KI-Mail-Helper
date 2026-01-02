@@ -3024,6 +3024,114 @@ def api_reprocess_email(email_id):
         db.close()
 
 
+@app.route("/api/batch-reprocess-embeddings", methods=["POST"])
+@login_required
+def api_batch_reprocess_embeddings():
+    """
+    Batch-Reprocess: Regeneriert Embeddings für ALLE Emails
+    
+    Use Case: User wechselt Embedding-Model (z.B. all-minilm → bge-large)
+    → Alle Emails müssen neu embedded werden für konsistente Semantic Search!
+    
+    Wichtig: Embeddings MÜSSEN vom gleichen Model stammen (Cosine Similarity)
+    """
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"success": False, "error": "Unauthorized"}), 401
+        
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"success": False, "error": "Master-Key nicht verfügbar"}), 401
+        
+        # Hole aktuelles Embedding-Model aus Settings
+        provider_embedding = (user.preferred_embedding_provider or "ollama").lower()
+        model_embedding = user.preferred_embedding_model or "all-minilm:22m"
+        resolved_model_embedding = ai_client.resolve_model(provider_embedding, model_embedding)
+        
+        embedding_client = ai_client.build_client(provider_embedding, model=resolved_model_embedding)
+        
+        # Hole alle RawEmails des Users
+        raw_emails = (
+            db.query(models.RawEmail)
+            .filter(
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.deleted_at == None
+            )
+            .all()
+        )
+        
+        if not raw_emails:
+            return jsonify({
+                "success": True,
+                "message": "Keine Emails vorhanden",
+                "processed": 0,
+                "failed": 0,
+                "model": resolved_model_embedding
+            }), 200
+        
+        from src.semantic_search import generate_embedding_for_email
+        
+        processed = 0
+        failed = 0
+        
+        logger.info(f"🔄 Batch-Reprocess: {len(raw_emails)} Emails mit {resolved_model_embedding}")
+        
+        for raw_email in raw_emails:
+            try:
+                # Entschlüsseln
+                decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
+                    raw_email.encrypted_subject or "", master_key
+                )
+                decrypted_body = encryption.EmailDataManager.decrypt_email_body(
+                    raw_email.encrypted_body or "", master_key
+                )
+                
+                # Embedding generieren
+                embedding_bytes, model_name, timestamp = generate_embedding_for_email(
+                    subject=decrypted_subject,
+                    body=decrypted_body,
+                    ai_client=embedding_client
+                )
+                
+                if embedding_bytes:
+                    raw_email.email_embedding = embedding_bytes
+                    raw_email.embedding_model = model_name or resolved_model_embedding
+                    raw_email.embedding_generated_at = timestamp
+                    processed += 1
+                else:
+                    failed += 1
+                    logger.warning(f"⚠️  Embedding failed for email {raw_email.id}")
+                    
+            except Exception as e:
+                failed += 1
+                logger.error(f"❌ Failed to reprocess email {raw_email.id}: {e}")
+        
+        db.commit()
+        
+        logger.info(f"✅ Batch-Reprocess complete: {processed} success, {failed} failed")
+        
+        return jsonify({
+            "success": True,
+            "message": f"Batch-Reprocess abgeschlossen",
+            "processed": processed,
+            "failed": failed,
+            "model": resolved_model_embedding
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Batch-Reprocess failed: {e}")
+        db.rollback()
+        return jsonify({
+            "success": False,
+            "error": f"Batch-Reprocess fehlgeschlagen: {str(e)}"
+        }), 500
+    finally:
+        db.close()
+
+
 # ===== End Phase F.2 Enhanced =====
 
 

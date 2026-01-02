@@ -89,7 +89,15 @@
                         <div class="col-12">
                             <div id="aiProviderWarning" class="alert alert-warning d-none mb-0"></div>
                         </div>
-                        <div class="col-12 d-flex justify-content-end gap-2">
+                        <div class="col-12">
+                            <div class="alert alert-warning small mb-3">
+                                <strong>⚠️ Wichtig:</strong> Wenn du das Embedding-Model änderst, müssen ALLE Emails neu verarbeitet werden für konsistente Semantic Search!
+                            </div>
+                        </div>
+                        <div class="col-12 d-flex justify-content-between gap-2">
+                            <button type="button" id="batchReprocessBtn" class="btn btn-outline-warning">
+                                🔄 Alle Emails neu embedden
+                            </button>
                             <button type="submit" class="btn btn-light text-dark px-4">Speichern</button>
                         </div>
                     </form>
@@ -792,6 +800,54 @@ async function triggerRetraining() {
     }
 }
 
+async function triggerBatchReprocess() {
+    const btn = document.getElementById('batchReprocessBtn');
+    const originalText = btn.textContent;
+    
+    // Warnung und Bestätigung
+    if (!confirm(
+        '⚠️ Alle Emails neu embedden?\n\n' +
+        'Dies wird ALLE Emails mit dem aktuellen EMBEDDING Model neu verarbeiten.\n\n' +
+        'Grund: Semantic Search funktioniert nur, wenn alle Emails das gleiche Embedding-Model verwenden!\n\n' +
+        'Dies kann je nach Anzahl einige Minuten dauern.\n\n' +
+        'Fortfahren?'
+    )) {
+        return;
+    }
+    
+    btn.disabled = true;
+    btn.textContent = '⏳ Verarbeite alle Emails...';
+    
+    try {
+        const response = await fetch('/api/batch-reprocess-embeddings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(`✅ ${data.message}\n\n` +
+                  `Verarbeitet: ${data.processed}\n` +
+                  `Fehler: ${data.failed}\n` +
+                  `Embedding-Model: ${data.model}`);
+            btn.disabled = false;
+            btn.textContent = originalText;
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    } catch (err) {
+        alert(`❌ Batch-Reprocessing fehlgeschlagen: ${err}`);
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Security: Parse JSON safely to prevent XSS via provider/model names
     try {
@@ -816,6 +872,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const providerBaseSelect = document.getElementById('aiProviderSelectBase');
     const providerOptimizeSelect = document.getElementById('aiProviderSelectOptimize');
     const retrainBtn = document.getElementById('retrainBtn');
+    const batchReprocessBtn = document.getElementById('batchReprocessBtn');
     const regenerateForm = document.getElementById('regenerateRecoveryForm');
     
     if (providerEmbeddingSelect) {
@@ -829,6 +886,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (retrainBtn) {
         retrainBtn.addEventListener('click', triggerRetraining);
+    }
+    if (batchReprocessBtn) {
+        batchReprocessBtn.addEventListener('click', triggerBatchReprocess);
     }
     if (regenerateForm) {
         regenerateForm.addEventListener('submit', (e) => {
