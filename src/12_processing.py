@@ -193,7 +193,7 @@ def get_sender_hint_from_patterns(
         
         # Count sender's emails vs. others (case-insensitive comparison)
         sender_count = 0
-        total_count = len(sender_emails)
+        decryptable_count = 0  # Track successfully decrypted emails
         has_responses = False
         current_sender_lower = current_sender.lower()
         
@@ -206,19 +206,21 @@ def get_sender_hint_from_patterns(
             if not email_sender:
                 continue
             
+            decryptable_count += 1  # Count successfully decrypted emails
+            
             if email_sender.lower() == current_sender_lower:
                 sender_count += 1
             else:
                 has_responses = True
         
-        # Pattern detection
-        if sender_count == total_count and total_count >= 3:
+        # Pattern detection (use decryptable_count instead of len(sender_emails))
+        if sender_count == decryptable_count and decryptable_count >= 3:
             # All emails from same sender → likely newsletter/automation
-            return f"SENDER PATTERN: This sender typically sends automated emails (no conversation, {total_count}/{total_count} from same sender)"
+            return f"SENDER PATTERN: This sender typically sends automated emails (no conversation, {decryptable_count}/{decryptable_count} from same sender)"
         
         if has_responses and sender_count >= 2:
             # Mix of sender and responses → conversational
-            return f"SENDER PATTERN: This sender is conversational - thread has {total_count} emails with responses"
+            return f"SENDER PATTERN: This sender is conversational - thread has {decryptable_count} emails with responses"
         
         return ""
         
