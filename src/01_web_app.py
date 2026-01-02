@@ -1899,7 +1899,8 @@ def api_get_models_for_provider(provider: str):
         }
     """
     try:
-        from src import model_discovery
+        # Nummerierte Module brauchen importlib!
+        model_discovery = importlib.import_module('.04_model_discovery', 'src')
         
         # Modelle dynamisch von Provider abrufen
         models_list = model_discovery.get_available_models(provider)
