@@ -912,6 +912,38 @@ class IMAPDiagnostics:
                 client.login(self.username, self.password)
                 should_close = True
             
+            # Select folder with most messages for meaningful THREAD test
+            try:
+                mailboxes = client.list_folders()
+                best_folder = "INBOX"
+                max_messages = 0
+                
+                # Skip special folders that typically don't have threads
+                SKIP_FOLDERS = {'[Gmail]/Spam', '[Gmail]/Trash', 'Spam', 'Trash', 'Drafts', 
+                               'Junk', 'Deleted Items', 'Entwürfe', 'Papierkorb'}
+                
+                for flags, delimiter, folder_name in mailboxes:
+                    if folder_name in SKIP_FOLDERS:
+                        continue
+                    try:
+                        status = client.folder_status(folder_name, ['MESSAGES'])
+                        msg_count = status.get(b'MESSAGES', 0)
+                        if msg_count > max_messages:
+                            max_messages = msg_count
+                            best_folder = folder_name
+                    except Exception as e:
+                        logger.debug(f"Could not get status for {folder_name}: {e}")
+                        continue
+                
+                if max_messages > 0 and best_folder != "INBOX":
+                    client.select_folder(best_folder)
+                    logger.info(f"THREAD test using '{best_folder}' ({max_messages} messages)")
+                else:
+                    client.select_folder("INBOX")
+            except Exception as e:
+                logger.debug(f"Folder selection failed, using INBOX: {e}")
+                client.select_folder("INBOX")
+            
             # Check if THREAD capability exists
             caps = client.capabilities()
             caps_str = {cap.decode('ascii') if isinstance(cap, bytes) else cap 
@@ -1114,10 +1146,44 @@ class IMAPDiagnostics:
                 client.login(self.username, self.password)
                 should_close = True
             
+            # Select folder with most messages for SORT test (same as THREAD)
+            try:
+                mailboxes = client.list_folders()
+                best_folder = "INBOX"
+                max_messages = 0
+                
+                # Skip special folders
+                SKIP_FOLDERS = {'[Gmail]/Spam', '[Gmail]/Trash', 'Spam', 'Trash', 'Drafts', 
+                               'Junk', 'Deleted Items', 'Entwürfe', 'Papierkorb'}
+                
+                for flags, delimiter, folder_name in mailboxes:
+                    if folder_name in SKIP_FOLDERS:
+                        continue
+                    try:
+                        status = client.folder_status(folder_name, ['MESSAGES'])
+                        msg_count = status.get(b'MESSAGES', 0)
+                        if msg_count > max_messages:
+                            max_messages = msg_count
+                            best_folder = folder_name
+                    except Exception as e:
+                        logger.debug(f"Could not get status for {folder_name}: {e}")
+                        continue
+                
+                if max_messages > 0:
+                    client.select_folder(best_folder)
+                    logger.info(f"SORT test using '{best_folder}' ({max_messages} messages)")
+                else:
+                    client.select_folder("INBOX")
+            except Exception as e:
+                logger.debug(f"Folder selection failed, using INBOX: {e}")
+                client.select_folder("INBOX")
+            
             # Check if SORT capability exists
             caps = client.capabilities()
             caps_str = {cap.decode('ascii') if isinstance(cap, bytes) else cap 
                        for cap in caps}
+            
+            logger.debug(f"Server capabilities: {caps_str}")
             
             sort_support = any('SORT' in cap for cap in caps_str)
             sort_charsets = []
@@ -1129,6 +1195,9 @@ class IMAPDiagnostics:
                         charsets = cap.split('=')[1].split()
                         sort_charsets = charsets
                         break
+                logger.info(f"SORT capability detected: {sort_support}, charsets: {sort_charsets}")
+            else:
+                logger.warning("SORT capability not detected on server")
             
             # Test various sort criteria
             sort_results = {}
@@ -1143,13 +1212,22 @@ class IMAPDiagnostics:
                 
                 for criteria, label in test_criteria:
                     try:
-                        result = client.sort(criteria)
+                        # IMAPClient API: sort(sort_criteria, criteria='ALL', charset='UTF-8')
+                        # Parameter heißt 'criteria' nicht 'search_criteria'!
+                        result = client.sort(
+                            sort_criteria=[criteria],
+                            criteria='ALL',
+                            charset='UTF-8'
+                        )
+                        # result is a list of UIDs - success means no exception was raised
                         sort_results[criteria] = {
                             'label': label,
-                            'success': bool(result),
+                            'success': True,  # If we got here, sort succeeded
                             'message_count': len(result) if result else 0
                         }
+                        logger.debug(f"SORT {criteria} succeeded: {len(result)} results")
                     except Exception as e:
+                        logger.debug(f"SORT {criteria} failed: {type(e).__name__}: {e}")
                         sort_results[criteria] = {
                             'label': label,
                             'success': False,

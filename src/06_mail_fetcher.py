@@ -558,9 +558,10 @@ class MailFetcher:
                     except:
                         received_at = datetime.now()
             
-            # PHASE 2: RFC822 für Body
+            # PHASE 2: RFC822 für Body + Complete Envelope Parsing
             body_data = conn.fetch([mail_id], ['RFC822'])
             body = 'N/A'
+            msg = None
             
             if body_data and mail_id in body_data:
                 msg_bytes = body_data[mail_id].get(b'RFC822')
@@ -568,9 +569,24 @@ class MailFetcher:
                     msg = email.message_from_bytes(msg_bytes)
                     body = self._extract_body(msg)
             
-            # BODYSTRUCTURE parsen
+            # Phase E Bug-Fix: Parse complete envelope (in_reply_to, references, etc.)
+            # _parse_envelope() extrahiert ALLE Header auf einmal (effizienter!)
             bodystructure = msg_data.get(b'BODYSTRUCTURE')
-            has_attachments = self._check_attachments_in_bodystructure(bodystructure) if bodystructure else False
+            envelope_data = {}
+            
+            if msg:
+                # Prepare bodystructure_info for _parse_envelope()
+                bodystructure_info = None
+                if bodystructure:
+                    has_attachments = self._check_attachments_in_bodystructure(bodystructure)
+                    bodystructure_info = {
+                        "content_type": msg.get_content_type() if msg else None,
+                        "charset": msg.get_content_charset() if msg else None,
+                        "has_attachments": has_attachments
+                    }
+                
+                # Nutze _parse_envelope() statt einzelne Extraktion
+                envelope_data = self._parse_envelope(msg, bodystructure_info, message_size)
             
             # Phase 13C: Decode IMAP UTF-7 folder names to UTF-8
             folder_utf8 = decode_imap_folder_name(folder)
@@ -578,7 +594,8 @@ class MailFetcher:
             # Phase 14b: UIDVALIDITY aus Closure
             uidvalidity = getattr(self, '_current_folder_uidvalidity', None)
 
-            return {
+            # Phase E Bug-Fix: Merge envelope_data mit base_data
+            base_data = {
                 "uid": str(mail_id),
                 "sender": sender,
                 "subject": subject,
@@ -588,25 +605,15 @@ class MailFetcher:
                 "imap_folder": folder_utf8,
                 "imap_uidvalidity": uidvalidity,
                 "imap_flags": imap_flags,
-                "message_id": message_id_val,
-                "in_reply_to": None,  # TODO: Extract from envelope
-                "to": None,  # TODO: Extract from envelope
-                "cc": None,
-                "bcc": None,
-                "reply_to": None,
-                "references": None,
-                "message_size": message_size,
-                "content_type": None,  # TODO: Extract from bodystructure
-                "charset": None,
-                "has_attachments": has_attachments,
-                "imap_is_seen": flags_dict["imap_is_seen"],
-                "imap_is_answered": flags_dict["imap_is_answered"],
-                "imap_is_flagged": flags_dict["imap_is_flagged"],
-                "imap_is_deleted": flags_dict["imap_is_deleted"],
-                "imap_is_draft": flags_dict["imap_is_draft"],
-                "thread_id": None,
-                "parent_uid": None,
+                "thread_id": None,  # Wird später von _calculate_thread_ids() gesetzt
+                "parent_uid": None,  # Wird später von _calculate_thread_ids() gesetzt
+                **flags_dict,  # Boolean flags (imap_is_seen, imap_is_flagged, etc.)
             }
+            
+            # Merge envelope_data (message_id, in_reply_to, references, to, cc, etc.)
+            base_data.update(envelope_data)
+            
+            return base_data
 
         except Exception as e:
             logger.debug(f"Fetch mail error for ID {mail_id}: {e}")
