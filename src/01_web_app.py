@@ -2554,9 +2554,10 @@ def change_password():
 @app.route("/api/available-models/<provider>")
 @login_required
 def get_available_models(provider):
-    """Gibt verfügbare Modelle für einen Provider zurück"""
+    """Gibt verfügbare Modelle für einen Provider zurück, gefiltert nach kind=base/optimize"""
     try:
-        models_list = provider_utils.get_available_models(provider)
+        kind = request.args.get('kind', None)  # 'base', 'optimize', oder None
+        models_list = provider_utils.get_available_models(provider, kind=kind)
         return jsonify({"models": models_list})
     except Exception as exc:
         logger.error(f"Fehler beim Abrufen von Modellen für {provider}: {exc}")

@@ -425,3 +425,94 @@ All changes tested and validated with real IMAP server operations.
 - `migrations/versions/ph16_separate_optimize_results.py`
 
 ✅ **Phase 15 + 16 Complete!** All tested with real IMAP operations.
+---
+
+## 🔧 Phase 17: Provider Configuration Fix (02.01.2026)
+
+**Issues Found During Settings Testing:**
+
+### Issue 1: API Route ignoriert kind-Parameter
+**Problem:** JavaScript sendet `?kind=base` oder `?kind=optimize`, aber `/api/available-models/<provider>` ignorierte den Parameter
+- Dropdown zeigte **alle** Modelle statt nur erlaubte für jeweiligen Pass
+- Settings erlaubte z.B. `gpt-4-turbo` für Base-Pass (nicht in `models_base`)
+
+**Solution:**
+```python
+# src/01_web_app.py
+@app.route("/api/available-models/<provider>")
+def get_available_models(provider):
+    kind = request.args.get('kind', None)  # ← NEU
+    models_list = provider_utils.get_available_models(provider, kind=kind)
+    return jsonify({"models": models_list})
+```
+
+### Issue 2: Anthropic Model-IDs inkonsistent
+**Problem:** `get_anthropic_models()` gab andere Modelle zurück als in `PROVIDER_REGISTRY` definiert
+- Registry: `claude-3-5-sonnet-20240620`, `claude-3-haiku-20240307`
+- Funktion: `claude-opus-4-1-20250805`, `claude-3-5-sonnet-20241022`, `claude-3-opus-20240229`
+- **Alle Modelle wurden herausgefiltert** → Empty dropdown
+
+**Solution:** Alle Provider-Funktionen jetzt konsistent aus `PROVIDER_REGISTRY`:
+```python
+def get_anthropic_models() -> List[str]:
+    try:
+        ai_client = importlib.import_module("src.03_ai_client")
+        registry = getattr(ai_client, "PROVIDER_REGISTRY", {})
+        cfg = registry.get("anthropic", {})
+        return cfg.get("models", [])
+    except:
+        return [fallback_models]
+```
+
+### Issue 3: Deprecated Claude 3.x Modelle
+**Problem:** Anthropic API gab 404-Fehler für `claude-3-5-sonnet-20240620`
+- Claude 3.x Modelle wurden retired (30.06.2025 deprecated, 05.01.2026 retired)
+- Fehlermeldung: `{"type":"not_found_error","message":"model: claude-3-5-sonnet-20240620"}`
+
+**Solution:** Update auf aktuelle Claude 4/4.5 Modelle:
+```python
+"anthropic": {
+    "default_model_base": "claude-haiku-4-5-20251001",      # $1/$5
+    "default_model_optimize": "claude-sonnet-4-5-20250929",  # $3/$15
+    "models_base": [
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514",
+    ],
+    "models_optimize": [
+        "claude-sonnet-4-5-20250929",  # Beste Balance
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-5-20251101",    # Premium
+        "claude-opus-4-1-20250805",
+        "claude-haiku-4-5-20251001",
+    ],
+}
+```
+
+### Issue 4: UI-Inkonsistenz (Button-Labels)
+**Problem:** Email Detail Buttons nicht konsistent mit Settings-Terminologie
+- Button: "🔄 Neu verarbeiten" / "🔧 Präzisiere Kategorisierung"
+- Settings: "⚡ Base-Pass" / "🔧 Optimize-Pass"
+
+**Solution:** Buttons angepasst:
+- ✅ "🔄 Base-Pass neu"
+- ✅ "🔧 Optimize-Pass"
+
+**Files Changed:**
+- `src/01_web_app.py` (API-Route mit kind-Parameter)
+- `src/03_ai_client.py` (PROVIDER_REGISTRY: Anthropic Claude 4/4.5)
+- `src/15_provider_utils.py` (Provider-Funktionen konsistent aus Registry)
+- `templates/email_detail.html` (Button-Labels)
+
+**Testing:**
+- ✅ Base-Pass Dropdown: Nur `models_base` Modelle
+- ✅ Optimize-Pass Dropdown: Nur `models_optimize` Modelle
+- ✅ Anthropic: Claude Haiku 4.5 funktioniert
+- ✅ OpenAI: Kein `gpt-4` mehr in Base-Pass
+- ✅ Mistral: Modelle korrekt gefiltert
+
+**Rationale - Two-Pass System:**
+- **Base-Pass:** Schnelle Triage mit günstigen Modellen (Haiku $1/$5, gpt-4o-mini)
+- **Optimize-Pass:** Tiefe Analyse mit besseren Modellen nur bei wichtigen Mails (Sonnet $3/$15, gpt-4o)
+- Kosten-Optimierung: 90% der Mails brauchen nur Base-Pass
+
+✅ **Phase 17 Complete!** Provider-Konfiguration konsistent, deprecated Modelle entfernt.

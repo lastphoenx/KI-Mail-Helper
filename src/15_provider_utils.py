@@ -61,23 +61,43 @@ def get_openai_models() -> List[str]:
         models = cfg.get("models", [])
         return [m for m in models if isinstance(m, str) and m.strip()]
     except (ImportError, AttributeError):
-        return ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"]
+        return ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]
 
 
 def get_anthropic_models() -> List[str]:
+    """Gibt kuratierte Anthropic-Modelle aus PROVIDER_REGISTRY zurück."""
     if not os.getenv("ANTHROPIC_API_KEY"):
         return []
-    return [
-        "claude-opus-4-1-20250805",
-        "claude-3-5-sonnet-20241022",
-        "claude-3-opus-20240229",
-    ]
+
+    try:
+        ai_client = importlib.import_module("src.03_ai_client")
+        registry = getattr(ai_client, "PROVIDER_REGISTRY", {})
+        cfg = registry.get("anthropic", {})
+        models = cfg.get("models", [])
+        return [m for m in models if isinstance(m, str) and m.strip()]
+    except (ImportError, AttributeError):
+        return [
+            "claude-sonnet-4-5-20250929",
+            "claude-sonnet-4-20250514",
+            "claude-opus-4-5-20251101",
+            "claude-opus-4-1-20250805",
+            "claude-haiku-4-5-20251001",
+        ]
 
 
 def get_mistral_models() -> List[str]:
+    """Gibt kuratierte Mistral-Modelle aus PROVIDER_REGISTRY zurück."""
     if not os.getenv("MISTRAL_API_KEY"):
         return []
-    return ["mistral-large-latest", "mistral-small-latest", "mistral-tiny"]
+
+    try:
+        ai_client = importlib.import_module("src.03_ai_client")
+        registry = getattr(ai_client, "PROVIDER_REGISTRY", {})
+        cfg = registry.get("mistral", {})
+        models = cfg.get("models", [])
+        return [m for m in models if isinstance(m, str) and m.strip()]
+    except (ImportError, AttributeError):
+        return ["mistral-large-latest", "mistral-small-latest", "mistral-tiny"]
 
 
 def get_available_models(provider: str, kind: Optional[str] = None) -> List:
