@@ -83,6 +83,15 @@
                     <span class="text-muted">Keine Tags zugewiesen</span>
                 {% endif %}
             </div>
+            
+            <!-- Phase F.2: Smart Tag Suggestions -->
+            <div id="tagSuggestionsBox" class="mt-2 mb-2" style="display: none;">
+                <div class="alert alert-info py-2 px-3" style="background-color: #e7f3ff; border-color: #b8daff;">
+                    <small class="fw-bold">💡 Vorgeschlagene Tags (AI):</small>
+                    <div id="tagSuggestionsList" class="mt-1"></div>
+                </div>
+            </div>
+            
             <button type="button" class="btn btn-sm btn-outline-secondary" id="addTagBtn">+ Tag hinzufügen</button>
 
             <!-- Current Flags Display -->
@@ -639,6 +648,97 @@ document.addEventListener('DOMContentLoaded', function() {
         const modal = new bootstrap.Modal(document.getElementById('addTagModal'));
         modal.show();
     });
+    
+    // Phase F.2: Load and display smart tag suggestions
+    async function loadTagSuggestions() {
+        try {
+            const response = await fetch(`/api/emails/${emailId}/tag-suggestions`, {
+                method: 'GET',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                console.warn('Tag suggestions fetch failed:', response.status);
+                return;
+            }
+            
+            const data = await response.json();
+            
+            if (data.suggestions && data.suggestions.length > 0) {
+                const suggestionsBox = document.getElementById('tagSuggestionsBox');
+                const suggestionsList = document.getElementById('tagSuggestionsList');
+                
+                // Clear previous suggestions
+                suggestionsList.innerHTML = '';
+                
+                // Add each suggestion as a clickable badge
+                data.suggestions.forEach(suggestion => {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge me-1 mb-1';
+                    badge.style.cursor = 'pointer';
+                    badge.style.backgroundColor = suggestion.color || '#3B82F6';
+                    
+                    // Similarity color coding
+                    const similarity = suggestion.similarity || 0;
+                    if (similarity >= 0.85) {
+                        badge.style.borderLeft = '3px solid #22c55e'; // Green = high match
+                    } else if (similarity >= 0.75) {
+                        badge.style.borderLeft = '3px solid #f59e0b'; // Orange = good match
+                    } else {
+                        badge.style.borderLeft = '3px solid #6b7280'; // Gray = ok match
+                    }
+                    
+                    const similarityPercent = Math.round(similarity * 100);
+                    badge.innerHTML = `${suggestion.name} <small>(${similarityPercent}%)</small>`;
+                    badge.title = `Click to assign tag. Similarity: ${similarityPercent}%`;
+                    
+                    // Click handler to assign tag
+                    badge.addEventListener('click', async () => {
+                        try {
+                            const assignResponse = await fetch(`/api/emails/${emailId}/tags`, {
+                                method: 'POST',
+                                headers: { 
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': getCsrfToken()
+                                },
+                                body: JSON.stringify({ tag_id: suggestion.id })
+                            });
+                            
+                            if (assignResponse.ok) {
+                                location.reload();
+                            } else {
+                                const errorData = await assignResponse.json();
+                                alert('Fehler: ' + (errorData.error || 'Tag konnte nicht zugewiesen werden'));
+                            }
+                        } catch (error) {
+                            alert('Fehler beim Zuweisen: ' + error.message);
+                        }
+                    });
+                    
+                    suggestionsList.appendChild(badge);
+                });
+                
+                // Show the suggestions box
+                suggestionsBox.style.display = 'block';
+                
+                // Log method used
+                if (data.method === 'embedding') {
+                    console.log('✅ Phase F.2: Tag suggestions via Email-Embeddings');
+                } else if (data.method === 'text-fallback') {
+                    console.log('⚠️  Tag suggestions via text fallback (no embedding)');
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to load tag suggestions:', error);
+        }
+    }
+    
+    // Load suggestions on page load
+    loadTagSuggestions();
     
     // Remove tag buttons
     document.querySelectorAll('.remove-tag-btn').forEach(btn => {

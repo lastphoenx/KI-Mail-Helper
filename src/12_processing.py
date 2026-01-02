@@ -531,6 +531,69 @@ def process_pending_raw_emails(
                 except Exception as e:
                     logger.warning(f"⚠️  Tag-Manager nicht verfügbar oder Fehler: {e}")
             
+            # Phase F.2: Smart Tag Auto-Suggestions basierend auf Email-Embeddings
+            if raw_email.email_embedding:
+                try:
+                    tag_manager_mod = importlib.import_module(".services.tag_manager", "src")
+                    
+                    # Bereits zugewiesene Tags holen (um Duplikate zu vermeiden)
+                    session.flush()  # Ensure processed_email.id is available
+                    already_assigned_tag_ids = [
+                        assignment.tag_id 
+                        for assignment in session.query(models.EmailTagAssignment)
+                        .filter_by(email_id=processed_email.id).all()
+                    ]
+                    
+                    # Tag-Suggestions basierend auf Email-Embedding holen
+                    tag_suggestions = tag_manager_mod.TagManager.suggest_tags_by_email_embedding(
+                        db=session,
+                        user_id=user.id,
+                        email_embedding_bytes=raw_email.email_embedding,
+                        top_k=5,
+                        min_similarity=0.70,  # 70% Similarity als Threshold
+                        exclude_tag_ids=already_assigned_tag_ids
+                    )
+                    
+                    # Auto-assign bei hoher Similarity (>= 0.85)
+                    # Manuelle Vorschläge bei mittlerer Similarity (0.70-0.84)
+                    auto_assigned_count = 0
+                    manual_suggestions = []
+                    
+                    for tag, similarity in tag_suggestions:
+                        if similarity >= 0.85:
+                            # Auto-Assign
+                            try:
+                                tag_manager_mod.TagManager.assign_tag(
+                                    db=session,
+                                    email_id=processed_email.id,
+                                    tag_id=tag.id,
+                                    user_id=user.id
+                                )
+                                auto_assigned_count += 1
+                                logger.info(
+                                    f"🏷️  Auto-assigned Tag '{tag.name}' ({similarity:.2%} similarity) "
+                                    f"to email {processed_email.id}"
+                                )
+                            except Exception as assign_err:
+                                logger.warning(f"⚠️  Auto-assignment fehlgeschlagen für '{tag.name}': {assign_err}")
+                        else:
+                            # Für UI-Suggestions speichern
+                            manual_suggestions.append({
+                                "name": tag.name,
+                                "id": tag.id,
+                                "similarity": round(similarity, 3)
+                            })
+                    
+                    if auto_assigned_count > 0:
+                        logger.info(f"✅ Phase F.2: {auto_assigned_count} Tags auto-assigned")
+                    
+                    if manual_suggestions:
+                        # TODO: Suggested_tags könnten in ProcessedEmail.metadata gespeichert werden
+                        logger.debug(f"💡 Phase F.2: {len(manual_suggestions)} manual tag suggestions available")
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️  Phase F.2 Tag-Suggestions fehlgeschlagen: {e}")
+            
             processed_count += 1
 
             logger.info(

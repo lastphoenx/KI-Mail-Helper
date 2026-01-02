@@ -478,6 +478,72 @@ class TagManager:
         return similarities[:top_k]
     
     @staticmethod
+    def suggest_tags_by_email_embedding(
+        db: Session,
+        user_id: int,
+        email_embedding_bytes: bytes,
+        top_k: int = 5,
+        min_similarity: float = 0.3,
+        exclude_tag_ids: Optional[List[int]] = None
+    ) -> List[Tuple[models.EmailTag, float]]:
+        """
+        Phase F.2: Findet Tags die semantisch ähnlich zum Email-Embedding sind.
+        
+        OPTIMIERT: Nutzt vorhandene Email-Embeddings direkt (bereits beim Fetch generiert),
+        kein Re-Embedding nötig!
+        
+        Args:
+            db: Database session
+            user_id: User ID für Tag-Lookup
+            email_embedding_bytes: Email-Embedding (bytes aus RawEmail.email_embedding)
+            top_k: Maximale Anzahl Vorschläge
+            min_similarity: Minimale Ähnlichkeit (0-1)
+            exclude_tag_ids: Optional - Tag-IDs die ignoriert werden sollen (z.B. bereits assigned)
+            
+        Returns:
+            Liste von (Tag, Ähnlichkeit) Tupeln, sortiert nach Ähnlichkeit
+        """
+        # Alle Tags des Users holen
+        tags = db.query(models.EmailTag).filter(
+            models.EmailTag.user_id == user_id
+        ).all()
+        
+        if not tags:
+            return []
+        
+        # Email-Embedding konvertieren
+        try:
+            email_embedding = np.frombuffer(email_embedding_bytes, dtype=np.float32)
+        except Exception as e:
+            logger.warning(f"Konnte Email-Embedding nicht konvertieren: {e}")
+            return []
+        
+        # Ähnlichkeiten berechnen
+        similarities: List[Tuple[models.EmailTag, float]] = []
+        exclude_set = set(exclude_tag_ids or [])
+        
+        for tag in tags:
+            # Skip bereits zugewiesene Tags
+            if tag.id in exclude_set:
+                continue
+            
+            # Tag-Embedding holen
+            tag_embedding = TagEmbeddingCache.get_tag_embedding(tag.name, user_id)
+            if tag_embedding is None:
+                continue
+            
+            # Cosine Similarity berechnen
+            similarity = TagEmbeddingCache.compute_similarity(email_embedding, tag_embedding)
+            
+            if similarity >= min_similarity:
+                similarities.append((tag, similarity))
+        
+        # Nach Ähnlichkeit sortieren (höchste zuerst)
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        
+        return similarities[:top_k]
+    
+    @staticmethod
     def get_tag_suggestions_for_email(
         db: Session,
         email_id: int,

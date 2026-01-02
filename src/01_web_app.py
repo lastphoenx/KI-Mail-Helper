@@ -2193,9 +2193,10 @@ def api_get_email_tags(email_id):
 @login_required
 def api_get_tag_suggestions(email_id):
     """
-    API: Tag-Vorschläge für eine E-Mail abrufen (Phase 11c).
+    API: Tag-Vorschläge für eine E-Mail abrufen (Phase F.2).
 
-    Verwendet Embeddings um semantisch ähnliche Tags vorzuschlagen.
+    Phase F.2: Verwendet Email-Embeddings direkt statt Text zu re-embedden.
+    Schneller und effizienter da Embeddings bereits beim Fetch generiert wurden.
     """
     db = get_db_session()
 
@@ -2206,11 +2207,75 @@ def api_get_tag_suggestions(email_id):
 
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
-            suggestions = tag_manager_mod.TagManager.get_tag_suggestions_for_email(
-                db, email_id, user.id, top_k=5
+            
+            # Phase F.2: Nutze Email-Embeddings direkt
+            # 1. Hole RawEmail mit Embedding
+            processed = (
+                db.query(models.ProcessedEmail)
+                .join(models.RawEmail)
+                .filter(
+                    models.ProcessedEmail.id == email_id,
+                    models.RawEmail.user_id == user.id,
+                    models.RawEmail.deleted_at == None
+                )
+                .first()
             )
-
-            return jsonify({"suggestions": suggestions, "email_id": email_id}), 200
+            
+            if not processed or not processed.raw_email:
+                return jsonify({"suggestions": [], "email_id": email_id, "method": "none"}), 200
+            
+            raw_email = processed.raw_email
+            
+            # 2. Wenn Email-Embedding vorhanden: Nutze Phase F.2 Methode
+            if raw_email.email_embedding:
+                # Bereits zugewiesene Tags holen
+                assigned_tag_ids = [
+                    assignment.tag_id 
+                    for assignment in db.query(models.EmailTagAssignment)
+                    .filter_by(email_id=email_id).all()
+                ]
+                
+                # Phase F.2: Email-Embedding-basierte Suggestions
+                tag_suggestions = tag_manager_mod.TagManager.suggest_tags_by_email_embedding(
+                    db=db,
+                    user_id=user.id,
+                    email_embedding_bytes=raw_email.email_embedding,
+                    top_k=5,
+                    min_similarity=0.70,  # 70% als UI-Threshold
+                    exclude_tag_ids=assigned_tag_ids
+                )
+                
+                suggestions = [
+                    {
+                        "id": tag.id,
+                        "name": tag.name,
+                        "color": tag.color,
+                        "similarity": round(similarity, 3)
+                    }
+                    for tag, similarity in tag_suggestions
+                ]
+                
+                return jsonify({
+                    "suggestions": suggestions, 
+                    "email_id": email_id,
+                    "method": "embedding",  # Phase F.2
+                    "embedding_available": True
+                }), 200
+            
+            else:
+                # Fallback: Alte text-basierte Methode (Phase 11c)
+                # Für Emails ohne Embedding (z.B. alte Daten vor Phase F.1)
+                suggestions = tag_manager_mod.TagManager.get_tag_suggestions_for_email(
+                    db, email_id, user.id, top_k=5
+                )
+                
+                return jsonify({
+                    "suggestions": suggestions, 
+                    "email_id": email_id,
+                    "method": "text-fallback",  # Legacy
+                    "embedding_available": False
+                }), 200
+                
         except Exception as e:
             logger.error(f"Fehler beim Abrufen der Tag-Vorschläge: {e}")
             return jsonify({"suggestions": [], "email_id": email_id}), 200
