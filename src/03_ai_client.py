@@ -811,18 +811,18 @@ class LocalOllamaClient(AIClient):
         }
 
     def analyze_email(
-        self, subject: str, body: str, language: str = "de", sender: str = "", context: Optional[str] = None
+        self, subject: str, body: str, language: str = "de", context: Optional[str] = None
     ) -> Dict[str, Any]:
         """Dispatcher: nutzt Embedding-Heuristiken oder Chat-LLM je nach Modelltyp."""
         # Security: Sanitize inputs before API calls
         subject = _sanitize_email_input(subject, max_length=500)
         body = _sanitize_email_input(body, max_length=50000)
-        sender = _sanitize_email_input(sender, max_length=200)
         if context:
             context = _sanitize_email_input(context, max_length=5000)
 
         if self._is_embedding_model:
-            return self._analyze_with_embeddings(subject, body, sender=sender)
+            # Note: Embeddings don't use context yet
+            return self._analyze_with_embeddings(subject, body, sender="")
         return self._analyze_with_chat(subject, body, language, context=context)
 
     def _analyze_with_chat(

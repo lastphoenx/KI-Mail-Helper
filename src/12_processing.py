@@ -64,11 +64,12 @@ def build_thread_context(
     
     try:
         # Query previous emails in same thread (older than current email)
+        # Use received_at for chronological ordering (IDs can be non-sequential)
         thread_emails = (
             session.query(models.RawEmail)
             .filter(
                 models.RawEmail.thread_id == raw_email.thread_id,
-                models.RawEmail.id < raw_email.id,  # Only older emails
+                models.RawEmail.received_at < raw_email.received_at,  # Time-based filter!
                 models.RawEmail.deleted_at.is_(None),
                 models.RawEmail.deleted_verm.is_(False)
             )
@@ -78,7 +79,7 @@ def build_thread_context(
         )
         
         if not thread_emails:
-            logger.debug(f"Thread {raw_email.thread_id} has no previous emails")
+            logger.debug(f"Thread {raw_email.thread_id} has no previous emails (first in thread)")
             return ""
         
         # Decrypt and format context
@@ -190,17 +191,18 @@ def get_sender_hint_from_patterns(
             # Need at least 2 emails to detect patterns
             return ""
         
-        # Count sender's emails vs. others
+        # Count sender's emails vs. others (case-insensitive comparison)
         sender_count = 0
         total_count = len(sender_emails)
         has_responses = False
+        current_sender_lower = current_sender.lower()
         
         for email in sender_emails:
             email_sender = encryption_mod.EmailDataManager.decrypt_email_sender(
                 email.encrypted_sender or "", master_key
             )
             
-            if email_sender == current_sender:
+            if email_sender.lower() == current_sender_lower:
                 sender_count += 1
             else:
                 has_responses = True
@@ -365,7 +367,6 @@ def process_pending_raw_emails(
             ai_result = active_ai.analyze_email(
                 subject=decrypted_subject or "",
                 body=clean_body,
-                sender=decrypted_sender or "",
                 context=context_str if context_str else None  # Phase E: Pass context to AI
             )
             
