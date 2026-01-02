@@ -83,7 +83,8 @@
                     <button class="btn btn-sm btn-outline-primary flex-fill edit-tag-btn" 
                             data-tag-id="{{ tag.id }}" 
                             data-tag-name="{{ tag.name }}" 
-                            data-tag-color="{{ tag.color }}">
+                            data-tag-color="{{ tag.color }}"
+                            data-tag-description="{{ tag.description or '' }}">
                         ✏️ Bearbeiten
                     </button>
                     <button class="btn btn-sm btn-outline-danger delete-tag-btn" 
@@ -115,11 +116,22 @@
             <form id="createTagForm">
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label">Tag-Name</label>
+                        <label class="form-label">Tag-Name *</label>
                         <input type="text" class="form-control" id="createTagName" 
                                placeholder="z.B. Wichtig, Rechnung, Termin" 
                                maxlength="50" required>
                         <small class="text-muted">Max. 50 Zeichen</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Semantische Beschreibung <span class="badge bg-info">NEU</span></label>
+                        <textarea class="form-control" id="createTagDescription" rows="3"
+                                  placeholder="Beschreibe, welche Emails zu diesem Tag gehören (optional, aber empfohlen für bessere KI-Vorschläge)
+Beispiel: Emails related to OnlyFans, BestFans, Fansly, adult content platforms, creator accounts, subscriptions"></textarea>
+                        <small class="text-muted">
+                            💡 <strong>Tipp:</strong> Je genauer die Beschreibung, desto besser die automatischen Tag-Vorschläge!
+                            Die KI lernt außerdem automatisch aus deinen zugewiesenen Tags.
+                        </small>
                     </div>
                     
                     <div class="mb-3">
@@ -157,9 +169,18 @@
                 <input type="hidden" id="editTagId">
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label">Tag-Name</label>
+                        <label class="form-label">Tag-Name *</label>
                         <input type="text" class="form-control" id="editTagName" 
                                maxlength="50" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Semantische Beschreibung <span class="badge bg-info">NEU</span></label>
+                        <textarea class="form-control" id="editTagDescription" rows="3"
+                                  placeholder="Beschreibe, welche Emails zu diesem Tag gehören (optional)"></textarea>
+                        <small class="text-muted">
+                            💡 Genauere Beschreibungen = bessere automatische Vorschläge
+                        </small>
                     </div>
                     
                     <div class="mb-3">
@@ -209,6 +230,7 @@ document.getElementById('createTagForm').addEventListener('submit', async functi
     
     const name = document.getElementById('createTagName').value.trim();
     const color = document.getElementById('createTagColor').value;
+    const description = document.getElementById('createTagDescription').value.trim();
     
     if (!name) {
         alert('Bitte einen Tag-Namen eingeben');
@@ -216,13 +238,18 @@ document.getElementById('createTagForm').addEventListener('submit', async functi
     }
     
     try {
+        const body = { name, color };
+        if (description) {
+            body.description = description;
+        }
+        
         const response = await fetch('/api/tags', {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
                 'X-CSRFToken': getCsrfToken()
             },
-            body: JSON.stringify({ name, color })
+            body: JSON.stringify(body)
         });
         
         const data = await response.json();
@@ -243,10 +270,12 @@ document.querySelectorAll('.edit-tag-btn').forEach(btn => {
         const tagId = this.dataset.tagId;
         const tagName = this.dataset.tagName;
         const tagColor = this.dataset.tagColor;
+        const tagDescription = this.dataset.tagDescription || '';
         
         document.getElementById('editTagId').value = tagId;
         document.getElementById('editTagName').value = tagName;
         document.getElementById('editTagColor').value = tagColor;
+        document.getElementById('editTagDescription').value = tagDescription;
         
         const picker = document.getElementById('editColorPicker');
         picker.querySelectorAll('.color-picker-option').forEach(o => {
@@ -264,15 +293,21 @@ document.getElementById('editTagForm').addEventListener('submit', async function
     const tagId = document.getElementById('editTagId').value;
     const name = document.getElementById('editTagName').value.trim();
     const color = document.getElementById('editTagColor').value;
+    const description = document.getElementById('editTagDescription').value.trim();
     
     try {
+        const body = { name, color };
+        if (description) {
+            body.description = description;
+        }
+        
         const response = await fetch(`/api/tags/${tagId}`, {
             method: 'PUT',
             headers: { 
                 'Content-Type': 'application/json',
                 'X-CSRFToken': getCsrfToken()
             },
-            body: JSON.stringify({ name, color })
+            body: JSON.stringify(body)
         });
         
         const data = await response.json();

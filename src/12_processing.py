@@ -550,17 +550,17 @@ def process_pending_raw_emails(
                         user_id=user.id,
                         email_embedding_bytes=raw_email.email_embedding,
                         top_k=5,
-                        min_similarity=0.70,  # 70% Similarity als Threshold
+                        min_similarity=0.10,  # Lowered from 0.70 - Email-to-TagName similarity is naturally low
                         exclude_tag_ids=already_assigned_tag_ids
                     )
                     
-                    # Auto-assign bei hoher Similarity (>= 0.85)
-                    # Manuelle Vorschläge bei mittlerer Similarity (0.70-0.84)
+                    # Auto-assign bei höchster Similarity (>= 0.18)
+                    # Manuelle Vorschläge bei mittlerer Similarity (0.12-0.17)
                     auto_assigned_count = 0
                     manual_suggestions = []
                     
                     for tag, similarity in tag_suggestions:
-                        if similarity >= 0.85:
+                        if similarity >= 0.18:  # Adjusted from 0.85 - Email-to-TagName similarity much lower
                             # Auto-Assign
                             try:
                                 tag_manager_mod.TagManager.assign_tag(
@@ -577,7 +577,7 @@ def process_pending_raw_emails(
                             except Exception as assign_err:
                                 logger.warning(f"⚠️  Auto-assignment fehlgeschlagen für '{tag.name}': {assign_err}")
                         else:
-                            # Für UI-Suggestions speichern
+                            # Für UI-Suggestions speichern (similarity < 0.18 but >= 0.10)
                             manual_suggestions.append({
                                 "name": tag.name,
                                 "id": tag.id,

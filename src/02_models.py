@@ -90,7 +90,13 @@ class OptimizationStatus(str, Enum):
 
 
 class EmailTag(Base):
-    """User-definierte Tags für Emails (Phase 10)"""
+    """User-definierte Tags für Emails (Phase 10)
+    
+    Phase F.2 Enhanced:
+    - description: Optional semantic description for better embeddings
+    - learned_embedding: Aggregated embedding from assigned emails
+    - embedding_updated_at: Last update timestamp for learned_embedding
+    """
 
     __tablename__ = "email_tags"
 
@@ -99,6 +105,16 @@ class EmailTag(Base):
     color = Column(String(20), nullable=False, default="#3B82F6")  # Tailwind blue-500
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Phase F.2 Enhanced: Semantic tag description for better embeddings
+    # If NULL: Fallback to name for embeddings
+    description = Column(Text, nullable=True)
+    
+    # Phase F.2 Learning: Aggregated embedding from assigned emails
+    # Recalculated after each tag assignment (mean of all email_embeddings)
+    # If NULL: Fallback to description/name embedding
+    learned_embedding = Column(LargeBinary, nullable=True)
+    embedding_updated_at = Column(DateTime, nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="email_tags")

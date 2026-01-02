@@ -35,55 +35,126 @@ models = import_module("02_models")
 
 
 class TagEmbeddingCache:
-    """Phase 11c: Cache für Tag-Embeddings
+    """Phase F.2: Cache für Tag-Embeddings mit Learning
     
     Speichert Embeddings aller User-Tags im Memory für schnelle Similarity-Suche.
+    
+    Learning-Hierarchie (Fallback-Kette):
+    1. learned_embedding (aggregiert aus assigned emails) - BESTE Qualität!
+    2. description Embedding (semantische Beschreibung)
+    3. name Embedding (nur Tag-Name, schwächste Option)
     """
     
-    _cache: dict = {}  # {user_id: {tag_name: embedding}}
-    _ollama_client = None
+    _cache: dict = {}  # {user_id: {tag_id: embedding}}
+    _ai_client_cache: dict = {}  # {user_id: ai_client}
     
     @classmethod
-    def _get_ollama_client(cls):
-        """Lazy-Init des Ollama Clients"""
-        if cls._ollama_client is None:
-            try:
-                ai_client = import_module(".03_ai_client", "src")
-                cls._ollama_client = ai_client.LocalOllamaClient(model="all-minilm:22m")
-            except Exception as e:
-                logger.warning(f"Ollama Client nicht verfügbar: {e}")
-                return None
-        return cls._ollama_client
-    
-    @classmethod
-    def get_tag_embedding(cls, tag_name: str, user_id: int) -> Optional[np.ndarray]:
-        """Holt oder generiert Embedding für einen Tag-Namen"""
-        # Check Cache
-        if user_id in cls._cache and tag_name in cls._cache[user_id]:
-            return cls._cache[user_id][tag_name]
+    def _get_ai_client_for_user(cls, user_id: int, db: Session = None):
+        """Holt AI-Client basierend auf User-Settings (optimize model)
         
-        # Generiere Embedding
-        client = cls._get_ollama_client()
+        Phase F.2: Settings-basiert (NICHT hardcoded!)
+        """
+        # Cache Check
+        if user_id in cls._ai_client_cache:
+            return cls._ai_client_cache[user_id]
+        
+        try:
+            ai_client_mod = import_module(".03_ai_client", "src")
+            
+            # User-Settings laden (falls DB verfügbar)
+            if db:
+                user = db.query(models.User).filter_by(id=user_id).first()
+                if user:
+                    provider = user.preferred_ai_provider_optimize or "ollama"
+                    model = user.preferred_ai_model_optimize or "llama3.2:1b"
+                    
+                    if provider == "ollama":
+                        client = ai_client_mod.LocalOllamaClient(model=model)
+                    elif provider == "openai":
+                        client = ai_client_mod.OpenAIClient(model=model)
+                    else:
+                        # Fallback
+                        client = ai_client_mod.LocalOllamaClient(model="llama3.2:1b")
+                    
+                    cls._ai_client_cache[user_id] = client
+                    logger.info(f"✅ Tag-Embeddings nutzen: {provider}/{model} (aus Settings)")
+                    return client
+            
+            # Fallback wenn keine DB/Settings
+            client = ai_client_mod.LocalOllamaClient(model="llama3.2:1b")
+            cls._ai_client_cache[user_id] = client
+            return client
+            
+        except Exception as e:
+            logger.warning(f"AI-Client nicht verfügbar: {e}")
+            return None
+    
+    @classmethod
+    def get_tag_embedding(cls, tag: models.EmailTag, db: Session) -> Optional[np.ndarray]:
+        """Holt Embedding für Tag (Learning-Hierarchie!)
+        
+        Fallback-Kette:
+        1. learned_embedding (aus assigned emails) - BESTE Qualität!
+        2. description Embedding (semantische Beschreibung)
+        3. name Embedding (nur Tag-Name)
+        
+        Args:
+            tag: EmailTag object
+            db: Database session (für User-Settings)
+        """
+        # Check Cache
+        if tag.user_id in cls._cache and tag.id in cls._cache[tag.user_id]:
+            return cls._cache[tag.user_id][tag.id]
+        
+        # 1. PRIORITÄT: Learned Embedding (aggregiert aus assigned emails)
+        if tag.learned_embedding:
+            try:
+                embedding_array = np.frombuffer(tag.learned_embedding, dtype=np.float32)
+                logger.debug(f"🎓 Tag '{tag.name}': Using learned embedding ({len(embedding_array)} dims)")
+                
+                # Cache speichern
+                if tag.user_id not in cls._cache:
+                    cls._cache[tag.user_id] = {}
+                cls._cache[tag.user_id][tag.id] = embedding_array
+                return embedding_array
+            except Exception as e:
+                logger.warning(f"Learned embedding konvertierung fehlgeschlagen: {e}")
+        
+        # 2. FALLBACK: Description Embedding (semantische Beschreibung)
+        text_for_embedding = tag.description if tag.description else tag.name
+        
+        client = cls._get_ai_client_for_user(tag.user_id, db)
         if not client:
             return None
         
-        embedding = client._get_embedding(tag_name)
+        embedding = client._get_embedding(text_for_embedding)
         if embedding:
             embedding_array = np.array(embedding)
             
+            source = "description" if tag.description else "name"
+            logger.debug(f"📝 Tag '{tag.name}': Generated embedding from {source} ('{text_for_embedding[:50]}...')")
+            
             # Cache speichern
-            if user_id not in cls._cache:
-                cls._cache[user_id] = {}
-            cls._cache[user_id][tag_name] = embedding_array
+            if tag.user_id not in cls._cache:
+                cls._cache[tag.user_id] = {}
+            cls._cache[tag.user_id][tag.id] = embedding_array
             
             return embedding_array
         return None
     
     @classmethod
+    def invalidate_tag_cache(cls, tag_id: int, user_id: int):
+        """Invalidiert Cache für einen spezifischen Tag"""
+        if user_id in cls._cache and tag_id in cls._cache[user_id]:
+            del cls._cache[user_id][tag_id]
+    
+    @classmethod
     def invalidate_user_cache(cls, user_id: int):
-        """Invalidiert Cache für einen User (z.B. nach Tag-Rename)"""
+        """Invalidiert Cache für einen User (z.B. nach Settings-Änderung)"""
         if user_id in cls._cache:
             del cls._cache[user_id]
+        if user_id in cls._ai_client_cache:
+            del cls._ai_client_cache[user_id]
     
     @classmethod
     def compute_similarity(cls, emb1: np.ndarray, emb2: np.ndarray) -> float:
@@ -105,15 +176,16 @@ class TagManager:
 
     @staticmethod
     def create_tag(
-        db: Session, user_id: int, name: str, color: str = "#3B82F6"
+        db: Session, user_id: int, name: str, color: str = "#3B82F6", description: Optional[str] = None
     ) -> models.EmailTag:
-        """Erstellt neuen Tag für User
+        """Erstellt neuen Tag für User (Phase F.2: mit description)
         
         Args:
             db: SQLAlchemy Session
             user_id: User ID
             name: Tag-Name (max 50 Zeichen)
             color: Hex-Color (default: Tailwind blue-500)
+            description: Semantische Beschreibung (optional, für bessere Embeddings)
             
         Returns:
             EmailTag object
@@ -138,14 +210,14 @@ class TagManager:
             raise ValueError(f"Tag '{name}' existiert bereits")
         
         # Erstelle Tag
-        tag = models.EmailTag(user_id=user_id, name=name, color=color)
+        tag = models.EmailTag(user_id=user_id, name=name, color=color, description=description)
         db.add(tag)
         
         try:
             db.commit()
             db.refresh(tag)
             
-            # Cache invalidieren (Phase 11c) - neuer Tag verfügbar
+            # Cache invalidieren (Phase F.2) - neuer Tag verfügbar
             TagEmbeddingCache.invalidate_user_cache(user_id)
             
             return tag
@@ -257,6 +329,10 @@ class TagManager:
         
         try:
             db.commit()
+            
+            # Phase F.2 Learning: Update learned_embedding nach jeder Zuweisung!
+            TagManager.update_learned_embedding(db, tag_id, user_id)
+            
             return True
         except IntegrityError:
             db.rollback()
@@ -354,9 +430,10 @@ class TagManager:
 
     @staticmethod
     def update_tag(
-        db: Session, tag_id: int, user_id: int, name: Optional[str] = None, color: Optional[str] = None
+        db: Session, tag_id: int, user_id: int, name: Optional[str] = None, 
+        color: Optional[str] = None, description: Optional[str] = None
     ) -> Optional[models.EmailTag]:
-        """Aktualisiert Tag-Name oder -Farbe
+        """Aktualisiert Tag-Name, -Farbe oder -Beschreibung (Phase F.2)
         
         Args:
             db: SQLAlchemy Session
@@ -364,6 +441,7 @@ class TagManager:
             user_id: User ID (zur Validierung)
             name: Neuer Name (optional)
             color: Neue Farbe (optional)
+            description: Neue Beschreibung (optional, None = unverändert, "" = löschen)
             
         Returns:
             Aktualisierter EmailTag oder None wenn nicht gefunden
@@ -404,13 +482,17 @@ class TagManager:
                 raise ValueError("Color muss Hex-Format sein (#RRGGBB)")
             tag.color = color
         
+        if description is not None:
+            # Leerer String = description löschen
+            tag.description = description if description.strip() else None
+        
         try:
             db.commit()
             db.refresh(tag)
             
-            # Cache invalidieren bei Namensänderung (Phase 11c)
-            if name is not None:
-                TagEmbeddingCache.invalidate_user_cache(user_id)
+            # Cache invalidieren bei Name/Description-Änderung (Phase F.2)
+            if name is not None or description is not None:
+                TagEmbeddingCache.invalidate_tag_cache(tag_id, user_id)
             
             return tag
         except IntegrityError as e:
@@ -533,8 +615,8 @@ class TagManager:
                 logger.debug(f"⏭️  Phase F.2: Skipping already assigned tag '{tag.name}'")
                 continue
             
-            # Tag-Embedding holen
-            tag_embedding = TagEmbeddingCache.get_tag_embedding(tag.name, user_id)
+            # Tag-Embedding holen (NEUE API: Tag-Object + DB für Settings!)
+            tag_embedding = TagEmbeddingCache.get_tag_embedding(tag, db)
             if tag_embedding is None:
                 logger.warning(f"⚠️  Phase F.2: Could not get embedding for tag '{tag.name}'")
                 continue
@@ -616,3 +698,75 @@ class TagManager:
             })
         
         return result
+    
+    @staticmethod
+    def update_learned_embedding(db: Session, tag_id: int, user_id: int) -> bool:
+        """Phase F.2 Learning: Update Tag-Embedding aus assigned emails
+        
+        Berechnet Mittelwert aller email_embeddings von Emails mit diesem Tag.
+        Wird nach jeder Tag-Zuweisung aufgerufen.
+        
+        Args:
+            db: Database session
+            tag_id: EmailTag ID
+            user_id: User ID (zur Validierung)
+            
+        Returns:
+            True wenn erfolgreich, False wenn nicht genug Daten
+        """
+        try:
+            # Tag validieren
+            tag = db.query(models.EmailTag).filter_by(id=tag_id, user_id=user_id).first()
+            if not tag:
+                logger.warning(f"Tag {tag_id} nicht gefunden")
+                return False
+            
+            # Alle assigned emails mit Embeddings holen
+            assigned_emails = (
+                db.query(models.RawEmail)
+                .join(models.ProcessedEmail, models.RawEmail.id == models.ProcessedEmail.raw_email_id)
+                .join(models.EmailTagAssignment, models.ProcessedEmail.id == models.EmailTagAssignment.email_id)
+                .filter(
+                    models.EmailTagAssignment.tag_id == tag_id,
+                    models.RawEmail.email_embedding.isnot(None),
+                    models.RawEmail.user_id == user_id
+                )
+                .all()
+            )
+            
+            if not assigned_emails:
+                logger.debug(f"🎓 Tag '{tag.name}': Keine Emails mit Embeddings für Learning")
+                return False
+            
+            # Embeddings sammeln und mitteln
+            embeddings = []
+            for email in assigned_emails:
+                try:
+                    emb = np.frombuffer(email.email_embedding, dtype=np.float32)
+                    embeddings.append(emb)
+                except Exception as e:
+                    logger.warning(f"Embedding konvertierung fehlgeschlagen: {e}")
+                    continue
+            
+            if not embeddings:
+                return False
+            
+            # Mittelwert berechnen
+            learned_embedding = np.mean(embeddings, axis=0)
+            
+            # In DB speichern
+            tag.learned_embedding = learned_embedding.tobytes()
+            tag.embedding_updated_at = datetime.now(UTC)
+            db.commit()
+            
+            # Cache invalidieren
+            TagEmbeddingCache.invalidate_tag_cache(tag_id, user_id)
+            
+            logger.info(f"🎓 Tag '{tag.name}': Learned embedding updated from {len(embeddings)} emails")
+            return True
+            
+        except Exception as e:
+            logger.error(f"update_learned_embedding fehlgeschlagen: {e}")
+            db.rollback()
+            return False
+

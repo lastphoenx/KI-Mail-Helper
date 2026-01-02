@@ -1287,8 +1287,24 @@ def render_email_html(email_id: int):
         # Marker für after_request Hook: Überschreibe Headers nicht (MUSS VOR make_response!)
         g.skip_security_headers = True
 
+        # Wrap email body with proper HTML structure to prevent Quirks Mode
+        html_content = f"""<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; padding: 10px; }}
+        img {{ max-width: 100%; height: auto; }}
+    </style>
+</head>
+<body>
+{decrypted_body}
+</body>
+</html>"""
+
         # Response mit lockerer CSP nur für E-Mail-Content
-        response = make_response(decrypted_body)
+        response = make_response(html_content)
         response.headers["Content-Type"] = "text/html; charset=utf-8"
 
         # CSP für E-Mail-Rendering: Erlaube externe Fonts/Bilder (PayPal, etc.)
@@ -2072,7 +2088,7 @@ def api_get_tags():
 @app.route("/api/tags", methods=["POST"])
 @login_required
 def api_create_tag():
-    """API: Tag erstellen"""
+    """API: Tag erstellen (Phase F.2: mit description)"""
     db = get_db_session()
 
     try:
@@ -2083,15 +2099,23 @@ def api_create_tag():
         data = request.get_json()
         name = data.get("name", "").strip()
         color = data.get("color", "#3B82F6")
+        description = data.get("description", "").strip() or None  # None wenn leer
 
         if not name:
             return jsonify({"error": "Tag-Name erforderlich"}), 400
 
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
-            tag = tag_manager_mod.TagManager.create_tag(db, user.id, name, color)
+            tag = tag_manager_mod.TagManager.create_tag(
+                db, user.id, name, color, description=description
+            )
 
-            return jsonify({"id": tag.id, "name": tag.name, "color": tag.color}), 201
+            return jsonify({
+                "id": tag.id, 
+                "name": tag.name, 
+                "color": tag.color,
+                "description": tag.description
+            }), 201
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
 
@@ -2102,7 +2126,7 @@ def api_create_tag():
 @app.route("/api/tags/<int:tag_id>", methods=["PUT"])
 @login_required
 def api_update_tag(tag_id):
-    """API: Tag aktualisieren"""
+    """API: Tag aktualisieren (Phase F.2: mit description)"""
     db = get_db_session()
 
     try:
@@ -2113,11 +2137,12 @@ def api_update_tag(tag_id):
         data = request.get_json()
         name = data.get("name")
         color = data.get("color")
+        description = data.get("description", "").strip() or None  # None wenn leer
 
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             tag = tag_manager_mod.TagManager.update_tag(
-                db, tag_id, user.id, name=name, color=color
+                db, tag_id, user.id, name=name, color=color, description=description
             )
 
             if not tag:
@@ -2243,7 +2268,7 @@ def api_get_tag_suggestions(email_id):
                     user_id=user.id,
                     email_embedding_bytes=raw_email.email_embedding,
                     top_k=5,
-                    min_similarity=0.70,  # 70% als UI-Threshold
+                    min_similarity=0.15,  # Lowered from 0.70 - Email-to-TagName similarity is naturally low
                     exclude_tag_ids=assigned_tag_ids
                 )
                 

@@ -68,15 +68,15 @@
         <div class="mb-4">
             <h5>🏷️ Tags</h5>
             <div id="emailTags" class="mb-2">
-                {% if email.tags %}
-                    {% for tag in email.tags %}
-                    <span class="badge bg-primary d-inline-flex align-items-center gap-2">
+                {% if email_tags %}
+                    {% for tag in email_tags %}
+                    <span class="badge d-inline-flex align-items-center gap-2 me-1" style="background-color: {{ tag.color }};">
                         {{ tag.name }}
                         <button type="button" class="btn btn-sm btn-transparent remove-tag-btn p-0" 
                                 data-email-id="{{ email.id }}"
                                 data-tag-id="{{ tag.id }}"
                                 data-tag-name="{{ tag.name }}"
-                                aria-label="Entfernen" style="font-size: 16px; line-height: 1;">×</button>
+                                aria-label="Entfernen" style="font-size: 16px; line-height: 1; color: white; opacity: 0.8;">×</button>
                     </span>
                     {% endfor %}
                 {% else %}
@@ -97,11 +97,11 @@
             <!-- Current Flags Display -->
             <div id="flagsCurrent" class="mt-2" style="display: none;"></div>
             
-            <!-- Tag List -->
-            <div id="currentTagsList" class="mt-2">
-                {% if email.tags %}
-                    {% for tag in email.tags %}
-                    <span class="badge bg-primary d-inline-flex align-items-center gap-2">
+            <!-- Tag List (Hidden duplicate - remove or keep synced) -->
+            <div id="currentTagsList" class="mt-2" style="display: none;">
+                {% if email_tags %}
+                    {% for tag in email_tags %}
+                    <span class="badge d-inline-flex align-items-center gap-2 me-1" style="background-color: {{ tag.color }};">
                         {{ tag.name }}
                         <button type="button" class="btn btn-close btn-close-white ms-2 remove-tag-btn" style="font-size: 10px;" 
                                 data-email-id="{{ email.id }}"
