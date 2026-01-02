@@ -48,7 +48,7 @@ class TagEmbeddingCache:
         """Lazy-Init des Ollama Clients"""
         if cls._ollama_client is None:
             try:
-                ai_client = import_module("03_ai_client")
+                ai_client = import_module(".03_ai_client", "src")
                 cls._ollama_client = ai_client.LocalOllamaClient(model="all-minilm:22m")
             except Exception as e:
                 logger.warning(f"Ollama Client nicht verfügbar: {e}")
