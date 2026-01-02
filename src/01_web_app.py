@@ -1559,11 +1559,11 @@ def optimize_email(email_id):
                 decrypted["body"], level=sanitize_level
             )
 
+            # Phase E: analyze_email() hat keinen sender Parameter mehr
             result = client.analyze_email(
                 subject=decrypted["subject"],
                 body=sanitized_body,
-                language="de",
-                sender=decrypted["sender"],
+                language="de"
             )
 
             priority = scoring.analyze_priority(
