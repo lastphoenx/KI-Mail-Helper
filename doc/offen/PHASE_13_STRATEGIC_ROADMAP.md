@@ -2,34 +2,34 @@
 
 **Strategic Planning Document - Was haben wir, was brauchen wir?**
 
-**Status:** ✅ Phase A-E + 14(a-g) + **F.2** Complete | 🚀 Phase F.1, F.3, G-J Ready to Implement  
+**Status:** ✅ Phase A-E + 14(a-g) + **F (komplett)** Complete | 🚀 Phase G-J Ready to Implement  
 **Created:** 31. Dezember 2025  
-**Updated:** 03. Januar 2026 - **Phase F.2: 3-Settings System COMPLETE**  
-**Recent:** Semantic Intelligence Phase F.2 with full 3-Settings System implemented & tested  
+**Updated:** 03. Januar 2026 - **Phase F: Semantic Intelligence COMPLETE (F.1 + F.2 + F.3)**  
+**Recent:** Alle 3 Phasen F abgeschlossen: Semantic Search + 3-Settings + Email Similarity  
 **Supersedes/Integrates:** Task 5 & Task 6
 
 ---
 
 ## 📋 Executive Summary
 
-**Abgeschlossen (51-64h):**
+**Abgeschlossen (73-91h):**
 - ✅ Phase A: Filter auf /liste
 - ✅ Phase B: Server DELETE/FLAG/READ
 - ✅ Phase C: MOVE + Multi-Folder FULL SYNC
 - ✅ Phase D: ServiceToken + InitialSync Fixes
 - ✅ Phase E: KI Thread-Context
 - ✅ Phase 14(a-g): RFC UIDs + IMAPClient Migration
-- ✅ **Phase F.2: 3-Settings System (Embedding/Base/Optimize) - NEW!**
+- ✅ **Phase F.1: Semantic Email Search (8-12h) - DONE!**
+- ✅ **Phase F.2: 3-Settings System (12-15h) - DONE!**
+- ✅ **Phase F.3: Email Similarity (2-3h) - DONE!**
 
-**Neu geplant (44-65h):**
-- 🔥 **Phase F.1:** Semantic Email Search (8-12h) ⭐⭐⭐⭐⭐ **TOP PRIORITY**
-- 🔥 **Phase G:** AI Action Engine (10-14h) ⭐⭐⭐⭐⭐ **HIGH VALUE**
+**Neu geplant (22-42h):**
+- 🔥 **Phase G:** AI Action Engine (10-14h) ⭐⭐⭐⭐⭐ **TOP PRIORITY**
 - ⭐ **Phase H:** Action Extraction (8-12h) ⭐⭐⭐⭐
 - 🟢 **Phase I:** Productivity Features (20-28h) ⭐⭐⭐ **OPTIONAL**
 - 🟢 **Phase J:** SMTP Integration (6-8h) ⭐⭐⭐ **OPTIONAL**
-- 🟢 **Phase F.3:** Email Similarity (2-3h) ⭐⭐⭐ **OPTIONAL**
 
-**Total Roadmap:** 95-129 Stunden → **Completed: 51-64h** | **Remaining: 44-65h**
+**Total Roadmap:** 95-133 Stunden → **Completed: 73-91h** | **Remaining: 22-42h**
 
 ---
 
@@ -913,21 +913,21 @@ def analyze_email(
 | ✅ DONE | 4c | IMAPClient Migration | 4-5h | 40% Code-Reduktion, 100% Reliability | Phase 14g COMPLETE |
 | ✅ DONE | 4d | reset_all_emails.py Fix | 0.5h | Soft-Delete + UIDVALIDITY Cache Clear | Phase 14g COMPLETE |
 | ✅ DONE | 5 | KI Thread-Context | 4h | Bessere Klassifizierung | Phase E COMPLETE |
-| ✅ DONE | 6 | **3-Settings System (Embedding/Base/Optimize)** | 12-15h | Separate AI models | Phase F.2 COMPLETE |
+| ✅ DONE | 6 | **Semantic Intelligence (F.1+F.2+F.3)** | 22-30h | Semantische Suche komplett | Phase F COMPLETE |
 
-**Abgeschlossen:** 51-64h (Phase A-E + 14a-g + F.2)
+**Abgeschlossen:** 73-91h (Phase A-E + 14a-g + F.1-3)
 
 ---
 
-### 🚀 Phase F: Semantic Intelligence (12-18h) ⭐⭐⭐⭐⭐ **TOP PRIORITY**
+### 🚀 Phase F: Semantic Intelligence (22-30h) ⭐⭐⭐⭐⭐ **COMPLETE!**
 
 | Status | Prio | Feature | Aufwand | Impact | Notes |
 |--------|------|---------|---------|--------|-------|
-| 🟡 | F.1 | **Semantic Email Search** | 8-12h | ⭐⭐⭐⭐⭐ | Killer-Feature, Infrastructure ready |
-| ✅ DONE | F.2 | **3-Settings System (Embedding/Base/Optimize)** | 12-15h | ⭐⭐⭐⭐⭐ | **COMPLETE:** Separate models, batch-reprocess, pre-checks |
-| 🟢 | F.3 | Email Similarity Detection | 2-3h | ⭐⭐⭐ | Deduplizierung & "Ähnliche Mails" |
+| ✅ DONE | F.1 | **Semantic Email Search** | 8-12h | ⭐⭐⭐⭐⭐ | Vector-based search, 47/47 embeddings |
+| ✅ DONE | F.2 | **3-Settings System (Embedding/Base/Optimize)** | 12-15h | ⭐⭐⭐⭐⭐ | Separate models, batch-reprocess, pre-checks |
+| ✅ DONE | F.3 | **Email Similarity Detection** | 2-3h | ⭐⭐⭐ | "Similar emails" card with scores |
 
-**Total:** 22-30h | **Completed: 12-15h** | **User Value:** Massive (findet Mails ohne exakte Keywords!)
+**Total:** 22-30h | **Status: COMPLETE!** | **User Value:** Massive (semantische Suche funktioniert!)
 
 ---
 
