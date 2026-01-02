@@ -658,19 +658,99 @@ document.addEventListener('DOMContentLoaded', function() {
     const reprocessBtn = document.getElementById('reprocessEmailBtn');
     if (reprocessBtn) {
         reprocessBtn.addEventListener('click', async function() {
-            if (!confirm('Email neu verarbeiten?\n\n' +
-                        'Dies regeneriert:\n' +
-                        '• Embedding (mit aktuellem EMBEDDING Model)\n' +
-                        '• KI-Score & Kategorie (mit BASE Model)\n' +
-                        '• Tag-Vorschläge werden aktualisiert')) {
-                return;
-            }
-            
             const originalText = reprocessBtn.innerHTML;
-            reprocessBtn.disabled = true;
-            reprocessBtn.innerHTML = '⏳ Verarbeite...';
             
             try {
+                // 1. PRE-CHECK: Embedding-Kompatibilität prüfen
+                reprocessBtn.disabled = true;
+                reprocessBtn.innerHTML = '🔍 Prüfe Kompatibilität...';
+                
+                const checkResponse = await fetch(`/api/emails/${emailId}/check-embedding-compatibility`, {
+                    method: 'GET',
+                    headers: { 'X-CSRFToken': getCsrfToken() },
+                    credentials: 'include'
+                });
+                
+                const checkData = await checkResponse.json();
+                
+                // Falls NICHT kompatibel → Warnung und STOP
+                if (!checkData.compatible) {
+                    reprocessBtn.disabled = false;
+                    reprocessBtn.innerHTML = originalText;
+                    
+                    alert('⚠️ Embedding-Model-Konflikt!\n\n' +
+                          `Diese Email: ${checkData.current_dim} Dimensionen\n` +
+                          `Andere Emails: ${checkData.expected_dim} Dimensionen\n\n` +
+                          'Die Verarbeitung wurde NICHT gestartet.\n\n' +
+                          'Lösung: Gehe zu Settings → "Alle Emails neu embedden"\n' +
+                          'um alle Emails mit dem gleichen Model zu verarbeiten.');
+                    return;
+                }
+                
+                // 2. KOMPATIBEL → Bestätigung anzeigen
+                reprocessBtn.disabled = false;
+                reprocessBtn.innerHTML = originalText;
+                
+                if (!confirm('Email neu verarbeiten?\n\n' +
+                            'Dies regeneriert:\n' +
+                            '• Embedding (mit aktuellem EMBEDDING Model)\n' +
+                            '• KI-Score & Kategorie (mit BASE Model)\n' +
+                            '• Tag-Vorschläge werden aktualisiert')) {
+                    return;
+                }
+                
+                // 3. STARTEN → Progress-Anzeige
+                reprocessBtn.disabled = true;
+                reprocessBtn.innerHTML = '⏳ Verarbeite...';
+                
+                // Progress Modal
+                const progressHtml = `
+                    <div class="modal fade" id="reprocessProgressModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+                        <div class="modal-dialog modal-dialog-centered">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">⏳ Email wird verarbeitet</h5>
+                                </div>
+                                <div class="modal-body">
+                                    <p>Embedding + Score werden regeneriert...</p>
+                                    <div class="progress mb-3" style="height: 25px;">
+                                        <div id="reprocessProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                             role="progressbar" style="width: 0%">0%</div>
+                                    </div>
+                                    <small class="text-muted">
+                                        <span id="reprocessElapsed">0s</span> / max. 10 Minuten
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                if (!document.getElementById('reprocessProgressModal')) {
+                    document.body.insertAdjacentHTML('beforeend', progressHtml);
+                }
+                
+                const progressModal = new bootstrap.Modal(document.getElementById('reprocessProgressModal'));
+                progressModal.show();
+                
+                const startTime = Date.now();
+                const maxDuration = 600; // 10 Minuten
+                
+                // Progress Timer
+                const progressInterval = setInterval(() => {
+                    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                    const progress = Math.min(95, (elapsed / maxDuration) * 100);
+                    
+                    document.getElementById('reprocessProgressBar').style.width = progress + '%';
+                    document.getElementById('reprocessProgressBar').textContent = Math.floor(progress) + '%';
+                    document.getElementById('reprocessElapsed').textContent = elapsed + 's';
+                    
+                    if (elapsed >= maxDuration) {
+                        clearInterval(progressInterval);
+                    }
+                }, 1000);
+                
+                // 4. API-Call
                 const response = await fetch(`/api/emails/${emailId}/reprocess`, {
                     method: 'POST',
                     headers: { 
@@ -680,22 +760,38 @@ document.addEventListener('DOMContentLoaded', function() {
                     credentials: 'include'
                 });
                 
+                clearInterval(progressInterval);
+                
                 const data = await response.json();
                 
-                if (response.ok) {
-                    alert('✅ Email erfolgreich neu verarbeitet!\n\n' +
-                          `Embedding Model: ${data.embedding_model || 'unbekannt'}\n` +
-                          `KI-Score: ${data.ai_score !== undefined ? data.ai_score.toFixed(3) : 'n/a'}`);
-                    location.reload(); // Reload to show updated data
-                } else {
-                    alert('❌ Fehler: ' + (data.error || 'Verarbeitung fehlgeschlagen'));
-                    reprocessBtn.disabled = false;
-                    reprocessBtn.innerHTML = originalText;
-                }
+                // Progress auf 100%
+                document.getElementById('reprocessProgressBar').style.width = '100%';
+                document.getElementById('reprocessProgressBar').textContent = '100%';
+                document.getElementById('reprocessProgressBar').classList.remove('progress-bar-animated');
+                
+                setTimeout(() => {
+                    progressModal.hide();
+                    
+                    if (response.ok) {
+                        alert('✅ Email erfolgreich neu verarbeitet!\n\n' +
+                              `Embedding Model: ${data.embedding_model || 'unbekannt'}\n` +
+                              `KI-Score: ${data.ai_score !== undefined ? data.ai_score.toFixed(3) : 'n/a'}`);
+                        location.reload();
+                    } else {
+                        alert('❌ Fehler: ' + (data.error || 'Verarbeitung fehlgeschlagen'));
+                        reprocessBtn.disabled = false;
+                        reprocessBtn.innerHTML = originalText;
+                    }
+                }, 500);
+                
             } catch (error) {
                 alert('❌ Netzwerkfehler: ' + error.message);
                 reprocessBtn.disabled = false;
                 reprocessBtn.innerHTML = originalText;
+                
+                // Close modal on error
+                const modal = bootstrap.Modal.getInstance(document.getElementById('reprocessProgressModal'));
+                if (modal) modal.hide();
             }
         });
     }

@@ -2880,6 +2880,82 @@ def api_get_reply_tones():
 # ===== End Phase G.1 =====
 
 
+@app.route("/api/emails/<int:email_id>/check-embedding-compatibility", methods=["GET"])
+@login_required
+def api_check_embedding_compatibility(email_id):
+    """
+    Pre-Check: Prüft ob Email-Embedding mit aktuellem Model kompatibel ist
+    
+    Returns:
+        {
+            "compatible": bool,
+            "current_dim": int,
+            "expected_dim": int,
+            "message": str
+        }
+    """
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"compatible": False, "error": "Unauthorized"}), 401
+        
+        # Hole Email
+        raw_email = (
+            db.query(models.RawEmail)
+            .filter(
+                models.RawEmail.id == email_id,
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.deleted_at == None
+            )
+            .first()
+        )
+        
+        if not raw_email:
+            return jsonify({"compatible": False, "error": "Email nicht gefunden"}), 404
+        
+        # Prüfe Embedding-Dimension
+        from src.semantic_search import get_embedding_dim_from_bytes, DEFAULT_EMBEDDING_DIM
+        
+        current_dim = get_embedding_dim_from_bytes(raw_email.email_embedding) if raw_email.email_embedding else 0
+        expected_dim = DEFAULT_EMBEDDING_DIM  # 384 für all-minilm
+        
+        # Hol alle anderen Embeddings im System um zu checken ob konsistent
+        sample_emails = (
+            db.query(models.RawEmail)
+            .filter(
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.email_embedding.isnot(None),
+                models.RawEmail.deleted_at == None
+            )
+            .limit(5)
+            .all()
+        )
+        
+        if sample_emails:
+            # Nutze die häufigste Dimension als "expected"
+            dimensions = [get_embedding_dim_from_bytes(e.email_embedding) for e in sample_emails]
+            expected_dim = max(set(dimensions), key=dimensions.count)  # Most common
+        
+        compatible = (current_dim == expected_dim) if current_dim > 0 else True
+        
+        return jsonify({
+            "compatible": compatible,
+            "current_dim": current_dim,
+            "expected_dim": expected_dim,
+            "message": f"Embedding-Dimension {current_dim} weicht von bestehenden Emails ({expected_dim}) ab. "
+                      f"Bitte nutze 'Alle Emails neu embedden' in den Settings!"
+                      if not compatible else "Embedding kompatibel"
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Compatibility check failed: {e}")
+        return jsonify({"compatible": True, "error": str(e)}), 200  # Allow on error
+    finally:
+        db.close()
+
+
 @app.route("/api/emails/<int:email_id>/reprocess", methods=["POST"])
 @login_required
 def api_reprocess_email(email_id):
