@@ -178,7 +178,7 @@ def get_sender_hint_from_patterns(
             session.query(models.RawEmail)
             .filter(
                 models.RawEmail.thread_id == raw_email.thread_id,
-                models.RawEmail.id < raw_email.id,
+                models.RawEmail.received_at < raw_email.received_at,  # Time-based!
                 models.RawEmail.deleted_at.is_(None),
                 models.RawEmail.deleted_verm.is_(False)
             )
@@ -201,6 +201,10 @@ def get_sender_hint_from_patterns(
             email_sender = encryption_mod.EmailDataManager.decrypt_email_sender(
                 email.encrypted_sender or "", master_key
             )
+            
+            # Null-safety: skip if decryption failed
+            if not email_sender:
+                continue
             
             if email_sender.lower() == current_sender_lower:
                 sender_count += 1
@@ -360,8 +364,12 @@ def process_pending_raw_emails(
             if sender_hint:
                 context_str += sender_hint + "\n\n"
             
+            # Bug #4: Improved logging with char counts
             if context_str:
-                logger.info(f"📧 Thread-Context: {len(thread_context)} chars, Sender-Hint: {'Yes' if sender_hint else 'No'}")
+                logger.info(
+                    f"📧 Thread-Context: {len(thread_context) if thread_context else 0} chars, "
+                    f"Sender-Hint: {len(sender_hint) if sender_hint else 0} chars"
+                )
 
             logger.info("🤖 Analysiere gespeicherte Mail: %s...", subject_preview)
             ai_result = active_ai.analyze_email(
@@ -373,22 +381,22 @@ def process_pending_raw_emails(
             # Phase 11d: Sender-Pattern-Hinweis anwenden (wenn vorhanden)
             try:
                 sender_patterns_mod = importlib.import_module(".services.sender_patterns", "src")
-                sender_hint = sender_patterns_mod.SenderPatternManager.get_classification_hint(
+                classification_hint = sender_patterns_mod.SenderPatternManager.get_classification_hint(
                     db=session,
                     user_id=raw_email.user_id,
                     sender=decrypted_sender or "",
                     min_confidence=70,  # Nur bei hoher Konfidenz überschreiben
                     min_emails=3
                 )
-                if sender_hint:
+                if classification_hint:
                     # Bei hoher Konfidenz: Sender-Pattern überschreibt AI
-                    if sender_hint.get("category"):
-                        ai_result["kategorie_aktion"] = sender_hint["category"]
-                    if sender_hint.get("priority"):
-                        ai_result["dringlichkeit"] = sender_hint["priority"]
-                    if sender_hint.get("is_newsletter") is not None:
-                        ai_result["spam_flag"] = sender_hint["is_newsletter"]
-                    logger.debug(f"📊 Sender-Pattern angewandt (confidence={sender_hint['confidence']})")
+                    if classification_hint.get("category"):
+                        ai_result["kategorie_aktion"] = classification_hint["category"]
+                    if classification_hint.get("priority"):
+                        ai_result["dringlichkeit"] = classification_hint["priority"]
+                    if classification_hint.get("is_newsletter") is not None:
+                        ai_result["spam_flag"] = classification_hint["is_newsletter"]
+                    logger.debug(f"📊 Sender-Pattern angewandt (confidence={classification_hint['confidence']})")
             except Exception as e:
                 # Sender-Patterns sind optional
                 logger.debug(f"Sender-Pattern Lookup übersprungen: {e}")
