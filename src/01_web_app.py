@@ -2855,6 +2855,7 @@ def api_generate_reply(email_id):
             # Get AI Client (gleicher wie für Processing)
             provider = (user.preferred_ai_provider or "ollama").lower()
             resolved_model = ai_client.resolve_model(provider, user.preferred_ai_model)
+            logger.info(f"🤖 Reply-Generator: {provider}/{resolved_model}")
             client = ai_client.build_client(provider, model=resolved_model)
             
             generator = reply_generator_mod.ReplyGenerator(ai_client=client)
