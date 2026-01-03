@@ -285,20 +285,25 @@ class AutoRulesEngine:
             try:
                 results = self.process_email(email.id, dry_run=False)
                 
+                has_error = False
                 for result in results:
                     if result.success:
                         stats["rules_triggered"] += 1
                         stats["actions_executed"] += len(result.actions_executed)
                     else:
                         stats["errors"] += 1
+                        has_error = True
                 
-                # Markiere als verarbeitet
-                email.auto_rules_processed = True
-                stats["processed_email_ids"].append(email.id)
+                # Nur bei Erfolg als verarbeitet markieren
+                if not has_error:
+                    email.auto_rules_processed = True
+                    self.db.flush()  # Sofort persistieren
+                    stats["processed_email_ids"].append(email.id)
                 
             except Exception as e:
                 logger.error(f"Auto-Rule Error für E-Mail {email.id}: {e}")
                 stats["errors"] += 1
+                # NICHT als processed markieren → wird beim nächsten Run erneut versucht
         
         # Commit batch
         if stats["processed_email_ids"]:
@@ -414,6 +419,7 @@ class AutoRulesEngine:
                     match_details['subject_regex'] = email_data['subject'][:50]
             except re.error as e:
                 logger.warning(f"Ungültiger Regex in Regel {rule.id}: {conditions['subject_regex']} - {e}")
+                match_details['subject_regex_error'] = f"Ungültiger Regex: {str(e)}"
         
         # Body-Bedingungen
         if 'body_contains' in conditions:
@@ -571,14 +577,16 @@ class AutoRulesEngine:
                     ).first()
                     
                     if not tag:
-                        # Tag erstellen
+                        # Tag erstellen mit optionaler Farbe aus actions
+                        tag_color = actions.get('tag_color', '#6366F1')  # Default-Farbe
                         tag = EmailTag(
                             user_id=self.user_id,
                             name=tag_name,
-                            color='#6366F1'  # Default-Farbe
+                            color=tag_color
                         )
                         self.db.add(tag)
                         self.db.flush()
+                        logger.info(f"📝 Created new tag '{tag_name}' with color {tag_color}")
                     
                     # Prüfe ob Tag bereits zugewiesen
                     existing = self.db.query(EmailTagAssignment).filter_by(
