@@ -2853,15 +2853,18 @@ def api_generate_reply(email_id):
             reply_generator_mod = importlib.import_module("src.reply_generator")
             
             # Get AI Client (gleicher wie für Processing)
-            ai_client = get_active_ai_client()
+            provider = (user.preferred_ai_provider or "ollama").lower()
+            resolved_model = ai_client.resolve_model(provider, user.preferred_ai_model)
+            client = ai_client.build_client(provider, model=resolved_model)
             
-            generator = reply_generator_mod.ReplyGenerator(ai_client=ai_client)
+            generator = reply_generator_mod.ReplyGenerator(ai_client=client)
             result = generator.generate_reply(
                 original_subject=decrypted_subject,
                 original_body=decrypted_body,
                 original_sender=decrypted_sender,
                 tone=tone,
-                thread_context=thread_context if thread_context else None
+                thread_context=thread_context if thread_context else None,
+                has_attachments=raw_email.has_attachments or False
             )
             
             if result["success"]:
