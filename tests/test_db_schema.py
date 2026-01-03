@@ -51,8 +51,9 @@ def test_mail_account_enums(session):
     account = models.MailAccount(
         user_id=user.id,
         name="Test Account",
-        imap_server="imap.example.com",
-        imap_username="user",
+        encrypted_imap_server="encrypted_imap.example.com",
+        encrypted_imap_username="encrypted_user",
+        encrypted_imap_password="encrypted_pass",
         imap_encryption=models.IMAPEncryption.SSL.value,
         smtp_encryption=models.SMTPEncryption.STARTTLS.value
     )
@@ -77,8 +78,9 @@ def test_raw_email_unique_constraint(session):
     account = models.MailAccount(
         user_id=user.id,
         name="Test Account",
-        imap_server="imap.example.com",
-        imap_username="user"
+        encrypted_imap_server="encrypted_imap.example.com",
+        encrypted_imap_username="encrypted_user",
+        encrypted_imap_password="encrypted_pass"
     )
     session.add(account)
     session.flush()
@@ -86,10 +88,12 @@ def test_raw_email_unique_constraint(session):
     raw_email1 = models.RawEmail(
         user_id=user.id,
         mail_account_id=account.id,
-        uid="UNIQUE_UID_123",
-        sender="sender@example.com",
-        subject="Test Email",
-        body="Test body",
+        imap_uid=123,
+        imap_folder="INBOX",
+        imap_uidvalidity=12345,
+        encrypted_sender="encrypted_sender@example.com",
+        encrypted_subject="encrypted_Test Email",
+        encrypted_body="encrypted_Test body",
         received_at=datetime.now(UTC)
     )
     session.add(raw_email1)
@@ -98,10 +102,12 @@ def test_raw_email_unique_constraint(session):
     raw_email2 = models.RawEmail(
         user_id=user.id,
         mail_account_id=account.id,
-        uid="UNIQUE_UID_123",
-        sender="sender2@example.com",
-        subject="Test Email 2",
-        body="Test body 2",
+        imap_uid=123,
+        imap_folder="INBOX",
+        imap_uidvalidity=12345,
+        encrypted_sender="encrypted_sender2@example.com",
+        encrypted_subject="encrypted_Test Email 2",
+        encrypted_body="encrypted_Test body 2",
         received_at=datetime.now(UTC)
     )
     session.add(raw_email2)
@@ -123,8 +129,9 @@ def test_processed_email_no_user_id(session):
     account = models.MailAccount(
         user_id=user.id,
         name="Test Account",
-        imap_server="imap.example.com",
-        imap_username="user"
+        encrypted_imap_server="encrypted_imap.example.com",
+        encrypted_imap_username="encrypted_user",
+        encrypted_imap_password="encrypted_pass"
     )
     session.add(account)
     session.flush()
@@ -132,10 +139,11 @@ def test_processed_email_no_user_id(session):
     raw_email = models.RawEmail(
         user_id=user.id,
         mail_account_id=account.id,
-        uid="UID_999",
-        sender="sender@example.com",
-        subject="Test",
-        body="Body",
+        imap_uid=999,
+        imap_folder="INBOX",
+        encrypted_sender="encrypted_sender@example.com",
+        encrypted_subject="encrypted_Test",
+        encrypted_body="encrypted_Body",
         received_at=datetime.now(UTC)
     )
     session.add(raw_email)
@@ -169,8 +177,9 @@ def test_soft_delete_fields(session):
     account = models.MailAccount(
         user_id=user.id,
         name="Test Account",
-        imap_server="imap.example.com",
-        imap_username="user"
+        encrypted_imap_server="encrypted_imap.example.com",
+        encrypted_imap_username="encrypted_user",
+        encrypted_imap_password="encrypted_pass"
     )
     session.add(account)
     session.flush()
@@ -178,10 +187,11 @@ def test_soft_delete_fields(session):
     raw_email = models.RawEmail(
         user_id=user.id,
         mail_account_id=account.id,
-        uid="UID_DELETE",
-        sender="sender@example.com",
-        subject="Delete Me",
-        body="Body",
+        imap_uid=777,
+        imap_folder="INBOX",
+        encrypted_sender="encrypted_sender@example.com",
+        encrypted_subject="encrypted_Delete Me",
+        encrypted_body="encrypted_Body",
         received_at=datetime.now(UTC)
     )
     session.add(raw_email)
@@ -220,8 +230,9 @@ def test_email_folder_creation(session):
     account = models.MailAccount(
         user_id=user.id,
         name="Test Account",
-        imap_server="imap.example.com",
-        imap_username="user"
+        encrypted_imap_server="encrypted_imap.example.com",
+        encrypted_imap_username="encrypted_user",
+        encrypted_imap_password="encrypted_pass"
     )
     session.add(account)
     session.flush()
