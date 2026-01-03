@@ -3,11 +3,16 @@ Tests für KI-Client Interface
 """
 
 import sys
+import importlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.ai_client_03 import AIClient, LocalOllamaClient, get_ai_client
+# Numerische Module mit importlib laden
+ai_client_module = importlib.import_module(".03_ai_client", "src")
+AIClient = ai_client_module.AIClient
+LocalOllamaClient = ai_client_module.LocalOllamaClient
+get_ai_client = ai_client_module.get_ai_client
 
 
 def test_ai_client_interface():

@@ -129,7 +129,9 @@ class ReplyGenerator:
         original_sender: str = "",
         tone: str = "formal",
         thread_context: Optional[str] = None,
-        language: str = "de"
+        language: str = "de",
+        has_attachments: bool = False,
+        attachment_names: Optional[list] = None
     ) -> Dict[str, Any]:
         """
         Generiert einen Antwort-Entwurf.
@@ -141,6 +143,8 @@ class ReplyGenerator:
             tone: Ton der Antwort (formal/friendly/brief/decline)
             thread_context: Optional - Thread-Context aus Phase E
             language: Sprache (de/en)
+            has_attachments: Ob Original-Email Anhänge hat
+            attachment_names: Liste der Anhang-Namen (optional)
             
         Returns:
             Dict mit:
@@ -173,7 +177,9 @@ class ReplyGenerator:
             original_sender=original_sender,
             tone_instructions=tone_config["instructions"],
             thread_context=thread_context,
-            language=language
+            language=language,
+            has_attachments=has_attachments,
+            attachment_names=attachment_names
         )
         
         # Rufe AI auf
@@ -234,16 +240,26 @@ class ReplyGenerator:
         original_sender: str,
         tone_instructions: str,
         thread_context: Optional[str],
-        language: str
+        language: str,
+        has_attachments: bool = False,
+        attachment_names: Optional[list] = None
     ) -> str:
         """Baut den User-Prompt für die Reply-Generierung"""
+        
+        # Anhang-Hinweis
+        attachment_hint = ""
+        if has_attachments:
+            if attachment_names:
+                attachment_hint = f"\n📎 ANHÄNGE: {', '.join(attachment_names)}\n"
+            else:
+                attachment_hint = "\n📎 ANHÄNGE: Die Original-Email enthält Anhänge\n"
         
         prompt = f"""
 {tone_instructions}
 
 ORIGINAL E-MAIL:
 Von: {original_sender or "Unbekannt"}
-Betreff: {original_subject or "(Kein Betreff)"}
+Betreff: {original_subject or "(Kein Betreff)"}{attachment_hint}
 
 {original_body[:2000]}  
 """

@@ -439,6 +439,7 @@ class AutoRulesEngine:
                     match_details['body_regex'] = True
             except re.error as e:
                 logger.warning(f"Ungültiger Body-Regex in Regel {rule.id}: {conditions['body_regex']} - {e}")
+                match_details['body_regex_error'] = f"Ungültiger Regex: {str(e)}"
         
         # Attachment-Bedingung
         if 'has_attachment' in conditions:
