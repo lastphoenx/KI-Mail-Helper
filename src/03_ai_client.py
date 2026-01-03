@@ -1145,13 +1145,17 @@ class OpenAIClient(AIClient):
         max_tokens: int = 1000
     ) -> str:
         """Generiert Text mit OpenAI Chat Completions API."""
+        # GPT-5+ verwendet max_completion_tokens statt max_tokens
+        is_new_model = self.model.startswith(("gpt-5", "o1", "o3"))
+        token_param = "max_completion_tokens" if is_new_model else "max_tokens"
+        
         payload = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            "max_tokens": max_tokens,
+            token_param: max_tokens,
             "temperature": 0.7
         }
         headers = {
