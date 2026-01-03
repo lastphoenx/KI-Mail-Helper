@@ -2,7 +2,7 @@
 
 > **Intelligente E-Mail-Priorisierung mit lokalem LLM & Zero-Knowledge Encryption**  
 > Datenschutzfreundlich • End-to-End verschlüsselt • Automatische Übersetzung • 3×3-Prioritäten-Dashboard  
-> Security Score: **98/100** 🔒 | Phase: **14 (RFC-Compliant IMAP Architecture)** 🚧
+> Security Score: **98/100** 🔒 | Phase: **G (AI Action Engine) - COMPLETE** ✅
 
 ---
 
@@ -20,7 +20,7 @@ Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher
 - Ein weiterer **KI-Provider + Modell** war hauptsächlich für Review, kritisches Gegenprüfen und das Vorschlagen von Fixes zuständig und hat nur wenige Änderungen selbst implementiert.
 - Ein dritter **KI-Provider + ausgewähltes Modell** wurde per API für ein Deep-Review eingesetzt – unterstützt durch ein eigenes Python-Review-Skript mit ca. 1.000 Zeilen (ausschließlich für Review-Zwecke).
 
-**Das Projekt befindet sich in Phase 14 (RFC-Compliant IMAP Architecture) und wird aktiv weiterentwickelt.** Die neue Phase implementiert RFC-konforme IMAP UIDs (RFC 3501/4315/9051) mit (folder, UIDVALIDITY, UID) als unique key, beseitigt Race-Conditions bei MOVE-Operationen und verbessert die Zuverlässigkeit der Email-Synchronisation erheblich.
+**Das Projekt hat Phase G (AI Action Engine) erfolgreich abgeschlossen und wird aktiv weiterentwickelt.** Phase G brachte zwei leistungsstarke Features: G.1 Reply Draft Generator (KI schreibt Antwort-Entwürfe mit Ton-Auswahl) und G.2 Auto-Action Rules Engine (automatische Email-Aktionen mit 14 Bedingungstypen, farbigen Tag-Indikatoren und KI-Integration für intelligente Regel-Ketten).
 
 **Trotz größter Sorgfalt beim Prompting, kritischem Hinterfragen und wiederholten Reviews erfolgt die Verwendung auf eigenes Risiko.** Die Software wird „wie gesehen" (as is) bereitgestellt – ohne Gewährleistung und ohne Zusicherung hinsichtlich Korrektheit, Sicherheit oder Eignung. Wenn du das Tool mit echten Mail-Accounts oder sensiblen Daten nutzen willst, führe bitte eigene Tests, Threat-Modeling und ein unabhängiges Security-Review durch.
 
@@ -36,7 +36,7 @@ This repository was created with multiple AI systems. So far, the codebase has b
 - Another **AI provider + model** was mainly responsible for review, critical verification, and proposing fixes, contributing only minor code changes.
 - A third **AI provider + selected model** was used via API for an in-depth review, supported by a dedicated Python review harness of about 1,000 lines (built solely for review purposes).
 
-**The project is currently in Phase 14 (RFC-Compliant IMAP Architecture) and is being actively developed.** The new phase implements RFC-compliant IMAP UIDs (RFC 3501/4315/9051) with (folder, UIDVALIDITY, UID) as unique key, eliminates race conditions in MOVE operations, and significantly improves email synchronization reliability.
+**The project has successfully completed Phase G (AI Action Engine) and is being actively developed.** Phase G introduced two powerful features: G.1 Reply Draft Generator (AI generates reply drafts with tone selection) and G.2 Auto-Action Rules Engine (automatic email actions with 14 condition types, colored tag indicators, and AI integration for intelligent rule chains).
 
 **Despite careful prompting, critical challenge/verification, and repeated reviews, use is at your own risk.** The software is provided "as is", without warranty, and with no guarantee of correctness, security, or fitness for a particular purpose. If you plan to use it with real email accounts or sensitive data, please conduct your own testing, threat modeling, and an independent security review first.
 
@@ -117,6 +117,15 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
   - **Multi-Tag-Filter**: Kombiniere Tags mit Farbe/Done/Suche
   - **Learning-Integration**: Manuelle Tag-Änderungen → ML-Training (user_override_tags)
   - **Performance**: Eager Loading verhindert n+1 Queries (2 Queries für 100 Emails)
+- **🤖 AI Action Engine (Phase G)** – Automatisierung & KI-Assistenz
+  - **G.1 Reply Draft Generator**: KI generiert Antwort-Entwürfe mit 4 Ton-Varianten (Formell/Freundlich/Kurz/Ablehnend)
+  - **G.2 Auto-Rules Engine**: Automatische Email-Aktionen mit Bedingungen & Aktionen
+    - 14 Bedingungstypen: Sender, Subject, Body, Regex, Tags, KI-Vorschläge
+    - 6 Aktionstypen: Move, Tag, Flag, Read, Priority, Delete
+    - Farbige Tag-Indikatoren (CSS-Kreise)
+    - Regel-Ketten mit `has_tag` / `not_has_tag` Conditions
+    - KI-Integration: `ai_suggested_tag` mit Confidence-Threshold
+    - 4 Templates: Newsletter-Archiv, Spam-Filter, Important-Sender, Attachment-Archive
 - **Datenschutz-Sanitizer** – 3 Level (Volltext → Pseudonymisierung)
 - **Multi-Provider KI-Analyse** – Lokal (Ollama) oder Cloud (OpenAI, Anthropic, Mistral)
 - **Intelligentes Scoring** – 3×3-Matrix + Ampelfarben (Rot/Gelb/Grün)
