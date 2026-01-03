@@ -80,6 +80,27 @@ class AIClient(ABC):
             context: Optional thread context (Phase E) with previous emails
         """
         raise NotImplementedError
+    
+    def generate_text(
+        self, 
+        system_prompt: str, 
+        user_prompt: str, 
+        max_tokens: int = 1000
+    ) -> str:
+        """Generiert Text basierend auf Prompts (für Reply Draft Generator etc.).
+        
+        Args:
+            system_prompt: System instruction für AI
+            user_prompt: User's actual request/input
+            max_tokens: Maximum tokens for response
+            
+        Returns:
+            Generated text response
+            
+        Note: Default implementation raises NotImplementedError.
+              Provider-specific implementations override this method.
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} hat generate_text() nicht implementiert")
 
 
 OLLAMA_SYSTEM_PROMPT = """
@@ -940,6 +961,40 @@ class LocalOllamaClient(AIClient):
         """Fallback-Response wenn LLM nicht verfügbar oder Antwort unbrauchbar."""
         return _fallback_response()
 
+    def generate_text(
+        self, 
+        system_prompt: str, 
+        user_prompt: str, 
+        max_tokens: int = 1000
+    ) -> str:
+        """Generiert Text mit Ollama Chat API."""
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "num_predict": max_tokens
+            }
+        }
+        
+        try:
+            response = requests.post(
+                self.chat_url,
+                json=payload,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result.get("message", {}).get("content", "")
+        except requests.exceptions.RequestException as e:
+            logger.error("Ollama generate_text fehlgeschlagen: %s", e)
+            raise
+
 
 class OpenAIClient(AIClient):
     """OpenAI Chat Completions API."""
@@ -1082,6 +1137,41 @@ class OpenAIClient(AIClient):
             return _fallback_response()
 
         return _validate_ai_payload(parsed)
+
+    def generate_text(
+        self, 
+        system_prompt: str, 
+        user_prompt: str, 
+        max_tokens: int = 1000
+    ) -> str:
+        """Generiert Text mit OpenAI Chat Completions API."""
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.7
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        
+        try:
+            response = requests.post(
+                self.API_URL,
+                json=payload,
+                headers=headers,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        except requests.exceptions.RequestException as e:
+            logger.error("OpenAI generate_text fehlgeschlagen: %s", e)
+            raise
     
     def _get_embedding(self, text: str) -> list[float] | None:
         """
@@ -1290,6 +1380,44 @@ class AnthropicClient(AIClient):
 
         return _validate_ai_payload(parsed)
 
+    def generate_text(
+        self, 
+        system_prompt: str, 
+        user_prompt: str, 
+        max_tokens: int = 1000
+    ) -> str:
+        """Generiert Text mit Anthropic Messages API."""
+        payload = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "system": system_prompt,
+            "messages": [
+                {"role": "user", "content": user_prompt}
+            ]
+        }
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        
+        try:
+            response = requests.post(
+                self.API_URL,
+                json=payload,
+                headers=headers,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            data = response.json()
+            # Anthropic gibt content als Liste von Blöcken zurück
+            content_blocks = data.get("content", [])
+            text_parts = [b["text"] for b in content_blocks if b.get("type") == "text"]
+            return "\n".join(text_parts)
+        except requests.exceptions.RequestException as e:
+            logger.error("Anthropic generate_text fehlgeschlagen: %s", e)
+            raise
+
 
 class MistralClient(AIClient):
     """Mistral AI Chat & Embeddings API."""
@@ -1370,6 +1498,41 @@ class MistralClient(AIClient):
             return _validate_ai_payload(parsed)
         except Exception:
             return _fallback_response()
+
+    def generate_text(
+        self, 
+        system_prompt: str, 
+        user_prompt: str, 
+        max_tokens: int = 1000
+    ) -> str:
+        """Generiert Text mit Mistral Chat API."""
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.7
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        
+        try:
+            response = requests.post(
+                self.API_URL_CHAT,
+                json=payload,
+                headers=headers,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        except requests.exceptions.RequestException as e:
+            logger.error("Mistral generate_text fehlgeschlagen: %s", e)
+            raise
     
     def _get_embedding(self, text: str) -> list[float] | None:
         """Generiert Embedding via Mistral Embeddings API (mistral-embed, 1024 dim)."""
