@@ -250,35 +250,6 @@ class TagEmbeddingCache:
             return 0.0
         
         return float(np.dot(emb1, emb2) / (norm1 * norm2))
-    
-    @staticmethod
-    def _get_thresholds_for_tag(tag: models.EmailTag) -> tuple:
-        """
-        Bestimme Suggest- und Auto-Assign-Thresholds basierend auf der Embedding-Quelle.
-        
-        Source-spezifische Thresholds:
-        - Learned Embeddings: 75% suggest, 80% auto-assign (höchste Qualität)
-        - Description-basierte: 50% suggest, 60% auto-assign (mittlere Qualität)
-        - Name-basierte: 35% suggest, 45% auto-assign (niedrigste Qualität)
-        
-        Args:
-            tag: EmailTag object mit learned_embedding, description, name
-            
-        Returns:
-            tuple: (suggest_threshold, auto_assign_threshold)
-        """
-        if tag.learned_embedding:
-            # Learned Embeddings sind sehr präzise (aus echten Emails gelernt)
-            # → Hohe Thresholds (75%/80%)
-            return 0.75, 0.80
-        elif tag.description:
-            # Description-basierte Embeddings haben mittlere Qualität
-            # → Mittlere Thresholds (50%/60%)
-            return 0.50, 0.60
-        else:
-            # Name-basierte Embeddings sind am generischsten
-            # → Niedrigere Thresholds (35%/45%)
-            return 0.35, 0.45
 
 
 class TagManager:
@@ -760,9 +731,6 @@ class TagManager:
                 f"Dot product: {np.dot(email_embedding, tag_embedding):.4f}"
             )
             
-            # 🆕 Source-spezifische Thresholds holen
-            suggest_threshold, auto_assign_threshold = TagEmbeddingCache._get_thresholds_for_tag(tag)
-            
             # Embedding-Quelle bestimmen (für Logging)
             if tag.learned_embedding:
                 source = "learned"
@@ -771,15 +739,14 @@ class TagManager:
             else:
                 source = "name"
             
-            # Konfidenz-Level mit source-spezifischen Thresholds bestimmen
-            will_auto_assign = similarity >= auto_assign_threshold
-            will_suggest = similarity >= suggest_threshold
+            # Konfidenz-Level bestimmen
+            will_auto_assign = similarity >= AUTO_ASSIGN_SIMILARITY_THRESHOLD
+            will_suggest = similarity >= min_similarity
             
             # LOG mit allen Details
             logger.info(
                 f"📊 Tag '{tag.name}' ({source}): similarity={similarity:.4f} "
-                f"thresh=[suggest={suggest_threshold:.0%}, auto={auto_assign_threshold:.0%}] "
-                f"→ (auto={will_auto_assign}, suggest={will_suggest})"
+                f"(auto={will_auto_assign}, suggest={will_suggest})"
             )
             
             if will_suggest:
@@ -795,10 +762,7 @@ class TagManager:
         # Top-K auswählen
         result = [(tag, sim) for tag, sim, _ in similarities_sorted[:top_k]]
         
-        logger.info(
-            f"✅ Phase F.2: Returning {len(result)} tag suggestions "
-            f"(dynamic thresholds: learned=75%, description=50%, name=35%)"
-        )
+        logger.info(f"✅ Phase F.2: Returning {len(result)} tag suggestions (threshold={min_similarity:.0%})")
         
         return result
     

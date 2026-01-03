@@ -137,13 +137,7 @@ Beispiel: Emails related to OnlyFans, BestFans, Fansly, adult content platforms,
                     <div class="mb-3">
                         <label class="form-label">Farbe</label>
                         <div id="createColorPicker">
-                            <span class="color-picker-option selected" data-color="#3B82F6" style="background-color: #3B82F6;" title="Blau"></span>
-                            <span class="color-picker-option" data-color="#10B981" style="background-color: #10B981;" title="Grün"></span>
-                            <span class="color-picker-option" data-color="#F59E0B" style="background-color: #F59E0B;" title="Orange"></span>
-                            <span class="color-picker-option" data-color="#EF4444" style="background-color: #EF4444;" title="Rot"></span>
-                            <span class="color-picker-option" data-color="#8B5CF6" style="background-color: #8B5CF6;" title="Lila"></span>
-                            <span class="color-picker-option" data-color="#EC4899" style="background-color: #EC4899;" title="Pink"></span>
-                            <span class="color-picker-option" data-color="#6B7280" style="background-color: #6B7280;" title="Grau"></span>
+                            <!-- Dynamisch befüllt via JavaScript - zeigt nur noch nicht verwendete Farben -->
                         </div>
                         <input type="hidden" id="createTagColor" value="#3B82F6">
                     </div>
@@ -186,13 +180,7 @@ Beispiel: Emails related to OnlyFans, BestFans, Fansly, adult content platforms,
                     <div class="mb-3">
                         <label class="form-label">Farbe</label>
                         <div id="editColorPicker">
-                            <span class="color-picker-option" data-color="#3B82F6" style="background-color: #3B82F6;"></span>
-                            <span class="color-picker-option" data-color="#10B981" style="background-color: #10B981;"></span>
-                            <span class="color-picker-option" data-color="#F59E0B" style="background-color: #F59E0B;"></span>
-                            <span class="color-picker-option" data-color="#EF4444" style="background-color: #EF4444;"></span>
-                            <span class="color-picker-option" data-color="#8B5CF6" style="background-color: #8B5CF6;"></span>
-                            <span class="color-picker-option" data-color="#EC4899" style="background-color: #EC4899;"></span>
-                            <span class="color-picker-option" data-color="#6B7280" style="background-color: #6B7280;"></span>
+                            <!-- Dynamisch befüllt via JavaScript - zeigt alle Farben (inkl. aktueller Farbe) -->
                         </div>
                         <input type="hidden" id="editTagColor">
                     </div>
@@ -212,7 +200,79 @@ function getCsrfToken() {
     return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 }
 
-// Color Picker Handler
+// 🎨 Erweiterte Farbpalette (15 Farben)
+const ALL_COLORS = [
+    { hex: '#3B82F6', name: 'Blau' },
+    { hex: '#10B981', name: 'Grün' },
+    { hex: '#F59E0B', name: 'Orange' },
+    { hex: '#EF4444', name: 'Rot' },
+    { hex: '#8B5CF6', name: 'Lila' },
+    { hex: '#EC4899', name: 'Pink' },
+    { hex: '#6B7280', name: 'Grau' },
+    { hex: '#06B6D4', name: 'Cyan' },
+    { hex: '#14B8A6', name: 'Türkis' },
+    { hex: '#F97316', name: 'Dunkelorange' },
+    { hex: '#84CC16', name: 'Hellgrün' },
+    { hex: '#A855F7', name: 'Hellviolett' },
+    { hex: '#F43F5E', name: 'Rose' },
+    { hex: '#0EA5E9', name: 'Sky' },
+    { hex: '#64748B', name: 'Slate' }
+];
+
+// Sammle bereits verwendete Farben
+function getUsedColors() {
+    const tags = {{ tags|tojson|safe }};
+    return tags.map(tag => tag.color);
+}
+
+// Rendere Color Picker mit Smart Selection
+function renderColorPicker(containerId, currentColor = null, showAll = false) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    const usedColors = showAll ? [] : getUsedColors();
+    const availableColors = ALL_COLORS.filter(c => 
+        showAll || !usedColors.includes(c.hex) || c.hex === currentColor
+    );
+    
+    // Fallback: Wenn alle Farben verwendet, zeige trotzdem alle
+    const colorsToShow = availableColors.length > 0 ? availableColors : ALL_COLORS;
+    
+    container.innerHTML = colorsToShow.map((color, index) => {
+        const isSelected = (currentColor && color.hex === currentColor) || 
+                          (!currentColor && index === 0);
+        return `<span class="color-picker-option ${isSelected ? 'selected' : ''}" 
+                      data-color="${color.hex}" 
+                      style="background-color: ${color.hex};" 
+                      title="${color.name}"></span>`;
+    }).join('');
+    
+    // Event Listener für neue Color Options
+    container.querySelectorAll('.color-picker-option').forEach(option => {
+        option.addEventListener('click', function() {
+            container.querySelectorAll('.color-picker-option').forEach(o => o.classList.remove('selected'));
+            this.classList.add('selected');
+            const hiddenInput = container.nextElementSibling;
+            hiddenInput.value = this.dataset.color;
+        });
+    });
+    
+    // Setze Hidden Input
+    const hiddenInput = container.nextElementSibling;
+    const selectedColor = colorsToShow.find(c => 
+        (currentColor && c.hex === currentColor) || (!currentColor && colorsToShow[0])
+    );
+    if (hiddenInput && selectedColor) {
+        hiddenInput.value = selectedColor.hex;
+    }
+}
+
+// Initialisiere Color Pickers beim Laden
+document.addEventListener('DOMContentLoaded', function() {
+    renderColorPicker('createColorPicker', null, false); // Nur unverwendete Farben
+});
+
+// Color Picker Handler (Legacy - wird durch renderColorPicker ersetzt)
 document.querySelectorAll('.color-picker-option').forEach(option => {
     option.addEventListener('click', function() {
         const parent = this.parentElement;
@@ -277,10 +337,8 @@ document.querySelectorAll('.edit-tag-btn').forEach(btn => {
         document.getElementById('editTagColor').value = tagColor;
         document.getElementById('editTagDescription').value = tagDescription;
         
-        const picker = document.getElementById('editColorPicker');
-        picker.querySelectorAll('.color-picker-option').forEach(o => {
-            o.classList.toggle('selected', o.dataset.color === tagColor);
-        });
+        // Rendere Color Picker mit allen Farben (inkl. aktueller Farbe)
+        renderColorPicker('editColorPicker', tagColor, true);
         
         new bootstrap.Modal(document.getElementById('editTagModal')).show();
     });

@@ -61,16 +61,20 @@ def generate_embedding_for_email(
     model_name: Optional[str] = None
 ) -> Tuple[Optional[bytes], Optional[str], Optional[datetime]]:
     """
-    Generiert Embedding aus Subject + Body.
+    Generiert Embedding aus Subject + Body mit Chunking + Normalisierung.
     
     WICHTIG: Aufrufen BEVOR verschlüsselt wird (Klartext nötig)!
+    
+    BUGFIX (03.01.2026): Nutzt LocalOllamaClient._get_embedding() MIT Chunking
+    für lange Emails (>512 tokens), aber normalisiert am Ende für konsistente
+    Similarity mit Tag-Embeddings (die auch normalisiert sind).
     
     Args:
         subject: Email-Betreff (Klartext)
         body: Email-Body (Klartext)
-        ai_client: AI Client mit _get_embedding() Methode
+        ai_client: AI Client mit _get_embedding() Methode (LocalOllamaClient)
         max_body_length: Maximale Body-Länge für Embedding
-        model_name: Optional - Name des verwendeten Models (z.B. "text-embedding-3-large")
+        model_name: Optional - Name des verwendeten Models (z.B. "all-minilm:22m")
         
     Returns:
         Tuple (embedding_bytes, model_name, timestamp)
@@ -94,21 +98,34 @@ def generate_embedding_for_email(
         
         logger.info(f"📝 Generiere Embedding für Text ({len(text)} Zeichen)...")
         
-        # Embedding von AI-Client holen
+        # Embedding mit Chunking generieren (für lange Emails wichtig!)
         embedding_list = ai_client._get_embedding(text)
         
         if not embedding_list:
             logger.warning("❌ AI-Client lieferte kein Embedding")
             return None, None, None
         
-        # Zu numpy array konvertieren und als bytes speichern
+        # Zu numpy array konvertieren
         embedding_array = np.array(embedding_list, dtype=np.float32)
+        
+        # 🆕 WICHTIG: Normalisieren für konsistente Similarity mit Tag-Embeddings!
+        # Tag-Embeddings sind von Ollama normalisiert (Norm = 1.0)
+        # Email-Embeddings waren mean-pooled (Norm < 1.0) → Similarity war zu niedrig!
+        norm = np.linalg.norm(embedding_array)
+        if norm > 0:
+            embedding_array = embedding_array / norm
+            logger.debug(f"📊 Email-Embedding normalisiert: {norm:.4f} → 1.0")
+        else:
+            logger.warning("⚠️  Email-Embedding hat Norm = 0, keine Normalisierung möglich")
+        
+        # Als bytes speichern
+        embedding_array = embedding_array.astype(np.float32)
         
         # Validierung: Check gegen erste Email im System (wenn vorhanden)
         dimension = embedding_array.shape[0]
         
         # Log Dimension für Debugging
-        logger.info(f"✅ Embedding generiert: {dimension} Dimensionen, {len(embedding_array.tobytes())} bytes")
+        logger.info(f"✅ Embedding generiert: {dimension} Dimensionen, {len(embedding_array.tobytes())} bytes, Norm = 1.0")
         
         # WARNING nur wenn stark abweicht von DEFAULT
         if dimension != DEFAULT_EMBEDDING_DIM:
@@ -117,10 +134,10 @@ def generate_embedding_for_email(
                 f"Stelle sicher, dass ALLE Emails mit dem gleichen Model embedded werden!"
             )
         
-        # Model-Name: Verwende übergebenen Namen oder versuche von Client zu holen
+        # Model-Name: Verwende übergebenen Namen oder hole von Client
         actual_model = model_name
         if not actual_model:
-            # Versuche Model-Name vom Client zu holen
+            # Hole Model-Name vom Client
             if hasattr(ai_client, 'model'):
                 actual_model = ai_client.model
             elif hasattr(ai_client, '_model'):
@@ -208,19 +225,47 @@ class SemanticSearchService:
         Returns:
             Liste von Dicts mit Email-Daten + similarity_score
         """
-        if not self.ai_client:
-            logger.warning("Kein AI-Client für Semantic Search")
-            return []
-        
         try:
-            # 1. Query-Embedding generieren
-            query_embedding_list = self.ai_client._get_embedding(query)
+            # 0. Ermittle das Embedding-Model aus der Datenbank (von Emails)
+            sample_email = (
+                self.db.query(models.RawEmail)
+                .filter(
+                    models.RawEmail.user_id == user_id,
+                    models.RawEmail.email_embedding.isnot(None),
+                    models.RawEmail.embedding_model.isnot(None)
+                )
+                .first()
+            )
+            
+            if not sample_email:
+                logger.warning("Keine Emails mit Embeddings gefunden für Semantic Search")
+                return []
+            
+            embedding_model = sample_email.embedding_model
+            logger.info(f"🔍 Semantic Search: Nutze Embedding-Model '{embedding_model}' (von Emails)")
+            
+            # AI-Client mit dem richtigen Model erstellen
+            import importlib
+            ai_client_module = importlib.import_module("src.03_ai_client")
+            query_client = ai_client_module.LocalOllamaClient(
+                model=embedding_model,
+                base_url="http://127.0.0.1:11434"
+            )
+            
+            # 1. Query-Embedding generieren MIT RICHTIGEM MODEL!
+            query_embedding_list = query_client._get_embedding(query)
             
             if not query_embedding_list:
                 logger.warning("Query-Embedding konnte nicht generiert werden")
                 return []
             
             query_vector = np.array(query_embedding_list, dtype=np.float32)
+            
+            # Normalisieren für konsistente Similarity
+            norm = np.linalg.norm(query_vector)
+            if norm > 0:
+                query_vector = query_vector / norm
+                logger.debug(f"📊 Query-Embedding normalisiert: {norm:.4f} → 1.0")
             
             # 2. Alle Emails mit Embeddings laden
             query_obj = (

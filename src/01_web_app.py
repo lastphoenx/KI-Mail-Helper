@@ -2086,6 +2086,7 @@ def tags_view():
                     "id": tag.id,
                     "name": tag.name,
                     "color": tag.color,
+                    "description": tag.description,  # Phase F.2: Description für Edit-Modal
                     "email_count": email_count,
                 }
             )
@@ -2305,13 +2306,14 @@ def api_get_tag_suggestions(email_id):
                 
                 logger.info(f"Phase F.2: Email {email_id} - Assigned tags: {assigned_tag_ids}")
                 
-                # Phase F.2: Email-Embedding-basierte Suggestions
+                # Phase F.2 Enhanced: Email-Embedding-basierte Suggestions mit dynamischen Thresholds
+                # min_similarity=None → Nutzt get_suggestion_threshold() (70-80% basierend auf Tag-Anzahl)
                 tag_suggestions = tag_manager_mod.TagManager.suggest_tags_by_email_embedding(
                     db=db,
                     user_id=user.id,
                     email_embedding_bytes=raw_email.email_embedding,
                     top_k=5,
-                    min_similarity=0.15,  # Lowered from 0.70 - Email-to-TagName similarity is naturally low
+                    min_similarity=None,  # Dynamisch: 70% bei <= 5 Tags, 75% bei 6-15, 80% bei >= 16
                     exclude_tag_ids=assigned_tag_ids
                 )
                 

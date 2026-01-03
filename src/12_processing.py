@@ -544,24 +544,29 @@ def process_pending_raw_emails(
                         .filter_by(email_id=processed_email.id).all()
                     ]
                     
-                    # Tag-Suggestions basierend auf Email-Embedding holen
+                    # Phase F.2 Enhanced: Tag-Suggestions mit dynamischen Thresholds
+                    # min_similarity=None → Nutzt dynamischen Threshold basierend auf Tag-Anzahl (70-80%)
                     tag_suggestions = tag_manager_mod.TagManager.suggest_tags_by_email_embedding(
                         db=session,
                         user_id=user.id,
                         email_embedding_bytes=raw_email.email_embedding,
                         top_k=5,
-                        min_similarity=0.10,  # Lowered from 0.70 - Email-to-TagName similarity is naturally low
+                        min_similarity=None,  # Dynamisch: 70% bei <= 5 Tags, 75% bei 6-15, 80% bei >= 16
                         exclude_tag_ids=already_assigned_tag_ids
                     )
                     
-                    # Auto-assign bei höchster Similarity (>= 0.18)
-                    # Manuelle Vorschläge bei mittlerer Similarity (0.12-0.17)
+                    # Auto-Assignment vs. Manuelle Vorschläge:
+                    # >= 80% (AUTO_ASSIGN_SIMILARITY_THRESHOLD) → Auto-assign
+                    # 70-79% (get_suggestion_threshold) → Nur Vorschlag für UI
                     auto_assigned_count = 0
                     manual_suggestions = []
                     
+                    # Import der Threshold-Konstante
+                    AUTO_ASSIGN_THRESHOLD = tag_manager_mod.AUTO_ASSIGN_SIMILARITY_THRESHOLD
+                    
                     for tag, similarity in tag_suggestions:
-                        if similarity >= 0.18:  # Adjusted from 0.85 - Email-to-TagName similarity much lower
-                            # Auto-Assign
+                        if similarity >= AUTO_ASSIGN_THRESHOLD:
+                            # Auto-Assign für sehr sichere Matches (>= 80%)
                             try:
                                 tag_manager_mod.TagManager.assign_tag(
                                     db=session,
@@ -571,18 +576,19 @@ def process_pending_raw_emails(
                                 )
                                 auto_assigned_count += 1
                                 logger.info(
-                                    f"🏷️  Auto-assigned Tag '{tag.name}' ({similarity:.2%} similarity) "
+                                    f"🏷️  ✅ AUTO-ASSIGNED Tag '{tag.name}' ({similarity:.0%} similarity) "
                                     f"to email {processed_email.id}"
                                 )
                             except Exception as assign_err:
                                 logger.warning(f"⚠️  Auto-assignment fehlgeschlagen für '{tag.name}': {assign_err}")
                         else:
-                            # Für UI-Suggestions speichern (similarity < 0.18 but >= 0.10)
+                            # Für UI-Suggestions speichern (similarity >= threshold aber < 80%)
                             manual_suggestions.append({
                                 "name": tag.name,
                                 "id": tag.id,
                                 "similarity": round(similarity, 3)
                             })
+                            logger.debug(f"💡 Suggested Tag '{tag.name}' ({similarity:.0%}) for manual review")
                     
                     if auto_assigned_count > 0:
                         logger.info(f"✅ Phase F.2: {auto_assigned_count} Tags auto-assigned")

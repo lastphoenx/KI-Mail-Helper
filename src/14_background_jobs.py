@@ -773,6 +773,16 @@ class BackgroundJobQueue:
             
             session.commit()
             
+            # Tag-Embedding-Cache leeren nach Batch-Reprocess!
+            # Wichtig: Tags müssen mit neuem Model re-embedded werden
+            try:
+                from src.services.tag_manager import TagEmbeddingCache
+                TagEmbeddingCache._cache.clear()
+                TagEmbeddingCache._ai_client_cache.clear()
+                logger.info("🗑️  Tag-Embedding-Cache geleert (Tags werden mit neuem Model re-embedded)")
+            except Exception as cache_err:
+                logger.warning(f"⚠️  Konnte Tag-Cache nicht leeren: {cache_err}")
+            
             self._update_status(
                 job.job_id,
                 {
