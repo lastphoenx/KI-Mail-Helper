@@ -15,7 +15,7 @@
             <form method="POST">                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />                <div class="mb-4">
                     <p>Gib den 6-stelligen Code aus deiner Authenticator-App ein:</p>
                     <input type="text" class="form-control form-control-lg text-center" id="token" name="token" 
-                           placeholder="000000" maxlength="6" pattern="[0-9]{6}" required 
+                           placeholder="000000" maxlength="6" pattern="[0-9]{6}" required autofocus
                            style="font-size: 2em; letter-spacing: 0.5em;">
                 </div>
                 
