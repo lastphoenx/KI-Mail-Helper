@@ -14,7 +14,7 @@ Features:
 Usage:
     from src.auto_rules_engine import AutoRulesEngine
     
-    engine = AutoRulesEngine(user_id=1, master_key="abc123")
+    engine = AutoRulesEngine(user_id=1, master_key="abc123", db_session=session)
     
     # Einzelne Email verarbeiten
     results = engine.process_email(email_id=456)
@@ -136,12 +136,12 @@ class AutoRulesEngine:
     3. Beim Testen einer Regel (Dry-Run Mode)
     """
     
-    def __init__(self, user_id: int, master_key: str, db_session: Optional[Session] = None):
+    def __init__(self, user_id: int, master_key: str, db_session: Session):
         """
         Args:
             user_id: User-ID
             master_key: Master-Key für Entschlüsselung
-            db_session: Optional - DB-Session (falls None, nutze get_db_session())
+            db_session: DB-Session (required)
         """
         self.user_id = user_id
         self.master_key = master_key
@@ -150,10 +150,7 @@ class AutoRulesEngine:
     
     @property
     def db(self) -> Session:
-        """Lazy DB-Session"""
-        if self._db_session is None:
-            web_app = importlib.import_module(".01_web_app", "src")
-            self._db_session = web_app.get_db_session()
+        """DB-Session Accessor"""
         return self._db_session
     
     @property
