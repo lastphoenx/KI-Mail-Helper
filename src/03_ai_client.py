@@ -1169,6 +1169,15 @@ class OpenAIClient(AIClient):
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"]
+        except requests.exceptions.HTTPError as e:
+            # Zeige Response Body für besseres Debugging
+            error_detail = ""
+            try:
+                error_detail = e.response.json().get("error", {}).get("message", "")
+            except:
+                error_detail = e.response.text[:200] if e.response else ""
+            logger.error("OpenAI generate_text fehlgeschlagen: %s - %s", e, error_detail)
+            raise
         except requests.exceptions.RequestException as e:
             logger.error("OpenAI generate_text fehlgeschlagen: %s", e)
             raise
@@ -1414,6 +1423,14 @@ class AnthropicClient(AIClient):
             content_blocks = data.get("content", [])
             text_parts = [b["text"] for b in content_blocks if b.get("type") == "text"]
             return "\n".join(text_parts)
+        except requests.exceptions.HTTPError as e:
+            error_detail = ""
+            try:
+                error_detail = e.response.json().get("error", {}).get("message", "")
+            except:
+                error_detail = e.response.text[:200] if e.response else ""
+            logger.error("Anthropic generate_text fehlgeschlagen: %s - %s", e, error_detail)
+            raise
         except requests.exceptions.RequestException as e:
             logger.error("Anthropic generate_text fehlgeschlagen: %s", e)
             raise
@@ -1530,6 +1547,14 @@ class MistralClient(AIClient):
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"]
+        except requests.exceptions.HTTPError as e:
+            error_detail = ""
+            try:
+                error_detail = e.response.json().get("error", {}).get("message", "")
+            except:
+                error_detail = e.response.text[:200] if e.response else ""
+            logger.error("Mistral generate_text fehlgeschlagen: %s - %s", e, error_detail)
+            raise
         except requests.exceptions.RequestException as e:
             logger.error("Mistral generate_text fehlgeschlagen: %s", e)
             raise
