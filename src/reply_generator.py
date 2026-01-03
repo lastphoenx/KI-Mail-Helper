@@ -186,21 +186,16 @@ class ReplyGenerator:
         try:
             logger.info(f"🤖 Generiere Reply-Entwurf (Ton: {tone})")
             
-            # Verwende _call_model wenn vorhanden, sonst analyze_email Fallback
-            if hasattr(self.ai_client, '_call_model'):
-                reply_text = self.ai_client._call_model([
-                    {"role": "system", "content": REPLY_GENERATION_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ])
-            elif hasattr(self.ai_client, 'chat_completion'):
-                response = self.ai_client.chat_completion([
-                    {"role": "system", "content": REPLY_GENERATION_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ])
-                reply_text = response.get("content", "")
+            # Nutze generate_text() - in Phase G.2 zu allen AI Clients hinzugefügt
+            if hasattr(self.ai_client, 'generate_text'):
+                reply_text = self.ai_client.generate_text(
+                    system_prompt=REPLY_GENERATION_SYSTEM_PROMPT,
+                    user_prompt=user_prompt,
+                    max_tokens=1000
+                )
             else:
-                # Fallback: Nutze analyze_email (nicht ideal, aber funktioniert)
-                logger.warning("AI-Client hat keine _call_model Methode, nutze Fallback")
+                # Fallback für ältere Clients ohne generate_text()
+                logger.warning("AI-Client hat keine generate_text() Methode, nutze Fallback")
                 result = self.ai_client.analyze_email(
                     subject=original_subject,
                     body=f"GENERATE REPLY:\n{user_prompt}",
