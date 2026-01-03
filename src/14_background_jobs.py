@@ -280,6 +280,29 @@ class BackgroundJobQueue:
                 progress_callback=progress_callback,
             )
 
+            # ═══════════════════════════════════════════════════════════════
+            # PHASE G.2: Auto-Action Rules nach Email-Fetch anwenden
+            # ═══════════════════════════════════════════════════════════════
+            try:
+                from src.auto_rules_engine import AutoRulesEngine
+                
+                rules_engine = AutoRulesEngine(user.id, master_key, session)
+                # Verarbeite alle neuen Mails der letzten 60 Minuten
+                rules_stats = rules_engine.process_new_emails(
+                    since_minutes=60,
+                    limit=500
+                )
+                
+                if rules_stats["rules_triggered"] > 0:
+                    logger.info(
+                        f"🤖 Auto-Rules: {rules_stats['rules_triggered']} Regeln auf "
+                        f"{rules_stats['emails_checked']} E-Mails angewendet"
+                    )
+            except Exception as rules_err:
+                # Auto-Rules sind optional - Job sollte nicht scheitern
+                logger.warning(f"⚠️ Auto-Rules fehlgeschlagen: {rules_err}")
+            # ═══════════════════════════════════════════════════════════════
+
             account.last_fetch_at = datetime.now(UTC)
             
             if not account.initial_sync_done:

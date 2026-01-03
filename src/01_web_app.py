@@ -2099,6 +2099,38 @@ def tags_view():
         db.close()
 
 
+@app.route("/api/accounts", methods=["GET"])
+@login_required
+def api_get_accounts():
+    """API: Alle Mail-Accounts des Users abrufen"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        
+        accounts = db.query(models.MailAccount).filter_by(user_id=user.id).all()
+        
+        return jsonify({
+            "accounts": [
+                {
+                    "id": acc.id,
+                    "name": acc.name,
+                    "auth_type": acc.auth_type
+                }
+                for acc in accounts
+            ]
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der Accounts: {e}")
+        return jsonify({"error": "Fehler beim Laden"}), 500
+    
+    finally:
+        db.close()
+
+
 @app.route("/api/tags", methods=["GET"])
 @login_required
 def api_get_tags():
@@ -2879,6 +2911,513 @@ def api_get_reply_tones():
         return jsonify({"tones": {}}), 500
 
 
+# ===== End Phase G.1 =====
+
+
+# ===== Phase G.2: Auto-Action Rules Engine =====
+
+@app.route("/rules")
+@login_required
+def rules_management():
+    """Rules Management Page - Übersicht über alle Auto-Rules"""
+    db_session = get_db_session()
+    
+    try:
+        user = get_current_user_model(db_session)
+        if not user:
+            return redirect(url_for("login"))
+        
+        # Lade alle Regeln des Users
+        rules = db_session.query(models.AutoRule).filter_by(
+            user_id=user.id
+        ).order_by(models.AutoRule.priority.asc()).all()
+        
+        return render_template(
+            "rules_management.html",
+            user=user,
+            rules=rules,
+            csp_nonce=g.csp_nonce
+        )
+    
+    finally:
+        db_session.close()
+
+
+@app.route("/api/rules", methods=["GET"])
+@login_required
+def api_get_rules():
+    """API: Alle Regeln des Users abrufen"""
+    db_session = get_db_session()
+    
+    try:
+        user = get_current_user_model(db_session)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        rules = db_session.query(models.AutoRule).filter_by(
+            user_id=user.id
+        ).order_by(models.AutoRule.priority.asc()).all()
+        
+        return jsonify({
+            "rules": [
+                {
+                    "id": rule.id,
+                    "name": rule.name,
+                    "description": rule.description,
+                    "is_active": rule.is_active,
+                    "priority": rule.priority,
+                    "conditions": rule.conditions,
+                    "actions": rule.actions,
+                    "times_triggered": rule.times_triggered,
+                    "last_triggered_at": rule.last_triggered_at.isoformat() if rule.last_triggered_at else None,
+                    "created_at": rule.created_at.isoformat() if rule.created_at else None
+                }
+                for rule in rules
+            ]
+        }), 200
+    
+    finally:
+        db_session.close()
+
+
+@app.route("/api/rules", methods=["POST"])
+@login_required
+def api_create_rule():
+    """API: Neue Regel erstellen"""
+    db_session = get_db_session()
+    
+    try:
+        user = get_current_user_model(db_session)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        data = request.get_json()
+        
+        # Validierung
+        name = data.get("name", "").strip()
+        if not name:
+            return jsonify({"error": "Name erforderlich"}), 400
+        
+        conditions = data.get("conditions", {})
+        actions = data.get("actions", {})
+        
+        if not conditions:
+            return jsonify({"error": "Mindestens eine Bedingung erforderlich"}), 400
+        
+        if not actions:
+            return jsonify({"error": "Mindestens eine Aktion erforderlich"}), 400
+        
+        # Regel erstellen
+        rule = models.AutoRule(
+            user_id=user.id,
+            name=name,
+            description=data.get("description"),
+            priority=data.get("priority", 100),
+            is_active=data.get("is_active", True),
+            conditions=conditions,
+            actions=actions
+        )
+        
+        db_session.add(rule)
+        db_session.commit()
+        
+        logger.info(f"✅ Regel erstellt: '{rule.name}' (ID: {rule.id}) für User {user.id}")
+        
+        return jsonify({
+            "success": True,
+            "rule": {
+                "id": rule.id,
+                "name": rule.name,
+                "description": rule.description,
+                "is_active": rule.is_active,
+                "priority": rule.priority,
+                "conditions": rule.conditions,
+                "actions": rule.actions
+            }
+        }), 201
+    
+    except Exception as e:
+        db_session.rollback()
+        logger.error(f"Fehler beim Erstellen der Regel: {e}")
+        return jsonify({"error": str(e)}), 500
+    
+    finally:
+        db_session.close()
+
+
+@app.route("/api/rules/<int:rule_id>", methods=["PUT"])
+@login_required
+def api_update_rule(rule_id):
+    """API: Regel aktualisieren"""
+    db_session = get_db_session()
+    
+    try:
+        user = get_current_user_model(db_session)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        rule = db_session.query(models.AutoRule).filter_by(
+            id=rule_id,
+            user_id=user.id
+        ).first()
+        
+        if not rule:
+            return jsonify({"error": "Regel nicht gefunden"}), 404
+        
+        data = request.get_json()
+        
+        # Update Felder
+        if "name" in data:
+            rule.name = data["name"].strip()
+        if "description" in data:
+            rule.description = data["description"]
+        if "is_active" in data:
+            rule.is_active = data["is_active"]
+        if "priority" in data:
+            rule.priority = data["priority"]
+        if "conditions" in data:
+            rule.conditions = data["conditions"]
+        if "actions" in data:
+            rule.actions = data["actions"]
+        
+        db_session.commit()
+        
+        logger.info(f"✅ Regel aktualisiert: '{rule.name}' (ID: {rule.id})")
+        
+        return jsonify({
+            "success": True,
+            "rule": {
+                "id": rule.id,
+                "name": rule.name,
+                "description": rule.description,
+                "is_active": rule.is_active,
+                "priority": rule.priority,
+                "conditions": rule.conditions,
+                "actions": rule.actions
+            }
+        }), 200
+    
+    except Exception as e:
+        db_session.rollback()
+        logger.error(f"Fehler beim Aktualisieren der Regel: {e}")
+        return jsonify({"error": str(e)}), 500
+    
+    finally:
+        db_session.close()
+
+
+@app.route("/api/rules/<int:rule_id>", methods=["DELETE"])
+@login_required
+def api_delete_rule(rule_id):
+    """API: Regel löschen"""
+    db_session = get_db_session()
+    
+    try:
+        user = get_current_user_model(db_session)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        rule = db_session.query(models.AutoRule).filter_by(
+            id=rule_id,
+            user_id=user.id
+        ).first()
+        
+        if not rule:
+            return jsonify({"error": "Regel nicht gefunden"}), 404
+        
+        rule_name = rule.name
+        db_session.delete(rule)
+        db_session.commit()
+        
+        logger.info(f"🗑️  Regel gelöscht: '{rule_name}' (ID: {rule_id})")
+        
+        return jsonify({"success": True}), 200
+    
+    except Exception as e:
+        db_session.rollback()
+        logger.error(f"Fehler beim Löschen der Regel: {e}")
+        return jsonify({"error": str(e)}), 500
+    
+    finally:
+        db_session.close()
+
+
+@app.route("/api/rules/<int:rule_id>/test", methods=["POST"])
+@login_required
+def api_test_rule(rule_id):
+    """
+    API: Regel auf E-Mail testen (Dry-Run)
+    
+    Request Body:
+    {
+        "email_id": 123  # Optional - wenn nicht angegeben, teste gegen alle
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "matches": [
+            {
+                "email_id": 123,
+                "matched": true,
+                "matched_conditions": ["sender_contains", "subject_contains"],
+                "actions_would_execute": ["move_to:Archive", "mark_as_read"]
+            }
+        ],
+        "total_tested": 1,
+        "total_matches": 1
+    }
+    """
+    db_session = get_db_session()
+    
+    try:
+        user = get_current_user_model(db_session)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        rule = db_session.query(models.AutoRule).filter_by(
+            id=rule_id,
+            user_id=user.id
+        ).first()
+        
+        if not rule:
+            return jsonify({"error": "Regel nicht gefunden"}), 404
+        
+        data = request.get_json() or {}
+        email_id = data.get("email_id")
+        
+        # Master-Key aus Session
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key nicht verfügbar"}), 401
+        
+        # Rules Engine initialisieren
+        from src.auto_rules_engine import AutoRulesEngine
+        engine = AutoRulesEngine(user.id, master_key, db_session)
+        
+        matches = []
+        
+        if email_id:
+            # Teste eine spezifische E-Mail
+            results = engine.process_email(email_id, dry_run=True, rule_id=rule_id)
+            
+            for result in results:
+                matches.append({
+                    "email_id": result.email_id,
+                    "matched": result.success,
+                    "actions_would_execute": result.actions_executed
+                })
+        else:
+            # Teste gegen die letzten 20 E-Mails
+            recent_emails = db_session.query(models.RawEmail).filter_by(
+                user_id=user.id,
+                deleted_at=None
+            ).order_by(models.RawEmail.received_at.desc()).limit(20).all()
+            
+            for email in recent_emails:
+                results = engine.process_email(email.id, dry_run=True, rule_id=rule_id)
+                
+                if results and results[0].success:
+                    matches.append({
+                        "email_id": email.id,
+                        "matched": True,
+                        "actions_would_execute": results[0].actions_executed
+                    })
+        
+        logger.info(f"🧪 Regel '{rule.name}' getestet: {len(matches)} Matches")
+        
+        return jsonify({
+            "success": True,
+            "matches": matches,
+            "total_tested": 1 if email_id else 20,
+            "total_matches": len(matches),
+            "rule_name": rule.name
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Fehler beim Testen der Regel: {e}")
+        return jsonify({"error": str(e)}), 500
+    
+    finally:
+        db_session.close()
+
+
+@app.route("/api/rules/apply", methods=["POST"])
+@login_required
+def api_apply_rules():
+    """
+    API: Regeln manuell auf E-Mails anwenden
+    
+    Request Body:
+    {
+        "email_ids": [123, 456],  # Optional - wenn leer, alle unverarbeiteten
+        "rule_ids": [1, 2]        # Optional - wenn leer, alle aktiven Regeln
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "stats": {
+            "emails_processed": 2,
+            "rules_triggered": 3,
+            "actions_executed": 5
+        }
+    }
+    """
+    db_session = get_db_session()
+    
+    try:
+        user = get_current_user_model(db_session)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        data = request.get_json() or {}
+        email_ids = data.get("email_ids", [])
+        
+        # Master-Key aus Session
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key nicht verfügbar"}), 401
+        
+        # Rules Engine initialisieren
+        from src.auto_rules_engine import AutoRulesEngine
+        engine = AutoRulesEngine(user.id, master_key, db_session)
+        
+        stats = {
+            "emails_processed": 0,
+            "rules_triggered": 0,
+            "actions_executed": 0,
+            "errors": 0
+        }
+        
+        if email_ids:
+            # Spezifische E-Mails verarbeiten
+            for email_id in email_ids:
+                try:
+                    results = engine.process_email(email_id, dry_run=False)
+                    
+                    for result in results:
+                        if result.success:
+                            stats["rules_triggered"] += 1
+                            stats["actions_executed"] += len(result.actions_executed)
+                        else:
+                            stats["errors"] += 1
+                    
+                    stats["emails_processed"] += 1
+                    
+                except Exception as e:
+                    logger.error(f"Fehler bei E-Mail {email_id}: {e}")
+                    stats["errors"] += 1
+        else:
+            # Alle unverarbeiteten E-Mails
+            batch_stats = engine.process_new_emails(since_minutes=10080, limit=500)  # 1 Woche
+            stats.update(batch_stats)
+            stats["emails_processed"] = batch_stats["emails_checked"]
+        
+        logger.info(
+            f"✅ Auto-Rules angewendet: {stats['emails_processed']} E-Mails, "
+            f"{stats['rules_triggered']} Regeln ausgelöst"
+        )
+        
+        return jsonify({
+            "success": True,
+            "stats": stats
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Fehler beim Anwenden der Regeln: {e}")
+        return jsonify({"error": str(e)}), 500
+    
+    finally:
+        db_session.close()
+
+
+@app.route("/api/rules/templates", methods=["GET"])
+@login_required
+def api_get_rule_templates():
+    """API: Vordefinierte Regel-Templates abrufen"""
+    try:
+        from src.auto_rules_engine import RULE_TEMPLATES
+        
+        return jsonify({
+            "templates": [
+                {
+                    "id": key,
+                    "name": template["name"],
+                    "description": template["description"],
+                    "priority": template.get("priority", 100),
+                    "conditions": template["conditions"],
+                    "actions": template["actions"]
+                }
+                for key, template in RULE_TEMPLATES.items()
+            ]
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der Templates: {e}")
+        return jsonify({"templates": []}), 500
+
+
+@app.route("/api/rules/templates/<template_name>", methods=["POST"])
+@login_required
+def api_create_rule_from_template(template_name):
+    """
+    API: Regel aus Template erstellen
+    
+    Request Body:
+    {
+        "overrides": {
+            "name": "Meine angepasste Regel",
+            "conditions": {...},
+            "actions": {...}
+        }
+    }
+    """
+    db_session = get_db_session()
+    
+    try:
+        user = get_current_user_model(db_session)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        data = request.get_json() or {}
+        overrides = data.get("overrides", {})
+        
+        from src.auto_rules_engine import create_rule_from_template
+        
+        rule = create_rule_from_template(
+            db_session=db_session,
+            user_id=user.id,
+            template_name=template_name,
+            overrides=overrides
+        )
+        
+        if not rule:
+            return jsonify({"error": "Template nicht gefunden"}), 404
+        
+        return jsonify({
+            "success": True,
+            "rule": {
+                "id": rule.id,
+                "name": rule.name,
+                "description": rule.description,
+                "is_active": rule.is_active,
+                "priority": rule.priority,
+                "conditions": rule.conditions,
+                "actions": rule.actions
+            }
+        }), 201
+    
+    except Exception as e:
+        db_session.rollback()
+        logger.error(f"Fehler beim Erstellen der Regel aus Template: {e}")
+        return jsonify({"error": str(e)}), 500
+    
+    finally:
+        db_session.close()
+
+
+# ===== End Phase G.2 =====
 # ===== End Phase G.1 =====
 
 

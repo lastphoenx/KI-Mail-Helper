@@ -664,6 +664,11 @@ class RawEmail(Base):
     embedding_model = Column(String(50), nullable=True)  # "all-minilm:22m"
     embedding_generated_at = Column(DateTime, nullable=True)
 
+    # ===== PHASE G.2: AUTO-ACTION RULES =====
+    # Flag ob Email bereits durch Auto-Rules verarbeitet wurde
+    # Verhindert mehrfache Verarbeitung bei Background-Jobs
+    auto_rules_processed = Column(Boolean, default=False, nullable=False, index=True)
+
     # Relationships
     user = relationship("User", back_populates="raw_emails")
     mail_account = relationship("MailAccount", back_populates="raw_emails")
@@ -839,6 +844,103 @@ class EmailFolder(Base):
 
     def __repr__(self):
         return f"<EmailFolder(id={self.id}, account={self.mail_account_id}, name='{self.name}')>"
+
+
+class AutoRule(Base):
+    """
+    Auto-Action Rules für automatische E-Mail-Verarbeitung (Phase G.2)
+    
+    Ermöglicht Regeln wie:
+    - "Alle Newsletter von X → Archiv-Ordner"
+    - "Absender Y → Als gelesen + wichtig"
+    - "Betreff enthält [SPAM] → Papierkorb"
+    
+    Beispiel-Regel:
+    {
+        "name": "Newsletter archivieren",
+        "conditions": {
+            "match_mode": "any",
+            "sender_contains": "newsletter",
+            "body_contains": "unsubscribe"
+        },
+        "actions": {
+            "move_to_folder": "Archive",
+            "mark_as_read": true,
+            "apply_tag": "Newsletter"
+        }
+    }
+    """
+    __tablename__ = 'auto_rules'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    
+    # Regel-Metadaten
+    name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    priority = Column(Integer, default=100, nullable=False, index=True)  # Niedrigere = höhere Priorität
+    
+    # Bedingungen (JSON)
+    # Mögliche Keys:
+    # - match_mode: "all" (AND) oder "any" (OR)
+    # - sender_equals: "exact@match.com"
+    # - sender_contains: "newsletter"
+    # - sender_domain: "marketing.com"
+    # - subject_contains: "Newsletter"
+    # - subject_regex: "\\[SPAM\\].*"
+    # - has_attachment: true/false
+    # - body_contains: "unsubscribe"
+    conditions_json = Column(Text, nullable=False, default='{}')
+    
+    # Aktionen (JSON)
+    # Mögliche Keys:
+    # - move_to_folder: "Spam"
+    # - mark_as_read: true
+    # - mark_as_flagged: true
+    # - apply_tag: "Newsletter"
+    # - set_priority: "low"
+    # - delete: true (VORSICHT!)
+    # - stop_processing: false (stoppt weitere Regeln falls true)
+    actions_json = Column(Text, nullable=False, default='{}')
+    
+    # Statistiken
+    times_triggered = Column(Integer, default=0, nullable=False)
+    last_triggered_at = Column(DateTime, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
+    
+    # Relationships
+    user = relationship('User', backref='auto_rules')
+    
+    @property
+    def conditions(self) -> dict:
+        """Gibt Bedingungen als dict zurück"""
+        import json
+        return json.loads(self.conditions_json) if self.conditions_json else {}
+    
+    @conditions.setter
+    def conditions(self, value: dict):
+        """Setzt Bedingungen aus dict"""
+        import json
+        self.conditions_json = json.dumps(value)
+    
+    @property
+    def actions(self) -> dict:
+        """Gibt Aktionen als dict zurück"""
+        import json
+        return json.loads(self.actions_json) if self.actions_json else {}
+    
+    @actions.setter
+    def actions(self, value: dict):
+        """Setzt Aktionen aus dict"""
+        import json
+        self.actions_json = json.dumps(value)
+    
+    def __repr__(self):
+        return f'<AutoRule {self.id}: {self.name} (active={self.is_active})>'
 
 
 # DB-Setup
