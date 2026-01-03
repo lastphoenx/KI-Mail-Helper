@@ -213,12 +213,12 @@ Und die Hilfsfunktion `_get_thresholds_for_tag()` entfernen.
 
 ## Test Results (2026-01-03)
 
-### Email 33 (PayPal AGB):
+### Email 33 (Test-E-Mail):
 ```
 ✅ AGB Richtlinien (learned): 91% → AUTO-ASSIGN (thresh=75%/80%)
 ✅ Spam (name): 59% → AUTO-ASSIGN (thresh=35%/45%)
 ✅ Newsletter/Promotion (name): 56% → AUTO-ASSIGN (thresh=35%/45%)
-✅ Onlyfans - Adult Creator (name): 49% → AUTO-ASSIGN (thresh=35%/45%)
+✅ Subscriptions (name): 49% → AUTO-ASSIGN (thresh=35%/45%)
 ✅ Bank (name): 47% → AUTO-ASSIGN (thresh=35%/45%)
 ```
 

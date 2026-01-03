@@ -756,7 +756,7 @@ class LocalOllamaClient(AIClient):
                 "gewinn",
                 "spielen",
             ]
-            keywords_spam_medium = ["bestfans", "game", "kostenlos"]
+            keywords_spam_medium = ["game", "kostenlos", "gratis"]
             keywords_dringend = ["urgent", "sofort", "deadline"]
             keywords_aktion_required = [
                 "bezahle",

@@ -52,7 +52,7 @@ NEWSLETTER_DOMAINS = {
     "lyft.com",
     "airbnb.com",
     "stripe.com",
-    "paypal.com",
+    # "paypal.com",  # Removed: kann auch wichtige Transaktions-E-Mails senden
     "square.com",
     "aws.amazon.com",
     "google.com",

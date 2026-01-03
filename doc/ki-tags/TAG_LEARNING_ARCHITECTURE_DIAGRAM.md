@@ -186,20 +186,20 @@ Gesamt-Overhead:
 │                    BEISPIEL-SZENARIO                                 │
 └─────────────────────────────────────────────────────────────────────┘
 
-📧 User Mike hat 8 Tags:
+📧 User hat 8 Tags:
    - "Rechnung" (12 Emails) → learned_embedding ✅
    - "Finanzen" (8 Emails) → learned_embedding ✅
-   - "OnlyFans" (description: "Adult content platforms") → description ✅
+   - "Subscriptions" (description: "Membership and subscription services") → description ✅
    - "Wichtig" (1 Email) → name-only ❌
    - ... 4 weitere Tags
 
-📩 Neue Email kommt rein: "Invoice #1234 from BestFans"
+📩 Neue Email kommt rein: "Invoice #1234 from ServiceProvider"
    │
    └─→ email_embedding erstellt [0.34, -0.12, 0.67, ...]
 
 🎯 Tag-Suggestions:
    │
-   ├─ "OnlyFans" (description)
+   ├─ "Subscriptions" (description)
    │  └─ Similarity: 0.89 → AUTO-ASSIGN ✅ (>= 80%)
    │
    ├─ "Rechnung" (learned)
@@ -212,13 +212,13 @@ Gesamt-Overhead:
       └─ Similarity: 0.42 → SKIP ❌ (< 70%)
 
 Result:
-   - 2 Tags auto-assigned: "OnlyFans", "Rechnung"
+   - 2 Tags auto-assigned: "Subscriptions", "Rechnung"
    - 1 Tag suggested: "Finanzen"
    - User muss nur 1 Tag manuell prüfen (statt 3)
 
 🎓 Learning Update:
    │
-   ├─ update_learned_embedding(tag_id="OnlyFans")
+   ├─ update_learned_embedding(tag_id="Subscriptions")
    │  └─ Jetzt 9 Emails → learned_embedding noch besser
    │
    └─ update_learned_embedding(tag_id="Rechnung")

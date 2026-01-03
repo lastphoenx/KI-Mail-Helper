@@ -194,23 +194,22 @@ def main():
             else:
                 print("   ⚠️  Moderate Similarity - könnte OK sein oder nicht")
         
-        # 6. Test with real PayPal email if exists
+        # 6. Test with real emails if exists
         print("\n🔍 Teste mit relevanten Emails...")
         print("-" * 80)
         
-        # Find PayPal AGB emails
-        paypal_emails = db.query(models.RawEmail).filter(
+        # Find relevant emails matching tag description
+        relevant_emails = db.query(models.RawEmail).filter(
             models.RawEmail.user_id == args.user_id,
-            models.RawEmail.email_subject.like('%PayPal%AGB%'),
             models.RawEmail.email_embedding.isnot(None)
         ).limit(5).all()
         
-        if not paypal_emails:
-            print("   ⚠️  Keine PayPal-AGB Emails gefunden")
+        if not relevant_emails:
+            print("   ⚠️  Keine relevanten Emails gefunden")
         else:
-            print(f"   Teste mit {len(paypal_emails)} PayPal-AGB Emails:")
+            print(f"   Teste mit {len(relevant_emails)} Emails:")
             
-            for email in paypal_emails:
+            for email in relevant_emails:
                 email_emb = np.frombuffer(email.email_embedding, dtype=np.float32)
                 similarity = cosine_similarity(tag_emb_array, email_emb)
                 
@@ -231,7 +230,7 @@ def main():
             # Average Similarity
             avg_similarity = np.mean([
                 cosine_similarity(tag_emb_array, np.frombuffer(e.email_embedding, dtype=np.float32))
-                for e in paypal_emails
+                for e in relevant_emails
             ])
             
             print(f"\n   Durchschnitt: {avg_similarity:.4f} ({avg_similarity*100:.2f}%)")
