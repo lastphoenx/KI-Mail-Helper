@@ -2,17 +2,17 @@
 
 **Strategic Planning Document - Was haben wir, was brauchen wir?**
 
-**Status:** ✅ Phase A-E + 14(a-g) + **F (komplett)** Complete | 🚀 Phase G-J Ready to Implement  
+**Status:** ✅ Phase A-E + 14(a-g) + **F (komplett)** + **G (komplett)** Complete | 🚀 Phase H-J Ready to Implement  
 **Created:** 31. Dezember 2025  
-**Updated:** 03. Januar 2026 - **Phase F: Semantic Intelligence COMPLETE (F.1 + F.2 + F.3)**  
-**Recent:** Alle 3 Phasen F abgeschlossen: Semantic Search + 3-Settings + Email Similarity  
+**Updated:** 03. Januar 2026 - **Phase G: AI Action Engine COMPLETE (G.1 + G.2 Enhanced)**  
+**Recent:** Phase G.2 mit 3 Enhancement-Features: Farbige Tags, has_tag, ai_suggested_tag  
 **Supersedes/Integrates:** Task 5 & Task 6
 
 ---
 
 ## 📋 Executive Summary
 
-**Abgeschlossen (73-91h):**
+**Abgeschlossen (83-105h):**
 - ✅ Phase A: Filter auf /liste
 - ✅ Phase B: Server DELETE/FLAG/READ
 - ✅ Phase C: MOVE + Multi-Folder FULL SYNC
@@ -22,14 +22,15 @@
 - ✅ **Phase F.1: Semantic Email Search (8-12h) - DONE!**
 - ✅ **Phase F.2: 3-Settings System (12-15h) - DONE!**
 - ✅ **Phase F.3: Email Similarity (2-3h) - DONE!**
+- ✅ **Phase G.1: Reply Draft Generator (4-6h) - DONE!**
+- ✅ **Phase G.2: Auto-Action Rules Engine (6-8h) + Enhancements (2h) - DONE!**
 
-**Neu geplant (22-42h):**
-- 🔥 **Phase G:** AI Action Engine (10-14h) ⭐⭐⭐⭐⭐ **TOP PRIORITY**
+**Neu geplant (14-24h):**
 - ⭐ **Phase H:** Action Extraction (8-12h) ⭐⭐⭐⭐
 - 🟢 **Phase I:** Productivity Features (20-28h) ⭐⭐⭐ **OPTIONAL**
 - 🟢 **Phase J:** SMTP Integration (6-8h) ⭐⭐⭐ **OPTIONAL**
 
-**Total Roadmap:** 95-133 Stunden → **Completed: 73-91h** | **Remaining: 22-42h**
+**Total Roadmap:** 95-133 Stunden → **Completed: 83-105h** | **Remaining: 12-28h**
 
 ---
 
@@ -931,14 +932,21 @@ def analyze_email(
 
 ---
 
-### 🤖 Phase G: AI Action Engine (10-14h) ⭐⭐⭐⭐⭐
+### 🤖 Phase G: AI Action Engine (10-14h) ⭐⭐⭐⭐⭐ - ✅ COMPLETE
 
-| Prio | Feature | Aufwand | Impact | Notes |
-|------|---------|---------|--------|-------|
-| 🔥 G.1 | **Reply Draft Generator** | 4-6h | ⭐⭐⭐⭐⭐ | Mit Ton-Auswahl & Thread-Context |
-| 🔥 G.2 | **Auto-Action Rules Engine** | 6-8h | ⭐⭐⭐⭐⭐ | Newsletter-Problem endlich gelöst! |
+| Prio | Feature | Aufwand | Impact | Status | Notes |
+|------|---------|---------|--------|--------|-------|
+| 🔥 G.1 | **Reply Draft Generator** | 4-6h | ⭐⭐⭐⭐⭐ | ✅ DONE | Mit Ton-Auswahl & Thread-Context |
+| 🔥 G.2 | **Auto-Action Rules Engine** | 6-8h + 2h | ⭐⭐⭐⭐⭐ | ✅ DONE | + Enhancements: Farbige Tags, has_tag, ai_suggested_tag |
 
-**Total:** 10-14h | **User Value:** Massive (Automation + Draft-Generator!)
+**Total:** 12-16h | **Status: COMPLETE!** | **User Value:** Massive (Automation + Draft-Generator!)
+
+**Enhancements über ursprüngliches Konzept:**
+- 🎨 Farbige Tag-Indikatoren (CSS-Kreise wie in email_detail.html)
+- 🔗 Neue Bedingung: `has_tag` / `not_has_tag` (für Regel-Ketten)
+- 🤖 Neue Bedingung: `ai_suggested_tag` mit Confidence-Threshold (Phase F.2 Integration)
+
+📄 **Documentation:** [doc/erledigt/CHANGELOG_PHASE_G_AI_ACTION_ENGINE.md](../erledigt/CHANGELOG_PHASE_G_AI_ACTION_ENGINE.md)
 
 ---
 
@@ -977,16 +985,18 @@ def analyze_email(
 
 ### 📊 Gesamtübersicht (Phase F-J)
 
-**Abgeschlossen (A-E + 14):** 39-49h  
-**Geplant Phase F-J:** 56-80h  
-**Phase 13 Total:** 95-129h  
+**Abgeschlossen (A-E + 14 + F + G):** 83-105h  
+**Geplant Phase H-J:** 14-28h  
+**Phase 13 Total:** 97-133h  
 
-**Empfohlene Reihenfolge:**
-1. **Phase F** (Semantic Intelligence) - Größter Impact, Infrastructure ready
-2. **Phase G** (AI Actions) - Auto-Actions löst Newsletter-Problem!
+**✅ Completed Phases:**
+1. ✅ **Phase F** (Semantic Intelligence) - 22-30h DONE
+2. ✅ **Phase G** (AI Actions) - 12-16h DONE (inkl. Enhancements)
+
+**🚀 Remaining Phases:**
 3. **Phase H** (Action Extraction) - Synergien mit Phase G
-4. **Phase I** (Bulk Ops) - Wenn Core-Features stable
-5. **Phase J** (SMTP) - Optional, Reply Draft reicht meist
+4. **Phase I** (Bulk Ops) - Wenn Core-Features stable (OPTIONAL)
+5. **Phase J** (SMTP) - Optional, Reply Draft reicht meist (OPTIONAL)
 
 **Phase D Justification (Critical Infrastructure):**
 - Moved ahead of Phase C due to critical nature
@@ -1440,7 +1450,73 @@ if similar_emails:
 
 ---
 
-## 🤖 Phase G: AI Action Engine - DETAILLIERT
+## 🤖 Phase G: AI Action Engine - ✅ COMPLETE
+
+**Duration:** ~12-16 Stunden | **Status:** ✅ **ABGESCHLOSSEN**
+
+**Problem gelöst:**
+- ❌ User muss alle Emails manuell verarbeiten
+- ❌ Newsletter verstopfen Inbox trotz Tags
+- ❌ Keine Automatisierung möglich
+
+**Neue Features:**
+- ✅ G.1: Reply Draft Generator mit Ton-Auswahl (Formell/Freundlich/Kurz/Ablehnend)
+- ✅ G.2: Auto-Action Rules Engine mit 10+ Bedingungen und 6 Aktionen
+- ✅ Enhancement: Farbige Tag-Indikatoren (CSS-Kreise)
+- ✅ Enhancement: `has_tag` / `not_has_tag` Bedingungen für Regel-Ketten
+- ✅ Enhancement: `ai_suggested_tag` mit Confidence-Threshold (Phase F.2 Integration)
+
+**Implemented:**
+- Phase G.1: Reply Draft Generator
+  - src/services/reply_generator.py: 300+ Zeilen mit 4 Ton-Varianten
+  - API: POST /api/emails/<id>/generate-reply
+  - UI: templates/email_detail.html mit Modal & Copy-to-Clipboard
+  - Thread-Context Integration für bessere Antworten
+
+- Phase G.2: Auto-Action Rules Engine (Enhanced Edition)
+  - src/auto_rules_engine.py: 800+ Zeilen mit Template-Support
+  - migrations/versions/phG2_auto_rules.py: DB Schema
+  - API: 10 Endpoints (CRUD, test, apply, templates, accounts)
+  - UI: templates/rules_management.html (900+ Zeilen)
+  - Background: 14_background_jobs.py Integration
+  - Navigation: base.html "⚡ Auto-Rules" Link
+
+**Condition Types (14):**
+- Sender: equals, contains, not_contains, domain
+- Subject: equals, contains, not_contains, regex
+- Body: contains, not_contains, regex
+- Attachment: has_attachment (boolean)
+- Folder: folder_equals
+- **Tags:** has_tag, not_has_tag (NEU)
+- **AI:** ai_suggested_tag + confidence_threshold (NEU)
+
+**Action Types (6):**
+- move_to_folder (mit Folder-Dropdown)
+- mark_as_read
+- mark_as_flagged
+- apply_tag (mit farbigen Tag-Dropdowns)
+- set_priority (high/low)
+- stop_processing (Regel-Kette beenden)
+
+**Templates (4):**
+- newsletter_archive: Newsletter automatisch archivieren
+- spam_delete: Spam in Papierkorb
+- important_sender: Wichtige Sender flaggen
+- attachment_archive: Anhänge in speziellen Ordner
+
+**UI Highlights:**
+- 🎨 Farbige Tag-Indikatoren (wie in email_detail.html)
+- 📋 Thunderbird-style Operator-Dropdowns
+- 🔍 Dry-Run Testing Mode
+- 📊 Statistics Tracking (triggered_count)
+- 🔗 Regel-Ketten mit has_tag Conditions
+- 🤖 KI-Integration mit ai_suggested_tag
+
+📄 **Detailed Documentation:** [doc/erledigt/CHANGELOG_PHASE_G_AI_ACTION_ENGINE.md](../erledigt/CHANGELOG_PHASE_G_AI_ACTION_ENGINE.md)
+
+---
+
+## 🤖 Phase G: AI Action Engine - DETAILLIERT (Ursprüngliches Konzept)
 
 ### **Phase G.1: Reply Draft Generator (4-6h)** ⭐⭐⭐⭐⭐
 
