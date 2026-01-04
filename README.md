@@ -271,25 +271,12 @@ mail-helper/
 │   ├── ki-tags/                # Tag-Learning Architektur
 │   ├── smtp-modul/             # SMTP Integration (Phase H)
 │   └── ...
-├── emails.db                   # SQLite Datenbank (WAL-Mode)
-├── .env                        # Konfiguration (API-Keys, Secrets)
-└── README.md                   # Dieses Dokument
-```
+├── config/                     # Konfigurationsdateien
 │   ├── fail2ban-filter.conf    # Fail2Ban Filter Rules
 │   ├── fail2ban-jail.conf      # Fail2Ban Jail Config
 │   └── logrotate.conf          # Log Rotation Config
-├── docs/                       # Dokumentation
-│   ├── INSTALLATION.md         # Komplette Installationsanleitung
-│   ├── DEPLOYMENT.md           # Production Deployment Guide
-│   ├── MAINTENANCE.md          # Maintenance & Helper-Skripte
-│   ├── SECURITY.md             # Security Model & Threat Analysis
-│   ├── OAUTH_AND_IMAP_SETUP.md # OAuth & IMAP Konfiguration
-│   ├── TESTING_GUIDE.md        # Kompletter Testing-Workflow
-│   ├── SETUP_VENV.md           # Virtual Environment Setup
-│   ├── CHANGELOG.md            # Version History
-│   └── ZERO_KNOWLEDGE_COMPLETE.md  # Zero-Knowledge Implementierung
-├── emails.db                   # SQLite Datenbank
-├── Instruction_&_goal.md       # Projekt-Spezifikation (Phase 0-10)
+├── emails.db                   # SQLite Datenbank (WAL-Mode)
+├── .env                        # Konfiguration (API-Keys, Secrets)
 └── README.md                   # Dieses Dokument
 ```
 
