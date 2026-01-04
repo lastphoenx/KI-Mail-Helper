@@ -1,8 +1,43 @@
-# 📧 KI-Mail-Helper – Lokaler KI-Mail-Assistent
+# 📧 KI-Mail-Helper
 
-> **Intelligente E-Mail-Priorisierung mit lokalem LLM & Zero-Knowledge Encryption**  
-> Datenschutzfreundlich • End-to-End verschlüsselt • Automatische Übersetzung • 3×3-Prioritäten-Dashboard  
-> Security Score: **98/100** 🔒 | Phase: **G (AI Action Engine) - COMPLETE** ✅
+**Lokaler KI-Mail-Assistent mit Zero-Knowledge-Architektur**
+
+Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschlüsselung kombiniert. Der Server sieht niemals Klartext-Daten – Entschlüsselung erfolgt ausschließlich im Browser mit deinem Passwort.
+
+---
+
+## Kernfeatures
+
+- **Zero-Knowledge Encryption** – AES-256-GCM, DEK/KEK-Pattern, Master-Key nur im RAM
+- **3×3 Prioritäts-Matrix** – Dringlichkeit × Wichtigkeit mit Farbcodierung
+- **Multi-Provider AI** – Lokale Modelle (Ollama) oder Cloud (Claude, OpenAI, Mistral)
+- **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (14 Bedingungen)
+- **Semantische Suche** – Embeddings für "finde ähnliche Emails"
+- **Tag-System** – Manuell + KI-Vorschläge basierend auf gelernten Mustern
+- **IMAP/POP3 & Gmail OAuth** – Funktioniert mit GMX, Gmail, Outlook, etc.
+- **SMTP Versand** – Antworten & neue Emails mit Sent-Ordner-Sync
+- **Thread-View** – Konversations-basierte Ansicht mit Context
+- **Fetch-Filter** – Account-spezifisch: Ordner, Datum, UNSEEN, Delta-Sync
+
+---
+
+## Status
+
+**Version:** 1.0.0  
+**Development:** Aktiv (Phase H - SMTP Integration abgeschlossen)  
+**Stability:** Production-ready für Single-User-Deployment  
+**Next:** Bulk Operations, Pipeline Integration
+
+**Abgeschlossene Phasen:**
+- ✅ Phase 0-12: Core System, Zero-Knowledge, Production Hardening
+- ✅ Phase 13C: Account-spezifische Fetch-Filter
+- ✅ Phase 14: RFC-konformer IMAP UID-Sync (UIDVALIDITY)
+- ✅ Phase 15: Multi-Folder UIDPLUS Support
+- ✅ Phase E: Thread-Context & Conversation View
+- ✅ Phase F1: Semantic Search mit Embeddings
+- ✅ Phase F2: Smart Tag Suggestions & Learning
+- ✅ Phase G: AI Action Engine (Reply Generator + Auto-Rules)
+- ✅ Phase H: SMTP Mail-Versand mit Sent-Sync
 
 ---
 
@@ -14,13 +49,17 @@
 
 **Hinweis: KI-generierter Code (in aktiver Entwicklung)**
 
-Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher **vollständig von KI erzeugt**; keine Zeile wurde manuell von einem Menschen geschrieben. Die gesamte Entwicklung erfolgte in **Microsoft Visual Studio Code (VS Code)**.
+Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher **vollständig von KI erzeugt**; keine Zeile wurde manuell von einem Menschen geschrieben. Die gesamte Entwicklung erfolgte in **Microsoft Visual Studio Code (VS Code)** mit GitHub Copilot als primärem Entwickler.
 
-- Ein **KI-Provider + Modell** war der primäre „Entwickler" und hat den Großteil der Implementierung erstellt.
-- Ein weiterer **KI-Provider + Modell** war hauptsächlich für Review, kritisches Gegenprüfen und das Vorschlagen von Fixes zuständig und hat nur wenige Änderungen selbst implementiert.
-- Ein dritter **KI-Provider + ausgewähltes Modell** wurde per API für ein Deep-Review eingesetzt – unterstützt durch ein eigenes Python-Review-Skript mit ca. 1.000 Zeilen (ausschließlich für Review-Zwecke).
-
-**Das Projekt hat Phase G (AI Action Engine) erfolgreich abgeschlossen und wird aktiv weiterentwickelt.** Phase G brachte zwei leistungsstarke Features: G.1 Reply Draft Generator (KI schreibt Antwort-Entwürfe mit Ton-Auswahl) und G.2 Auto-Action Rules Engine (automatische Email-Aktionen mit 14 Bedingungstypen, farbigen Tag-Indikatoren und KI-Integration für intelligente Regel-Ketten).
+**Aktuelle Features (Stand Januar 2026):**
+- 🎯 **Core System:** Zero-Knowledge Encryption, 3×3 Prioritäts-Matrix, Multi-Provider AI
+- 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
+- 📥 **Fetch:** IMAP/POP3/Gmail OAuth mit account-spezifischen Filtern (Ordner, Datum, UNSEEN)
+- 📤 **Send:** SMTP-Versand mit automatischer Sent-Ordner-Synchronisation
+- 🧵 **Thread-View:** Konversations-basierte Email-Ansicht mit KI-Context
+- 🔍 **Semantic Search:** Vector-basierte Suche mit Embeddings (OpenAI, Mistral, etc.)
+- 🏷️ **Smart Tags:** KI-Vorschläge + Learning-System + Multi-Tag-Filter
+- 🤖 **AI Actions:** Reply Draft Generator (4 Ton-Varianten) + Auto-Rules Engine (14 Bedingungen)
 
 **Trotz größter Sorgfalt beim Prompting, kritischem Hinterfragen und wiederholten Reviews erfolgt die Verwendung auf eigenes Risiko.** Die Software wird „wie gesehen" (as is) bereitgestellt – ohne Gewährleistung und ohne Zusicherung hinsichtlich Korrektheit, Sicherheit oder Eignung. Wenn du das Tool mit echten Mail-Accounts oder sensiblen Daten nutzen willst, führe bitte eigene Tests, Threat-Modeling und ein unabhängiges Security-Review durch.
 
@@ -30,88 +69,85 @@ Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher
 
 > **🚧 WORK IN PROGRESS**: This project is under active development. Features are continuously being added, improved, and tested. For production use, please conduct your own testing and check for updates regularly.
 
-This repository was created with multiple AI systems. So far, the codebase has been generated **entirely by AI** — not a single line was written manually by a human. All development work was performed in **Microsoft Visual Studio Code (VS Code)**.
+This repository was created with multiple AI systems. So far, the codebase has been generated **entirely by AI** — not a single line was written manually by a human. All development work was performed in **Microsoft Visual Studio Code (VS Code)** with GitHub Copilot as primary developer.
 
-- One **AI provider + model** acted as the primary "developer" and produced most of the implementation.
-- Another **AI provider + model** was mainly responsible for review, critical verification, and proposing fixes, contributing only minor code changes.
-- A third **AI provider + selected model** was used via API for an in-depth review, supported by a dedicated Python review harness of about 1,000 lines (built solely for review purposes).
-
-**The project has successfully completed Phase G (AI Action Engine) and is being actively developed.** Phase G introduced two powerful features: G.1 Reply Draft Generator (AI generates reply drafts with tone selection) and G.2 Auto-Action Rules Engine (automatic email actions with 14 condition types, colored tag indicators, and AI integration for intelligent rule chains).
-
-**Despite careful prompting, critical challenge/verification, and repeated reviews, use is at your own risk.** The software is provided "as is", without warranty, and with no guarantee of correctness, security, or fitness for a particular purpose. If you plan to use it with real email accounts or sensitive data, please conduct your own testing, threat modeling, and an independent security review first.
-
----
-
----
-
-## ⚠️ Haftungsausschluss / Disclaimer (AI-Generated Code)
-
-### 🇩🇪 Deutsch
-
-**Hinweis: KI-generierter Code**
-
-Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher **vollständig von KI erzeugt**; keine Zeile wurde manuell von einem Menschen geschrieben. Die gesamte Entwicklung erfolgte in **Microsoft Visual Studio Code (VS Code)**.
-
-- Ein **KI-Provider + Modell** war der primäre „Entwickler" und hat den Großteil der Implementierung erstellt.
-- Ein weiterer **KI-Provider + Modell** war hauptsächlich für Review, kritisches Gegenprüfen und das Vorschlagen von Fixes zuständig und hat nur wenige Änderungen selbst implementiert.
-- Ein dritter **KI-Provider + ausgewähltes Modell** wurde per API für ein Deep-Review eingesetzt – unterstützt durch ein eigenes Python-Review-Skript mit ca. 1.000 Zeilen (ausschließlich für Review-Zwecke).
-
-**Trotz größter Sorgfalt beim Prompting, kritischem Hinterfragen und wiederholten Reviews erfolgt die Verwendung auf eigenes Risiko.** Die Software wird „wie gesehen" (as is) bereitgestellt – ohne Gewährleistung und ohne Zusicherung hinsichtlich Korrektheit, Sicherheit oder Eignung. Wenn du das Tool mit echten Mail-Accounts oder sensiblen Daten nutzen willst, führe bitte eigene Tests, Threat-Modeling und ein unabhängiges Security-Review durch.
-
-### 🇬🇧 English
-
-**Notice: AI-generated code**
-
-This repository was created with multiple AI systems. So far, the codebase has been generated **entirely by AI** — not a single line was written manually by a human. All development work was performed in **Microsoft Visual Studio Code (VS Code)**.
-
-- One **AI provider + model** acted as the primary "developer" and produced most of the implementation.
-- Another **AI provider + model** was mainly responsible for review, critical verification, and proposing fixes, contributing only minor code changes.
-- A third **AI provider + selected model** was used via API for an in-depth review, supported by a dedicated Python review harness of about 1,000 lines (built solely for review purposes).
+**Current Features (January 2026):**
+- 🎯 **Core System:** Zero-Knowledge Encryption, 3×3 Priority Matrix, Multi-Provider AI
+- 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
+- 📥 **Fetch:** IMAP/POP3/Gmail OAuth with account-specific filters (folders, date, UNSEEN)
+- 📤 **Send:** SMTP with automatic Sent folder sync
+- 🧵 **Thread-View:** Conversation-based email view with AI context
+- 🔍 **Semantic Search:** Vector-based search with embeddings (OpenAI, Mistral, etc.)
+- 🏷️ **Smart Tags:** AI suggestions + learning system + multi-tag filters
+- 🤖 **AI Actions:** Reply Draft Generator (4 tone variants) + Auto-Rules Engine (14 conditions)
 
 **Despite careful prompting, critical challenge/verification, and repeated reviews, use is at your own risk.** The software is provided "as is", without warranty, and with no guarantee of correctness, security, or fitness for a particular purpose. If you plan to use it with real email accounts or sensitive data, please conduct your own testing, threat modeling, and an independent security review first.
 
 ---
 
-## 🎯 Was ist Mail Helper?
+## 🎯 Was ist KI-Mail-Helper?
 
 Ein lokaler Mail-Assistent, der E-Mails automatisch:
-- ✅ Von IMAP-Servern (GMX, Yahoo, Hotmail) & Gmail OAuth abholt
+- ✅ Von IMAP/POP3-Servern (GMX, Yahoo, Hotmail) & Gmail OAuth abholt
 - 🔒 **Zero-Knowledge verschlüsselt** – Server hat keinen Zugriff auf Klartext-Daten
-- 🤖 Mit lokalem LLM (Ollama: llama3.2, all-minilm:22m, etc.) oder Cloud-KI analysiert
+- 🤖 Mit lokalem LLM (Ollama: llama3.2, mistral, etc.) oder Cloud-KI analysiert
 - 📊 In einem **3×3-Prioritäten-Dashboard** darstellt (Wichtigkeit × Dringlichkeit)
-- 🌍 Automatisch ins Deutsche übersetzt
+- 🏷️ Mit KI-gestützten Tag-Vorschlägen versieht
 - 💡 Mit Handlungsempfehlungen versieht
-- 📋 IMAP-Metadaten (UID, Folder, Flags) für jede Email speichert
+- 📧 **SMTP-Versand** mit automatischer Sent-Ordner-Synchronisation ermöglicht
+- � **AI Action Engine**: Antwort-Entwürfe generieren + Auto-Rules für Email-Aktionen
+- �🧵 In **Thread-View** mit Konversations-Context darstellt
+- 🔍 Mit **semantischer Suche** durchsuchbar macht
 
 ---
 
 ## ✨ Features
 
 ### Kernfunktionen
-- **🔐 Zero-Knowledge Encryption (Phase 8a+8b)** – AES-256-GCM End-to-End Verschlüsselung (siehe [docs/ZERO_KNOWLEDGE_COMPLETE.md](docs/ZERO_KNOWLEDGE_COMPLETE.md))
+- **🔐 Zero-Knowledge Encryption (Phase 8)** – AES-256-GCM End-to-End Verschlüsselung (siehe [docs/ZERO_KNOWLEDGE_COMPLETE.md](docs/ZERO_KNOWLEDGE_COMPLETE.md))
   - **DEK/KEK Pattern** – Passwort ändern ohne E-Mails neu zu verschlüsseln
   - Alle E-Mails verschlüsselt (Sender, Subject, Body, AI-Ergebnisse)
   - Alle Credentials verschlüsselt (IMAP/SMTP Server, Usernames, Passwords)
   - DEK (Data Encryption Key) nur in Server-RAM (Flask Server-Side Sessions)
   - Server kann niemals auf Klartext-Daten zugreifen
-  - Session Security: Auto-Logout bei DEK-Loss, keine Passwörter in Session
 - **🔒 Production Security (Phase 9)** – Enterprise-Grade Hardening (siehe [DEPLOYMENT.md](docs/DEPLOYMENT.md))
   - **Flask-Limiter**: Rate Limiting (5 requests/min Login/2FA)
   - **Account Lockout**: 5 Failed → 15min Ban
   - **Session Timeout**: 30min Inaktivität → Auto-Logout
   - **Fail2Ban Integration**: Network-Level IP Banning
   - **Audit Logging**: Strukturierte Security-Events für Monitoring
-  - **Automated Backups**: Daily + Weekly mit Rotation
-  - **SECRET_KEY Security**: System Environment (nicht .env!)
-  - **Gunicorn + Systemd**: Production WSGI Server mit Auto-Restart
   - **Security Score: 98/100** 🔒
-- **Dual Mail-Fetcher** – IMAP (GMX, Yahoo, Hotmail) + Gmail OAuth2 API
-- **IMAP-Metadaten** – Speichert UID, Folder, Flags für jede Email
-- **Two-Pass Optimization** – Base-Pass (schnell) + Optimize-Pass (optional, bessere Kategorisierung)
-- **Dynamic Provider-Dropdowns** – Auto-Erkennung verfügbarer KI-Modelle basierend auf API-Keys
-- **Flexible Modellauswahl** – Keine Hardcodierung! llama3.2, all-minilm:22m (46MB, ~100x schneller), oder beliebige Ollama-Modelle
-- **Learning System (Phase 9 ML)** – Human-in-the-Loop Training mit User-Korrektionen
-- **🏷️ Smart Tag-System (Phase 10)** – KI-gestützte Tag-Vorschläge & Filter (siehe [Features](#tag-system-phase-10))
+- **📥 Fetch-System** – Intelligente Mail-Synchronisation
+  - **IMAP/POP3** – GMX, Yahoo, Hotmail, custom servers
+  - **Gmail OAuth2** – Google API mit automatischer Token-Refresh
+  - **Account-spezifische Filter (Phase 13C):**
+    - Ordner: Include/Exclude Listen
+    - Datum: SINCE-Filter (nur Mails ab Datum X)
+    - Status: UNSEEN-only (nur ungelesene)
+    - Limit: Mails pro Ordner + Gesamt-Maximum
+    - Delta-Sync: Nur neue Mails seit letztem Sync (UID-Range)
+  - **Live-Vorschau**: Zeigt geschätzte Mail-Anzahl vor Fetch
+  - **UIDVALIDITY-Tracking (Phase 14)**: RFC-konformer UID-Sync
+  - **Multi-Folder UIDPLUS (Phase 15)**: Paralleles Fetching
+- **📤 SMTP-Versand (Phase H)** – Email-Versand mit Sync
+  - **Antworten**: Direkt aus Email-Detail mit Reply-To-Header
+  - **Neue Emails**: Compose mit To/CC/BCC/Betreff/Body
+  - **Sent-Sync**: Automatisches APPEND in IMAP Sent-Ordner
+  - **Thread-Support**: In-Reply-To + References Headers
+  - **DB-Synchronisation**: Gesendete Mails als ProcessedEmail
+  - **Zero-Knowledge**: SMTP-Credentials verschlüsselt
+- **🧵 Thread-View (Phase E)** – Konversations-basierte Ansicht
+  - **Thread-ID Berechnung**: SHA256(normalized_subject + participants)
+  - **Conversation-Grouping**: Emails mit gleichem Thread-ID gruppiert
+  - **Chronologische Sortierung**: Älteste → Neueste
+  - **Context-Aware AI**: KI sieht vollständigen Thread-Context
+  - **Collapse/Expand**: Threads können eingeklappt werden
+- **🔍 Semantische Suche (Phase F1)** – Vector-basierte Suche
+  - **Embeddings**: OpenAI, Mistral, Voyage, Cohere, etc.
+  - **"Finde ähnliche"**: Ähnlichkeitssuche basierend auf Semantik
+  - **Fast**: Cosine Similarity mit NumPy
+  - **User-spezifisch**: Nur eigene Emails durchsuchbar
+- **🏷️ Smart Tag-System (Phase F2)** – KI-gestützte Tag-Vorschläge
   - **Auto-Tagging**: KI schlägt 1-5 semantische Tags vor (suggested_tags)
   - **Tag-Management**: Create/Edit/Delete mit 7 Farben + Email-Count
   - **Multi-Tag-Filter**: Kombiniere Tags mit Farbe/Done/Suche
@@ -126,21 +162,26 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
     - Regel-Ketten mit `has_tag` / `not_has_tag` Conditions
     - KI-Integration: `ai_suggested_tag` mit Confidence-Threshold
     - 4 Templates: Newsletter-Archiv, Spam-Filter, Important-Sender, Attachment-Archive
+- **Dynamic Provider-Dropdowns** – Auto-Erkennung verfügbarer KI-Modelle basierend auf API-Keys
+- **Flexible Modellauswahl** – Keine Hardcodierung! llama3.2, mistral, oder beliebige Ollama/Cloud-Modelle
+- **Two-Pass Optimization** – Base-Pass (schnell) + Optimize-Pass (optional, bessere Kategorisierung)
+- **Learning System (Phase 9 ML)** – Human-in-the-Loop Training mit User-Korrektionen
 - **Datenschutz-Sanitizer** – 3 Level (Volltext → Pseudonymisierung)
 - **Multi-Provider KI-Analyse** – Lokal (Ollama) oder Cloud (OpenAI, Anthropic, Mistral)
 - **Intelligentes Scoring** – 3×3-Matrix + Ampelfarben (Rot/Gelb/Grün)
 - **Web-Dashboard** – Übersichtliche Darstellung mit Matrix- und Listenansicht
-- **Automatische Übersetzung** – Mehrsprachige Mails → Deutsch
 - **2FA (TOTP) + Recovery-Codes** – Zwei-Faktor-Authentifizierung mit Backup-Codes
 - **Background-Jobs** – Asynchrone Email-Verarbeitung mit Progress-Tracking
-- **Maintenance Helper** – Scripts für DB-Reset, Migrationen, Troubleshooting (in `scripts/` organisiert)
+- **Maintenance Helper** – Scripts für DB-Reset, Migrationen, Troubleshooting (siehe [scripts/README.md](scripts/README.md))
 
 ### Ansichten
 1. **3×3-Matrix** – Wichtigkeit (x) × Dringlichkeit (y) mit Farbcodierung
 2. **Ampel-Ansicht** – Rot (hoch) / Gelb (mittel) / Grün (niedrig)
 3. **Listen-View** – Sortiert nach Score mit Filtern + Tag-Filter (Multi-Select)
-4. **Detail-Ansicht** – Vollständige Mail-Info + Aktionen + Tag-Management
-5. **Tag-Management** – `/tags` Route für CRUD-Operationen + Statistiken
+4. **Thread-View** – Konversations-basierte Gruppierung mit Context
+5. **Detail-Ansicht** – Vollständige Mail-Info + Aktionen + Tag-Management + SMTP-Reply
+6. **Tag-Management** – `/tags` Route für CRUD-Operationen + Statistiken
+7. **Semantic Search** – `/search` mit "Finde ähnliche" Button
 
 ---
 
@@ -150,38 +191,90 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
 mail-helper/
 ├── src/
 │   ├── 00_main.py              # Entry Point / CLI + Cron-Orchestrierung
-│   ├── 01_web_app.py           # Flask Web-Dashboard + Auth
+│   ├── 01_web_app.py           # Flask Web-Dashboard + Auth + API Routes
 │   ├── 02_models.py            # SQLAlchemy DB-Modelle + Soft-Delete
 │   ├── 03_ai_client.py         # KI-Client (Ollama, OpenAI, Anthropic, Mistral)
-│   │                           # ✨ Dynamische Modellauswahl (llama3.2, all-minilm:22m, etc.)
 │   ├── 04_sanitizer.py         # Datenschutz-Level 1-3
 │   ├── 05_scoring.py           # 3×3-Matrix + Farben
-│   ├── 06_mail_fetcher.py      # IMAP-Client (GMX, Yahoo, Hotmail) mit UID/Folder/Flags
+│   ├── 05_embedding_api.py     # Embedding-Client für Semantic Search
+│   ├── 06_mail_fetcher.py      # IMAP-Client mit UID/Folder/Flags
+│   ├── 07_pop3_fetcher.py      # POP3-Client (Alternative zu IMAP)
 │   ├── 07_auth.py              # Auth + Master-Key + 2FA
-│   ├── 08_encryption.py        # Zero-Knowledge AES-256-GCM Encryption/Decryption
+│   ├── 08_encryption.py        # Zero-Knowledge AES-256-GCM
 │   ├── 10_google_oauth.py      # Gmail OAuth2 API Fetcher
 │   ├── 12_processing.py        # Email-Verarbeitungs-Workflow
 │   ├── 14_background_jobs.py   # Job Queue für Hintergrund-Verarbeitung
 │   ├── 15_provider_utils.py    # Dynamic Provider/Model Discovery
+│   ├── 16_imap_flags.py        # IMAP Flag Management (Read/Unread/Flagged)
+│   ├── 16_mail_sync.py         # Multi-Folder Sync Coordinator
+│   ├── 19_smtp_sender.py       # SMTP Versand + Sent-Sync (Phase H)
+│   ├── auto_rules_engine.py    # Auto-Rules Engine (Phase G.2)
+│   ├── reply_generator.py      # AI Reply Draft Generator (Phase G.1)
+│   ├── semantic_search.py      # Vector-basierte Suche (Phase F1)
+│   ├── thread_api.py           # Thread-View API
+│   ├── thread_service.py       # Thread-Grouping Logic
 │   ├── services/
-│   │   └── tag_manager.py      # Tag CRUD + Assignment Logic (Phase 10)
+│   │   ├── tag_manager.py      # Tag CRUD + Assignment Logic
+│   │   └── sender_patterns.py  # Sender Pattern Learning
 │   └── ...
 ├── templates/                  # HTML-Templates (20+)
-├── tests/                      # Unit Tests (pytest)
-│   ├── test_ai_client.py       # AI-Client Tests
-│   ├── test_mail_fetcher.py    # Mail-Fetcher Tests
+│   ├── dashboard.html          # 3×3 Matrix + Ampel-View
+│   ├── list_view.html          # List + Filters
+│   ├── threads_view.html       # Conversation View (Phase E)
+│   ├── email_detail.html       # Detail + Reply + Tags
+│   ├── tags.html               # Tag Management UI
+│   ├── rules_management.html   # Auto-Rules UI (Phase G.2)
 │   └── ...
-├── scripts/                    # Utility & Maintenance Scripts
+├── tests/                      # Unit Tests (pytest)
+│   ├── test_ai_client.py
+│   ├── test_mail_fetcher.py
+│   ├── test_sanitizer.py
+│   ├── test_thread_id_calculation.py
+│   └── ...
+├── scripts/                    # Utility & Maintenance Scripts (siehe README.md)
 │   ├── reset_base_pass.py      # Base-Pass Analysis Reset
-│   ├── check_db.py             # DB-Health-Check
-│   ├── encrypt_db_verification.py
-│   └── ... (9+ Helper-Scripts)
-├── migrations/                 # Alembic DB-Migrationen
+│   ├── reset_all_emails.py     # Hard-Delete Emails
+│   ├── backup_database.sh      # Automated WAL-aware Backups
+│   ├── verify_wal_mode.py      # SQLite WAL-Check
+│   └── ... (17 aktive Scripts)
+├── migrations/                 # Alembic DB-Migrationen (24+ Versionen)
+│   ├── versions/
+│   │   ├── ph10_email_tags.py
+│   │   ├── ph13c_p5_fetch_filters.py
+│   │   ├── ph14a_rfc_unique_key_uidvalidity.py
+│   │   ├── phE_thread_context.py
+│   │   ├── phF1_semantic_search.py
+│   │   ├── phG2_auto_rules.py
+│   │   └── ...
 ├── config/                     # Konfigurationsdateien
 │   ├── mail-helper.service     # Systemd Service (Web-App)
-│   ├── mail-helper-processor.service  # Systemd Service (Cron)
+│   ├── mail-helper-processor.service
 │   ├── mail-helper-processor.timer    # Cron Timer (15 min)
 │   ├── gunicorn.conf.py        # Gunicorn WSGI Config
+│   ├── fail2ban-filter.conf    # Fail2Ban Filter Rules
+│   ├── fail2ban-jail.conf      # Fail2Ban Jail Config
+│   └── logrotate.conf          # Log Rotation Config
+├── docs/                       # Dokumentation
+│   ├── INSTALLATION.md         # Komplette Installationsanleitung
+│   ├── DEPLOYMENT.md           # Production Deployment Guide
+│   ├── MAINTENANCE.md          # Maintenance & Helper-Skripte
+│   ├── SECURITY.md             # Security Model & Threat Analysis
+│   ├── OAUTH_AND_IMAP_SETUP.md # OAuth & IMAP Konfiguration
+│   ├── TESTING_GUIDE.md        # Kompletter Testing-Workflow
+│   ├── ZERO_KNOWLEDGE_COMPLETE.md  # Zero-Knowledge Implementierung
+│   └── CHANGELOG.md            # Version History
+├── doc/                        # Feature-Dokumentation
+│   ├── Changelogs/             # Phase-Changelogs
+│   ├── erledigt/               # Abgeschlossene Phasen
+│   ├── fetch-filters/          # Fetch-Filter Docs
+│   ├── imap/                   # IMAP-Strategie & Troubleshooting
+│   ├── ki-tags/                # Tag-Learning Architektur
+│   ├── smtp-modul/             # SMTP Integration (Phase H)
+│   └── ...
+├── emails.db                   # SQLite Datenbank (WAL-Mode)
+├── .env                        # Konfiguration (API-Keys, Secrets)
+└── README.md                   # Dieses Dokument
+```
 │   ├── fail2ban-filter.conf    # Fail2Ban Filter Rules
 │   ├── fail2ban-jail.conf      # Fail2Ban Jail Config
 │   └── logrotate.conf          # Log Rotation Config
