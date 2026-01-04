@@ -78,7 +78,6 @@ class AuthType(str, Enum):
 
     IMAP = "imap"
     OAUTH = "oauth"
-    POP3 = "pop3"  # Future Support
 
 
 class OptimizationStatus(str, Enum):
@@ -421,7 +420,8 @@ class MailAccount(Base):
     encrypted_oauth_refresh_token = Column(Text)
     oauth_expires_at = Column(DateTime)
 
-    # POP3-spezifische Felder (zukünftig, wenn auth_type="pop3", verschlüsselt)
+    # DEPRECATED: POP3-Felder (kept for schema compatibility, not functional)
+    # POP3 support was removed - IMAP-only architecture
     encrypted_pop3_server = Column(Text, nullable=True)
     pop3_port = Column(Integer, default=995)
     encrypted_pop3_username = Column(Text, nullable=True)
@@ -502,16 +502,6 @@ class MailAccount(Base):
         elif self.auth_type == AuthType.OAUTH.value:
             if not all([self.oauth_provider, self.encrypted_oauth_token]):
                 return False, "OAuth requires: provider, token"
-
-        elif self.auth_type == AuthType.POP3.value:
-            if not all(
-                [
-                    self.encrypted_pop3_server,
-                    self.encrypted_pop3_username,
-                    self.encrypted_pop3_password,
-                ]
-            ):
-                return False, "POP3 requires: server, username, password"
 
         return True, ""
 

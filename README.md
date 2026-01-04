@@ -14,7 +14,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (14 Bedingungen)
 - **Semantische Suche** – Embeddings für "finde ähnliche Emails"
 - **Tag-System** – Manuell + KI-Vorschläge basierend auf gelernten Mustern
-- **IMAP/POP3 & Gmail OAuth** – Funktioniert mit GMX, Gmail, Outlook, etc.
+- **IMAP & Gmail OAuth** – Funktioniert mit GMX, Gmail, Outlook, etc.
 - **SMTP Versand** – Antworten & neue Emails mit Sent-Ordner-Sync
 - **Thread-View** – Konversations-basierte Ansicht mit Context
 - **Fetch-Filter** – Account-spezifisch: Ordner, Datum, UNSEEN, Delta-Sync
@@ -54,7 +54,7 @@ Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher
 **Aktuelle Features (Stand Januar 2026):**
 - 🎯 **Core System:** Zero-Knowledge Encryption, 3×3 Prioritäts-Matrix, Multi-Provider AI
 - 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
-- 📥 **Fetch:** IMAP/POP3/Gmail OAuth mit account-spezifischen Filtern (Ordner, Datum, UNSEEN)
+- 📥 **Fetch:** IMAP/Gmail OAuth mit account-spezifischen Filtern (Ordner, Datum, UNSEEN)
 - 📤 **Send:** SMTP-Versand mit automatischer Sent-Ordner-Synchronisation
 - 🧵 **Thread-View:** Konversations-basierte Email-Ansicht mit KI-Context
 - 🔍 **Semantic Search:** Vector-basierte Suche mit Embeddings (OpenAI, Mistral, etc.)
@@ -74,7 +74,7 @@ This repository was created with multiple AI systems. So far, the codebase has b
 **Current Features (January 2026):**
 - 🎯 **Core System:** Zero-Knowledge Encryption, 3×3 Priority Matrix, Multi-Provider AI
 - 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
-- 📥 **Fetch:** IMAP/POP3/Gmail OAuth with account-specific filters (folders, date, UNSEEN)
+- 📥 **Fetch:** IMAP/Gmail OAuth with account-specific filters (folders, date, UNSEEN)
 - 📤 **Send:** SMTP with automatic Sent folder sync
 - 🧵 **Thread-View:** Conversation-based email view with AI context
 - 🔍 **Semantic Search:** Vector-based search with embeddings (OpenAI, Mistral, etc.)
@@ -88,7 +88,7 @@ This repository was created with multiple AI systems. So far, the codebase has b
 ## 🎯 Was ist KI-Mail-Helper?
 
 Ein lokaler Mail-Assistent, der E-Mails automatisch:
-- ✅ Von IMAP/POP3-Servern (GMX, Yahoo, Hotmail) & Gmail OAuth abholt
+- ✅ Von IMAP-Servern (GMX, Yahoo, Hotmail) & Gmail OAuth abholt
 - 🔒 **Zero-Knowledge verschlüsselt** – Server hat keinen Zugriff auf Klartext-Daten
 - 🤖 Mit lokalem LLM (Ollama: llama3.2, mistral, etc.) oder Cloud-KI analysiert
 - 📊 In einem **3×3-Prioritäten-Dashboard** darstellt (Wichtigkeit × Dringlichkeit)
@@ -118,7 +118,7 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
   - **Audit Logging**: Strukturierte Security-Events für Monitoring
   - **Security Score: 98/100** 🔒
 - **📥 Fetch-System** – Intelligente Mail-Synchronisation
-  - **IMAP/POP3** – GMX, Yahoo, Hotmail, custom servers
+  - **IMAP** – GMX, Yahoo, Hotmail, custom servers
   - **Gmail OAuth2** – Google API mit automatischer Token-Refresh
   - **Account-spezifische Filter (Phase 13C):**
     - Ordner: Include/Exclude Listen
@@ -198,7 +198,7 @@ mail-helper/
 │   ├── 05_scoring.py           # 3×3-Matrix + Farben
 │   ├── 05_embedding_api.py     # Embedding-Client für Semantic Search
 │   ├── 06_mail_fetcher.py      # IMAP-Client mit UID/Folder/Flags
-│   ├── 07_pop3_fetcher.py      # POP3-Client (Alternative zu IMAP)
+
 │   ├── 07_auth.py              # Auth + Master-Key + 2FA
 │   ├── 08_encryption.py        # Zero-Knowledge AES-256-GCM
 │   ├── 10_google_oauth.py      # Gmail OAuth2 API Fetcher

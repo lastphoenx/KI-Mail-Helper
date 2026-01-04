@@ -1044,14 +1044,13 @@ def get_mail_fetcher_for_account(mail_account, master_key: str | None = None):
     Unterstützt Multi-Auth:
     - auth_type="imap": Standard IMAP/SMTP
     - auth_type="oauth": OAuth 2.0 (Gmail, Outlook)
-    - auth_type="pop3": POP3 (experimental)
 
     Args:
         mail_account: MailAccount Model-Instanz
         master_key: Encrypted Master-Key um Passwörter zu decrypten
 
     Returns:
-        MailFetcher (IMAP), GoogleMailFetcher (OAuth) oder POP3MailFetcher
+        MailFetcher (IMAP) oder GoogleMailFetcher (OAuth)
 
     Raises:
         ValueError: Bei fehlenden Credentials oder unbekanntem auth_type
@@ -1089,20 +1088,6 @@ def get_mail_fetcher_for_account(mail_account, master_key: str | None = None):
             username=mail_account.imap_username,
             password=imap_password,
             port=mail_account.imap_port,
-        )
-
-    elif mail_account.auth_type == "pop3":
-        pop3_fetcher = importlib.import_module(".07_pop3_fetcher", "src")
-
-        pop3_password = encryption.CredentialManager.decrypt_imap_password(
-            mail_account.encrypted_pop3_password, master_key
-        )
-
-        return pop3_fetcher.POP3MailFetcher(
-            server=mail_account.pop3_server,
-            username=mail_account.pop3_username,
-            password=pop3_password,
-            port=mail_account.pop3_port,
         )
 
     else:

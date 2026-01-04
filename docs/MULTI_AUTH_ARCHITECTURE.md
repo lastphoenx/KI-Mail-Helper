@@ -2,26 +2,26 @@
 
 ## 📐 Architektur-Übersicht
 
-Das KI-Mail-Helper System unterstützt **drei parallele Authentifizierungsmethoden** für E-Mail-Konten:
+Das KI-Mail-Helper System unterstützt **zwei parallele Authentifizierungsmethoden** für E-Mail-Konten:
 
 ```
 ┌─────────────────────────────────────────────────┐
 │           MailAccount (Database)                │
 │  ┌───────────────────────────────────────────┐  │
-│  │ auth_type: Enum("imap", "oauth", "pop3")  │  │
+│  │ auth_type: Enum("imap", "oauth")          │  │
 │  └───────────────────────────────────────────┘  │
 └─────────────────────┬───────────────────────────┘
                       │
         ┌─────────────┼─────────────┐
-        ▼             ▼             ▼
-   ┌────────┐   ┌────────┐   ┌────────┐
-   │  IMAP  │   │ OAuth  │   │  POP3  │
-   └────────┘   └────────┘   └────────┘
-        │             │             │
-        ▼             ▼             ▼
-   MailFetcher  GoogleMail-  POP3Mail-
-   (06_*.py)    Fetcher      Fetcher
-                (10_*.py)    (07_*.py)
+        ▼             ▼             
+   ┌────────┐   ┌────────┐   
+   │  IMAP  │   │ OAuth  │   
+   └────────┘   └────────┘   
+        │             │             
+        ▼             ▼             
+   MailFetcher  GoogleMail-  
+   (06_*.py)    Fetcher      
+                (10_*.py)    
 ```
 
 ---
@@ -33,7 +33,7 @@ Das KI-Mail-Helper System unterstützt **drei parallele Authentifizierungsmethod
 ```python
 class MailAccount(Base):
     # Allgemein
-    auth_type: str  # "imap" | "oauth" | "pop3"
+    auth_type: str  # "imap" | "oauth"
     name: str
     enabled: bool
     
@@ -48,12 +48,6 @@ class MailAccount(Base):
     encrypted_oauth_token: bytes
     encrypted_oauth_refresh_token: bytes
     oauth_expires_at: datetime
-    
-    # POP3-spezifisch
-    pop3_server: str
-    pop3_port: int
-    pop3_username: str
-    encrypted_pop3_password: bytes
     
     # SMTP (optional, für Versand)
     smtp_server: str
@@ -82,9 +76,6 @@ def get_mail_fetcher_for_account(mail_account, master_key):
     
     elif mail_account.auth_type == "imap":
         return MailFetcher(...)
-    
-    elif mail_account.auth_type == "pop3":
-        return POP3MailFetcher(...)
 ```
 
 ---
@@ -103,7 +94,6 @@ account.validate_auth_fields()
 **Regeln:**
 - **IMAP:** `imap_server`, `imap_username`, `encrypted_imap_password` müssen gesetzt sein
 - **OAuth:** `oauth_provider`, `encrypted_oauth_token` müssen gesetzt sein
-- **POP3:** `pop3_server`, `pop3_username`, `encrypted_pop3_password` müssen gesetzt sein
 
 ---
 
@@ -156,7 +146,6 @@ Um eine neue Auth-Methode (z.B. Exchange, DAV) hinzuzufügen:
 class AuthType(str, Enum):
     IMAP = "imap"
     OAUTH = "oauth"
-    POP3 = "pop3"
     EXCHANGE = "exchange"  # NEU
 ```
 
@@ -207,15 +196,15 @@ elif self.auth_type == AuthType.EXCHANGE.value:
 
 ## 📊 Vergleichstabelle
 
-| Feature | IMAP | OAuth | POP3 |
-|---------|------|-------|------|
-| Empfangen | ✅ | ✅ | ✅ |
-| Versenden | ✅ (SMTP) | ✅ | ❌ |
-| Ordner | ✅ | ✅ | ❌ |
-| UID-Tracking | ✅ | ✅ | ⚠️ (Message-ID) |
-| Token-Refresh | ❌ | ✅ | ❌ |
-| Server-Löschen | ❌ | ❌ | ⚠️ (optional) |
-| Sicherheit | ⚠️ (App-Passwort) | ✅✅ | ⚠️ (Passwort) |
+| Feature | IMAP | OAuth |
+|---------|------|-------|
+| Empfangen | ✅ | ✅ |
+| Versenden | ✅ (SMTP) | ✅ |
+| Ordner | ✅ | ✅ |
+| UID-Tracking | ✅ | ✅ |
+| Token-Refresh | ❌ | ✅ |
+| Server-Löschen | ❌ | ❌ |
+| Sicherheit | ⚠️ (App-Passwort) | ✅✅ |
 
 ---
 
@@ -244,7 +233,6 @@ password = CredentialManager.decrypt_imap_password(encrypted, master_key)
 src/
 ├── 02_models.py               # MailAccount Model mit auth_type
 ├── 06_mail_fetcher.py         # IMAP Fetcher + Factory
-├── 07_pop3_fetcher.py         # POP3 Fetcher
 ├── 08_encryption.py           # CredentialManager
 ├── 10_google_oauth.py         # OAuth Manager + GoogleMailFetcher
 └── 14_background_jobs.py      # Cron Jobs (nutzt Factory)

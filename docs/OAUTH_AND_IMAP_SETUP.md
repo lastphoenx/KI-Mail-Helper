@@ -1,10 +1,10 @@
 # Mail Helper - Multi-Auth Setup Guide
 
-Diese Dokumentation erklärt, wie du **Google OAuth**, **IMAP** und **POP3** in Mail Helper konfigurierst.
+Diese Dokumentation erklärt, wie du **Google OAuth** und **IMAP** in Mail Helper konfigurierst.
 
 ## 🚀 Überblick
 
-Mail Helper unterstützt **drei Authentifizierungsmethoden** für E-Mail-Konten:
+Mail Helper unterstützt **zwei Authentifizierungsmethoden** für E-Mail-Konten:
 
 1. **OAuth 2.0** - Sicher, ohne Passwort-Speicherung (empfohlen für Gmail/Outlook)
    - ✅ Automatische Token-Erneuerung
@@ -15,11 +15,6 @@ Mail Helper unterstützt **drei Authentifizierungsmethoden** für E-Mail-Konten:
    - ✅ Universell unterstützt
    - ✅ Bidirektional (Empfangen + Versenden)
    - ✅ Ordner-Verwaltung
-   
-3. **POP3** - Einfacher Empfang (Experimental)
-   - ⚠️ Nur Empfang, kein Versand
-   - ⚠️ Löscht Mails auf Server (optional)
-   - ⚠️ Keine Ordner-Unterstützung
 
 **Alle Methoden** speichern Credentials **verschlüsselt** mit AES-256-GCM.
 
@@ -230,51 +225,6 @@ Dies testet:
 - ✅ Google OAuth Manager
 - ✅ Encryption/Decryption
 - ✅ Database-Struktur
-
----
-
-## 🆕 POP3 Setup (Experimental)
-
-### Warnung
-
-⚠️ **POP3 hat signifikante Einschränkungen:**
-- Löscht Mails standardmäßig nach Abruf vom Server
-- Kein Versand (nur Empfang)
-- Keine Ordner-Verwaltung
-- Keine UID-basierte Deduplication
-
-**Empfehlung:** Nutze IMAP, wenn möglich!
-
-### POP3-Konto hinzufügen
-
-1. Gehe zu **Einstellungen** → **"Neuen Account hinzufügen"**
-2. Wähle **POP3**
-3. Gib ein:
-   - **POP3-Server:** (z.B. `pop.gmx.net`)
-   - **Port:** `995` (SSL) oder `110` (unverschlüsselt)
-   - **Benutzername:** Deine E-Mail-Adresse
-   - **Passwort:** Dein E-Mail-Passwort
-4. **SSL aktivieren:** Ja (empfohlen)
-5. **Mails nach Abruf löschen:** Nein (empfohlen für Tests!)
-
-### Provider-Beispiele
-
-```yaml
-# GMX
-pop3_server: pop.gmx.net
-pop3_port: 995
-ssl: true
-
-# Gmail (mit App-Passwort)
-pop3_server: pop.gmail.com
-pop3_port: 995
-ssl: true
-
-# Outlook
-pop3_server: outlook.office365.com
-pop3_port: 995
-ssl: true
-```
 
 ---
 
