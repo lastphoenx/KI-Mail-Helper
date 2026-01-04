@@ -240,6 +240,9 @@ class User(Base):
     fetch_max_total = Column(Integer, default=0)  # 0 = unbegrenzt
     fetch_use_delta_sync = Column(Boolean, default=True)  # Nur neue Mails holen
 
+    # Phase INV: Invite & Diagnostics Access
+    imap_diagnostics_enabled = Column(Boolean, default=False)  # IMAP-Diagnostics Zugriff
+
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
@@ -1007,6 +1010,24 @@ def init_db(db_path="emails.db"):
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     return engine, Session
+
+
+class InvitedEmail(Base):
+    """
+    Phase INV: Email-Whitelist für Registration
+    Nur eingetragene Email-Adressen dürfen sich registrieren (nach dem ersten User)
+    """
+    __tablename__ = "invited_emails"
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    invited_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    invited_by = Column(String(255), nullable=True)  # CLI-Username oder "admin"
+    used = Column(Boolean, default=False)  # Wurde die Einladung bereits genutzt?
+    used_at = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return f"<InvitedEmail {self.email} (used={self.used})>"
 
 
 if __name__ == "__main__":

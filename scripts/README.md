@@ -4,6 +4,22 @@ Utility scripts for maintenance, debugging, testing, and documentation.
 
 ## 🔧 Maintenance & Operations
 
+### `manage_users.py`
+User management for invite-whitelist and IMAP-diagnostics access (Phase INV).
+```bash
+# Whitelist Management
+python3 scripts/manage_users.py add-whitelist user@example.com
+python3 scripts/manage_users.py remove-whitelist user@example.com
+python3 scripts/manage_users.py list-whitelist
+
+# IMAP-Diagnostics Access
+python3 scripts/manage_users.py enable-diagnostics admin@example.com
+python3 scripts/manage_users.py disable-diagnostics admin@example.com
+python3 scripts/manage_users.py list-diagnostics
+```
+**Use cases:** Invite new users after first registration, grant/revoke IMAP-diagnostics access.  
+**Note:** First user can register freely, all subsequent users need whitelist entry.
+
 ### `backup_database.sh`
 Automated database backups with WAL-checkpoint and rotation.
 ```bash

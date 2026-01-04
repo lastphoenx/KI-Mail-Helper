@@ -552,6 +552,20 @@ def register():
                     400,
                 )
 
+            # Phase INV: Whitelist-Check (außer für ersten User)
+            user_count = db.query(models.User).count()
+            if user_count > 0:  # Nicht der erste User
+                invite = db.query(models.InvitedEmail).filter_by(email=email, used=False).first()
+                if not invite:
+                    return (
+                        render_template(
+                            "register.html",
+                            error="Registration ist nur mit Einladung möglich. Kontaktiere den Administrator.",
+                            username=username,
+                        ),
+                        403,
+                    )
+
             # Phase 8c: Security Hardening - OWASP Password Policy
             is_valid, error_msg = password_validator.PasswordValidator.validate(
                 password
@@ -591,6 +605,12 @@ def register():
 
             db.add(user)
             db.commit()
+
+            # Phase INV: Markiere Invite als verwendet
+            if user_count > 0:
+                invite.used = True
+                invite.used_at = datetime.now(UTC)
+                db.commit()
 
             # Phase 8: DEK/KEK Pattern - DEK erstellen und in Session speichern
             salt, encrypted_dek, dek = auth.MasterKeyManager.setup_dek_for_user(
@@ -5170,6 +5190,11 @@ def imap_diagnostics():
         if not user:
             return redirect(url_for("login"))
 
+        # Phase INV: Zugriffskontrolle - nur für autorisierte User
+        if not user.imap_diagnostics_enabled:
+            flash("Zugriff verweigert. IMAP-Diagnostics ist für deinen Account nicht aktiviert.", "error")
+            return redirect(url_for("dashboard"))
+
         # Lade Mail-Accounts mit entschlüsselten Usernames
         mail_accounts = (
             db.query(models.MailAccount)
@@ -5728,8 +5753,23 @@ def get_account_mail_count(account_id):
     Phase 13C Part 4: Quick Count für intelligentes Fetching
     - Zeigt User wie viele Mails remote vorhanden sind
     - User kann dann entscheiden: Alle holen oder in Portionen?
+    Phase 13C Part 6+: Auch SINCE-Date Count für exakte Schätzung
     """
     db = get_db_session()
+    
+    # Optional: since_date für SINCE count (Format: YYYY-MM-DD)
+    since_date_str = request.args.get('since_date')
+    since_date = None
+    if since_date_str:
+        try:
+            from datetime import datetime
+            since_date = datetime.strptime(since_date_str, '%Y-%m-%d')
+        except ValueError:
+            logger.warning(f"Ungültiges since_date Format: {since_date_str}")
+            since_date = None
+    
+    # Optional: unseen_only für kombinierte Filter
+    unseen_only = request.args.get('unseen_only', '').lower() == 'true'
 
     try:
         user = get_current_user_model(db)
@@ -5793,9 +5833,30 @@ def get_account_mail_count(account_id):
                     messages_count = status_dict.get(b'MESSAGES', 0)
                     unseen_count = status_dict.get(b'UNSEEN', 0)
                     
+                    # Phase 13C Part 6+: SINCE count wenn since_date gegeben (kombiniert mit unseen_only)
+                    since_count = None
+                    if since_date:
+                        try:
+                            # SELECT folder für SEARCH (readonly)
+                            fetcher.connection.select_folder(folder_name, readonly=True)
+                            # IMAP SEARCH SINCE format: DD-Mon-YYYY
+                            date_str = since_date.strftime("%d-%b-%Y")
+                            
+                            # Build search criteria: SINCE [+ UNSEEN]
+                            search_criteria = ['SINCE', date_str]
+                            if unseen_only:
+                                search_criteria.append('UNSEEN')
+                            
+                            since_messages = fetcher.connection.search(search_criteria)
+                            since_count = len(since_messages) if since_messages else 0
+                        except Exception as search_err:
+                            logger.debug(f"SINCE search failed für {folder_display}: {search_err}")
+                            since_count = None
+                    
                     folder_counts[folder_display] = {
                         "total": messages_count,
-                        "unseen": unseen_count
+                        "unseen": unseen_count,
+                        "since": since_count
                     }
                     total_remote += messages_count
                     total_unseen += unseen_count

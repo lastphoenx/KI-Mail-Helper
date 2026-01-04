@@ -367,6 +367,9 @@ python3 -m src.00_main --serve --https
 
 ## 📚 Documentation
 
+**For users:**
+- **[📖 BENUTZERHANDBUCH.md](./docs/BENUTZERHANDBUCH.md)** – Vollständige Bedienungsanleitung (German User Manual)
+
 **Before you deploy to production, read:**
 - **[SECURITY.md](./docs/SECURITY.md)** – Threat Model, Security Features, Known Limitations
 - **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** – Production Setup (Gunicorn, Systemd, Fail2Ban, Backups)

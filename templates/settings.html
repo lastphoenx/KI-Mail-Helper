@@ -1170,6 +1170,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     console.log('✅ Filter geladen für Account', filterData.account_name);
                     
+                    // Phase 13C Part 6+: Ordner sofort laden (mit aktuellen Filtern!)
+                    // Kurzer Timeout damit Browser Input-Felder erst updaten kann
+                    setTimeout(() => {
+                        loadFoldersForFilter();
+                    }, 50);
+                    
                 } catch (e) {
                     console.warn('Filter-Laden fehlgeschlagen:', e);
                 }
@@ -1224,10 +1230,15 @@ document.addEventListener('DOMContentLoaded', () => {
     [mailsPerFolderInput, maxTotalInput, unseenCheckbox, sinceDateInput].forEach(el => {
         if (el) {
             el.addEventListener('change', () => {
-                // Trigger Update wenn Ordner geladen sind
-                const firstCheckbox = document.querySelector('input[name="include_folders"]');
-                if (firstCheckbox && window.lastFetchData) {
-                    // Ordner sind geladen - update Preview mit gespeicherten Daten
+                // Phase 13C Part 6+: Bei sinceDate/unseenOnly Änderung: Ordner NEU laden (wegen since_count)
+                const accountSelect = document.getElementById('folderAccountSelect');
+                const accountId = accountSelect ? accountSelect.value : null;
+                
+                if ((el === sinceDateInput || el === unseenCheckbox) && accountId) {
+                    // Ordner neu laden mit neuen Filtern
+                    loadFoldersForFilter();
+                } else if (window.lastFetchData) {
+                    // Nur Vorschau updaten (mails_per_folder, max_total)
                     updateFetchPreview(window.lastFetchData);
                 }
             });
@@ -1250,7 +1261,24 @@ async function loadFoldersForFilter() {
     excludeContainer.innerHTML = '<small class="text-muted">Lade Ordner...</small>';
     
     try {
-        const response = await fetch(`/account/${accountId}/mail-count`);
+        // Phase 13C Part 6+: since_date + unseen_only Parameter übergeben für exakte Schätzung
+        const sinceDateInput = document.getElementById('sinceDate');
+        const sinceDate = sinceDateInput ? sinceDateInput.value : '';
+        const unseenOnly = document.getElementById('unseenOnly')?.checked || false;
+        
+        let url = `/account/${accountId}/mail-count`;
+        const params = [];
+        if (sinceDate) {
+            params.push(`since_date=${encodeURIComponent(sinceDate)}`);
+        }
+        if (unseenOnly) {
+            params.push(`unseen_only=true`);
+        }
+        if (params.length > 0) {
+            url += '?' + params.join('&');
+        }
+        
+        const response = await fetch(url);
         
         // Prüfe HTTP-Status
         if (!response.ok) {
@@ -1262,6 +1290,12 @@ async function loadFoldersForFilter() {
         
         console.log('📊 Received data:', data);
         console.log('📁 Folders:', data.folders);
+        
+        // Debug: Zeige ob since_count vorhanden ist
+        if (data.folders && Object.keys(data.folders).length > 0) {
+            const firstFolder = Object.keys(data.folders)[0];
+            console.log('🔍 Debug first folder:', firstFolder, data.folders[firstFolder]);
+        }
         
         // Prüfe ob Ordner vorhanden sind
         if (!data.folders || Object.keys(data.folders).length === 0) {
@@ -1441,17 +1475,24 @@ function updateFetchPreview(data) {
     Object.entries(folderCounts).forEach(([folderName, folderData]) => {
         const totalCount = (folderData && folderData.total) ? parseInt(folderData.total) : 0;
         const unseenCount = (folderData && folderData.unseen) ? parseInt(folderData.unseen) : 0;
+        const sinceCount = (folderData && folderData.since !== null && folderData.since !== undefined) ? parseInt(folderData.since) : null;
         
         // Prüfe ob dieser Ordner durch Filter kommt
         const isIncluded = (includeFolders.length === 0 || includeFolders.includes(folderName)) && !excludeFolders.includes(folderName);
         
         if (isIncluded) {
             // Wenn UNSEEN-Only, nutze unseen count statt total
-            const baseCount = unseenOnly ? unseenCount : totalCount;
-            let folderEstimate = Math.min(baseCount, mailsPerFolder);
+            let baseCount = unseenOnly ? unseenCount : totalCount;
             
-            // SINCE reduziert die Anzahl (Schätzung: 50%)
-            if (sinceDate) folderEstimate = Math.floor(folderEstimate * 0.5);
+            // Phase 13C Part 6+: Wenn sinceDate gesetzt UND Server hat since_count geliefert → nutze das!
+            if (sinceDate && sinceCount !== null) {
+                baseCount = sinceCount;
+            } else if (sinceDate && sinceCount === null) {
+                // Fallback: 50% Schätzung (Server konnte SINCE nicht ermitteln)
+                baseCount = Math.floor(baseCount * 0.5);
+            }
+            
+            let folderEstimate = Math.min(baseCount, mailsPerFolder);
             
             totalEstimate += folderEstimate;
             includedFolderCount++;

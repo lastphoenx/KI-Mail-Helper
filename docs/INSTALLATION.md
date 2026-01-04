@@ -1,207 +1,222 @@
-﻿# 📦 KI-Mail-Helper - Installation Guide
+# 📦 KI-Mail-Helper – Installationsanleitung
 
-Komplette Installationsanleitung für frische Umgebungen (Linux/WSL2).
-
----
-
-## 🔧 Voraussetzungen
-
-- **Python 3.11+** (empfohlen: 3.13)
-- **SQLite3** (meist vorinstalliert)
-- **Git**
-- **Ollama** (für lokale KI, optional wenn Cloud-KI verwendet wird)
+**Komplette Schritt-für-Schritt Anleitung für Linux/WSL2**
 
 ---
 
-## 📥 Schritt-für-Schritt Installation
+## Inhaltsverzeichnis
 
-### 1. System-Dependencies
+1. [Voraussetzungen](#1-voraussetzungen)
+2. [Repository klonen](#2-repository-klonen)
+3. [Python-Umgebung einrichten](#3-python-umgebung-einrichten)
+4. [Ollama installieren (lokale KI)](#4-ollama-installieren-lokale-ki)
+5. [Konfiguration (.env)](#5-konfiguration-env)
+6. [Datenbank initialisieren](#6-datenbank-initialisieren)
+7. [App starten](#7-app-starten)
+8. [Erste Schritte nach dem Start](#8-erste-schritte-nach-dem-start)
+9. [User-Verwaltung](#9-user-verwaltung)
+10. [Installation verifizieren](#10-installation-verifizieren)
+11. [Production Deployment](#11-production-deployment)
+12. [Troubleshooting](#12-troubleshooting)
+
+---
+
+## 1. Voraussetzungen
+
+### System-Anforderungen
+
+| Komponente | Minimum | Empfohlen |
+|------------|---------|-----------|
+| **OS** | Debian 11 / Ubuntu 22.04 | Debian 12 / Ubuntu 24.04 |
+| **Python** | 3.11 | 3.13 |
+| **RAM** | 4 GB | 8 GB (für lokale KI) |
+| **Disk** | 2 GB | 10 GB (für Ollama-Modelle) |
+
+### System-Pakete installieren
 
 ```bash
 # Ubuntu/Debian
 sudo apt update
-sudo apt install -y python3 python3-pip python3-venv git sqlite3
+sudo apt install -y python3 python3-pip python3-venv git sqlite3 curl
+```
 
-# Optional: Ollama für lokale KI
+---
+
+## 2. Repository klonen
+
+```bash
+# In gewünschtes Verzeichnis wechseln
+cd /home/$USER/projects  # oder /opt für Production
+
+# Repository klonen
+git clone https://github.com/lastphoenx/KI-Mail-Helper.git
+cd KI-Mail-Helper
+```
+
+---
+
+## 3. Python-Umgebung einrichten
+
+### Virtual Environment erstellen
+
+```bash
+# venv erstellen
+python3 -m venv venv
+
+# venv aktivieren
+source venv/bin/activate
+
+# Prüfen (sollte >= 3.11 sein)
+python --version
+```
+
+### Dependencies installieren
+
+```bash
+# Pip aktualisieren
+pip install --upgrade pip
+
+# Alle Abhängigkeiten installieren
+pip install -r requirements.txt
+```
+
+> 💡 **Tipp:** Bei Problemen mit einzelnen Paketen: `pip install -r requirements.txt --ignore-installed`
+
+---
+
+## 4. Ollama installieren (lokale KI)
+
+> ⚠️ **Optional:** Wenn du nur Cloud-KI (OpenAI, Anthropic, Mistral) nutzen willst, überspringe diesen Schritt.
+
+### Ollama installieren
+
+```bash
+# Ollama installieren
 curl -fsSL https://ollama.com/install.sh | sh
+
+# Service starten
 sudo systemctl start ollama
 sudo systemctl enable ollama
+
+# Status prüfen
+systemctl status ollama
 ```
 
-### 2. Repository klonen
+### Modelle herunterladen
 
 ```bash
-git clone <YOUR_REPO_URL> ki-mail-helper
-cd ki-mail-helper
-```
+# PFLICHT: Embedding-Modell (für semantische Suche)
+ollama pull all-minilm:22m      # 46 MB, schnell
 
-### 3. Virtual Environment erstellen
+# EMPFOHLEN: Analyse-Modell
+ollama pull llama3.2:1b         # 1.3 GB, schnelle Analyse
+ollama pull llama3.2:3b         # 2.0 GB, tiefere Analyse (optional)
 
-```bash
-python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-
-# Prüfe Python-Version
-python --version  # Sollte >= 3.11 sein
-```
-
-### 4. Python Dependencies installieren
-
-```bash
-# Standard-Installation
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# WICHTIG: Flask-Session für Zero-Knowledge Server-Side Sessions
-pip install Flask-Session
-
-# Optional: Machine Learning Features (Newsletter-Klassifizierung)
-pip install -r requirements-ml.txt
-```
-
-### 5. Environment-Variablen konfigurieren
-
-```bash
-# Kopiere Template
-cp .env.example .env
-
-# Editiere Datei
-nano .env  # oder vim, code, etc.
-```
-
-**Wichtigste Einstellungen:**
-
-```dotenv
-# === PFLICHT: Security Keys für Zero-Knowledge ===
-# Generiere mit: python -c "import secrets; print(secrets.token_hex(32))"
-FLASK_SECRET_KEY=your-generated-secret-key-here
-
-# === HTTPS Settings ===
-FORCE_HTTPS=true                     # Flask-Talisman aktivieren
-SESSION_COOKIE_SECURE=false          # false für Development, true für Production
-BEHIND_REVERSE_PROXY=false           # true wenn hinter Nginx/Caddy
-
-# === KI-Backend ===
-AI_BACKEND=ollama                    # ollama, openai, anthropic, mistral
-OLLAMA_MODEL=llama3.2                # Wenn ollama
-OLLAMA_BASE_URL=http://localhost:11434
-USE_CLOUD_AI=false
-
-# === Optional: Cloud-KI ===
-# OPENAI_API_KEY=sk-...
-# ANTHROPIC_API_KEY=...
-# MISTRAL_API_KEY=...
-
-# === Datenbank ===
-DATABASE_PATH=emails.db
-
-# === Web-Server ===
-WEB_HOST=0.0.0.0
-WEB_PORT=5000
-WEB_DEBUG=true
-```
-
-**Security Keys generieren:**
-
-```bash
-# FLASK_SECRET_KEY
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
-### 6. Ollama Modell laden (wenn lokal)
-
-```bash
-# Für Base-Pass (schnelle Analyse)
-ollama pull llama3.2
-
-# Optional: Kleineres Modell für Optimize-Pass
-ollama pull all-minilm:22m
-
-# Prüfe verfügbare Modelle
+# Prüfen
 ollama list
 ```
 
-### 7. Datenbank initialisieren
+**Modell-Übersicht:**
 
-**Zero-Knowledge Setup:**
+| Modell | Größe | Zweck | VRAM |
+|--------|-------|-------|------|
+| `all-minilm:22m` | 46 MB | Embeddings (semantische Suche) | < 1 GB |
+| `llama3.2:1b` | 1.3 GB | Base-Analyse (schnell) | 2-3 GB |
+| `llama3.2:3b` | 2.0 GB | Optimize-Analyse (tief) | 4-5 GB |
+| `mxbai-embed-large` | 670 MB | Alternative Embeddings | 1-2 GB |
+
+> 💡 **CPU-only:** Alle Modelle laufen auch ohne GPU, nur langsamer.
+
+---
+
+## 5. Konfiguration (.env)
+
+### .env Datei erstellen
+
 ```bash
-# Flask-Session Directory erstellen (für Zero-Knowledge)
+# Template kopieren
+cp .env.example .env
+
+# Bearbeiten
+nano .env
+```
+
+### Minimale Konfiguration
+
+```dotenv
+# ═══════════════════════════════════════════════════════════════
+# PFLICHT
+# ═══════════════════════════════════════════════════════════════
+FLASK_SECRET_KEY=                    # Generiere mit: python3 -c "import secrets; print(secrets.token_hex(32))"
+
+# ═══════════════════════════════════════════════════════════════
+# KI-BACKEND (wähle eins)
+# ═══════════════════════════════════════════════════════════════
+AI_BACKEND=ollama                    # ollama | openai | anthropic | mistral
+OLLAMA_BASE_URL=http://localhost:11434
+
+# Cloud-KI API Keys (nur wenn AI_BACKEND entsprechend gesetzt)
+# OPENAI_API_KEY=sk-...
+# ANTHROPIC_API_KEY=sk-ant-...
+# MISTRAL_API_KEY=...
+
+# ═══════════════════════════════════════════════════════════════
+# WEB-SERVER
+# ═══════════════════════════════════════════════════════════════
+WEB_HOST=127.0.0.1                   # 0.0.0.0 für LAN-Zugriff
+WEB_PORT=5000
+FLASK_DEBUG=false                    # true nur für Development
+
+# ═══════════════════════════════════════════════════════════════
+# HTTPS & SECURITY
+# ═══════════════════════════════════════════════════════════════
+FORCE_HTTPS=false                    # true für HTTPS-Redirect
+SESSION_COOKIE_SECURE=false          # true wenn HTTPS
+BEHIND_REVERSE_PROXY=false           # true hinter Nginx/Caddy
+
+# ═══════════════════════════════════════════════════════════════
+# DATENBANK
+# ═══════════════════════════════════════════════════════════════
+DATABASE_PATH=emails.db
+```
+
+### Secret Key generieren
+
+```bash
+# Generiere sicheren Key
+python3 -c "import secrets; print(secrets.token_hex(32))"
+
+# Kopiere Ausgabe in .env als FLASK_SECRET_KEY
+```
+
+> ⚠️ **Wichtig:** Die `.env` enthält **KEINE** Mail-Passwörter! Diese werden über das Web-UI eingegeben und **verschlüsselt** in der DB gespeichert (Zero-Knowledge-Architektur).
+
+---
+
+## 6. Datenbank initialisieren
+
+### Flask-Session Verzeichnis
+
+```bash
+# Für Server-Side Sessions (Zero-Knowledge)
 mkdir -p .flask_sessions
 chmod 700 .flask_sessions
 ```
 
-**Option A: Automatisch beim ersten Start** (empfohlen)
+### Datenbank + Migrationen
 
 ```bash
-# Web-App startet und erstellt DB automatisch
-python -m src.00_main --serve
-```
+# Datenbank initialisieren
+python3 -m src.00_main --init-db
 
-**Option B: Manuell via CLI**
-
-```bash
-python -m src.00_main --init-db
-```
-
-**Option C: Via Python-Script**
-
-```bash
-python -c "import importlib; models = importlib.import_module('.02_models', 'src'); models.init_db()"
-```
-
-### 8. Database-Migrationen anwenden
-
-```bash
-# Alembic Migrationen auf neuesten Stand bringen
+# Migrationen anwenden
 alembic upgrade head
 ```
 
-**Output sollte sein:**
-
-```
-INFO  [alembic.runtime.migration] Running upgrade -> d1be18ce087b, initial schema
-INFO  [alembic.runtime.migration] Running upgrade d1be18ce087b -> b899fc331a19, add two-pass optimization
-INFO  [alembic.runtime.migration] Running upgrade b899fc331a19 -> 3a1ac5983a2d, add model tracking
-INFO  [alembic.runtime.migration] Running upgrade 3a1ac5983a2d -> 86ca02f07586, add auth_type and pop3 support
-INFO  [alembic.runtime.migration] Running upgrade 86ca02f07586 -> f1a2b3c4d5e6, add imap_flags tracking
-```
-
-### 9. Web-App starten
+### Verifizieren
 
 ```bash
-python -m src.00_main --serve
-
-# Oder direkt:
-python src/01_web_app.py
-```
-
-**Öffne im Browser:**
-
-```
-http://localhost:5000
-```
-
-### 10. Ersten User registrieren
-
-1. Gehe zu: http://localhost:5000/register
-2. Erstelle Account (Username, Email, Passwort)
-3. Login mit Credentials
-4. Master-Key wird automatisch erstellt & verschlüsselt
-
----
-
-## ✅ Installation verifizieren
-
-### Check 1: Datenbank existiert
-
-```bash
-ls -lh emails.db
-# Sollte existieren (~100KB wenn leer)
-```
-
-### Check 2: Tabellen erstellt
-
-```bash
+# Tabellen prüfen
 sqlite3 emails.db "SELECT name FROM sqlite_master WHERE type='table';"
 ```
 
@@ -212,311 +227,264 @@ users
 mail_accounts
 raw_emails
 processed_emails
+email_tags
+email_tag_assignments
+auto_rules
+invited_emails
 service_tokens
 recovery_codes
 alembic_version
 ```
 
-### Check 3: Alembic Version
+---
+
+## 7. App starten
+
+### Development (HTTP)
 
 ```bash
+# venv aktivieren
+source venv/bin/activate
+
+# Server starten
+python3 -m src.00_main --serve
+```
+
+Öffne: **http://localhost:5000**
+
+### Development mit HTTPS
+
+```bash
+python3 -m src.00_main --serve --https
+```
+
+Öffne: **https://localhost:5001** (Browser-Warnung akzeptieren)
+
+---
+
+## 8. Erste Schritte nach dem Start
+
+### 8.1 Account registrieren
+
+1. Öffne **http://localhost:5000/register**
+2. Erstelle Account:
+   - **Benutzername:** 3-80 Zeichen
+   - **E-Mail:** Deine Email
+   - **Passwort:** Mindestens 24 Zeichen
+
+> ⚠️ **Wichtig:** Das Passwort ist dein **Master-Passwort**. Bei Verlust sind deine Daten **unwiederbringlich verloren**!
+
+> **ℹ️ Hinweis:** Der **erste User kann sich frei registrieren**. Alle weiteren User benötigen einen Whitelist-Eintrag (siehe Abschnitt "User-Verwaltung").
+
+### 8.2 Zwei-Faktor-Authentifizierung
+
+Nach der Registrierung: 2FA-Setup (**Pflicht!**):
+
+1. Öffne Authenticator-App (Google Authenticator, Authy)
+2. Scanne QR-Code
+3. Gib 6-stelligen Code ein
+4. **Speichere Recovery-Codes sicher ab!**
+
+### 8.3 Mail-Account hinzufügen
+
+1. **⚙️ Einstellungen** → **"Neuen Account hinzufügen"**
+2. Fülle Formular aus
+
+**Beispiel GMX:**
+
+| Feld | Wert |
+|------|------|
+| Name | GMX Postfach |
+| IMAP-Server | imap.gmx.net |
+| IMAP-Port | 993 |
+| Verschlüsselung | SSL |
+| Benutzername | deine@email.de |
+| Passwort | Email-Passwort |
+| SMTP-Server | smtp.gmx.net |
+| SMTP-Port | 587 |
+
+3. **"Verbindung testen"** → **"Speichern"**
+
+### 8.4 KI-Modelle konfigurieren
+
+**⚙️ Einstellungen** → **KI-Einstellungen**
+
+| Einstellung | Empfehlung | Zweck |
+|-------------|------------|-------|
+| **Embedding Model** | all-minilm:22m | Semantische Suche |
+| **Base Model** | llama3.2:1b | Schnelle Analyse |
+| **Optimize Model** | llama3.2:3b | Tiefe Analyse |
+
+### 8.5 Emails abrufen
+
+1. **⚙️ Einstellungen** → **"Jetzt abrufen"**
+2. Warte auf Fortschrittsbalken
+3. **📊 Dashboard** → Emails erscheinen in Matrix!
+
+---
+
+## 9. User-Verwaltung
+
+### Invite-Whitelist
+
+Nach der ersten Registration ist die Registrierung **geschlossen**. Weitere User nur per CLI:
+
+```bash
+# Email zur Whitelist hinzufügen
+python3 scripts/manage_users.py add-whitelist max@example.com
+
+# Whitelist anzeigen
+python3 scripts/manage_users.py list-whitelist
+
+# Email entfernen
+python3 scripts/manage_users.py remove-whitelist max@example.com
+```
+
+User kann sich nun mit der **exakten Email** registrieren.
+
+### IMAP-Diagnostics Zugriff
+
+Die `/imap-diagnostics` Route ist standardmäßig **deaktiviert**:
+
+```bash
+# Zugriff aktivieren
+python3 scripts/manage_users.py enable-diagnostics admin@example.com
+
+# Liste anzeigen
+python3 scripts/manage_users.py list-diagnostics
+
+# Zugriff widerrufen
+python3 scripts/manage_users.py disable-diagnostics admin@example.com
+```
+
+---
+
+## 10. Installation verifizieren
+
+```bash
+# 1. Datenbank existiert?
+ls -lh emails.db
+
+# 2. Tabellen korrekt?
+sqlite3 emails.db "SELECT COUNT(*) FROM sqlite_master WHERE type='table';"
+# → Sollte >= 11 sein
+
+# 3. Alembic aktuell?
 sqlite3 emails.db "SELECT version_num FROM alembic_version;"
-```
 
-**Sollte aktuellste Migration zeigen** (z.B. `86ca02f07586`)
-
-### Check 4: Web-App läuft
-
-```bash
-curl http://localhost:5000
-# Sollte HTML zurückgeben (keine Fehler)
-```
-
-### Check 5: Ollama läuft (wenn lokal)
-
-```bash
+# 4. Ollama läuft?
 curl http://localhost:11434/api/tags
-# Sollte JSON mit geladenen Modellen zurückgeben
+
+# 5. Web-App erreichbar?
+curl -s http://localhost:5000 | head -5
 ```
 
 ---
 
-## 🔐 Encryption Key Setup (DEK/KEK Pattern - Phase 8b)
+## 11. Production Deployment
 
-### Erste User-Registrierung
-
-Beim ersten User-Account wird automatisch:
-
-1. **User Salt** generiert (32 Bytes, base64-encoded = 44 chars)
-2. **KEK (Key Encryption Key)** abgeleitet (PBKDF2-HMAC-SHA256, 600.000 Iterations)
-3. **DEK (Data Encryption Key)** generiert (zufällige 32 Bytes)
-4. **Encrypted DEK** (AES-256-GCM(DEK, KEK)) in DB gespeichert
-5. **DEK in Session** (Server-RAM, nicht in DB!) für aktuelle Session
-
-**DEK/KEK Architektur:**
-- **DEK** verschlüsselt alle E-Mails (einmal generiert, bleibt konstant)
-- **KEK** aus Passwort abgeleitet (ändert sich bei Passwort-Wechsel)
-- **Vorteil:** Passwort ändern = nur DEK re-encrypten (nicht alle E-Mails!)
-
-**Wichtig:** Das User-Passwort wird **NIEMALS** im Klartext gespeichert!
-
-### Encryption Key Überprüfung
+### Gunicorn
 
 ```bash
-sqlite3 emails.db "SELECT id, username, LENGTH(salt), LENGTH(encrypted_dek) FROM users;"
+gunicorn -c config/gunicorn.conf.py "src.01_web_app:create_app()"
 ```
 
-**Output sollte sein:**
-
-```
-1|thomas|44|<number>
-```
-
-### Migration von alten Usern (encrypted_master_key → encrypted_dek)
-
-Falls du einen User aus Phase 8a hast:
+### Systemd Service
 
 ```bash
-python scripts/migrate_to_dek_kek.py
-# Gibt Passwort ein → encrypted_master_key wird als DEK verwendet
-```
+# Service kopieren
+sudo cp config/mail-helper.service /etc/systemd/system/
 
----
+# Pfade anpassen
+sudo nano /etc/systemd/system/mail-helper.service
 
-## 📧 Mail-Account hinzufügen
-
-### Via Web-UI (empfohlen)
-
-1. Login: http://localhost:5000
-2. Gehe zu **Einstellungen** (⚙️)
-3. **"Neuen Account hinzufügen"**
-4. Wähle Methode:
-   - **IMAP/SMTP** (GMX, Gmail mit App-Passwort, etc.)
-   - **Google OAuth** (Gmail ohne Passwort)
-   - **POP3** (experimental)
-
-### IMAP Beispiel (GMX)
-
-```
-Name: GMX Postfach
-IMAP-Server: imap.gmx.net
-Port: 993
-Verschlüsselung: SSL
-Username: deine@email.de
-Passwort: <dein-passwort>
-```
-
-### Google OAuth Setup
-
-Siehe: [OAUTH_AND_IMAP_SETUP.md](OAUTH_AND_IMAP_SETUP.md)
-
----
-
-## 🤖 Background Processing (Cron)
-
-### Systemd Timer Setup (produktiv)
-
-```bash
-# Kopiere Service-Dateien
-sudo cp config/mail-helper-processor.service /etc/systemd/system/
-sudo cp config/mail-helper-processor.timer /etc/systemd/system/
-
-# Editiere Pfade in Service-Datei
-sudo nano /etc/systemd/system/mail-helper-processor.service
-# WorkingDirectory=/home/USER/ki-mail-helper
-# ExecStart=/home/USER/ki-mail-helper/venv/bin/python ...
-
-# Aktiviere Timer
+# Aktivieren
 sudo systemctl daemon-reload
-sudo systemctl enable mail-helper-processor.timer
-sudo systemctl start mail-helper-processor.timer
-
-# Status prüfen
-sudo systemctl status mail-helper-processor.timer
-sudo journalctl -u mail-helper-processor.service -f
+sudo systemctl enable mail-helper
+sudo systemctl start mail-helper
 ```
 
-### Manueller Background Worker
+### Reverse Proxy
 
 ```bash
-# Worker läuft kontinuierlich
-python -m src.00_main --worker
-
-# Oder einmalig
-python -m src.00_main --process-once
-```
-
----
-
-## 🧪 Tests
-
-```bash
-# Alle Tests
-pytest tests/
-
-# Spezifische Tests
-pytest tests/test_ai_client.py -v
-pytest tests/test_sanitizer.py -v
-pytest tests/test_mail_fetcher.py -v
-
-# Mit Coverage
-pytest --cov=src tests/
-```
-
----
-
-## 🐛 Troubleshooting
-
-### Problem: "No module named 'src'"
-
-```bash
-# Stelle sicher, dass du im Projekt-Root bist
-cd /path/to/ki-mail-helper
-
-# Python-Pfad prüfen
-python -c "import sys; print(sys.path)"
-```
-
-### Problem: "emails.db locked"
-
-```bash
-# WAL-Modus Dateien löschen (nur wenn App NICHT läuft!)
-rm emails.db-wal emails.db-shm
-
-# Oder DB-Check
-python scripts/check_db.py
-```
-
-### Problem: Ollama nicht erreichbar
-
-```bash
-# Status prüfen
-systemctl status ollama
-
-# Neu starten
-sudo systemctl restart ollama
-
-# Logs
-journalctl -u ollama -f
-```
-
-### Problem: Master-Key Fehler
-
-```bash
-# Prüfe Encryption Setup
-python -c "
-import importlib
-enc = importlib.import_module('.08_encryption', 'src')
-print('✅ Encryption Module OK')
-"
-```
-
-### Problem: Migration Fehler
-
-```bash
-# Zeige aktuelle Revision
-alembic current
-
-# Zeige Historie
-alembic history
-
-# Downgrade falls nötig
-alembic downgrade -1
-
-# Upgrade
-alembic upgrade head
-```
-
----
-
-## � Production Deployment
-
-### HTTPS mit Reverse Proxy (Nginx/Caddy)
-
-**1. .env für Production anpassen:**
-```bash
+# .env anpassen
 BEHIND_REVERSE_PROXY=true
 SESSION_COOKIE_SECURE=true
 FORCE_HTTPS=true
 ```
 
-**2. Flask mit HTTPS starten:**
+Siehe **[DEPLOYMENT.md](./DEPLOYMENT.md)** für Nginx/Caddy-Konfiguration.
+
+---
+
+## 12. Troubleshooting
+
+### "No module named 'src'"
+
 ```bash
-python3 -m src.00_main --serve --https
-# Dual-Port: HTTP Redirector (5000) + HTTPS Server (5001)
+# Richtiges Verzeichnis?
+pwd
+
+# venv aktiv?
+which python  # Sollte venv/bin/python zeigen
+source venv/bin/activate
 ```
 
-**3. Nginx Konfiguration:**
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name your-domain.com;
-    
-    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
-    
-    location / {
-        proxy_pass https://127.0.0.1:5001;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header Host $host;
-    }
-}
+### "FLASK_SECRET_KEY not set"
 
-server {
-    listen 80;
-    server_name your-domain.com;
-    return 301 https://$server_name$request_uri;
-}
-```
-
-**4. Caddy Konfiguration (einfacher):**
-```caddy
-your-domain.com {
-    reverse_proxy https://127.0.0.1:5001 {
-        transport http {
-            tls_insecure_skip_verify  # Für Self-signed Cert
-        }
-        header_up X-Forwarded-Proto {scheme}
-        header_up X-Forwarded-Host {host}
-    }
-}
-```
-
-**5. Let's Encrypt SSL Zertifikat:**
 ```bash
-# Nginx
-sudo certbot --nginx -d your-domain.com
+# .env existiert?
+cat .env | grep FLASK_SECRET_KEY
 
-# Caddy (automatisch!)
-sudo systemctl restart caddy
+# Key generieren
+python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
+### "Ollama connection refused"
+
+```bash
+# Ollama läuft?
+systemctl status ollama
+
+# Starten
+sudo systemctl start ollama
+```
+
+### "no such column" (DB-Fehler)
+
+```bash
+# Migrationen ausführen
+alembic upgrade head
+
+# Notfall: DB neu (löscht Daten!)
+rm emails.db emails.db-wal emails.db-shm
+python3 -m src.00_main --init-db
+alembic upgrade head
+```
+
+### "SQLITE_BUSY"
+
+```bash
+# WAL-Checkpoint
+sqlite3 emails.db "PRAGMA wal_checkpoint(TRUNCATE);"
+
+# WAL prüfen
+python3 scripts/verify_wal_mode.py
+```
+
+### "Login funktioniert nicht"
+
+```bash
+# Session-Dateien löschen
+rm -rf .flask_sessions/*
+```
+
+### "2FA-Code nicht akzeptiert"
+
+1. **Zeit prüfen:** Handy-Uhr korrekt?
+2. **Recovery-Code:** Einen der 10 Backup-Codes nutzen
+3. **Neuer Account:** Falls alles fehlschlägt
+
 ---
 
-## �📚 Weiterführende Dokumentation
-
-- [README.md](../README.md) - Projekt-Übersicht & Quick Start
-- [OAUTH_AND_IMAP_SETUP.md](OAUTH_AND_IMAP_SETUP.md) - OAuth & IMAP Konfiguration
-- [MAINTENANCE.md](MAINTENANCE.md) - Wartung & Helper-Scripts
-- [TESTING_GUIDE.md](TESTING_GUIDE.md) - Test-Anleitung
-- [CRON_SETUP.md](CRON_SETUP.md) - Systemd Timer Setup
-- [MULTI_AUTH_ARCHITECTURE.md](MULTI_AUTH_ARCHITECTURE.md) - Multi-Auth Architektur
-
----
-
-## 🚀 Nächste Schritte
-
-1. ✅ Installation abgeschlossen
-2. ✅ User registriert
-3. ✅ Mail-Account hinzugefügt
-4. → **Erste Mails abrufen:** Klick "Abrufen" in Einstellungen
-5. → **Dashboard nutzen:** 3×3-Matrix, Ampel-View, Details
-6. → **Cron einrichten:** Automatischer Abruf alle 15 Min
-
----
-
-**Viel Erfolg mit KI-Mail-Helper! 🎉**
-
-Bei Fragen: Siehe [MAINTENANCE.md](MAINTENANCE.md) oder öffne ein Issue im GitHub Repository.
+*Stand: Januar 2026 | KI-Mail-Helper v1.0.0*
