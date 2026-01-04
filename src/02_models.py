@@ -377,7 +377,6 @@ class MailAccount(Base):
     Unterstützt Multi-Auth:
     - auth_type="imap": Klassische IMAP/SMTP Authentifizierung
     - auth_type="oauth": OAuth 2.0 (Gmail, Outlook)
-    - auth_type="pop3": POP3 (zukünftig)
 
     Zero-Knowledge:
     - E-Mail-Adressen und Server werden verschlüsselt gespeichert
@@ -386,7 +385,6 @@ class MailAccount(Base):
     Felder-Mapping:
     - IMAP: encrypted_imap_server, encrypted_imap_username, encrypted_imap_password
     - OAuth: oauth_provider, encrypted_oauth_token, encrypted_oauth_refresh_token
-    - POP3: encrypted_pop3_server, encrypted_pop3_username, encrypted_pop3_password
     """
 
     __tablename__ = "mail_accounts"

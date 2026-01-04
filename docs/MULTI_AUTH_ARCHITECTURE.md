@@ -255,12 +255,6 @@ IMAP_USERNAME=user@gmx.net \
 IMAP_PASSWORD=secret \
 python -m src.06_mail_fetcher
 
-# POP3 Test
-POP3_SERVER=pop.gmx.net \
-POP3_USERNAME=user@gmx.net \
-POP3_PASSWORD=secret \
-python -m src.07_pop3_fetcher
-
 # OAuth Test (benötigt Token)
 python test_google_oauth.py
 ```
