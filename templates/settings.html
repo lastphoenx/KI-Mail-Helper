@@ -1,0 +1,1526 @@
+{% extends "base.html" %}
+
+{% block title %}Einstellungen - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>Einstellungen</h2>
+    
+    <div class="row mt-4 g-4">
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#0f172a,#1e1b4b);color:#f8fafc;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <div>
+                            <p class="text-uppercase small mb-1 opacity-75">KI-Konfiguration</p>
+                            <h4 class="mb-2">Provider & Modell wählen</h4>
+                            <p class="mb-0" style="max-width:520px;">
+                                Bestimme hier, ob lokal (Ollama) oder über OpenAI/Anthropic analysiert werden soll. Cloud-Modelle nutzen automatisch die
+                                stark pseudonymisierte Variante.
+                            </p>
+                        </div>
+                        <span class="badge bg-light text-dark px-3 py-2 align-self-start">Experimentell 🔧</span>
+                    </div>
+                    <form class="row gy-3 mt-3" method="POST" action="/settings/ai">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <div class="col-12">
+                            <div class="alert alert-info small mb-3">
+                                <strong>3-Settings System:</strong> Embedding (Vektoren) → Base (schnell) → Optimize (optional, bessere Kategorisierung)
+                            </div>
+                        </div>
+                        
+                        <!-- EMBEDDING MODEL (NEU!) -->
+                        <div class="col-12">
+                            <h6 class="border-bottom pb-2">🔍 Embedding-Model (Vektorisierung für Semantic Search & Tags)</h6>
+                            <p class="small text-muted mb-3">Nur für Embeddings - nicht für Chat! Ollama, OpenAI, Mistral (Anthropic hat keine Embedding-API)</p>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiProviderSelectEmbedding" class="form-label">Provider</label>
+                            <select class="form-select" id="aiProviderSelectEmbedding" name="ai_provider_embedding" required>
+                                <option value="">-- Wird geladen --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiModelSelectEmbedding" class="form-label">Modell</label>
+                            <select class="form-select" id="aiModelSelectEmbedding" name="ai_model_embedding" required>
+                                <option value="">-- Bitte Provider wählen --</option>
+                            </select>
+                            <small class="text-muted d-block mt-1">z.B. all-minilm:22m, text-embedding-3-small, mistral-embed</small>
+                        </div>
+                        
+                        <!-- BASE MODEL -->
+                        <div class="col-12">
+                            <h6 class="border-bottom pb-2 mt-3">⚡ Base-Model (Schnelle Klassifikation)</h6>
+                            <p class="small text-muted mb-3">Erste Analyse mit schnellem Chat-Modell</p>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiProviderSelectBase" class="form-label">Provider</label>
+                            <select class="form-select" id="aiProviderSelectBase" name="ai_provider_base" required>
+                                <option value="">-- Wird geladen --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiModelSelectBase" class="form-label">Modell</label>
+                            <select class="form-select" id="aiModelSelectBase" name="ai_model_base" required>
+                                <option value="">-- Bitte Provider wählen --</option>
+                            </select>
+                            <small class="text-muted d-block mt-1">z.B. llama3.2:1b, gpt-4o-mini, haiku</small>
+                        </div>
+                        
+                        <!-- OPTIMIZE MODEL -->
+                        <div class="col-12">
+                            <h6 class="border-bottom pb-2 mt-3">🔧 Optimize-Model (Tiefe Analyse für Scores 8-9)</h6>
+                            <p class="small text-muted mb-3">Zweiter Pass mit besserem Chat-Modell bei Bedarf</p>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiProviderSelectOptimize" class="form-label">Provider</label>
+                            <select class="form-select" id="aiProviderSelectOptimize" name="ai_provider_optimize" required>
+                                <option value="">-- Wird geladen --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="aiModelSelectOptimize" class="form-label">Modell</label>
+                            <select class="form-select" id="aiModelSelectOptimize" name="ai_model_optimize" required>
+                                <option value="">-- Bitte Provider wählen --</option>
+                            </select>
+                            <small class="text-muted d-block mt-1">z.B. llama3.2:3b, gpt-4o, sonnet</small>
+                        </div>
+                        
+                        <div class="col-12">
+                            <div id="aiProviderWarning" class="alert alert-warning d-none mb-0"></div>
+                        </div>
+                        <div class="col-12">
+                            <div class="alert alert-warning small mb-3">
+                                <strong>⚠️ Wichtig:</strong> Wenn du das Embedding-Model änderst, müssen ALLE Emails neu verarbeitet werden für konsistente Semantic Search!
+                            </div>
+                        </div>
+                        <div class="col-12 d-flex justify-content-between gap-2">
+                            <button type="button" id="batchReprocessBtn" class="btn btn-outline-warning">
+                                🔄 Alle Emails neu embedden
+                            </button>
+                            <button type="submit" class="btn btn-light text-dark px-4">Speichern</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#0f172a,#1e1b4b);color:#f8fafc;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+                        <div>
+                            <p class="text-uppercase small mb-1 opacity-75">🧠 Machine Learning</p>
+                            <h4 class="mb-2">Training & Feedback-Loop</h4>
+                            <p class="mb-0" style="max-width:520px;">
+                                Deine Korrektionen verbessern das System kontinuierlich. Wenn du ≥5 Emails korrigiert hast, kannst du neue Modelle trainieren.
+                            </p>
+                        </div>
+                        <span class="badge bg-info px-3 py-2 align-self-start">Live 🚀</span>
+                    </div>
+
+                    <div class="row g-3" id="trainingStatsContainer">
+                        <div class="col-md-6">
+                            <div class="p-3 bg-dark rounded">
+                                <small class="text-uppercase opacity-75">Korrektionen gespeichert</small>
+                                <h5 id="correctionsCount" class="mb-0">-- <span class="text-muted">/ ~50</span></h5>
+                                <div class="progress mt-2" style="height:6px;">
+                                    <div id="correctionsBar" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                                </div>
+                                <small class="text-muted d-block mt-2">Zum Trainieren: mind. 5 Korrektionen</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="p-3 bg-dark rounded">
+                                <small class="text-uppercase opacity-75">Trainierte Modelle</small>
+                                <h5 id="trainedModelsCount" class="mb-2">-- / 3</h5>
+                                <div id="trainedModelsList" class="small">
+                                    <small class="text-muted">wird geladen...</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div id="lastCorrectionInfo" class="alert alert-secondary d-none">
+                                <small>Letzte Korrektur: <strong id="lastCorrectionDate">--</strong></small>
+                            </div>
+                        </div>
+                        <div class="col-12 d-flex justify-content-end gap-2">
+                            <button id="retrainBtn" class="btn btn-primary">
+                                🚀 Neue Modelle trainieren
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#0f172a,#1e1b4b);color:#f8fafc;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                        <div>
+                            <p class="text-uppercase small mb-1 opacity-75">📥 Fetch Konfiguration</p>
+                            <h4 class="mb-2">Mail-Abruf steuern</h4>
+                            <p class="mb-0" style="max-width:600px;">
+                                Kontrolliere wie viele Mails pro Ordner und insgesamt abgerufen werden. 
+                                Delta-Sync fetcht nur neue Mails seit letztem Sync.
+                            </p>
+                        </div>
+                        <span class="badge bg-light text-dark px-3 py-2 align-self-start">Phase 13C Part 4</span>
+                    </div>
+                    <form class="row gy-3" method="POST" action="/settings/fetch-config" id="fetchConfigForm">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <input type="hidden" name="account_id" id="formAccountId" value="" />
+                        
+                        <div class="col-md-6">
+                            <label for="mailsPerFolder" class="form-label">Mails pro Ordner (Standard: 100)</label>
+                            <input type="number" class="form-control" id="mailsPerFolder" name="mails_per_folder" 
+                                   value="{{ user_prefs.get('mails_per_folder', 100) }}" min="10" max="1000" step="10">
+                            <small class="text-muted">Bei FULL SYNC wird dieses Limit angewandt</small>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label for="maxTotalMails" class="form-label">Max. Gesamt (0 = unbegrenzt)</label>
+                            <input type="number" class="form-control" id="maxTotalMails" name="max_total_mails" 
+                                   value="{{ user_prefs.get('max_total_mails', 0) }}" min="0" max="10000" step="50">
+                            <small class="text-muted">0 bedeutet: Hole ALLE Mails aus allen Ordnern</small>
+                        </div>
+                        
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="useDeltaSync" name="use_delta_sync" 
+                                       {% if user_prefs.get('use_delta_sync', true) %}checked{% endif %}>
+                                <label class="form-check-label" for="useDeltaSync">
+                                    <strong>Delta-Sync aktivieren</strong>
+                                    <small class="d-block text-muted">Nur neue Mails abrufen (spart Bandbreite & Zeit)</small>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Phase 13C Part 5: Erweiterte Filter -->
+                        <div class="col-12">
+                            <hr class="my-3 opacity-25">
+                            <h6 class="text-uppercase small opacity-75 mb-3">📋 Erweiterte Filter</h6>
+                            <small class="text-muted d-block mb-3">
+                                Diese Filter gelten bei <strong>jedem Fetch</strong> (außer SINCE bei Delta-Sync).
+                                Perfekt um große Accounts schrittweise zu synchronisieren.
+                            </small>
+                        </div>
+                        
+                        <!-- SINCE Datum -->
+                        <div class="col-md-6 mb-3">
+                            <label for="sinceDate" class="form-label">Nur Mails ab Datum</label>
+                            <input type="date" class="form-control bg-dark text-light border-secondary" 
+                                   id="sinceDate" name="since_date"
+                                   value="{{ user_prefs.get('since_date', '')|string if user_prefs.get('since_date') else '' }}">
+                            <small class="text-muted d-block mt-1">
+                                Leer = alle Mails. Empfohlen: 2025-12-01 für neue Accounts<br>
+                                <strong>Hinweis:</strong> Bei Delta-Sync deaktiviert (UID-Range effizienter)
+                            </small>
+                        </div>
+                        
+                        <!-- Nur Ungelesene -->
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check form-switch mt-4">
+                                <input class="form-check-input" type="checkbox" id="unseenOnly" name="unseen_only"
+                                       {% if user_prefs.get('unseen_only', false) %}checked{% endif %}>
+                                <label class="form-check-label" for="unseenOnly">
+                                    <strong>Nur ungelesene Mails</strong>
+                                    <small class="d-block text-muted">IMAP UNSEEN Filter - spart massiv Zeit</small>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Ordner-Auswahl -->
+                        <div class="col-12 mb-3">
+                            <label class="form-label">Ordner-Filter</label>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="alert alert-success mb-0">
+                                        <strong>✅ Nur diese Ordner (Include)</strong>
+                                        <small class="d-block text-muted mb-2 mt-1">
+                                            💡 Keine Auswahl = Alle Ordner werden synchronisiert
+                                        </small>
+                                        <div id="includeFoldersContainer" class="mt-2">
+                                            <small class="text-muted">Wähle einen Account und klicke "Ordner laden"</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="alert alert-warning mb-0">
+                                        <strong>❌ Diese Ordner ignorieren (Exclude)</strong>
+                                        <small class="d-block text-muted mb-2 mt-1">
+                                            Standard: Keine Ordner ausgeschlossen. Wähle gezielt aus.
+                                        </small>
+                                        <div id="excludeFoldersContainer" class="mt-2">
+                                            <small class="text-muted">Keine Ausschlüsse gesetzt</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                <label for="folderAccountSelect" class="form-label small">Account für Filter auswählen:</label>
+                                <select class="form-select form-select-sm bg-dark text-light border-secondary d-inline-block w-auto" 
+                                        id="folderAccountSelect" required>
+                                    <option value="">-- Account wählen --</option>
+                                    {% for account in mail_accounts %}
+                                    <option value="{{ account.id }}">{{ account.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button" class="btn btn-sm btn-outline-light" id="loadFoldersBtn">
+                                    📂 Ordner laden
+                                </button>
+                                <small class="d-block text-muted mt-1">Filter gelten nur für den gewählten Account</small>
+                            </div>
+                        </div>
+                        
+                        <div class="col-12">
+                            <div class="alert alert-info mb-0 small">
+                                <strong>💡 Tipp:</strong> Nutze "Quick Count" (siehe Mail-Accounts unten) um zu sehen wie viele Mails remote sind, 
+                                bevor du fetchst. Bei vielen Tausend Mails empfiehlt sich Delta-Sync!
+                            </div>
+                        </div>
+                        
+                        <!-- Phase 13C Part 5: Fetch-Vorschau Counter -->
+                        <div class="col-12" id="fetchPreviewContainer" style="display: none;">
+                            <div class="alert alert-success mb-0">
+                                <strong>📊 Geschätzte Mails mit aktuellen Filtern:</strong>
+                                <span id="fetchPreviewCount" class="badge bg-success fs-5 ms-2">0</span>
+                                <small class="d-block text-muted mt-1" id="fetchPreviewDetails"></small>
+                            </div>
+                        </div>
+                        
+                        <div class="col-12 d-flex justify-content-end gap-2">
+                            <button type="submit" class="btn btn-light text-dark px-4">Speichern</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <h4>Mail-Accounts</h4>
+            
+            {% if mail_accounts %}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Server</th>
+                            <th>Port</th>
+                            <th>Benutzer</th>
+                            <th>Status</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account in mail_accounts %}
+                        <tr>
+                            <td>
+                                <strong>{{ account.name }}</strong>
+                                {% if account.fetch_since_date or account.fetch_unseen_only or account.fetch_include_folders or account.fetch_exclude_folders %}
+                                <span class="badge bg-warning text-dark ms-1" title="Dieser Account hat aktive Fetch-Filter">⚙️ Filter</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ account.imap_server }}</td>
+                            <td>{{ account.imap_port }}</td>
+                            <td>{{ account.imap_username }}</td>
+                            <td>
+                                {% if account.enabled %}
+                                <span class="badge bg-success">Aktiv</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Inaktiv</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Mail-Aktionen" style="gap:0.25rem;">
+                                    <a href="/settings/mail-account/{{ account.id }}/edit" class="btn btn-info">Bearbeiten</a>
+                                    <button type="button" class="btn btn-outline-primary quick-count-btn" data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">📊 Count</button>
+                                    <button type="button" class="btn btn-success fetch-mails-btn" data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">Abrufen</button>
+                                    <button type="button" class="btn btn-outline-danger purge-mails-btn" data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">Daten löschen</button>
+                                    <form method="POST" action="/settings/mail-account/{{ account.id }}/delete" style="display: inline;" class="delete-account-form">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                                        <button type="submit" class="btn btn-danger">Löschen</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted">Noch keine Mail-Accounts konfiguriert</p>
+            {% endif %}
+            
+            <a href="/settings/mail-account/select-type" class="btn btn-primary mt-3">Neuen Account hinzufügen</a>
+            
+            <hr class="my-5">
+            
+            <h4>🔐 Sicherheit</h4>
+            
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h6 class="card-title">Passwort ändern</h6>
+                    <p class="text-muted mb-2">Ändere dein Passwort mit Zero-Knowledge Sicherheit (KEK-Neuableitung ohne E-Mail-Neu-Verschlüsselung)</p>
+                    <a href="/settings/password" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-key"></i> Passwort ändern
+                    </a>
+                </div>
+            </div>
+            
+            <h4 class="mt-4">Zwei-Faktor-Authentifizierung (2FA)</h4>
+            {% if totp_enabled %}
+            <div class="alert alert-success">✓ 2FA ist aktiviert</div>
+            <p>Dein Account ist mit TOTP geschützt.</p>
+            <form method="POST" action="/settings/2fa/recovery-codes/regenerate" class="mt-3" id="regenerateRecoveryForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <button type="submit" class="btn btn-outline-warning">
+                    <i class="fas fa-sync"></i> Recovery-Codes regenerieren
+                </button>
+            </form>
+            {% else %}
+            <div class="alert alert-warning">⚠️ 2FA ist Pflicht - bitte aktivieren</div>
+            <a href="/settings/2fa/setup" class="btn btn-warning">2FA aktivieren</a>
+            {% endif %}
+            
+            <hr class="my-5">
+            
+            <div>
+                <a href="/dashboard" class="btn btn-secondary">Zurück zum Dashboard</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+function confirmRegenerate() {
+    return confirm(
+        '⚠️ Wirklich neue Recovery-Codes generieren?\n\n' +
+        'ACHTUNG:\n' +
+        '• Alle alten Recovery-Codes werden ungültig\n' +
+        '• Du musst die neuen Codes sofort sichern\n' +
+        '• Dieser Vorgang kann nicht rückgängig gemacht werden\n\n' +
+        'Fortfahren?'
+    );
+}
+
+function formatTime(seconds) {
+    if (seconds < 60) return seconds + 's';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins < 60) return mins + 'm ' + secs + 's';
+    const hours = Math.floor(mins / 60);
+    return hours + 'h ' + (mins % 60) + 'm';
+}
+
+function fetchMails(evt, accountId, accountName) {
+    const btn = evt ? evt.target : null;
+    const originalLabel = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Job wird gestartet...';
+    }
+
+    fetch(`/mail-account/${accountId}/fetch`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'queued') {
+            alert(`🕒 ${accountName}: Analyse läuft im Hintergrund.`);
+            if (data.job_id) {
+                pollJobStatus(data.job_id, accountName, btn, originalLabel);
+            }
+            return;
+        }
+        if (data.status === 'ok') {
+            alert(`✅ ${accountName}: ${data.message || 'Fertig.'}`);
+        } else {
+            throw new Error(data.error || 'Unbekannter Fehler');
+        }
+    })
+    .catch(err => {
+        alert(`❌ Fehler: ${err}`);
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalLabel || 'Abrufen';
+        }
+    });
+}
+
+let analysisModal = null;
+
+function getAnalysisModal() {
+    if (!analysisModal) {
+        analysisModal = new bootstrap.Modal(document.getElementById('progressModal'), {backdrop: 'static', keyboard: false});
+    }
+    return analysisModal;
+}
+
+// Race Condition Protection: Verhindere mehrfache parallele Polling-Loops
+let pollingActive = false;
+
+function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, startTime = Date.now(), emailStartTime = null, lastEmailIndex = null) {
+    // Verhindere Race Condition bei schnellen Button-Clicks
+    if (attempt === 0) {
+        if (pollingActive) {
+            console.warn('Polling bereits aktiv, ignoriere doppelten Start');
+            return;
+        }
+        pollingActive = true;
+    }
+    
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const modal = getAnalysisModal();
+    if (attempt === 0) modal.show();
+    
+    const perEmailTimeout = 600;  // 10 Minuten pro E-Mail
+    
+    fetch(`/jobs/${jobId}`, {cache: 'no-store'})
+        .then(r => {
+            if (r.status === 404) {
+                throw new Error('Job nicht gefunden');
+            }
+            if (r.status === 429) {
+                // Rate-limit: warte länger und versuche erneut
+                console.warn('Rate-Limit erreicht, warte 30s...');
+                setTimeout(() => pollJobStatus(jobId, accountName, btn, originalLabel, attempt + 1, startTime, emailStartTime, lastEmailIndex), 30000);
+                return null;
+            }
+            if (!r.ok) {
+                throw new Error(`HTTP ${r.status}`);
+            }
+            return r.json();
+        })
+        .then(status => {
+            // Skip wenn Rate-Limit und Retry gestartet
+            if (status === null) {
+                return;
+            }
+            const currentIdx = status.current_email_index || 0;
+            
+            // Wenn neue E-Mail begonnen wird, Timer zurücksetzen
+            if (lastEmailIndex !== null && currentIdx > lastEmailIndex) {
+                emailStartTime = Date.now();
+            }
+            if (emailStartTime === null) {
+                emailStartTime = Date.now();
+            }
+            
+            const emailElapsed = Math.floor((Date.now() - emailStartTime) / 1000);
+            const emailRemaining = perEmailTimeout - emailElapsed;
+            
+            document.getElementById('elapsedTime').textContent = formatTime(elapsed);
+            document.getElementById('remainingTime').textContent = emailRemaining > 0 ? '~' + formatTime(emailRemaining) : 'abgelaufen!';
+            
+            if (status.state === 'done') {
+                const saved = status.saved ?? 0;
+                const processed = status.processed ?? 0;
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressPercent').textContent = '100%';
+                document.getElementById('emailCount').textContent = `${status.current_email_index || status.total_emails || '?'}/${status.total_emails || '?'}`;
+                document.getElementById('progressText').textContent = `✅ ${accountName}: Fertig!`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusTitle').textContent = '✅ Analyse abgeschlossen';
+                document.getElementById('statusDetails').textContent = `${saved} neue / ${processed} verarbeitet.`;
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    const modal = getAnalysisModal();
+                    modal.hide();
+                    pollingActive = false;  // Reset polling flag
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel || 'Abrufen';
+                    }
+                });
+                return;
+            }
+            if (status.state === 'error') {
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressBar').classList.add('bg-danger');
+                document.getElementById('emailCount').textContent = `${status.current_email_index || '?'}/${status.total_emails || '?'}`;
+                document.getElementById('progressText').textContent = `❌ ${accountName}: ${status.message || 'Job fehlgeschlagen.'}`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
+                document.getElementById('statusTitle').textContent = '❌ Fehler bei der Analyse';
+                document.getElementById('statusDetails').textContent = status.message || 'Job fehlgeschlagen.';
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    const modal = getAnalysisModal();
+                    modal.hide();
+                    pollingActive = false;  // Reset polling flag
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel || 'Abrufen';
+                    }
+                });
+                return;
+            }
+            
+            const totalEmails = status.total_emails || 1;
+            const currentSubject = status.current_subject || '';
+            
+            document.getElementById('emailCount').textContent = `${currentIdx}/${totalEmails}`;
+            
+            if (emailRemaining <= 0) {
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressBar').classList.add('bg-danger');
+                document.getElementById('progressText').textContent = `❌ ${accountName}: Timeout überschritten.`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-warning mb-0';
+                document.getElementById('statusTitle').textContent = '⏱️ Timeout überschritten';
+                document.getElementById('statusDetails').textContent = `Die Analyse konnte nicht within ${Math.floor((Date.now() - startTime) / 1000)}s abgeschlossen werden.`;
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    const modal = getAnalysisModal();
+                    modal.hide();
+                    pollingActive = false;  // Reset polling flag
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel || 'Abrufen';
+                    }
+                });
+                return;
+            }
+            
+            const progress = Math.min(95, (currentIdx / totalEmails) * 100);
+            document.getElementById('progressBar').style.width = progress + '%';
+            document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+            const subjectDisplay = currentSubject ? ` - ${currentSubject}` : '';
+            document.getElementById('progressText').textContent = `${accountName}: Mail ${currentIdx}/${totalEmails}${subjectDisplay}`;
+            
+            setTimeout(() => pollJobStatus(jobId, accountName, btn, originalLabel, attempt + 1, startTime, emailStartTime, currentIdx), 2000);
+        })
+        .catch(err => {
+            modal.hide();
+            pollingActive = false;  // Reset polling flag bei Error
+            alert(`❌ Status-Check fehlgeschlagen: ${err}`);
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalLabel || 'Abrufen';
+            }
+        });
+}
+
+function quickCount(evt, accountId, accountName) {
+    const btn = evt ? evt.target : null;
+    const originalLabel = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Zähle...';
+    }
+
+    fetch(`/account/${accountId}/mail-count`, {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        // Format folder details
+        let folderDetails = Object.entries(data.folders || {})
+            .map(([folder, counts]) => `  • ${folder}: ${counts.total} Mails (${counts.unseen} ungelesen)`)
+            .join('\n');
+        
+        const summary = data.summary || {};
+        const message = `📊 ${accountName}\n\n` +
+            `Remote (Server):\n${folderDetails}\n\n` +
+            `Gesamt Remote: ${summary.total_remote || 0} Mails\n` +
+            `Ungelesen: ${summary.total_unseen || 0}\n` +
+            `Lokal in DB: ${summary.total_local || 0}\n` +
+            `Delta: ${summary.delta || 0} Mails fehlen lokal`;
+        
+        alert(message);
+        
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalLabel;
+        }
+    })
+    .catch(err => {
+        alert(`❌ Fehler beim Zählen: ${err}`);
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalLabel || '📊 Count';
+        }
+    });
+}
+
+function purgeMails(evt, accountId, accountName) {
+    if (!confirm(`Alle lokal gespeicherten Mails für ${accountName} löschen?`)) {
+        return;
+    }
+    const btn = evt ? evt.target : null;
+    const originalLabel = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Lösche...';
+    }
+
+    fetch(`/mail-account/${accountId}/purge`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            alert(`🧹 ${accountName}: ${data.raw_deleted} Raw / ${data.processed_deleted} Processed gelöscht.`);
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+        }
+    })
+    .catch(e => alert(`❌ Fehler: ${e}`))
+    .finally(() => {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalLabel || 'Daten löschen';
+        }
+    });
+}
+
+async function initializeProviders() {
+    try {
+        console.log('🔍 Fetching available providers...');
+        const response = await fetch('/api/available-providers', {credentials: 'include'});
+        console.log('📡 Response status:', response.status, response.statusText);
+        
+        if (!response.ok) {
+            console.error('❌ API call failed:', response.status, response.statusText);
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('✅ Providers loaded:', data.providers);
+        const providers = data.providers || [];
+        
+        const savedValues = window.savedAIValues || {
+            Embedding: { provider: 'ollama', model: 'all-minilm:22m' },
+            Base: { provider: 'ollama', model: 'llama3.2:1b' },
+            Optimize: { provider: 'ollama', model: 'llama3.2:3b' }
+        };
+        
+        // Provider-Dropdowns für alle 3 Settings füllen
+        ['Embedding', 'Base', 'Optimize'].forEach(pass => {
+            const select = document.getElementById(`aiProviderSelect${pass}`);
+            if (select) {
+                select.innerHTML = '';
+                if (providers.length === 0) {
+                    select.innerHTML = '<option value="">Keine Provider verfügbar</option>';
+                } else {
+                    providers.forEach(p => {
+                        // Anthropic hat keine Embedding-API → ausblenden für Embedding
+                        if (pass === 'Embedding' && p.id === 'anthropic') {
+                            return; // Skip Anthropic für Embedding
+                        }
+                        
+                        const option = document.createElement('option');
+                        option.value = p.id;
+                        option.textContent = `${p.name} - ${p.description}`;
+                        if (p.id === savedValues[pass].provider) {
+                            option.selected = true;
+                        }
+                        select.appendChild(option);
+                    });
+                }
+                
+                if (savedValues[pass].provider) {
+                    updateModels(pass);
+                }
+            }
+        });
+    } catch (err) {
+        console.error('❌ Error loading providers:', err);
+        alert(`Provider konnten nicht geladen werden: ${err.message}`);
+    }
+}
+
+async function updateModels(pass) {
+    const providerSelect = document.getElementById(`aiProviderSelect${pass}`);
+    const modelSelect = document.getElementById(`aiModelSelect${pass}`);
+    
+    if (!providerSelect || !modelSelect) return;
+    
+    const provider = providerSelect.value;
+    if (!provider) {
+        modelSelect.innerHTML = '<option value="">-- Bitte Provider wählen --</option>';
+        return;
+    }
+    
+    try {
+        modelSelect.innerHTML = '<option value="">Modelle werden geladen...</option>';
+        
+        // NEU: Nutze dynamische Model Discovery
+        const response = await fetch(`/api/models/${provider}`, {credentials: 'include'});
+        const data = await response.json();
+        let models = data.models || [];
+        
+        // Filter nach Model-Typ
+        if (pass === 'Embedding') {
+            // Nur Embedding-Modelle
+            models = models.filter(m => m.type === 'embedding');
+        } else {
+            // BASE & OPTIMIZE: Nur Chat-Modelle
+            models = models.filter(m => m.type === 'chat');
+        }
+        
+        const savedModel = (window.savedAIValues && window.savedAIValues[pass]) ? window.savedAIValues[pass].model : null;
+        
+        modelSelect.innerHTML = '';
+        if (models.length === 0) {
+            if (pass === 'Embedding' && provider === 'anthropic') {
+                modelSelect.innerHTML = '<option value="">⚠️ Anthropic hat keine Embedding-API</option>';
+            } else {
+                modelSelect.innerHTML = '<option value="">Keine Modelle verfügbar</option>';
+            }
+        } else {
+            models.forEach(m => {
+                const option = document.createElement('option');
+                option.value = m.id;
+                
+                // Formatierung mit Typ-Hinweis
+                const displayName = m.display_name || m.name || m.id;
+                const typeLabel = m.type === 'embedding' ? '🔍' : '💬';
+                option.textContent = `${typeLabel} ${displayName}`;
+                option.textContent = `${typeLabel} ${displayName}`;
+                
+                if (savedModel && m.id === savedModel) {
+                    option.selected = true;
+                }
+                modelSelect.appendChild(option);
+            });
+        }
+    } catch (err) {
+        console.error('Error loading models:', err);
+        modelSelect.innerHTML = '<option value="">Fehler beim Laden von Modellen</option>';
+    }
+}
+
+async function loadTrainingStats() {
+    try {
+        const response = await fetch('/api/training-stats');
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        
+        const correctionsCount = data.corrections_count || 0;
+        const maxCorrections = 50;
+        const progressPercent = Math.min(100, (correctionsCount / maxCorrections) * 100);
+        
+        document.getElementById('correctionsCount').textContent = correctionsCount + ' ';
+        document.getElementById('correctionsBar').style.width = progressPercent + '%';
+        
+        const trainedCount = data.trained_models_count || 0;
+        document.getElementById('trainedModelsCount').textContent = trainedCount + ' / 3';
+        
+        if (data.trained_models && data.trained_models.length > 0) {
+            const modelsList = data.trained_models.map(m => {
+                const date = new Date(m.modified * 1000).toLocaleDateString('de-DE');
+                return `<div class="badge bg-success">${m.name} ✓ (${date})</div>`;
+            }).join('');
+            document.getElementById('trainedModelsList').innerHTML = modelsList;
+        } else {
+            document.getElementById('trainedModelsList').innerHTML = '<small class="text-muted">Noch keine trainierten Modelle</small>';
+        }
+        
+        if (data.last_correction_date) {
+            const corrDate = new Date(data.last_correction_date);
+            document.getElementById('lastCorrectionDate').textContent = corrDate.toLocaleDateString('de-DE', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            document.getElementById('lastCorrectionInfo').classList.remove('d-none');
+        }
+        
+        const retrainBtn = document.getElementById('retrainBtn');
+        if (data.ready_for_training) {
+            retrainBtn.disabled = false;
+            retrainBtn.textContent = `🚀 Neue Modelle trainieren (${correctionsCount} Korrektionen)`;
+        } else {
+            retrainBtn.disabled = true;
+            retrainBtn.textContent = `🚀 Noch ${5 - correctionsCount} Korrektionen nötig`;
+        }
+    } catch (err) {
+        console.error('Error loading training stats:', err);
+    }
+}
+
+async function triggerRetraining() {
+    const btn = document.getElementById('retrainBtn');
+    const originalText = btn.textContent;
+    
+    btn.disabled = true;
+    btn.textContent = '⏳ Training läuft...';
+    
+    try {
+        const response = await fetch('/retrain', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            alert(`✅ ${data.message}`);
+            await loadTrainingStats();
+        } else if (data.status === 'no_data') {
+            alert(`⚠️ ${data.message}`);
+            btn.disabled = false;
+            btn.textContent = originalText;
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    } catch (err) {
+        alert(`❌ Training fehlgeschlagen: ${err}`);
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+async function triggerBatchReprocess() {
+    const btn = document.getElementById('batchReprocessBtn');
+    const originalText = btn.textContent;
+    
+    // Warnung und Bestätigung
+    if (!confirm(
+        '⚠️ Alle Emails neu embedden?\n\n' +
+        'Dies wird ALLE Emails mit dem aktuellen EMBEDDING Model neu verarbeiten.\n\n' +
+        'Grund: Semantic Search funktioniert nur, wenn alle Emails das gleiche Embedding-Model verwenden!\n\n' +
+        'Dies kann je nach Anzahl einige Minuten dauern.\n\n' +
+        'Fortfahren?'
+    )) {
+        return;
+    }
+    
+    btn.disabled = true;
+    btn.textContent = '⏳ Job wird gestartet...';
+    
+    try {
+        const response = await fetch('/api/batch-reprocess-embeddings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'queued' && data.job_id) {
+            // Job gestartet → Progress-Modal
+            alert('🕒 Batch-Reprocess läuft im Hintergrund.');
+            pollBatchReprocessStatus(data.job_id, btn, originalText);
+        } else if (data.success) {
+            alert(`✅ ${data.message}`);
+            btn.disabled = false;
+            btn.textContent = originalText;
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    } catch (err) {
+        alert(`❌ Batch-Reprocessing fehlgeschlagen: ${err}`);
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+function pollBatchReprocessStatus(jobId, btn, originalLabel, attempt = 0, startTime = Date.now(), emailStartTime = null, lastEmailIndex = null) {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const modal = getAnalysisModal();
+    if (attempt === 0) modal.show();
+    
+    const perEmailTimeout = 600;  // 10 Minuten pro E-Mail
+    
+    fetch(`/jobs/${jobId}`, {cache: 'no-store'})
+        .then(r => {
+            if (r.status === 404) throw new Error('Job nicht gefunden');
+            if (r.status === 429) {
+                console.warn('Rate-Limit erreicht, warte 30s...');
+                setTimeout(() => pollBatchReprocessStatus(jobId, btn, originalLabel, attempt + 1, startTime, emailStartTime, lastEmailIndex), 30000);
+                return null;
+            }
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+        })
+        .then(status => {
+            if (status === null) return;  // Rate-limit retry
+            
+            const currentIdx = status.current_email_index || 0;
+            
+            // Wenn neue E-Mail begonnen wird, Timer zurücksetzen
+            if (lastEmailIndex !== null && currentIdx > lastEmailIndex) {
+                emailStartTime = Date.now();
+            }
+            if (emailStartTime === null) {
+                emailStartTime = Date.now();
+            }
+            
+            const emailElapsed = Math.floor((Date.now() - emailStartTime) / 1000);
+            const emailRemaining = perEmailTimeout - emailElapsed;
+            
+            document.getElementById('elapsedTime').textContent = formatTime(emailElapsed);
+            document.getElementById('remainingTime').textContent = emailRemaining > 0 ? '~' + formatTime(emailRemaining) : 'abgelaufen!';
+            
+            if (status.state === 'done') {
+                const processed = status.processed ?? 0;
+                const failed = status.failed ?? 0;
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressPercent').textContent = '100%';
+                document.getElementById('emailCount').textContent = `${status.total_emails || '?'}/${status.total_emails || '?'}`;
+                document.getElementById('progressText').textContent = `✅ Batch-Reprocess: Fertig!`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusTitle').textContent = '✅ Batch-Reprocess abgeschlossen';
+                document.getElementById('statusDetails').textContent = `${processed} erfolgreich / ${failed} fehlgeschlagen.`;
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    modal.hide();
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel || '🔄 Alle Emails neu embedden';
+                    }
+                });
+                return;
+            }
+            if (status.state === 'error') {
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressBar').classList.add('bg-danger');
+                document.getElementById('progressText').textContent = `❌ Batch-Reprocess: ${status.message || 'Fehlgeschlagen.'}`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
+                document.getElementById('statusTitle').textContent = '❌ Fehler beim Batch-Reprocess';
+                document.getElementById('statusDetails').textContent = status.message || 'Fehlgeschlagen.';
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    modal.hide();
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel;
+                    }
+                });
+                return;
+            }
+            
+            const totalEmails = status.total_emails || 1;
+            const currentSubject = status.current_subject || '';
+            
+            document.getElementById('emailCount').textContent = `${currentIdx}/${totalEmails}`;
+            
+            if (emailRemaining <= 0) {
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressBar').classList.add('bg-danger');
+                document.getElementById('progressText').textContent = `❌ Timeout überschritten.`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-warning mb-0';
+                document.getElementById('statusTitle').textContent = '⏱️ Timeout überschritten';
+                document.getElementById('statusDetails').textContent = `Die Verarbeitung konnte nicht abgeschlossen werden.`;
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    modal.hide();
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel;
+                    }
+                });
+                return;
+            }
+            
+            const progress = Math.min(95, (currentIdx / totalEmails) * 100);
+            document.getElementById('progressBar').style.width = progress + '%';
+            document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+            const subjectDisplay = currentSubject ? ` - ${currentSubject}` : '';
+            document.getElementById('progressText').textContent = `Batch-Reprocess: Email ${currentIdx}/${totalEmails}${subjectDisplay}`;
+            
+            setTimeout(() => pollBatchReprocessStatus(jobId, btn, originalLabel, attempt + 1, startTime, emailStartTime, currentIdx), 2000);
+        })
+        .catch(err => {
+            modal.hide();
+            alert(`❌ Status-Check fehlgeschlagen: ${err}`);
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalLabel || '🔄 Alle Emails neu embedden';
+            }
+        });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Security: Parse JSON safely to prevent XSS via provider/model names
+    try {
+        window.savedAIValues = {{ {
+            'Embedding': {'provider': ai_selected_provider_embedding|default('ollama'), 'model': ai_selected_model_embedding|default('all-minilm:22m')},
+            'Base': {'provider': ai_selected_provider_base, 'model': ai_selected_model_base},
+            'Optimize': {'provider': ai_selected_provider_optimize, 'model': ai_selected_model_optimize}
+        }|tojson|safe }};
+    } catch(e) {
+        console.error('Failed to parse AI values:', e);
+        window.savedAIValues = {
+            Embedding: {provider: 'ollama', model: 'all-minilm:22m'},
+            Base: {provider: 'ollama', model: 'llama3.2:1b'},
+            Optimize: {provider: 'ollama', model: 'llama3.2:3b'}
+        };
+    }
+    initializeProviders();
+    loadTrainingStats();
+    
+    // CSP-compliant event listeners (no inline handlers) - 3 Settings!
+    const providerEmbeddingSelect = document.getElementById('aiProviderSelectEmbedding');
+    const providerBaseSelect = document.getElementById('aiProviderSelectBase');
+    const providerOptimizeSelect = document.getElementById('aiProviderSelectOptimize');
+    const retrainBtn = document.getElementById('retrainBtn');
+    const batchReprocessBtn = document.getElementById('batchReprocessBtn');
+    const regenerateForm = document.getElementById('regenerateRecoveryForm');
+    
+    if (providerEmbeddingSelect) {
+        providerEmbeddingSelect.addEventListener('change', () => updateModels('Embedding'));
+    }
+    if (providerBaseSelect) {
+        providerBaseSelect.addEventListener('change', () => updateModels('Base'));
+    }
+    if (providerOptimizeSelect) {
+        providerOptimizeSelect.addEventListener('change', () => updateModels('Optimize'));
+    }
+    if (retrainBtn) {
+        retrainBtn.addEventListener('click', triggerRetraining);
+    }
+    if (batchReprocessBtn) {
+        batchReprocessBtn.addEventListener('click', triggerBatchReprocess);
+    }
+    if (regenerateForm) {
+        regenerateForm.addEventListener('submit', (e) => {
+            if (!confirmRegenerate()) {
+                e.preventDefault();
+            }
+        });
+    }
+    
+    // Event delegation for dynamic buttons (fetchMails, purgeMails, delete)
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('fetch-mails-btn')) {
+            const accountId = parseInt(e.target.dataset.accountId);
+            const accountName = e.target.dataset.accountName;
+            fetchMails(e, accountId, accountName);
+        }
+        if (e.target.classList.contains('purge-mails-btn')) {
+            const accountId = parseInt(e.target.dataset.accountId);
+            const accountName = e.target.dataset.accountName;
+            purgeMails(e, accountId, accountName);
+        }
+        if (e.target.classList.contains('quick-count-btn')) {
+            const accountId = parseInt(e.target.dataset.accountId);
+            const accountName = e.target.dataset.accountName;
+            quickCount(e, accountId, accountName);
+        }
+    });
+    
+    // Delete form confirmation
+    document.querySelectorAll('.delete-account-form').forEach(form => {
+        form.addEventListener('submit', (e) => {
+            if (!confirm('Wirklich löschen?')) {
+                e.preventDefault();
+            }
+        });
+    });
+    
+    // Load folders button
+    const loadFoldersBtn = document.getElementById('loadFoldersBtn');
+    const folderAccountSelect = document.getElementById('folderAccountSelect');
+    
+    if (loadFoldersBtn) {
+        loadFoldersBtn.addEventListener('click', loadFoldersForFilter);
+    }
+    
+    // Phase 13C Part 6: Account-Select Listener - lädt Filter automatisch
+    if (folderAccountSelect) {
+        folderAccountSelect.addEventListener('change', async () => {
+            const accountId = folderAccountSelect.value;
+            if (accountId) {
+                // Update hidden field im Form
+                document.getElementById('formAccountId').value = accountId;
+                
+                // Lade Filter des gewählten Accounts
+                try {
+                    const response = await fetch(`/account/${accountId}/fetch-filters`);
+                    const filterData = await response.json();
+                    
+                    // Setze Filter-Felder
+                    const sinceDateInput = document.getElementById('sinceDate');
+                    const unseenCheckbox = document.getElementById('unseenOnly');
+                    
+                    if (sinceDateInput) sinceDateInput.value = filterData.since_date || '';
+                    if (unseenCheckbox) unseenCheckbox.checked = filterData.unseen_only || false;
+                    
+                    // Speichere Filter-Daten für später (beim Ordner-Laden)
+                    window.accountFilterData = filterData;
+                    
+                    console.log('✅ Filter geladen für Account', filterData.account_name);
+                    
+                } catch (e) {
+                    console.warn('Filter-Laden fehlgeschlagen:', e);
+                }
+            } else {
+                // Reset bei keiner Auswahl
+                document.getElementById('formAccountId').value = '';
+            }
+        });
+    }
+    
+    // Phase 13C Part 6: Form-Submit Handling - State beibehalten
+    const fetchConfigForm = document.getElementById('fetchConfigForm');
+    if (fetchConfigForm) {
+        fetchConfigForm.addEventListener('submit', (e) => {
+            const accountId = document.getElementById('formAccountId').value;
+            if (!accountId) {
+                e.preventDefault();
+                alert('Bitte zuerst einen Account auswählen');
+                return false;
+            }
+            
+            // Speichere Account-ID im localStorage für Reload
+            localStorage.setItem('lastSelectedAccountId', accountId);
+        });
+    }
+    
+    // Nach Page-Load: Restore Account-Auswahl
+    window.addEventListener('load', () => {
+        const lastAccountId = localStorage.getItem('lastSelectedAccountId');
+        const folderAccountSelect = document.getElementById('folderAccountSelect');
+        
+        if (lastAccountId && folderAccountSelect) {
+            folderAccountSelect.value = lastAccountId;
+            // Trigger change event um Filter zu laden
+            folderAccountSelect.dispatchEvent(new Event('change'));
+            // Lade auch die Ordner automatisch
+            setTimeout(() => {
+                document.getElementById('loadFoldersBtn')?.click();
+            }, 500);
+        }
+    });
+    
+    // Phase 13C Part 5: Event Listener für Fetch-Vorschau Updates
+    const mailsPerFolderInput = document.querySelector('input[name="mails_per_folder"]');
+    const maxTotalInput = document.querySelector('input[name="max_total_mails"]');
+    const unseenCheckbox = document.getElementById('unseenOnly');
+    const sinceDateInput = document.getElementById('sinceDate');
+    
+    // Speichere letzte Daten global für Updates
+    window.lastFetchData = null;
+    
+    [mailsPerFolderInput, maxTotalInput, unseenCheckbox, sinceDateInput].forEach(el => {
+        if (el) {
+            el.addEventListener('change', () => {
+                // Trigger Update wenn Ordner geladen sind
+                const firstCheckbox = document.querySelector('input[name="include_folders"]');
+                if (firstCheckbox && window.lastFetchData) {
+                    // Ordner sind geladen - update Preview mit gespeicherten Daten
+                    updateFetchPreview(window.lastFetchData);
+                }
+            });
+        }
+    });
+});
+
+// Phase 13C Part 5: Ordner für Filter laden
+async function loadFoldersForFilter() {
+    const accountId = document.getElementById('folderAccountSelect').value;
+    if (!accountId) {
+        alert('Bitte zuerst einen Account auswählen');
+        return;
+    }
+    
+    const includeContainer = document.getElementById('includeFoldersContainer');
+    const excludeContainer = document.getElementById('excludeFoldersContainer');
+    
+    includeContainer.innerHTML = '<small class="text-muted">Lade Ordner...</small>';
+    excludeContainer.innerHTML = '<small class="text-muted">Lade Ordner...</small>';
+    
+    try {
+        const response = await fetch(`/account/${accountId}/mail-count`);
+        
+        // Prüfe HTTP-Status
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Server-Fehler (${response.status}): ${errorText.substring(0, 100)}`);
+        }
+        
+        const data = await response.json();
+        
+        console.log('📊 Received data:', data);
+        console.log('📁 Folders:', data.folders);
+        
+        // Prüfe ob Ordner vorhanden sind
+        if (!data.folders || Object.keys(data.folders).length === 0) {
+            throw new Error('Keine Ordner gefunden. Möglicherweise Authentifizierungsproblem.');
+        }
+        
+        const folders = Object.keys(data.folders).sort();
+        console.log('✅ Folder names:', folders);
+        
+        // Speichere Daten global für spätere Updates
+        window.lastFetchData = data;
+        
+        // Phase 13C Part 6: Gespeicherte Auswahl vom Account laden
+        let savedInclude = [];
+        let savedExclude = [];
+        
+        if (window.accountFilterData) {
+            savedInclude = window.accountFilterData.include_folders || [];
+            savedExclude = window.accountFilterData.exclude_folders || [];
+            console.log('📋 Filter vom Account:', { savedInclude, savedExclude });
+        }
+        
+        // Include Checkboxen
+        includeContainer.innerHTML = ''; // Clear first
+        const includeRow = document.createElement('div');
+        includeRow.className = 'row g-2';
+        
+        folders.forEach(folderName => {
+            const checked = savedInclude.length === 0 || savedInclude.includes(folderName);
+            const safeFolderId = String(folderName).replace(/[^a-zA-Z0-9]/g, '_');
+            const folderData = data.folders[folderName] || {};
+            const mailCount = folderData.total || 0;
+            const unseenCount = folderData.unseen || 0;
+            
+            const col = document.createElement('div');
+            col.className = 'col-md-6';
+            
+            const formCheck = document.createElement('div');
+            formCheck.className = 'form-check';
+            
+            const checkbox = document.createElement('input');
+            checkbox.className = 'form-check-input';
+            checkbox.type = 'checkbox';
+            checkbox.name = 'include_folders';
+            checkbox.value = folderName;
+            checkbox.id = 'inc_' + safeFolderId;
+            checkbox.checked = checked;
+            
+            const label = document.createElement('label');
+            label.className = 'form-check-label';
+            label.htmlFor = 'inc_' + safeFolderId;
+            label.textContent = folderName + ' ';
+            
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-secondary ms-1';
+            badge.textContent = mailCount + '/' + unseenCount;
+            label.appendChild(badge);
+            
+            formCheck.appendChild(checkbox);
+            formCheck.appendChild(label);
+            col.appendChild(formCheck);
+            includeRow.appendChild(col);
+        });
+        
+        includeContainer.appendChild(includeRow);
+        
+        const hint = document.createElement('small');
+        hint.className = 'text-muted d-block mt-2';
+        hint.textContent = 'Keine Auswahl = alle Ordner';
+        includeContainer.appendChild(hint);
+        
+        // Event Listener für Include Checkboxen
+        document.querySelectorAll('input[name="include_folders"]').forEach(cb => {
+            cb.addEventListener('change', () => updateFetchPreview(data));
+        });
+        
+        // Exclude Checkboxen
+        excludeContainer.innerHTML = ''; // Clear first
+        const excludeRow = document.createElement('div');
+        excludeRow.className = 'row g-2';
+        
+        folders.forEach(folderName => {
+            // Nur gespeicherte Excludes verwenden, KEINE Auto-Selektion mehr
+            const checked = savedExclude.includes(folderName);
+            const safeFolderId = String(folderName).replace(/[^a-zA-Z0-9]/g, '_');
+            const folderData = data.folders[folderName] || {};
+            const mailCount = folderData.total || 0;
+            const unseenCount = folderData.unseen || 0;
+            
+            const col = document.createElement('div');
+            col.className = 'col-md-6';
+            
+            const formCheck = document.createElement('div');
+            formCheck.className = 'form-check';
+            
+            const checkbox = document.createElement('input');
+            checkbox.className = 'form-check-input';
+            checkbox.type = 'checkbox';
+            checkbox.name = 'exclude_folders';
+            checkbox.value = folderName;
+            checkbox.id = 'exc_' + safeFolderId;
+            checkbox.checked = checked;
+            
+            const label = document.createElement('label');
+            label.className = 'form-check-label';
+            label.htmlFor = 'exc_' + safeFolderId;
+            label.textContent = folderName + ' ';
+            
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-secondary ms-1';
+            badge.textContent = mailCount + '/' + unseenCount;
+            label.appendChild(badge);
+            
+            formCheck.appendChild(checkbox);
+            formCheck.appendChild(label);
+            col.appendChild(formCheck);
+            excludeRow.appendChild(col);
+        });
+        
+        excludeContainer.appendChild(excludeRow);
+        
+        // Event Listener für Exclude Checkboxen
+        document.querySelectorAll('input[name="exclude_folders"]').forEach(cb => {
+            cb.addEventListener('change', () => updateFetchPreview(data));
+        });
+        
+        // Trigger initial preview mit kompletten Daten (inkl. summary)
+        updateFetchPreview(data);
+        
+    } catch (error) {
+        console.error('Fehler beim Laden der Ordner:', error);
+        includeContainer.innerHTML = `<small class="text-danger">Fehler: ${error.message}</small>`;
+        excludeContainer.innerHTML = `<small class="text-danger">Fehler: ${error.message}</small>`;
+    }
+}
+
+// Phase 13C Part 5: Berechne geschätzte Mail-Anzahl mit Filtern
+function updateFetchPreview(data) {
+    const previewContainer = document.getElementById('fetchPreviewContainer');
+    const previewCount = document.getElementById('fetchPreviewCount');
+    const previewDetails = document.getElementById('fetchPreviewDetails');
+    
+    console.log('🔢 updateFetchPreview called with:', data);
+    
+    if (!data || !data.folders || Object.keys(data.folders).length === 0) {
+        previewContainer.style.display = 'none';
+        return;
+    }
+    
+    const folderCounts = data.folders;
+    const summary = data.summary || {};
+    
+    // Hole aktuelle Filter-Einstellungen
+    const mailsPerFolderInput = document.querySelector('input[name="mails_per_folder"]');
+    const maxTotalInput = document.querySelector('input[name="max_total_mails"]');
+    const mailsPerFolder = mailsPerFolderInput ? parseInt(mailsPerFolderInput.value) || 100 : 100;
+    const maxTotal = maxTotalInput ? parseInt(maxTotalInput.value) || 0 : 0;
+    const unseenOnly = document.getElementById('unseenOnly')?.checked || false;
+    const sinceDate = document.getElementById('sinceDate')?.value || '';
+    
+    console.log('⚙️ Settings:', { mailsPerFolder, maxTotal, unseenOnly, sinceDate });
+    
+    // Welche Ordner werden gefetcht?
+    const includeCheckboxes = document.querySelectorAll('input[name="include_folders"]:checked');
+    const excludeCheckboxes = document.querySelectorAll('input[name="exclude_folders"]:checked');
+    
+    let includeFolders = Array.from(includeCheckboxes).map(cb => cb.value);
+    let excludeFolders = Array.from(excludeCheckboxes).map(cb => cb.value);
+    
+    console.log('📁 Folders:', { includeFolders, excludeFolders });
+    
+    // Berechne Summe UND sammle ALLE Ordner-Infos
+    let totalEstimate = 0;
+    let includedFolderCount = 0;
+    let allFolderDetails = [];
+    
+    Object.entries(folderCounts).forEach(([folderName, folderData]) => {
+        const totalCount = (folderData && folderData.total) ? parseInt(folderData.total) : 0;
+        const unseenCount = (folderData && folderData.unseen) ? parseInt(folderData.unseen) : 0;
+        
+        // Prüfe ob dieser Ordner durch Filter kommt
+        const isIncluded = (includeFolders.length === 0 || includeFolders.includes(folderName)) && !excludeFolders.includes(folderName);
+        
+        if (isIncluded) {
+            // Wenn UNSEEN-Only, nutze unseen count statt total
+            const baseCount = unseenOnly ? unseenCount : totalCount;
+            let folderEstimate = Math.min(baseCount, mailsPerFolder);
+            
+            // SINCE reduziert die Anzahl (Schätzung: 50%)
+            if (sinceDate) folderEstimate = Math.floor(folderEstimate * 0.5);
+            
+            totalEstimate += folderEstimate;
+            includedFolderCount++;
+        }
+        
+        // Sammle ALLE Ordner für die Anzeige (auch die gefilterten)
+        allFolderDetails.push({
+            name: String(folderName),
+            total: totalCount,
+            unseen: unseenCount,
+            included: isIncluded
+        });
+    });
+    
+    console.log('📊 Estimate:', { totalEstimate, includedFolderCount, allFolderDetails });
+    
+    // Max Total Limit anwenden
+    if (maxTotal > 0 && totalEstimate > maxTotal) {
+        totalEstimate = maxTotal;
+    }
+    
+    // Anzeigen
+    if (!previewCount || !previewDetails || !previewContainer) {
+        console.warn('⚠️ Preview elements not found');
+        return;
+    }
+    
+    previewCount.textContent = totalEstimate || 0;
+    
+    // Details mit HTML-Struktur für bessere Lesbarkeit
+    let detailsHtml = '<div style="font-size: 0.9em;">';
+    
+    // Remote (Server): Alle Ordner auflisten
+    detailsHtml += '<strong>Remote (Server):</strong><ul style="margin: 5px 0; padding-left: 20px;">';
+    allFolderDetails.forEach(fd => {
+        const style = fd.included ? '' : ' style="color: #999; text-decoration: line-through;"';
+        detailsHtml += `<li${style}>${fd.name}: <strong>${fd.total}</strong> Mails (<strong>${fd.unseen}</strong> ungelesen)</li>`;
+    });
+    detailsHtml += '</ul>';
+    
+    // Summary-Infos
+    if (summary.total_remote !== undefined) {
+        detailsHtml += `<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ccc;">`;
+        detailsHtml += `<strong>Gesamt Remote:</strong> ${summary.total_remote} Mails<br>`;
+        detailsHtml += `<strong>Ungelesen:</strong> ${summary.total_unseen}<br>`;
+    }
+    if (summary.total_local !== undefined) {
+        detailsHtml += `<strong>Lokal in DB:</strong> ${summary.total_local}<br>`;
+    }
+    if (summary.delta !== undefined) {
+        const deltaColor = summary.delta > 0 ? '#856404' : '#155724';
+        detailsHtml += `<strong style="color: ${deltaColor};">Delta:</strong> ${summary.delta} Mails fehlen lokal`;
+    }
+    detailsHtml += '</div>';
+    
+    // Zusätzliche Filter-Infos
+    if (unseenOnly || sinceDate || maxTotal > 0) {
+        detailsHtml += '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ccc;">';
+        detailsHtml += '<strong>Aktive Filter:</strong><ul style="margin: 5px 0; padding-left: 20px;">';
+        if (unseenOnly) detailsHtml += '<li>Nur Ungelesene</li>';
+        if (sinceDate) detailsHtml += `<li>Ab ${sinceDate}</li>`;
+        if (maxTotal > 0) detailsHtml += `<li>Max ${maxTotal} Mails</li>`;
+        detailsHtml += '</ul></div>';
+    }
+    
+    detailsHtml += '</div>';
+    
+    previewDetails.innerHTML = detailsHtml;
+    previewContainer.style.display = 'block';
+}
+</script>
+{% endblock %}

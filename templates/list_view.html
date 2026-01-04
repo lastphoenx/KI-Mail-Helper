@@ -1,0 +1,615 @@
+{% extends "base.html" %}
+
+{% block title %}E-Mail Liste - Mail Helper{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">📝 E-Mail Liste</h1>
+
+<!-- Filter Bar (Phase 13) -->
+<div class="card mb-4" id="filterBar">
+    <div class="card-body">
+        <!-- Hauptfilter-Leiste (kompakt) -->
+        <div class="filter-toolbar mb-3">
+            <div class="row g-2 align-items-end">
+                <!-- Account -->
+                <div class="col-auto">
+                    <label class="form-label small mb-1">📧 Account</label>
+                    <select class="form-select form-select-sm filter-select" data-filter="mail_account" id="accountSelect">
+                        <option value="">Alle</option>
+                        {% if user_accounts %}
+                            {% for account in user_accounts %}
+                            <option value="{{ account.id }}" {% if account.id|string == filter_account_id|string %}selected{% endif %}>
+                                {{ account.decrypted_imap_username or account.name }}
+                            </option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+
+                <!-- Folder -->
+                <div class="col-auto">
+                    <label class="form-label small mb-1">📁 Ordner</label>
+                    <select class="form-select form-select-sm filter-select" data-filter="folder" id="folderSelect" 
+                            {% if not server_folders %}disabled{% endif %}>
+                        <option value="">{% if server_folders %}Alle Ordner{% else %}Erst Account wählen{% endif %}</option>
+                        {% if server_folders %}
+                            {% for folder in server_folders %}
+                            <option value="{{ folder }}" {% if folder == filter_folder %}selected{% endif %}>
+                                {{ folder }}
+                            </option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+
+                <!-- Status (Read/Unread) -->
+                <div class="col-auto">
+                    <label class="form-label small mb-1">👁️ Status</label>
+                    <select class="form-select form-select-sm filter-select" data-filter="seen">
+                        <option value="">Alle</option>
+                        <option value="true" {% if filter_seen == 'true' %}selected{% endif %}>Gelesen</option>
+                        <option value="false" {% if filter_seen == 'false' %}selected{% endif %}>Ungelesen</option>
+                    </select>
+                </div>
+
+                <!-- Flagged -->
+                <div class="col-auto">
+                    <label class="form-label small mb-1">🚩 Wichtig</label>
+                    <select class="form-select form-select-sm filter-select" data-filter="flagged">
+                        <option value="">Alle</option>
+                        <option value="true" {% if filter_flagged == 'true' %}selected{% endif %}>Geflaggt</option>
+                        <option value="false" {% if filter_flagged == 'false' %}selected{% endif %}>Nicht geflaggt</option>
+                    </select>
+                </div>
+
+                <!-- Attachments -->
+                <div class="col-auto">
+                    <label class="form-label small mb-1">📎 Anhänge</label>
+                    <select class="form-select form-select-sm filter-select" data-filter="attach">
+                        <option value="">Alle</option>
+                        <option value="true" {% if filter_attachments == 'true' %}selected{% endif %}>Mit Anhang</option>
+                        <option value="false" {% if filter_attachments == 'false' %}selected{% endif %}>Ohne Anhang</option>
+                    </select>
+                </div>
+
+                <!-- More/Advanced Toggle -->
+                <div class="col-auto ms-auto">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="advancedToggle" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
+                        ⚙️ Erweitert
+                    </button>
+                </div>
+            </div>
+
+            <!-- Erweiterte Filter (zusammengeklappt) -->
+            <div class="collapse mt-3" id="advancedFilters">
+                <div class="row g-2 align-items-end">
+                    <!-- Suche -->
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">🔍 Suche</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" class="form-control form-control-sm filter-search" placeholder="Betreff, Absender..." 
+                                   value="{{ search_term }}" id="searchInput">
+                            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" 
+                                    aria-expanded="false" id="searchModeBtn" title="Suchmodus">
+                                <span id="searchModeLabel">Text</span>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item search-mode-option" href="#" data-mode="text">
+                                    <i class="bi bi-search"></i> Text-Suche
+                                </a></li>
+                                <li><a class="dropdown-item search-mode-option" href="#" data-mode="semantic">
+                                    <i class="bi bi-lightbulb"></i> Semantisch
+                                </a></li>
+                            </ul>
+                        </div>
+                        <small class="text-muted" id="searchModeHint" style="display:none;">
+                            🧠 Findet ähnliche Bedeutungen
+                        </small>
+                    </div>
+
+                    <!-- Datums-Range -->
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">📅 Von</label>
+                        <input type="date" class="form-control form-control-sm filter-select" data-filter="date_from" 
+                               value="{{ filter_date_from }}">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">📅 Bis</label>
+                        <input type="date" class="form-control form-control-sm filter-select" data-filter="date_to" 
+                               value="{{ filter_date_to }}">
+                    </div>
+
+                    <!-- Priorität (Legacy) -->
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">🎯 Priorität</label>
+                        <select class="form-select form-select-sm filter-select" data-filter="farbe">
+                            <option value="">Alle</option>
+                            <option value="rot" {% if filter_color == 'rot' %}selected{% endif %}>🔴 Rot</option>
+                            <option value="gelb" {% if filter_color == 'gelb' %}selected{% endif %}>🟡 Gelb</option>
+                            <option value="grün" {% if filter_color == 'grün' %}selected{% endif %}>🟢 Grün</option>
+                        </select>
+                    </div>
+
+                    <!-- Status (Done) -->
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">✓ Bearbeitet</label>
+                        <select class="form-select form-select-sm filter-select" data-filter="done">
+                            <option value="">Alle</option>
+                            <option value="false" {% if filter_done == 'false' %}selected{% endif %}>Offen</option>
+                            <option value="true" {% if filter_done == 'true' %}selected{% endif %}>Erledigt</option>
+                        </select>
+                    </div>
+
+                    <!-- Tags -->
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">🏷️ Tags</label>
+                        <select class="form-select form-select-sm filter-select" data-filter="tags">
+                            <option value="">Alle Tags</option>
+                            {% if all_tags %}
+                                {% for tag in all_tags %}
+                                <option value="{{ tag.id }}" {% if filter_tag_ids and tag.id == filter_tag_ids[0] %}selected{% endif %}>
+                                    {{ tag.name }}
+                                </option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sortierung & Info -->
+        <div class="row align-items-center pt-2 border-top">
+            <div class="col-auto">
+                <small class="text-muted">
+                    <strong id="resultCount">{{ mails|length }}</strong> Mails
+                    <span id="activeFilters" class="badge bg-info ms-2" style="display:none;"></span>
+                </small>
+            </div>
+            <div class="col-auto ms-auto">
+                <label class="form-label small mb-0 me-2">Sortierung:</label>
+                <select class="form-select form-select-sm d-inline-block" style="width: auto;" id="sortBy" data-filter="sort">
+                    <option value="score" {% if sort_by == 'score' %}selected{% endif %}>Score</option>
+                    <option value="date" {% if sort_by == 'date' %}selected{% endif %}>Datum</option>
+                    <option value="size" {% if sort_by == 'size' %}selected{% endif %}>Größe</option>
+                    <option value="sender" {% if sort_by == 'sender' %}selected{% endif %}>Absender</option>
+                </select>
+                <button class="btn btn-sm btn-outline-secondary ms-2" id="sortOrder" data-order="{{ sort_order }}">
+                    {% if sort_order == 'asc' %}↑{% else %}↓{% endif %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- E-Mail-Liste -->
+<div class="card">
+    <div class="card-header">
+        <strong id="emailListCount">{{ mails|length }}</strong> Mails
+        {% if sort_by != 'score' or sort_order == 'asc' %}
+        <small class="text-muted">(sortiert nach {{ sort_by|replace('score', 'Score')|replace('date', 'Datum')|replace('size', 'Größe')|replace('sender', 'Absender') }} {{ 'aufsteigend' if sort_order == 'asc' else 'absteigend' }})</small>
+        {% else %}
+        <small class="text-muted">(sortiert nach Score)</small>
+        {% endif %}
+    </div>
+    <ul class="list-group list-group-flush">
+        {% for email in mails|default([]) %}
+        {% set raw = email.raw_email %}
+        {% set tag_list = email._decrypted_tags.split(',') if email._decrypted_tags else [] %}
+        <li class="list-group-item">
+            <div class="row align-items-center">
+                <div class="col-md-1 text-center">
+                    {% if email.optimization_status == 'done' and email.optimize_score is not none and email.optimization_completed_at and email.processed_at and email.optimization_completed_at > email.processed_at %}
+                    <span class="badge priority-{{ email.optimize_farbe }} fs-5">
+                        {{ email.optimize_score }}
+                    </span>
+                    {% else %}
+                    <span class="badge priority-{{ email.farbe }} fs-5">
+                        {{ email.score }}
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="col-md-8">
+                    <h6 class="mb-1">
+                        <a href="/email/{{ email.id }}" class="text-decoration-none">
+                            {{ email._decrypted_subject|default("(ohne Betreff)") }}
+                        </a>
+                    </h6>
+                    <small class="text-muted">
+                        Von: {{ email._decrypted_sender|default("Unbekannt") }}
+                        {% if raw and raw.received_at %}| {{ raw.received_at }}{% endif %}
+                    </small>
+                    <p class="mb-2 mt-2">{{ email._decrypted_summary_de|default('Keine Zusammenfassung verfügbar')|truncate(200) }}</p>
+                    <div class="small text-muted mb-2">
+                        {% if email.optimization_status == 'done' and email.optimize_dringlichkeit is not none and email.optimization_completed_at and email.processed_at and email.optimization_completed_at > email.processed_at %}
+                        Dringlichkeit: {{ email.optimize_dringlichkeit }} | Wichtigkeit: {{ email.optimize_wichtigkeit }} |
+                        Aktion: {{ email.optimize_kategorie_aktion|replace('_',' ') if email.optimize_kategorie_aktion else email.kategorie_aktion|replace('_',' ') }} | Spam: {{ 'Ja' if email.optimize_spam_flag else 'Nein' }}
+                        {% else %}
+                        Dringlichkeit: {{ email.dringlichkeit }} | Wichtigkeit: {{ email.wichtigkeit }} |
+                        Aktion: {{ email.kategorie_aktion|replace('_',' ') }} | Spam: {{ 'Ja' if email.spam_flag else 'Nein' }}
+                        {% endif %}
+                    </div>
+                    {% if email.email_tags %}
+                    <div class="mt-2">
+                        {% for tag in email.email_tags %}
+                        <span class="badge me-1" style="background-color: {{ tag.color }};">{{ tag.name }}</span>
+                        {% endfor %}
+                    </div>
+                    {% elif tag_list %}
+                    <div class="mt-2">
+                        <small class="text-muted">Legacy:</small>
+                        {% for tag in tag_list if tag %}
+                        <span class="badge bg-secondary">{{ tag.strip() }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="col-md-3 text-end">
+                    {% if not email.done %}
+                    <form method="post" action="/email/{{ email.id }}/done" class="d-inline action-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <button type="submit" class="btn btn-sm btn-success action-btn" data-action="done">✓ Erledigt</button>
+                    </form>
+                    {% else %}
+                    <span class="badge bg-success">✓ Erledigt</span>
+                    {% endif %}
+                    <a href="/email/{{ email.id }}" class="btn btn-sm btn-outline-primary action-btn" data-action="details">Details</a>
+                </div>
+            </div>
+        </li>
+        {% else %}
+        <li class="list-group-item text-center text-muted py-5">
+            Keine E-Mails gefunden
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+document.addEventListener('DOMContentLoaded', function() {
+    const filterSelects = document.querySelectorAll('.filter-select');
+    const filterSearch = document.querySelector('.filter-search');
+    const sortBySelect = document.getElementById('sortBy');
+    const sortOrderBtn = document.getElementById('sortOrder');
+    const accountSelect = document.getElementById('accountSelect');
+    const folderSelect = document.getElementById('folderSelect');
+
+    async function updateFolderDropdown(accountId) {
+        if (!accountId || !folderSelect) {
+            folderSelect.disabled = true;
+            folderSelect.innerHTML = '<option value="">Erst Account wählen</option>';
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/account/${accountId}/folders`, {
+                method: 'GET',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                console.error('Fehler beim Laden von Ordnern:', response.status);
+                folderSelect.disabled = true;
+                folderSelect.innerHTML = '<option value="">Fehler beim Laden</option>';
+                return;
+            }
+            
+            const data = await response.json();
+            const folders = data.folders || [];
+            const currentValue = folderSelect.value;
+            
+            folderSelect.disabled = false;
+            folderSelect.innerHTML = '<option value="">Alle Ordner</option>';
+            folders.forEach(folder => {
+                const option = document.createElement('option');
+                option.value = folder;
+                option.textContent = folder;
+                if (folder === currentValue) option.selected = true;
+                folderSelect.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Fehler beim Abrufen von Ordnern:', error);
+            folderSelect.disabled = true;
+            folderSelect.innerHTML = '<option value="">Fehler beim Laden</option>';
+        }
+    }
+
+    // Phase F.1: Semantic Search Mode (global variable)
+    window.searchMode = 'text'; // 'text' or 'semantic'
+    
+    function performSemanticSearch(query) {
+        const emailListContainer = document.querySelector('.card:last-of-type .list-group');
+        if (!emailListContainer) {
+            console.error('[ERROR] Email list container not found!');
+            return;
+        }
+        
+        console.log('[DEBUG] performSemanticSearch starting for:', query);
+        
+        // Show loading state
+        emailListContainer.innerHTML = '<li class="list-group-item"><div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Semantische Suche läuft...</p></div></li>';
+        
+        // Build API URL
+        const params = new URLSearchParams({
+            q: query,
+            limit: 50,
+            threshold: 0.25
+        });
+        
+        fetch(`/api/search/semantic?${params}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('[DEBUG] Semantic search results:', data);
+                if (data.results && data.results.length > 0) {
+                    renderSemanticResults(data.results);
+                } else {
+                    emailListContainer.innerHTML = '<li class="list-group-item"><div class="alert alert-info m-3">Keine semantischen Ergebnisse gefunden. Versuche Text-Suche oder andere Begriffe.</div></li>';
+                }
+            })
+            .catch(error => {
+                console.error('Semantic search error:', error);
+                emailListContainer.innerHTML = `<li class="list-group-item"><div class="alert alert-danger m-3">Fehler bei semantischer Suche: ${error.message}</div></li>`;
+            });
+    }
+    
+    function renderSemanticResults(results) {
+        const emailListContainer = document.querySelector('.card:last-of-type .list-group');
+        if (!emailListContainer) {
+            console.error('[ERROR] Email list container not found for rendering!');
+            return;
+        }
+        
+        console.log('[DEBUG] Rendering', results.length, 'semantic results');
+        
+        let html = '';
+        
+        results.forEach(result => {
+            const date = result.date ? new Date(result.date).toLocaleDateString('de-DE') : 'N/A';
+            const score = (result.similarity_score * 100).toFixed(0);
+            
+            html += `
+                <li class="list-group-item">
+                    <a href="/email/${result.email_id}" class="text-decoration-none">
+                        <div class="d-flex w-100 justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">${escapeHtml(result.subject || '(Kein Betreff)')}</h6>
+                                <p class="mb-1 text-muted small">
+                                    <strong>Von:</strong> ${escapeHtml(result.from)} | ${date}
+                                </p>
+                                <p class="mb-2 small">${escapeHtml(result.snippet)}</p>
+                            </div>
+                            <span class="badge bg-primary ms-3" title="Semantic Similarity Score">
+                                🧠 ${score}%
+                            </span>
+                        </div>
+                    </a>
+                </li>
+            `;
+        });
+        
+        emailListContainer.innerHTML = html;
+        
+        // Update count
+        const emailListCount = document.getElementById('emailListCount');
+        if (emailListCount) {
+            emailListCount.textContent = results.length;
+        }
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function updateFilters() {
+        // Phase F.1: Check if semantic search mode is active
+        const searchInput = document.getElementById('searchInput');
+        console.log('[DEBUG] updateFilters called, searchMode:', window.searchMode, 'value:', searchInput?.value);
+        
+        if (window.searchMode === 'semantic' && searchInput && searchInput.value.trim()) {
+            console.log('[DEBUG] Triggering semantic search for:', searchInput.value.trim());
+            performSemanticSearch(searchInput.value.trim());
+            return;
+        }
+        
+        console.log('[DEBUG] Using normal text-based filtering');
+        // Normal text-based filtering
+        const params = new URLSearchParams();
+
+        filterSelects.forEach(select => {
+            const value = select.value.trim();
+            if (value) {
+                const filterName = select.dataset.filter;
+                params.set(filterName, value);
+            }
+        });
+
+        if (filterSearch && filterSearch.value.trim()) {
+            params.set('search', filterSearch.value.trim());
+        }
+
+        if (sortBySelect && sortBySelect.value) {
+            params.set('sort', sortBySelect.value);
+        }
+
+        const currentOrder = sortOrderBtn?.dataset.order || 'desc';
+        params.set('order', currentOrder);
+
+        const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        window.history.replaceState({}, '', newUrl);
+
+        applyFiltersViaAjax(params);
+    }
+
+    function applyFiltersViaAjax(params) {
+        const url = '/list?' + params.toString();
+        
+        const resultCount = document.getElementById('resultCount');
+        if (resultCount) resultCount.textContent = '⏳...';
+
+        fetch(url, {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.text())
+        .then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            const newListHtml = doc.querySelector('.card:last-of-type');
+            const oldListHtml = document.querySelector('.card:last-of-type');
+            
+            if (newListHtml && oldListHtml) {
+                oldListHtml.replaceWith(newListHtml);
+                attachActionFormListeners();
+            }
+
+            const emailCount = doc.querySelector('.card-header');
+            if (emailCount && resultCount) {
+                const countMatch = emailCount.textContent.match(/(\d+)\s+Mails/);
+                if (countMatch) {
+                    resultCount.textContent = countMatch[1];
+                    const newListCount = doc.querySelector('#emailListCount');
+                    if (newListCount) {
+                        newListCount.textContent = countMatch[1];
+                    }
+                }
+            }
+
+            updateActiveFilterBadge(params);
+        })
+        .catch(error => {
+            console.error('Filter-Fehler:', error);
+            if (resultCount) resultCount.textContent = 'Fehler';
+        });
+    }
+
+    function updateActiveFilterBadge(params) {
+        const activeCount = params.toString().split('&').filter(p => p).length;
+        const badge = document.getElementById('activeFilters');
+        if (badge) {
+            if (activeCount > 0) {
+                badge.textContent = activeCount + ' aktiv';
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    }
+
+    function attachActionFormListeners() {
+        let isProcessing = false;
+
+        document.querySelectorAll('.action-form').forEach(form => {
+            form.removeEventListener('submit', handleFormSubmit);
+            form.addEventListener('submit', handleFormSubmit);
+        });
+
+        function handleFormSubmit(e) {
+            if (isProcessing) {
+                e.preventDefault();
+                return false;
+            }
+            const btn = this.querySelector('.action-btn');
+            btn.disabled = true;
+            btn.innerHTML = '⏳...';
+            isProcessing = true;
+        }
+
+        document.querySelectorAll('.action-btn[data-action="details"]').forEach(btn => {
+            btn.removeEventListener('click', handleDetailsClick);
+            btn.addEventListener('click', handleDetailsClick);
+        });
+
+        function handleDetailsClick(e) {
+            if (isProcessing) {
+                e.preventDefault();
+                return false;
+            }
+        }
+    }
+
+    filterSelects.forEach(select => {
+        select.addEventListener('change', function() {
+            if (this === accountSelect) {
+                const accountId = this.value;
+                if (accountId) {
+                    updateFolderDropdown(accountId);
+                }
+            }
+            updateFilters();
+        });
+    });
+
+    if (filterSearch) {
+        let searchTimeout;
+        filterSearch.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(updateFilters, 500);
+        });
+    }
+
+    if (sortBySelect) {
+        sortBySelect.addEventListener('change', updateFilters);
+    }
+
+    if (sortOrderBtn) {
+        sortOrderBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const currentOrder = this.dataset.order || 'desc';
+            const newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+            this.dataset.order = newOrder;
+            this.textContent = newOrder === 'asc' ? '↑' : '↓';
+            updateFilters();
+        });
+    }
+
+    // ===== Phase F.1: Semantic Search Toggle =====
+    const searchModeOptions = document.querySelectorAll('.search-mode-option');
+    const searchModeLabel = document.getElementById('searchModeLabel');
+    const searchModeHint = document.getElementById('searchModeHint');
+    
+    searchModeOptions.forEach(option => {
+        option.addEventListener('click', function(e) {
+            e.preventDefault();
+            window.searchMode = this.dataset.mode;
+            console.log('[DEBUG] Search mode changed to:', window.searchMode);
+            
+            if (window.searchMode === 'semantic') {
+                searchModeLabel.textContent = 'Semantisch';
+                searchModeHint.style.display = 'block';
+            } else {
+                searchModeLabel.textContent = 'Text';
+                searchModeHint.style.display = 'none';
+            }
+            
+            // Re-trigger search if there's a query
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput && searchInput.value.trim()) {
+                console.log('[DEBUG] Re-triggering search with existing query');
+                updateFilters();
+            }
+        });
+    });
+    // ===== End Phase F.1 =====
+
+    attachActionFormListeners();
+
+    const params = new URLSearchParams(window.location.search);
+    updateActiveFilterBadge(params);
+
+    if (accountSelect && accountSelect.value) {
+        updateFolderDropdown(accountSelect.value);
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,413 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Tag-Verwaltung - Mail Helper{% endblock %}
+
+{% block content %}
+<style>
+    .tag-item {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+        transition: all 0.2s;
+    }
+    
+    .tag-item:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+    }
+    
+    .tag-badge {
+        display: inline-block;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: 500;
+        color: white;
+    }
+    
+    .color-picker-option {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: 3px solid transparent;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-block;
+        margin: 5px;
+    }
+    
+    .color-picker-option:hover,
+    .color-picker-option.selected {
+        border-color: #333;
+        transform: scale(1.1);
+    }
+    
+    .email-count-badge {
+        background: #f8f9fa;
+        padding: 5px 12px;
+        border-radius: 12px;
+        font-size: 13px;
+        color: #666;
+    }
+</style>
+
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2>🏷️ Tag-Verwaltung</h2>
+            <p class="text-muted">Verwalte deine E-Mail-Tags für bessere Organisation</p>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTagModal">
+                ➕ Neuer Tag
+            </button>
+        </div>
+    </div>
+    
+    {% if tags %}
+    <div class="row">
+        {% for tag in tags %}
+        <div class="col-md-6 col-lg-4">
+            <div class="tag-item">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="tag-badge" style="background-color: {{ tag.color }};">
+                        {{ tag.name }}
+                    </span>
+                    <span class="email-count-badge">
+                        {{ tag.email_count }} E-Mails
+                    </span>
+                </div>
+                
+                <div class="d-flex gap-2 mt-3">
+                    <button class="btn btn-sm btn-outline-primary flex-fill edit-tag-btn" 
+                            data-tag-id="{{ tag.id }}" 
+                            data-tag-name="{{ tag.name }}" 
+                            data-tag-color="{{ tag.color }}"
+                            data-tag-description="{{ tag.description or '' }}">
+                        ✏️ Bearbeiten
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger delete-tag-btn" 
+                            data-tag-id="{{ tag.id }}" 
+                            data-tag-name="{{ tag.name }}">
+                        🗑️ Löschen
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        <h5>Keine Tags vorhanden</h5>
+        <p class="mb-0">Erstelle deinen ersten Tag, um E-Mails zu kategorisieren. Tags werden auch automatisch von der KI vorgeschlagen.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal: Tag erstellen -->
+<div class="modal fade" id="createTagModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Neuer Tag</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="createTagForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Tag-Name *</label>
+                        <input type="text" class="form-control" id="createTagName" 
+                               placeholder="z.B. Wichtig, Rechnung, Termin" 
+                               maxlength="50" required>
+                        <small class="text-muted">Max. 50 Zeichen</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Semantische Beschreibung <span class="badge bg-info">NEU</span></label>
+                        <textarea class="form-control" id="createTagDescription" rows="3"
+                                  placeholder="Beschreibe, welche Emails zu diesem Tag gehören (optional, aber empfohlen für bessere KI-Vorschläge)
+Beispiel: Emails related to subscriptions, membership platforms, recurring payments, service accounts"></textarea>
+                        <small class="text-muted">
+                            💡 <strong>Tipp:</strong> Je genauer die Beschreibung, desto besser die automatischen Tag-Vorschläge!
+                            Die KI lernt außerdem automatisch aus deinen zugewiesenen Tags.
+                        </small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Farbe</label>
+                        <div id="createColorPicker">
+                            <!-- Dynamisch befüllt via JavaScript - zeigt nur noch nicht verwendete Farben -->
+                        </div>
+                        <input type="hidden" id="createTagColor" value="#3B82F6">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Tag erstellen</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Tag bearbeiten -->
+<div class="modal fade" id="editTagModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Tag bearbeiten</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editTagForm">
+                <input type="hidden" id="editTagId">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Tag-Name *</label>
+                        <input type="text" class="form-control" id="editTagName" 
+                               maxlength="50" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Semantische Beschreibung <span class="badge bg-info">NEU</span></label>
+                        <textarea class="form-control" id="editTagDescription" rows="3"
+                                  placeholder="Beschreibe, welche Emails zu diesem Tag gehören (optional)"></textarea>
+                        <small class="text-muted">
+                            💡 Genauere Beschreibungen = bessere automatische Vorschläge
+                        </small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Farbe</label>
+                        <div id="editColorPicker">
+                            <!-- Dynamisch befüllt via JavaScript - zeigt alle Farben (inkl. aktueller Farbe) -->
+                        </div>
+                        <input type="hidden" id="editTagColor">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+// CSRF Token Helper
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+}
+
+// 🎨 Erweiterte Farbpalette (15 Farben)
+const ALL_COLORS = [
+    { hex: '#3B82F6', name: 'Blau' },
+    { hex: '#10B981', name: 'Grün' },
+    { hex: '#F59E0B', name: 'Orange' },
+    { hex: '#EF4444', name: 'Rot' },
+    { hex: '#8B5CF6', name: 'Lila' },
+    { hex: '#EC4899', name: 'Pink' },
+    { hex: '#6B7280', name: 'Grau' },
+    { hex: '#06B6D4', name: 'Cyan' },
+    { hex: '#14B8A6', name: 'Türkis' },
+    { hex: '#F97316', name: 'Dunkelorange' },
+    { hex: '#84CC16', name: 'Hellgrün' },
+    { hex: '#A855F7', name: 'Hellviolett' },
+    { hex: '#F43F5E', name: 'Rose' },
+    { hex: '#0EA5E9', name: 'Sky' },
+    { hex: '#64748B', name: 'Slate' }
+];
+
+// Sammle bereits verwendete Farben
+function getUsedColors() {
+    const tags = {{ tags|tojson|safe }};
+    return tags.map(tag => tag.color);
+}
+
+// Rendere Color Picker mit Smart Selection
+function renderColorPicker(containerId, currentColor = null, showAll = false) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    const usedColors = showAll ? [] : getUsedColors();
+    const availableColors = ALL_COLORS.filter(c => 
+        showAll || !usedColors.includes(c.hex) || c.hex === currentColor
+    );
+    
+    // Fallback: Wenn alle Farben verwendet, zeige trotzdem alle
+    const colorsToShow = availableColors.length > 0 ? availableColors : ALL_COLORS;
+    
+    container.innerHTML = colorsToShow.map((color, index) => {
+        const isSelected = (currentColor && color.hex === currentColor) || 
+                          (!currentColor && index === 0);
+        return `<span class="color-picker-option ${isSelected ? 'selected' : ''}" 
+                      data-color="${color.hex}" 
+                      style="background-color: ${color.hex};" 
+                      title="${color.name}"></span>`;
+    }).join('');
+    
+    // Event Listener für neue Color Options
+    container.querySelectorAll('.color-picker-option').forEach(option => {
+        option.addEventListener('click', function() {
+            container.querySelectorAll('.color-picker-option').forEach(o => o.classList.remove('selected'));
+            this.classList.add('selected');
+            const hiddenInput = container.nextElementSibling;
+            hiddenInput.value = this.dataset.color;
+        });
+    });
+    
+    // Setze Hidden Input
+    const hiddenInput = container.nextElementSibling;
+    const selectedColor = colorsToShow.find(c => 
+        (currentColor && c.hex === currentColor) || (!currentColor && colorsToShow[0])
+    );
+    if (hiddenInput && selectedColor) {
+        hiddenInput.value = selectedColor.hex;
+    }
+}
+
+// Initialisiere Color Pickers beim Laden
+document.addEventListener('DOMContentLoaded', function() {
+    renderColorPicker('createColorPicker', null, false); // Nur unverwendete Farben
+});
+
+// Color Picker Handler (Legacy - wird durch renderColorPicker ersetzt)
+document.querySelectorAll('.color-picker-option').forEach(option => {
+    option.addEventListener('click', function() {
+        const parent = this.parentElement;
+        parent.querySelectorAll('.color-picker-option').forEach(o => o.classList.remove('selected'));
+        this.classList.add('selected');
+        
+        const hiddenInput = parent.nextElementSibling;
+        hiddenInput.value = this.dataset.color;
+    });
+});
+
+// Tag erstellen
+document.getElementById('createTagForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const name = document.getElementById('createTagName').value.trim();
+    const color = document.getElementById('createTagColor').value;
+    const description = document.getElementById('createTagDescription').value.trim();
+    
+    if (!name) {
+        alert('Bitte einen Tag-Namen eingeben');
+        return;
+    }
+    
+    try {
+        const body = { name, color };
+        if (description) {
+            body.description = description;
+        }
+        
+        const response = await fetch('/api/tags', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify(body)
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            window.location.reload();
+        } else {
+            alert('Fehler: ' + (data.error || 'Tag konnte nicht erstellt werden'));
+        }
+    } catch (error) {
+        alert('Fehler beim Erstellen: ' + error.message);
+    }
+});
+
+// Tag bearbeiten - Event Listener
+document.querySelectorAll('.edit-tag-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const tagId = this.dataset.tagId;
+        const tagName = this.dataset.tagName;
+        const tagColor = this.dataset.tagColor;
+        const tagDescription = this.dataset.tagDescription || '';
+        
+        document.getElementById('editTagId').value = tagId;
+        document.getElementById('editTagName').value = tagName;
+        document.getElementById('editTagColor').value = tagColor;
+        document.getElementById('editTagDescription').value = tagDescription;
+        
+        // Rendere Color Picker mit allen Farben (inkl. aktueller Farbe)
+        renderColorPicker('editColorPicker', tagColor, true);
+        
+        new bootstrap.Modal(document.getElementById('editTagModal')).show();
+    });
+});
+
+// Tag bearbeiten (Submit)
+document.getElementById('editTagForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const tagId = document.getElementById('editTagId').value;
+    const name = document.getElementById('editTagName').value.trim();
+    const color = document.getElementById('editTagColor').value;
+    const description = document.getElementById('editTagDescription').value.trim();
+    
+    try {
+        const body = { name, color };
+        if (description) {
+            body.description = description;
+        }
+        
+        const response = await fetch(`/api/tags/${tagId}`, {
+            method: 'PUT',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify(body)
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            window.location.reload();
+        } else {
+            alert('Fehler: ' + (data.error || 'Tag konnte nicht aktualisiert werden'));
+        }
+    } catch (error) {
+        alert('Fehler beim Aktualisieren: ' + error.message);
+    }
+});
+
+// Tag löschen - Event Listener
+document.querySelectorAll('.delete-tag-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const tagId = this.dataset.tagId;
+        const tagName = this.dataset.tagName;
+        
+        if (!confirm(`Tag "${tagName}" wirklich löschen?\n\nDie Verknüpfungen zu E-Mails werden ebenfalls entfernt.`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/tags/${tagId}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': getCsrfToken()
+                }
+            });
+            
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                const data = await response.json();
+                alert('Fehler: ' + (data.error || 'Tag konnte nicht gelöscht werden'));
+            }
+        } catch (error) {
+            alert('Fehler beim Löschen: ' + error.message);
+        }
+    });
+});
+</script>
+{% endblock %}
