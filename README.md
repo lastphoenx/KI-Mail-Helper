@@ -1113,19 +1113,40 @@ ollama pull mistral  # 4GB, schneller
 
 | Status | Details |
 |--------|---------|
-| **Development Phase** | Phase 9 – Production Hardening ✅ |
-| **Security Score** | 98/100 🔒 |
-| **Tested Platforms** | Linux (Debian 12), WSL2, Proxmox ✅ |
-| **Supported Python** | 3.11+ |
-| **Production Ready** | ✅ Yes (single-user, local deployment) |
-| **Multi-User Support** | 🟡 Technically supported, not fully tested |
-| **License** | [To be determined] |
+| **Development** | Active - Core features complete |
+| **Tested Platforms** | Linux (Debian 12), WSL2, macOS |
+| **Python Version** | 3.11+ |
+| **Production Ready** | ⚠️ Beta - single-user tested, please report bugs |
+| **Multi-User** | 🟡 Supported, not fully tested |
+| **License** | AGPL-3.0 |
+
+---
+
+## 🔒 Security
+
+- **Zero-Knowledge Architecture** - Server kann Daten nicht entschlüsseln
+- **AES-256-GCM** für alle E-Mail-Inhalte
+- **DEK/KEK Pattern** - Passwort ändern ohne Daten neu zu verschlüsseln  
+- **PBKDF2** mit 600.000 Iterationen (OWASP 2024 Standard)
+- **Mandatory 2FA** für alle Accounts
+- **Keine Klartext-Credentials** - nur verschlüsselt in DB
+
+Siehe [SECURITY.md](./docs/SECURITY.md) für Details.
 
 ---
 
 ## 📄 Lizenz
 
-[Noch festzulegen]
+Dieses Projekt ist unter der **GNU Affero General Public License v3.0 (AGPL-3.0)** lizenziert.
+
+**Was bedeutet das?**
+- ✅ Du kannst die Software **frei nutzen, modifizieren und selbst hosten**
+- ✅ Wenn du die Software als **Web-Service anbietest**, musst du deine Änderungen **veröffentlichen**
+- ✅ Forks müssen ebenfalls unter AGPL-3.0 bleiben (Copyleft)
+
+Die volle Lizenz findest du in [LICENSE](./LICENSE).
+
+**Warum AGPL?** Weil KI-Mail-Helper eine Web-App ist. AGPL stellt sicher, dass Cloud-Anbieter ihre Verbesserungen mit der Community teilen müssen – im Gegensatz zu MIT/Apache, wo sie es einfach als proprietären SaaS verkaufen könnten.
 
 ---
 
