@@ -322,7 +322,7 @@ def process_pending_raw_emails(
     # 🚀 PERFORMANCE: Pre-Load alle Tag-Embeddings für User
     # Verhindert 11-13× Ollama-Calls pro Email (6min+ → 10s)
     try:
-        tag_manager_mod = import_module(".services.tag_manager", "src")
+        tag_manager_mod = importlib.import_module(".services.tag_manager", "src")
         preloaded = tag_manager_mod.TagEmbeddingCache.preload_user_tags(user.id, db)
         logger.info(f"⚡ {preloaded} Tag-Embeddings vorgeladen")
     except Exception as e:

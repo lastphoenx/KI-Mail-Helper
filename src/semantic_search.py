@@ -127,12 +127,17 @@ def generate_embedding_for_email(
         # Log Dimension für Debugging
         logger.info(f"✅ Embedding generiert: {dimension} Dimensionen, {len(embedding_array.tobytes())} bytes, Norm = 1.0")
         
-        # WARNING nur wenn stark abweicht von DEFAULT
-        if dimension != DEFAULT_EMBEDDING_DIM:
+        # WARNING nur beim ersten Mal pro Session (nicht bei jedem Embedding)
+        # Cache: Track ob bereits gewarnt wurde für diese Dimension
+        if not hasattr(generate_embedding_for_email, '_dimension_warned'):
+            generate_embedding_for_email._dimension_warned = set()
+        
+        if dimension != DEFAULT_EMBEDDING_DIM and dimension not in generate_embedding_for_email._dimension_warned:
             logger.warning(
                 f"⚠️  Embedding-Dimension {dimension} weicht von Default ({DEFAULT_EMBEDDING_DIM}) ab. "
                 f"Stelle sicher, dass ALLE Emails mit dem gleichen Model embedded werden!"
             )
+            generate_embedding_for_email._dimension_warned.add(dimension)
         
         # Model-Name: Verwende übergebenen Namen oder hole von Client
         actual_model = model_name
