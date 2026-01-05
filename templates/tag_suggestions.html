@@ -1,0 +1,367 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Tag-Vorschläge - KI Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col-md-10">
+            <h2>💡 KI Tag-Vorschläge</h2>
+            <small class="text-muted">
+                {% if stats.pending > 0 %}
+                    {{ stats.pending }} Vorschlag{{ 's' if stats.pending != 1 else '' }} ausstehend
+                {% else %}
+                    Keine ausstehenden Vorschläge
+                {% endif %}
+            </small>
+        </div>
+        <div class="col-md-2 text-end">
+            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#settingsModal">
+                ⚙️ Einstellungen
+            </button>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal fade" id="settingsModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">⚙️ Tag-Vorschläge Einstellungen</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="enableQueueToggle" 
+                               {% if queue_enabled %}checked{% endif %}>
+                        <label class="form-check-label" for="enableQueueToggle">
+                            KI-Tag-Vorschläge aktivieren
+                        </label>
+                    </div>
+                    <small class="text-muted d-block mt-2">
+                        Wenn aktiviert: AI-Vorschläge für nicht-existierende Tags werden in dieser Queue gesammelt.
+                        Sie können dann entscheiden, ob Sie neue Tags erstellen oder existierende verwenden möchten.
+                    </small>
+                    <div class="alert alert-info mt-3 mb-0">
+                        ℹ️ Tags werden <strong>niemals automatisch</strong> erstellt. Sie entscheiden immer selbst!
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="button" class="btn btn-primary" onclick="saveSettings()">💾 Speichern</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    {% if stats.total > 0 %}
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5>⏳ Ausstehend</h5>
+                    <h3>{{ stats.pending }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5>✅ Genehmigt</h5>
+                    <h3>{{ stats.approved }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5>🔀 Gemerged</h5>
+                    <h3>{{ stats.merged }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5>❌ Abgelehnt</h5>
+                    <h3>{{ stats.rejected }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Batch Actions -->
+    {% if suggestions %}
+    <div class="row mb-3">
+        <div class="col-md-12">
+            <div class="btn-group" role="group">
+                <button type="button" class="btn btn-sm btn-outline-success" onclick="batchApprove()">
+                    ✅ Alle annehmen
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="batchReject()">
+                    ❌ Alle ablehnen
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Suggestions List -->
+    {% if suggestions %}
+        {% for suggestion in suggestions %}
+        <div class="card mb-3 suggestion-card" data-suggestion-id="{{ suggestion.id }}">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <h5 class="mb-0">
+                            <span class="badge bg-primary">{{ suggestion.suggestion_count }}x</span>
+                            "{{ suggestion.suggested_name }}"
+                        </h5>
+                        {% if suggestion.source_email %}
+                        <small class="text-muted d-block">
+                            📧 Beispiel: "{{ suggestion.source_email.subject[:50] }}{% if suggestion.source_email.subject|length > 50 %}...{% endif %}"
+                        </small>
+                        {% endif %}
+                        <small class="text-muted d-block">
+                            Vorgeschlagen: {{ suggestion.created_at.strftime('%d.%m.%Y %H:%M') }}
+                        </small>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <!-- Approve -->
+                            <button type="button" class="btn btn-outline-success" 
+                                    onclick="approveSuggestion({{ suggestion.id }})">
+                                ✅ Annehmen
+                            </button>
+
+                            <!-- Merge Dropdown -->
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-outline-info dropdown-toggle" 
+                                        data-bs-toggle="dropdown" aria-expanded="false">
+                                    🔀 Mergen
+                                </button>
+                                <ul class="dropdown-menu" id="merge-menu-{{ suggestion.id }}">
+                                    {% if user_tags %}
+                                        {% for tag in user_tags %}
+                                        <li>
+                                            <a class="dropdown-item" 
+                                               onclick="mergeSuggestion({{ suggestion.id }}, {{ tag.id }})">
+                                                <span style="display: inline-block; width: 12px; height: 12px; 
+                                                             background-color: {{ tag.color }}; 
+                                                             border-radius: 50%; vertical-align: middle; margin-right: 8px;"></span>
+                                                {{ tag.name }}
+                                            </a>
+                                        </li>
+                                        {% endfor %}
+                                    {% else %}
+                                        <li><a class="dropdown-item disabled">Keine Tags vorhanden</a></li>
+                                    {% endif %}
+                                </ul>
+                            </div>
+
+                            <!-- Reject -->
+                            <button type="button" class="btn btn-outline-danger" 
+                                    onclick="rejectSuggestion({{ suggestion.id }})">
+                                ❌ Ablehnen
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="alert alert-info text-center py-5">
+            <h4>✨ Keine Vorschläge</h4>
+            <p class="mb-0">Wenn KI Tag-Vorschläge analysiert und diese nicht existieren, werden sie hier angezeigt.</p>
+        </div>
+    {% endif %}
+</div>
+
+<script>
+// API Base
+const API_BASE = '{{ url_for("index") }}';
+
+// Approve Suggestion
+async function approveSuggestion(suggestionId) {
+    try {
+        const response = await fetch(`/api/tag-suggestions/${suggestionId}/approve`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify({ color: '#3B82F6' })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            alert(`✅ Tag "${data.tag_name}" erstellt und Vorschlag genehmigt!`);
+            location.reload();
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+        }
+    } catch (err) {
+        alert(`❌ Fehler: ${err}`);
+    }
+}
+
+// Reject Suggestion
+async function rejectSuggestion(suggestionId) {
+    try {
+        const response = await fetch(`/api/tag-suggestions/${suggestionId}/reject`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            }
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            const card = document.querySelector(`[data-suggestion-id="${suggestionId}"]`);
+            if (card) {
+                card.style.opacity = '0.5';
+                card.style.textDecoration = 'line-through';
+            }
+            alert('✅ Vorschlag abgelehnt');
+            setTimeout(() => location.reload(), 1000);
+        }
+    } catch (err) {
+        alert(`❌ Fehler: ${err}`);
+    }
+}
+
+// Merge Suggestion
+async function mergeSuggestion(suggestionId, targetTagId) {
+    try {
+        const response = await fetch(`/api/tag-suggestions/${suggestionId}/merge`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify({ target_tag_id: targetTagId })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            alert('🔀 Vorschlag zu existierendem Tag zugewiesen!');
+            location.reload();
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+        }
+    } catch (err) {
+        alert(`❌ Fehler: ${err}`);
+    }
+}
+
+// Batch Approve
+async function batchApprove() {
+    if (!confirm('Alle Vorschläge annehmen und neue Tags erstellen?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/tag-suggestions/batch-approve', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify({ color: '#3B82F6' })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            alert(`✅ ${data.count} Vorschläge genehmigt!`);
+            location.reload();
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+        }
+    } catch (err) {
+        alert(`❌ Fehler: ${err}`);
+    }
+}
+
+// Batch Reject
+async function batchReject() {
+    if (!confirm('Alle Vorschläge ablehnen?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/tag-suggestions/batch-reject', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            }
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            alert(`✅ ${data.count} Vorschläge abgelehnt!`);
+            location.reload();
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+        }
+    } catch (err) {
+        alert(`❌ Fehler: ${err}`);
+    }
+}
+
+// Save Settings
+async function saveSettings() {
+    const enabled = document.getElementById('enableQueueToggle').checked;
+
+    try {
+        const response = await fetch('/api/tag-suggestions/settings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify({ enabled })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            alert(`✅ Einstellungen gespeichert!`);
+            location.reload();
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+        }
+    } catch (err) {
+        alert(`❌ Fehler: ${err}`);
+    }
+}
+</script>
+
+<style>
+    .suggestion-card {
+        transition: all 0.3s ease;
+        border-left: 4px solid #3B82F6;
+    }
+
+    .suggestion-card:hover {
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn-group-sm .btn {
+        font-size: 0.875rem;
+        padding: 0.375rem 0.75rem;
+    }
+
+    .card h5 {
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    .badge {
+        margin-right: 0.5rem;
+    }
+</style>
+{% endblock %}

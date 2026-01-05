@@ -2718,6 +2718,213 @@ def api_remove_tag_from_email(email_id, tag_id):
         db.close()
 
 
+# ============================================================================
+# Phase TAG-QUEUE: Tag Suggestion Queue Endpoints
+# ============================================================================
+
+@app.route("/tag-suggestions")
+@login_required
+def tag_suggestions_page():
+    """UI: Tag-Vorschläge Seite"""
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect("/login")
+
+        suggestion_mod = importlib.import_module("src.services.tag_suggestion_service")
+        tag_manager_mod = importlib.import_module("src.services.tag_manager")
+
+        # Holt pending Vorschläge + User-Tags
+        suggestions = suggestion_mod.TagSuggestionService.get_pending_suggestions(db, user.id)
+        user_tags = tag_manager_mod.TagManager.get_user_tags(db, user.id)
+        stats = suggestion_mod.TagSuggestionService.get_suggestion_stats(db, user.id)
+
+        return render_template(
+            "tag_suggestions.html",
+            suggestions=suggestions,
+            user_tags=user_tags,
+            stats=stats,
+            queue_enabled=user.enable_tag_suggestion_queue,
+        )
+
+    finally:
+        db.close()
+
+
+@app.route("/api/tag-suggestions", methods=["GET"])
+@login_required
+def api_get_tag_suggestions():
+    """API: Pending Vorschläge abrufen"""
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        suggestion_mod = importlib.import_module("src.services.tag_suggestion_service")
+        suggestions = suggestion_mod.TagSuggestionService.get_pending_suggestions(db, user.id)
+
+        return jsonify(
+            [
+                {
+                    "id": s.id,
+                    "name": s.suggested_name,
+                    "count": s.suggestion_count,
+                    "source_email_subject": (
+                        s.source_email.subject if s.source_email else None
+                    ),
+                    "source_email_id": s.source_email_id,
+                    "created_at": s.created_at.isoformat(),
+                }
+                for s in suggestions
+            ]
+        )
+
+    finally:
+        db.close()
+
+
+@app.route("/api/tag-suggestions/<int:id>/approve", methods=["POST"])
+@login_required
+def api_approve_suggestion(id):
+    """API: Vorschlag annehmen → Tag erstellen"""
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        data = request.get_json() or {}
+        color = data.get("color", "#3B82F6")
+
+        suggestion_mod = importlib.import_module("src.services.tag_suggestion_service")
+        tag = suggestion_mod.TagSuggestionService.approve_suggestion(db, id, user.id, color)
+
+        if not tag:
+            return jsonify({"error": "Suggestion not found"}), 404
+
+        return jsonify(
+            {"success": True, "tag_id": tag.id, "tag_name": tag.name, "color": tag.color}
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
+
+
+@app.route("/api/tag-suggestions/<int:id>/reject", methods=["POST"])
+@login_required
+def api_reject_suggestion(id):
+    """API: Vorschlag ablehnen"""
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        suggestion_mod = importlib.import_module("src.services.tag_suggestion_service")
+        success = suggestion_mod.TagSuggestionService.reject_suggestion(db, id, user.id)
+
+        return jsonify({"success": success})
+
+    finally:
+        db.close()
+
+
+@app.route("/api/tag-suggestions/<int:id>/merge", methods=["POST"])
+@login_required
+def api_merge_suggestion(id):
+    """API: Vorschlag zu existierendem Tag mergen"""
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        data = request.get_json()
+        target_tag_id = data.get("target_tag_id")
+
+        if not target_tag_id:
+            return jsonify({"error": "target_tag_id required"}), 400
+
+        suggestion_mod = importlib.import_module("src.services.tag_suggestion_service")
+        success = suggestion_mod.TagSuggestionService.merge_suggestion(
+            db, id, target_tag_id, user.id
+        )
+
+        return jsonify({"success": success})
+
+    finally:
+        db.close()
+
+
+@app.route("/api/tag-suggestions/batch-reject", methods=["POST"])
+@login_required
+def api_batch_reject_suggestions():
+    """API: Alle Vorschläge ablehnen"""
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        suggestion_mod = importlib.import_module("src.services.tag_suggestion_service")
+        count = suggestion_mod.TagSuggestionService.batch_reject_by_user(db, user.id)
+
+        return jsonify({"success": True, "count": count})
+
+    finally:
+        db.close()
+
+
+@app.route("/api/tag-suggestions/batch-approve", methods=["POST"])
+@login_required
+def api_batch_approve_suggestions():
+    """API: Alle Vorschläge annehmen"""
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        data = request.get_json() or {}
+        color = data.get("color", "#3B82F6")
+
+        suggestion_mod = importlib.import_module("src.services.tag_suggestion_service")
+        count = suggestion_mod.TagSuggestionService.batch_approve_by_user(db, user.id, color)
+
+        return jsonify({"success": True, "count": count})
+
+    finally:
+        db.close()
+
+
+@app.route("/api/tag-suggestions/settings", methods=["GET", "POST"])
+@login_required
+def api_tag_suggestion_settings():
+    """API: Queue-Einstellungen lesen/setzen"""
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        if request.method == "GET":
+            return jsonify({"enabled": user.enable_tag_suggestion_queue})
+
+        data = request.get_json()
+        user.enable_tag_suggestion_queue = data.get("enabled", False)
+        db.commit()
+
+        return jsonify({"success": True, "enabled": user.enable_tag_suggestion_queue})
+
+    finally:
+        db.close()
+
+
 def _update_user_override_tags(db, email_id: int, user_id: int, tag_manager_mod):
     """Helper: Aktualisiert user_override_tags für ML-Training
 

@@ -504,11 +504,13 @@ def process_pending_raw_emails(
                 
                 # Phase 10: Auto-assign suggested_tags from AI
                 # GEÄNDERT 2026-01-05: Nur existierende Tags zuweisen, keine Auto-Creation
+                # GEÄNDERT 2026-01-05: AI-Vorschläge gehen optional in Queue statt zu werden ignoriert
                 # Siehe: doc/offen/PATCH_DISABLE_TAG_AUTO_CREATION.md
                 suggested_tags = ai_result.get("suggested_tags", [])
                 if suggested_tags and isinstance(suggested_tags, list):
                     try:
                         tag_manager_mod = importlib.import_module(".services.tag_manager", "src")
+                        suggestion_mod = importlib.import_module(".services.tag_suggestion_service", "src")
                         
                         # Muss flushen damit processed_email.id verfügbar ist
                         session.flush()
@@ -539,14 +541,24 @@ def process_pending_raw_emails(
                                     )
                                     logger.debug(f"📌 Tag '{tag_name}' assigned to email {processed_email.id}")
                                 else:
-                                    # Tag existiert nicht → nur loggen (später: Queue)
-                                    logger.info(f"💡 AI suggested tag '{tag_name}' - nicht vorhanden, übersprungen (email {processed_email.id})")
+                                    # Tag existiert nicht → zur Queue hinzufügen (falls aktiviert)
+                                    if user.enable_tag_suggestion_queue:
+                                        suggestion_mod.TagSuggestionService.add_to_queue(
+                                            db=session,
+                                            user_id=user.id,
+                                            suggested_name=tag_name,
+                                            source_email_id=processed_email.id
+                                        )
+                                        logger.info(f"📥 AI suggested tag '{tag_name}' added to queue (email {processed_email.id})")
+                                    else:
+                                        # Queue deaktiviert → nur loggen
+                                        logger.info(f"💡 AI suggested tag '{tag_name}' - nicht vorhanden, übersprungen (email {processed_email.id})")
                                     
                             except Exception as tag_err:
-                                logger.warning(f"⚠️  Tag-Assignment fehlgeschlagen für '{tag_name}': {tag_err}")
+                                logger.warning(f"⚠️  Tag-Assignment/Queue fehlgeschlagen für '{tag_name}': {tag_err}")
                                 
                     except Exception as e:
-                        logger.warning(f"⚠️  Tag-Manager nicht verfügbar oder Fehler: {e}")
+                        logger.warning(f"⚠️  Tag-Manager/Suggestion nicht verfügbar oder Fehler: {e}")
                 
                 # Phase F.2: Smart Tag Auto-Suggestions basierend auf Email-Embeddings
                 if raw_email.email_embedding:

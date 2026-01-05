@@ -142,6 +142,49 @@ class EmailTagAssignment(Base):
     __table_args__ = (UniqueConstraint("email_id", "tag_id", name="uq_email_tag"),)
 
 
+class TagSuggestionQueue(Base):
+    """Warteschlange für KI-vorgeschlagene Tags (Phase TAG-QUEUE)
+    
+    Sammelt AI-Vorschläge für nicht-existierende Tags.
+    User entscheidet: approve → Tag erstellen, reject → ignorieren, merge → zu existierendem Tag
+    
+    Status: pending, approved, rejected, merged
+    """
+
+    __tablename__ = "tag_suggestion_queue"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    # Was wurde vorgeschlagen
+    suggested_name = Column(String(50), nullable=False)
+
+    # Woher kam der Vorschlag (optional - kann später löschen wenn Email gelöscht wird)
+    source_email_id = Column(Integer, ForeignKey("processed_emails.id", ondelete="SET NULL"), nullable=True)
+
+    # Wann wurde es vorgeschlagen
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    # Status: pending, approved, rejected, merged
+    status = Column(String(20), default="pending", nullable=False)
+
+    # Falls zu existierendem Tag gemappt (bei merge oder approve)
+    merged_into_tag_id = Column(Integer, ForeignKey("email_tags.id", ondelete="SET NULL"), nullable=True)
+
+    # Wie oft wurde dieser Name vorgeschlagen (für Priorisierung)
+    suggestion_count = Column(Integer, default=1)
+
+    # Relationships
+    user = relationship("User", backref="tag_suggestions")
+    source_email = relationship("ProcessedEmail", backref="tag_suggestions")
+    merged_into_tag = relationship("EmailTag", backref="merged_suggestions")
+
+    # Constraints: Nur ein pending Vorschlag pro Name pro User
+    __table_args__ = (
+        UniqueConstraint("user_id", "suggested_name", name="uq_user_pending_suggestion"),
+    )
+
+
 class SenderPattern(Base):
     """
     Gelernte Muster für Absender-basierte Klassifizierung (Phase 11d).
@@ -241,6 +284,11 @@ class User(Base):
 
     # Phase INV: Invite & Diagnostics Access
     imap_diagnostics_enabled = Column(Boolean, default=False)  # IMAP-Diagnostics Zugriff
+
+    # Phase TAG-QUEUE: Tag Suggestion Queue (Default: AUS)
+    # Wenn aktiviert: AI-Vorschläge für nicht-existierende Tags kommen in Queue
+    # User kann dann approve/reject/merge mit eigenen Tags
+    enable_tag_suggestion_queue = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(
