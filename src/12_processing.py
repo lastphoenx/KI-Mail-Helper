@@ -503,6 +503,8 @@ def process_pending_raw_emails(
                 # Transaction Fix: Don't commit inside loop - batch commit at end
                 
                 # Phase 10: Auto-assign suggested_tags from AI
+                # GEÄNDERT 2026-01-05: Nur existierende Tags zuweisen, keine Auto-Creation
+                # Siehe: doc/offen/PATCH_DISABLE_TAG_AUTO_CREATION.md
                 suggested_tags = ai_result.get("suggested_tags", [])
                 if suggested_tags and isinstance(suggested_tags, list):
                     try:
@@ -520,22 +522,26 @@ def process_pending_raw_emails(
                                 continue
                             
                             try:
-                                # Get or create tag für diesen User
-                                tag = tag_manager_mod.TagManager.get_or_create_tag(
+                                # NEU: Nur existierende Tags verwenden, NICHT erstellen
+                                tag = tag_manager_mod.TagManager.get_tag_by_name(
                                     db=session,
                                     user_id=user.id,
-                                    name=tag_name,
-                                    color="#3B82F6"  # Default blue
+                                    name=tag_name
                                 )
                                 
-                                # Assign tag zu email
-                                tag_manager_mod.TagManager.assign_tag(
-                                    db=session,
-                                    email_id=processed_email.id,
-                                    tag_id=tag.id,
-                                    user_id=user.id
-                                )
-                                logger.debug(f"📌 Tag '{tag_name}' assigned to email {processed_email.id}")
+                                if tag:
+                                    # Tag existiert → zuweisen
+                                    tag_manager_mod.TagManager.assign_tag(
+                                        db=session,
+                                        email_id=processed_email.id,
+                                        tag_id=tag.id,
+                                        user_id=user.id
+                                    )
+                                    logger.debug(f"📌 Tag '{tag_name}' assigned to email {processed_email.id}")
+                                else:
+                                    # Tag existiert nicht → nur loggen (später: Queue)
+                                    logger.info(f"💡 AI suggested tag '{tag_name}' - nicht vorhanden, übersprungen (email {processed_email.id})")
+                                    
                             except Exception as tag_err:
                                 logger.warning(f"⚠️  Tag-Assignment fehlgeschlagen für '{tag_name}': {tag_err}")
                                 

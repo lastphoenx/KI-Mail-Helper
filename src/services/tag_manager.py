@@ -420,6 +420,31 @@ class TagManager:
         return tag
 
     @staticmethod
+    def get_tag_by_name(
+        db: Session, user_id: int, name: str
+    ) -> Optional[models.EmailTag]:
+        """Gibt existierenden Tag zurück oder None
+        
+        UNTERSCHIED zu get_or_create_tag(): Erstellt KEINE neuen Tags!
+        
+        Args:
+            db: SQLAlchemy Session
+            user_id: User ID
+            name: Tag-Name (case-sensitive)
+            
+        Returns:
+            EmailTag object oder None wenn nicht gefunden
+        """
+        return (
+            db.query(models.EmailTag)
+            .filter(
+                models.EmailTag.user_id == user_id, 
+                models.EmailTag.name == name
+            )
+            .first()
+        )
+
+    @staticmethod
     def assign_tag(db: Session, email_id: int, tag_id: int, user_id: int) -> bool:
         """Weist Tag zu Email zu
         

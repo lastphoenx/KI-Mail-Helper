@@ -481,17 +481,24 @@ function getAnalysisModal() {
     return analysisModal;
 }
 
-// Race Condition Protection: Verhindere mehrfache parallele Polling-Loops
-let pollingActive = false;
+// Race Condition Protection: Track aktive Job-ID statt Boolean
+// GEÄNDERT 2026-01-05: Verhindert Modal-Updates von mehreren parallelen Jobs
+// Siehe: doc/offen/REFACTORING_JOB_MODAL_TRACKING.md
+let currentActiveJobId = null;
 
 function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, startTime = Date.now(), emailStartTime = null, lastEmailIndex = null) {
-    // Verhindere Race Condition bei schnellen Button-Clicks
+    // Job-Ownership Management: Bei erstem Aufruf übernimmt dieser Job das Modal
     if (attempt === 0) {
-        if (pollingActive) {
-            console.warn('Polling bereits aktiv, ignoriere doppelten Start');
-            return;
+        if (currentActiveJobId && currentActiveJobId !== jobId) {
+            console.log(`⚠️ Job ${jobId} übernimmt Modal von ${currentActiveJobId}`);
         }
-        pollingActive = true;
+        currentActiveJobId = jobId;
+    }
+    
+    // Ignoriere Updates von nicht-aktiven Jobs (verhindert UI-Springen)
+    if (currentActiveJobId !== jobId) {
+        console.log(`🛑 Poll ignoriert: Job ${jobId} nicht aktiv (aktiv: ${currentActiveJobId})`);
+        return;
     }
     
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
@@ -551,7 +558,7 @@ function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, star
                 document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
                     const modal = getAnalysisModal();
                     modal.hide();
-                    pollingActive = false;  // Reset polling flag
+                    currentActiveJobId = null;  // Reset job tracking
                     if (btn) {
                         btn.disabled = false;
                         btn.textContent = originalLabel || 'Abrufen';
@@ -572,7 +579,7 @@ function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, star
                 document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
                     const modal = getAnalysisModal();
                     modal.hide();
-                    pollingActive = false;  // Reset polling flag
+                    currentActiveJobId = null;  // Reset job tracking
                     if (btn) {
                         btn.disabled = false;
                         btn.textContent = originalLabel || 'Abrufen';
@@ -598,7 +605,7 @@ function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, star
                 document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
                     const modal = getAnalysisModal();
                     modal.hide();
-                    pollingActive = false;  // Reset polling flag
+                    currentActiveJobId = null;  // Reset job tracking
                     if (btn) {
                         btn.disabled = false;
                         btn.textContent = originalLabel || 'Abrufen';
@@ -619,7 +626,7 @@ function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, star
         })
         .catch(err => {
             modal.hide();
-            pollingActive = false;  // Reset polling flag bei Error
+            currentActiveJobId = null;  // Reset job tracking bei Error
             alert(`❌ Status-Check fehlgeschlagen: ${err}`);
             if (btn) {
                 btn.disabled = false;
@@ -968,6 +975,20 @@ async function triggerBatchReprocess() {
 }
 
 function pollBatchReprocessStatus(jobId, btn, originalLabel, attempt = 0, startTime = Date.now(), emailStartTime = null, lastEmailIndex = null) {
+    // Job-Ownership Management: Bei erstem Aufruf übernimmt dieser Job das Modal
+    if (attempt === 0) {
+        if (currentActiveJobId && currentActiveJobId !== jobId) {
+            console.log(`⚠️ Batch-Job ${jobId} übernimmt Modal von ${currentActiveJobId}`);
+        }
+        currentActiveJobId = jobId;
+    }
+    
+    // Ignoriere Updates von nicht-aktiven Jobs
+    if (currentActiveJobId !== jobId) {
+        console.log(`🛑 Batch-Poll ignoriert: Job ${jobId} nicht aktiv (aktiv: ${currentActiveJobId})`);
+        return;
+    }
+    
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
     const modal = getAnalysisModal();
     if (attempt === 0) modal.show();
@@ -1017,6 +1038,7 @@ function pollBatchReprocessStatus(jobId, btn, originalLabel, attempt = 0, startT
                 document.getElementById('closeAnalysisBtn').style.display = 'block';
                 document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
                     modal.hide();
+                    currentActiveJobId = null;  // Reset job tracking
                     if (btn) {
                         btn.disabled = false;
                         btn.textContent = originalLabel || '🔄 Alle Emails neu embedden';
@@ -1035,6 +1057,7 @@ function pollBatchReprocessStatus(jobId, btn, originalLabel, attempt = 0, startT
                 document.getElementById('closeAnalysisBtn').style.display = 'block';
                 document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
                     modal.hide();
+                    currentActiveJobId = null;  // Reset job tracking
                     if (btn) {
                         btn.disabled = false;
                         btn.textContent = originalLabel;
@@ -1059,6 +1082,7 @@ function pollBatchReprocessStatus(jobId, btn, originalLabel, attempt = 0, startT
                 document.getElementById('closeAnalysisBtn').style.display = 'block';
                 document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
                     modal.hide();
+                    currentActiveJobId = null;  // Reset job tracking
                     if (btn) {
                         btn.disabled = false;
                         btn.textContent = originalLabel;
@@ -1077,6 +1101,7 @@ function pollBatchReprocessStatus(jobId, btn, originalLabel, attempt = 0, startT
         })
         .catch(err => {
             modal.hide();
+            currentActiveJobId = null;  // Reset job tracking bei Error
             alert(`❌ Status-Check fehlgeschlagen: ${err}`);
             if (btn) {
                 btn.disabled = false;
