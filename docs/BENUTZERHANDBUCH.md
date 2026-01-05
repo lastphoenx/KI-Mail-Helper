@@ -692,6 +692,22 @@ Klicke auf einen Ordner, um Details zu sehen:
 
 ![Mail-Account Liste](images/screenshots/settings-accounts.png)
 
+**Account-Tabelle verstehen:**
+
+| Spalte | Bedeutung |
+|--------|-----------|
+| **ID** | Eindeutige Account-Nummer (wichtig für CLI & Fetch-Filter) |
+| **Name** | Dein Account-Name (z.B. "martina") |
+| **Server** | IMAP-Server-Adresse |
+| **Port** | IMAP-Port (Standard: 993) |
+| **Benutzer** | Email-Adresse des Accounts |
+| **Status** | Aktiv (grün) oder Inaktiv (grau) |
+
+> 💡 **Tipp:** Die **Account-ID** brauchst du für:
+> - CLI-Befehle (`scripts/list_accounts.py`)
+> - Fetch-Filter (nur bestimmte Accounts abrufen)
+> - Bulk-Operations (später)
+
 **Account bearbeiten:**
 1. Klicke auf **"Bearbeiten"** beim gewünschten Account
 2. Ändere Server, Port oder Zugangsdaten

@@ -300,6 +300,7 @@
                 <table class="table table-striped">
                     <thead>
                         <tr>
+                            <th>ID</th>
                             <th>Name</th>
                             <th>Server</th>
                             <th>Port</th>
@@ -311,6 +312,7 @@
                     <tbody>
                         {% for account in mail_accounts %}
                         <tr>
+                            <td><code class="text-muted">{{ account.id }}</code></td>
                             <td>
                                 <strong>{{ account.name }}</strong>
                                 {% if account.fetch_since_date or account.fetch_unseen_only or account.fetch_include_folders or account.fetch_exclude_folders %}

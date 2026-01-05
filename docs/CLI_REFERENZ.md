@@ -435,6 +435,61 @@ sudo journalctl -u mail-helper --since today
 
 ## 9. SQLite Direktzugriff
 
+### Account-IDs anzeigen
+
+**Alle Mail-Accounts über alle User auflisten:**
+
+```bash
+# Mit Python-Script (empfohlen - formatierte Ausgabe)
+python3 scripts/list_accounts.py
+
+# Mit Custom-DB-Pfad
+python3 scripts/list_accounts.py --db /path/to/emails.db
+```
+
+**Ausgabe-Beispiel:**
+```
++----+------------------+-----------+--------+------+
+| ID | Account-Name     | User      | Aktiv  | Auth |
++====+==================+===========+========+======+
+|  1 | martina          | thomas    | Ja     | imap |
+|  3 | work-gmail       | thomas    | Ja     | oauth|
+|  5 | personal         | admin     | Nein   | imap |
++----+------------------+-----------+--------+------+
+
+📊 Gesamt: 3 Account(s)
+```
+
+**Direkt per SQL:**
+
+```bash
+# Alle Accounts mit User-Zuordnung
+sqlite3 emails.db <<EOF
+SELECT 
+    ma.id AS account_id,
+    ma.name AS account_name,
+    u.username AS user_login,
+    CASE WHEN ma.enabled = 1 THEN 'Aktiv' ELSE 'Inaktiv' END AS status
+FROM mail_accounts ma
+JOIN users u ON ma.user_id = u.id
+ORDER BY u.username, ma.name;
+EOF
+
+# Nur eigene Accounts (ersetze 'thomas' mit deinem Username)
+sqlite3 emails.db <<EOF
+SELECT ma.id, ma.name, ma.enabled
+FROM mail_accounts ma
+JOIN users u ON ma.user_id = u.id
+WHERE u.username = 'thomas'
+ORDER BY ma.name;
+EOF
+```
+
+**💡 Wofür brauche ich die Account-ID?**
+- Fetch-Filter konfigurieren (nur bestimmte Accounts fetchen)
+- Bulk-Operations (später)
+- API-Calls & Debugging
+
 ### Interaktive Shell
 
 ```bash

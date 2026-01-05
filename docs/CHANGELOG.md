@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added - Account-ID UI & CLI Tools (2026-01-05)
+
+#### Mail-Account-ID Anzeige & Verwaltung
+**UI & CLI Improvements für Account-Management**
+- ✅ ID-Spalte in Mail-Accounts Tabelle (Settings)
+- ✅ Python-Script: `scripts/list_accounts.py` zeigt alle Accounts mit IDs
+- ✅ CLI-Dokumentation: SQL-Queries für Account-IDs in CLI_REFERENZ.md
+- ✅ Benutzerhandbuch: Account-ID Erklärung mit Use-Cases
+- Files: templates/settings.html, scripts/list_accounts.py, docs/CLI_REFERENZ.md, docs/BENUTZERHANDBUCH.md
+- Use-Case: IDs für Fetch-Filter, Bulk-Ops, CLI-Befehle, Debugging
+
 ### Added - Dashboard Multi-Account Filter (2026-01-05)
 
 #### Account-spezifische Dashboard-Ansicht
