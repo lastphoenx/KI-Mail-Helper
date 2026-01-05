@@ -101,3 +101,7 @@ change_password_route.txt
 
 # Git History Backup
 .git-backup-*
+
+# Backup files
+*.backup*
+*.bak
