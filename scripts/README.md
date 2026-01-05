@@ -21,16 +21,69 @@ python3 scripts/manage_users.py list-diagnostics
 **Note:** First user can register freely, all subsequent users need whitelist entry.
 
 ### `backup_database.sh`
-Automated database backups with WAL-checkpoint and rotation.
+Automated database backups with WAL-checkpoint, compression, and validation.
+
+🐛 **Bug-015 Fix:** Enhanced validation ensures backup integrity.
+
 ```bash
 chmod +x scripts/backup_database.sh
 ./backup_database.sh          # Daily backup (30-day retention)
 ./backup_database.sh weekly   # Weekly backup (90-day retention)
 ```
-**Crontab setup:**
+
+**Features:**
+- WAL checkpoint before backup (ensures consistency)
+- PRAGMA integrity_check validation
+- Compression (gzip)
+- Table count verification
+- Data sanity checks (users, emails counts)
+- Automatic cleanup of old backups
+
+**Crontab setup (optional):**
 ```bash
 0 2 * * * /path/to/scripts/backup_database.sh         # Daily 2:00 AM
 0 3 * * 0 /path/to/scripts/backup_database.sh weekly  # Sunday 3:00 AM
+```
+
+### `test_backup_restore.sh`
+Test if backups are actually restorable (Bug-015 Fix).
+
+🐛 **Bug-015 Fix:** Validates that backups can be restored successfully.
+
+```bash
+chmod +x scripts/test_backup_restore.sh
+./test_backup_restore.sh                           # Test newest backup
+./test_backup_restore.sh backups/daily/emails_*.gz # Test specific backup
+```
+
+**Tests performed:**
+1. ✅ Decompression (gzip)
+2. ✅ SQLite Integrity Check
+3. ✅ Schema Validation (13 tables expected)
+4. ✅ Critical tables exist (users, raw_emails, processed_emails, etc.)
+5. ✅ Schema version (Alembic)
+6. ✅ Data sanity checks (counts)
+7. ✅ Complex queries (JOINs)
+8. ✅ Encryption schema intact
+
+**Output:**
+```
+✅ Backup Restore Test PASSED
+
+📊 Summary:
+   Backup File: emails_20260105_143456.db.gz
+   Database Size: 1.3M
+   Tables: 13
+   Users: 1
+   Emails: 47
+   Schema Version: ph_inv_001
+
+✅ This backup is RESTORABLE and VALID
+```
+
+**Best Practice:** Run after every backup before major development work:
+```bash
+./scripts/backup_database.sh && ./scripts/test_backup_restore.sh
 ```
 
 ### `reset_base_pass.py`

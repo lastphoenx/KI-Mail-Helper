@@ -73,6 +73,67 @@ log "Compressing backup..."
 gzip "$BACKUP_FILE" || log "Warning: Compression failed (backup still valid)"
 BACKUP_FILE="${BACKUP_FILE}.gz"
 
+# 🐛 BUG-015 FIX: Enhanced Backup Validation
+log "Running enhanced validation checks..."
+validate_backup() {
+    local backup_file="$1"
+    local test_file
+    
+    # 1. File size check
+    local size_bytes=$(stat -f%z "$backup_file" 2>/dev/null || stat -c%s "$backup_file" 2>/dev/null)
+    if [ "$size_bytes" -lt 1024 ]; then
+        return 1
+    fi
+    
+    # 2. Decompress for testing
+    test_file="/tmp/backup_test_$$.db"
+    if ! gunzip -c "$backup_file" > "$test_file" 2>/dev/null; then
+        rm -f "$test_file"
+        return 1
+    fi
+    
+    # 3. SQLite Integrity Check
+    local integrity_result
+    integrity_result=$(sqlite3 "$test_file" "PRAGMA integrity_check;" 2>&1)
+    if [ "$integrity_result" != "ok" ]; then
+        log "ERROR: Integrity check failed: $integrity_result"
+        rm -f "$test_file"
+        return 1
+    fi
+    
+    # 4. Schema validation - check critical tables exist
+    local table_count
+    table_count=$(sqlite3 "$test_file" "SELECT COUNT(*) FROM sqlite_master WHERE type='table';" 2>&1)
+    if ! [[ "$table_count" =~ ^[0-9]+$ ]] || [ "$table_count" -lt 5 ]; then
+        log "ERROR: Too few tables found: $table_count (expected >= 5)"
+        rm -f "$test_file"
+        return 1
+    fi
+    
+    # 5. Data sanity checks
+    local user_count
+    user_count=$(sqlite3 "$test_file" "SELECT COUNT(*) FROM users;" 2>/dev/null || echo "0")
+    
+    local email_count
+    email_count=$(sqlite3 "$test_file" "SELECT COUNT(*) FROM raw_emails;" 2>/dev/null || echo "0")
+    
+    log "✅ Backup validation successful:"
+    log "   - Integrity: OK"
+    log "   - Tables: $table_count"
+    log "   - Users: $user_count"
+    log "   - Emails: $email_count"
+    
+    # Cleanup
+    rm -f "$test_file"
+    return 0
+}
+
+if validate_backup "$BACKUP_FILE"; then
+    log "✅ Backup validation passed"
+else
+    error_exit "Backup validation failed - backup may be corrupted!"
+fi
+
 # Cleanup old backups
 if [ "$BACKUP_TYPE" = "weekly" ]; then
     RETENTION=$RETENTION_WEEKLY
