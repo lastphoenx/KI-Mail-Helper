@@ -176,6 +176,15 @@ Nach der 2FA-Aktivierung erhältst du 10 Einmal-Codes. **Speichere diese sicher 
 
 Das Dashboard ist deine Zentrale. Hier siehst du auf einen Blick, welche Emails deine Aufmerksamkeit brauchen.
 
+**Account-Filter:**
+Wenn du mehrere Mail-Accounts hast, kannst du das Dashboard auf einen spezifischen Account filtern:
+- **Dropdown oben:** Wähle "Alle Accounts" oder einen spezifischen Account (Email-Adresse)
+- **Badge:** Zeigt die gewählte Email-Adresse wenn gefiltert
+- **Mail-Anzahl:** Im Dropdown siehst du "(47 Mails)" für den gewählten Account
+- **Persistenz:** Filter bleibt beim Reload erhalten (URL-Parameter)
+
+> 💡 Der Account-Filter wirkt auf Matrix, Ampel-Ansicht UND Statistik. Perfekt, um einen spezifischen Posteingang zu fokussieren!
+
 ### 3.1 Die 3×3 Prioritäts-Matrix
 
 Die Matrix kombiniert zwei Dimensionen:

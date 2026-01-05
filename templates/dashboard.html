@@ -3,7 +3,36 @@
 {% block title %}Dashboard - Mail Helper{% endblock %}
 
 {% block content %}
-<h1 class="mb-4">📊 Mail-Prioritäten Dashboard</h1>
+<h1 class="mb-4">
+    📊 Mail-Prioritäten Dashboard
+    {% if selected_account %}
+        <span class="badge bg-primary ms-2">{{ selected_account.decrypted_imap_username or selected_account.name }}</span>
+    {% endif %}
+</h1>
+
+<!-- Account-Filter -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-center">
+            <div class="col-auto">
+                <label class="form-label small mb-0 me-2">📧 Account:</label>
+            </div>
+            <div class="col-auto">
+                <select class="form-select form-select-sm" id="accountSelect">
+                    <option value="">Alle Accounts</option>
+                    {% if user_accounts %}
+                        {% for account in user_accounts %}
+                        <option value="{{ account.id }}" {% if account.id|string == filter_account_id|string %}selected{% endif %}>
+                            {{ account.decrypted_imap_username or account.name }}
+                            {% if account.id|string == filter_account_id|string %}({{ stats.total }} Mails){% endif %}
+                        </option>
+                        {% endfor %}
+                    {% endif %}
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
 
 <div class="row mb-4">
     <div class="col">
@@ -147,4 +176,24 @@
         </div>
     </div>
 </div>
+
+<script nonce="{{ csp_nonce() }}">
+document.addEventListener('DOMContentLoaded', function() {
+    const accountSelect = document.getElementById('accountSelect');
+    if (accountSelect) {
+        accountSelect.addEventListener('change', function() {
+            const accountId = this.value;
+            const url = new URL(window.location.href);
+            
+            if (accountId) {
+                url.searchParams.set('mail_account', accountId);
+            } else {
+                url.searchParams.delete('mail_account');
+            }
+            
+            window.location.href = url.toString();
+        });
+    }
+});
+</script>
 {% endblock %}

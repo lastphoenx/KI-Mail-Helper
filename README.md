@@ -9,7 +9,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 ## Kernfeatures
 
 - **Zero-Knowledge Encryption** – AES-256-GCM, DEK/KEK-Pattern, Master-Key nur im RAM
-- **3×3 Prioritäts-Matrix** – Dringlichkeit × Wichtigkeit mit Farbcodierung
+- **3×3 Prioritäts-Matrix** – Dringlichkeit × Wichtigkeit mit Farbcodierung + Account-Filter
 - **Multi-Provider AI** – Lokale Modelle (Ollama) oder Cloud (Claude, OpenAI, Mistral)
 - **Online-Learning System** – SGD-Classifier lernt aus User-Korrekturen (4 Classifier: D/W/Spam/Kategorie)
 - **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (14 Bedingungen)
@@ -19,6 +19,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **SMTP Versand** – Antworten & neue Emails mit Sent-Ordner-Sync
 - **Thread-View** – Konversations-basierte Ansicht mit Context
 - **Fetch-Filter** – Account-spezifisch: Ordner, Datum, UNSEEN, Delta-Sync
+- **Multi-Account Dashboard** – Filter Dashboard nach spezifischem Email-Account
 
 ---
 

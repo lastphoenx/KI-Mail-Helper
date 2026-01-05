@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added - Dashboard Multi-Account Filter (2026-01-05)
+
+#### Account-spezifische Dashboard-Ansicht
+**Konsistente Multi-Account-Filterung über alle Views**
+- ✅ Account-Dropdown im Dashboard: Zeigt alle Mail-Accounts mit Email-Adressen
+- ✅ Filter-Persistenz: URL-Parameter ?mail_account=X bleibt beim Reload erhalten
+- ✅ Badge im Header: Zeigt gewählte Email-Adresse wenn gefiltert
+- ✅ Mail-Anzahl: "(47 Mails)" für gewählten Account
+- ✅ Zero-Knowledge: Entschlüsselung der verschlüsselten Email-Adressen für Anzeige
+- ✅ Query-Filter: Offene & erledigte Mails nach mail_account_id gefiltert
+- ✅ CSP-konform: addEventListener statt Inline-Event-Handler
+- Files: src/01_web_app.py (dashboard route), templates/dashboard.html
+- Konsistenz: Gleiche Logik wie list_view für Multi-Account Support
+
 ### Added - Phase Learning-System: Online-Learning & User-Korrekturen (2026-01-05)
 
 #### Online-Learning mit SGD-Classifiers

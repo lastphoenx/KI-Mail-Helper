@@ -742,19 +742,59 @@ def dashboard():
         if not user:
             return redirect(url_for("login"))
 
+        # Account-Filter (optional)
+        filter_account_id = None
+        account_id_str = request.args.get("mail_account")
+        if account_id_str:
+            try:
+                filter_account_id = int(account_id_str)
+            except (ValueError, TypeError):
+                filter_account_id = None
+
+        # Alle Mail-Accounts des Users (für Dropdown)
+        user_accounts = (
+            db.query(models.MailAccount)
+            .filter(models.MailAccount.user_id == user.id)
+            .order_by(models.MailAccount.name)
+            .all()
+        )
+
+        # Zero-Knowledge: Entschlüssele Email-Adressen für Anzeige
+        master_key = session.get("master_key")
+        if master_key and user_accounts:
+            for account in user_accounts:
+                if account.auth_type == "imap" and account.encrypted_imap_username:
+                    try:
+                        account.decrypted_imap_username = (
+                            encryption.EmailDataManager.decrypt_email_sender(
+                                account.encrypted_imap_username, master_key
+                            )
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Fehler beim Entschlüsseln der Account-Email: {e}"
+                        )
+                        account.decrypted_imap_username = None
+
         matrix_data = {}
         total_mails = 0
         high_priority_count = 0
 
+        # Filtere nach Account falls gewählt
+        query_filter = [
+            models.RawEmail.user_id == user.id,
+            models.RawEmail.deleted_at == None,
+            models.ProcessedEmail.done == False,
+            models.ProcessedEmail.deleted_at == None,
+        ]
+        if filter_account_id:
+            query_filter.append(models.RawEmail.mail_account_id == filter_account_id)
+
+        # Alle unerledigten Mails des Users (optional gefiltert nach Account)
         processed_mails = (
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
-            .filter(
-                models.RawEmail.user_id == user.id,
-                models.RawEmail.deleted_at == None,
-                models.ProcessedEmail.done == False,
-                models.ProcessedEmail.deleted_at == None,
-            )
+            .filter(*query_filter)
             .all()
         )
 
@@ -789,15 +829,20 @@ def dashboard():
                 matrix_key = f"{x}{y}"
                 matrix[matrix_key] = matrix_data.get(key, {}).get("count", 0)
 
+        # Erledigte Mails (mit Account-Filter)
+        done_query_filter = [
+            models.RawEmail.user_id == user.id,
+            models.RawEmail.deleted_at == None,
+            models.ProcessedEmail.done == True,
+            models.ProcessedEmail.deleted_at == None,
+        ]
+        if filter_account_id:
+            done_query_filter.append(models.RawEmail.mail_account_id == filter_account_id)
+
         done_mails = (
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
-            .filter(
-                models.RawEmail.user_id == user.id,
-                models.RawEmail.deleted_at == None,
-                models.ProcessedEmail.done == True,
-                models.ProcessedEmail.deleted_at == None,
-            )
+            .filter(*done_query_filter)
             .count()
         )
 
@@ -807,8 +852,24 @@ def dashboard():
             "done": done_mails,
         }
 
+        # Gewählter Account (für Anzeige)
+        selected_account = None
+        if filter_account_id:
+            selected_account = (
+                db.query(models.MailAccount)
+                .filter(models.MailAccount.id == filter_account_id)
+                .first()
+            )
+
         return render_template(
-            "dashboard.html", matrix=matrix, ampel=amp_colors, stats=stats, top_tags=[]
+            "dashboard.html",
+            matrix=matrix,
+            ampel=amp_colors,
+            stats=stats,
+            top_tags=[],
+            user_accounts=user_accounts,
+            filter_account_id=filter_account_id,
+            selected_account=selected_account,
         )
 
     finally:
