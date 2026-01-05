@@ -611,7 +611,9 @@ function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, star
             const subjectDisplay = currentSubject ? ` - ${currentSubject}` : '';
             document.getElementById('progressText').textContent = `${accountName}: Mail ${currentIdx}/${totalEmails}${subjectDisplay}`;
             
-            setTimeout(() => pollJobStatus(jobId, accountName, btn, originalLabel, attempt + 1, startTime, emailStartTime, currentIdx), 2000);
+            // 🚀 Polling-Interval auf 5s erhöht (von 2s) - verhindert Rate-Limit-Hits
+            // Bei langsamen Jobs (Ollama-Embeddings) sind 2s zu aggressiv
+            setTimeout(() => pollJobStatus(jobId, accountName, btn, originalLabel, attempt + 1, startTime, emailStartTime, currentIdx), 5000);
         })
         .catch(err => {
             modal.hide();

@@ -82,6 +82,42 @@ class TagEmbeddingCache:
     _current_model: dict = {}  # {user_id: "model-name"} - für Auto-Invalidierung bei Model-Wechsel
     
     @classmethod
+    def preload_user_tags(cls, user_id: int, db: Session) -> int:
+        """🚀 PERFORMANCE: Lädt alle Tag-Embeddings eines Users auf einmal
+        
+        Statt 11-13× einzelne Ollama-Calls pro Email (= 6min+)
+        → 1× Batch-Load für alle Tags (= 5-10s)
+        
+        Args:
+            user_id: User ID
+            db: Database session
+            
+        Returns:
+            Anzahl geladener Tags
+        """
+        tags = db.query(models.EmailTag).filter(
+            models.EmailTag.user_id == user_id
+        ).all()
+        
+        if not tags:
+            return 0
+        
+        logger.info(f"🚀 Pre-Loading {len(tags)} Tag-Embeddings für User {user_id}...")
+        loaded_count = 0
+        
+        for tag in tags:
+            # get_tag_embedding cached automatisch
+            emb = cls.get_tag_embedding(tag, db)
+            if emb is not None:
+                loaded_count += 1
+        
+        logger.info(f"✅ {loaded_count}/{len(tags)} Tag-Embeddings geladen und gecacht")
+        return loaded_count
+    
+    _ai_client_cache: dict = {}  # {user_id: ai_client}
+    _current_model: dict = {}  # {user_id: "model-name"} - für Auto-Invalidierung bei Model-Wechsel
+    
+    @classmethod
     def _get_ai_client_for_user(cls, user_id: int, db: Session = None):
         """Holt dedizierten Embedding-Client für Tag-Embeddings
         
@@ -277,8 +313,9 @@ class TagEmbeddingCache:
             return 0.50, 0.60
         else:
             # Name-basierte Embeddings sind am generischsten
-            # → Niedrigere Thresholds (35%/45%)
-            return 0.35, 0.45
+            # → Moderate Thresholds (35%/65%) - Auto-Assign erhöht wegen False-Positives
+            # Beispiel: "FALSCHNERNamen" erreicht 57%, sollte aber nicht auto-assigned werden
+            return 0.35, 0.65
 
 
 class TagManager:
