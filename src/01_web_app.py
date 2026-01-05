@@ -1257,41 +1257,86 @@ def email_detail(email_id):
         decrypted_tags = ""
 
         if master_key:
+            # RawEmail entschlüsseln (mit individuellen try-except pro Feld!)
             try:
-                # RawEmail entschlüsseln
                 decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
                     raw.encrypted_subject or "", master_key
                 )
+            except Exception as e:
+                logger.warning(f"Subject decryption failed for email {raw.id}: {e}")
+                decrypted_subject = "(Entschlüsselung fehlgeschlagen)"
+            
+            try:
                 decrypted_sender = encryption.EmailDataManager.decrypt_email_sender(
                     raw.encrypted_sender or "", master_key
                 )
-                decrypted_to = encryption.EmailDataManager.decrypt_email_sender(
-                    raw.encrypted_to or "", master_key
-                )
-                decrypted_cc = encryption.EmailDataManager.decrypt_email_sender(
-                    raw.encrypted_cc or "", master_key
-                )
-                decrypted_bcc = encryption.EmailDataManager.decrypt_email_sender(
-                    raw.encrypted_bcc or "", master_key
-                )
+            except Exception as e:
+                logger.warning(f"Sender decryption failed for email {raw.id}: {e}")
+                decrypted_sender = "Unbekannt"
+            
+            # To/Cc/Bcc sind JSON: [{"name": "...", "email": "..."}]
+            try:
+                to_encrypted = raw.encrypted_to or ""
+                if to_encrypted:
+                    to_decrypted = encryption.EmailDataManager.decrypt_email_sender(to_encrypted, master_key)
+                    if to_decrypted:
+                        import json
+                        to_list = json.loads(to_decrypted)
+                        decrypted_to = ", ".join([f"{item.get('name', '')} <{item.get('email', '')}>" if item.get('name') else item.get('email', '') for item in to_list])
+            except Exception as e:
+                logger.warning(f"To decryption/parsing failed for email {raw.id}: {e}")
+            
+            try:
+                cc_encrypted = raw.encrypted_cc or ""
+                if cc_encrypted:
+                    cc_decrypted = encryption.EmailDataManager.decrypt_email_sender(cc_encrypted, master_key)
+                    if cc_decrypted:
+                        import json
+                        cc_list = json.loads(cc_decrypted)
+                        decrypted_cc = ", ".join([f"{item.get('name', '')} <{item.get('email', '')}>" if item.get('name') else item.get('email', '') for item in cc_list])
+            except Exception as e:
+                logger.warning(f"Cc decryption/parsing failed for email {raw.id}: {e}")
+            
+            try:
+                bcc_encrypted = raw.encrypted_bcc or ""
+                if bcc_encrypted:
+                    bcc_decrypted = encryption.EmailDataManager.decrypt_email_sender(bcc_encrypted, master_key)
+                    if bcc_decrypted:
+                        import json
+                        bcc_list = json.loads(bcc_decrypted)
+                        decrypted_bcc = ", ".join([f"{item.get('name', '')} <{item.get('email', '')}>" if item.get('name') else item.get('email', '') for item in bcc_list])
+            except Exception as e:
+                logger.warning(f"Bcc decryption/parsing failed for email {raw.id}: {e}")
+            
+            try:
                 decrypted_body = encryption.EmailDataManager.decrypt_email_body(
                     raw.encrypted_body or "", master_key
                 )
+            except Exception as e:
+                logger.warning(f"Body decryption failed for email {raw.id}: {e}")
+                decrypted_body = "(Entschlüsselung fehlgeschlagen)"
 
-                # ProcessedEmail entschlüsseln
+            # ProcessedEmail entschlüsseln
+            try:
                 decrypted_summary_de = encryption.EmailDataManager.decrypt_summary(
                     processed.encrypted_summary_de or "", master_key
                 )
+            except Exception as e:
+                logger.warning(f"Summary decryption failed for email {processed.id}: {e}")
+                
+            try:
                 decrypted_text_de = encryption.EmailDataManager.decrypt_summary(
                     processed.encrypted_text_de or "", master_key
                 )
+            except Exception as e:
+                logger.warning(f"Text decryption failed for email {processed.id}: {e}")
+                
+            try:
                 decrypted_tags = encryption.EmailDataManager.decrypt_summary(
                     processed.encrypted_tags or "", master_key
                 )
             except Exception as e:
-                logger.error(
-                    f"Entschlüsselung fehlgeschlagen für RawEmail {raw.id}: {type(e).__name__}"
-                )
+                logger.warning(f"Tags decryption failed for email {processed.id}: {e}")
 
         # Phase 10: Lade Email-Tags
         email_tags = []

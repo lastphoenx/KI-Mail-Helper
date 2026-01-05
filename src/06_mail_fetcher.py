@@ -557,7 +557,7 @@ class MailFetcher:
             
             # IMAPClient: fetch() gibt Dict zurück: {uid: {b'FLAGS': [...], b'RFC822': ...}}
             # PHASE 1: Metadaten + Header
-            meta_data = conn.fetch([mail_id], ['FLAGS', 'RFC822.SIZE', 'ENVELOPE', 'BODYSTRUCTURE'])
+            meta_data = conn.fetch([mail_id], ['FLAGS', 'RFC822.SIZE', 'ENVELOPE', 'BODYSTRUCTURE', 'INTERNALDATE'])
             
             if not meta_data or mail_id not in meta_data:
                 return None
@@ -608,12 +608,27 @@ class MailFetcher:
                         subject = str(envelope.subject)[:200]
                 
                 # Sender (from) - mit MIME-Header Dekodierung
-                if envelope.from_ and envelope.from_[0]:
+                if envelope.from_ and len(envelope.from_) > 0:
                     try:
-                        from_tuple = envelope.from_[0]
+                        from_addr = envelope.from_[0]
+                        logger.debug(f"📧 ENVELOPE.from_ raw: {envelope.from_}")
+                        logger.debug(f"📧 from_addr type: {type(from_addr)}, value: {from_addr}")
+                        
+                        # IMAPClient gibt Address-Objekte zurück (nicht Tuples!)
+                        # Address hat Attribute: .name, .route, .mailbox, .host
+                        if hasattr(from_addr, 'name'):
+                            # Neues Format: Address object
+                            name_raw = from_addr.name.decode() if isinstance(from_addr.name, bytes) else (from_addr.name or "")
+                            mailbox = from_addr.mailbox.decode() if isinstance(from_addr.mailbox, bytes) else (from_addr.mailbox or "")
+                            domain = from_addr.host.decode() if isinstance(from_addr.host, bytes) else (from_addr.host or "")
+                        else:
+                            # Altes Format: Tuple (Fallback für alte IMAPClient Versionen)
+                            name_raw = from_addr[0].decode() if from_addr[0] else ""
+                            mailbox = from_addr[2].decode() if from_addr[2] else ""
+                            domain = from_addr[3].decode() if from_addr[3] else ""
                         
                         # Name dekodieren (kann MIME-Header enthalten!)
-                        name_raw = from_tuple[0].decode() if from_tuple[0] else ""
+                        name = ""
                         if name_raw:
                             decoded_parts = decode_header(name_raw)
                             name_parts = []
@@ -623,18 +638,19 @@ class MailFetcher:
                                 else:
                                     name_parts.append(part)
                             name = ''.join(name_parts)
-                        else:
-                            name = ""
-                        
-                        mailbox = from_tuple[2].decode() if from_tuple[2] else ""
-                        domain = from_tuple[3].decode() if from_tuple[3] else ""
                         
                         if name:
                             sender = f"\"{name}\" <{mailbox}@{domain}>"
                         else:
                             sender = f"{mailbox}@{domain}" if mailbox and domain else "N/A"
+                        
+                        logger.debug(f"✅ Parsed sender: {sender}")
                     except Exception as e:
+                        logger.error(f"❌ Sender parsing failed: {type(e).__name__}: {e}, raw envelope.from_={envelope.from_}")
                         sender = 'N/A'
+                else:
+                    logger.warning(f"⚠️ ENVELOPE.from_ is empty or None: {envelope.from_}")
+                    sender = 'N/A'
                 
                 # Message-ID
                 if envelope.message_id:
@@ -643,13 +659,25 @@ class MailFetcher:
                     except:
                         message_id_val = str(envelope.message_id)
                 
-                # Date
-                if envelope.date:
+                # Date: Nutze INTERNALDATE (Server-Empfangsdatum, zuverlässig)
+                internal_date = msg_data.get(b'INTERNALDATE')
+                if internal_date:
+                    # INTERNALDATE ist bereits datetime object von IMAPClient
+                    received_at = internal_date
+                    logger.debug(f"📅 Using INTERNALDATE: {received_at}")
+                elif envelope.date:
+                    # Fallback: envelope.date (kann vom Absender gefälscht sein)
                     try:
                         date_str = envelope.date.decode() if isinstance(envelope.date, bytes) else str(envelope.date)
                         received_at = email.utils.parsedate_to_datetime(date_str)
-                    except:
+                        logger.debug(f"📅 Using envelope.date: {received_at}")
+                    except Exception as e:
+                        logger.error(f"❌ envelope.date parsing failed: {type(e).__name__}: {e}, raw={envelope.date}")
                         received_at = datetime.now()
+                        logger.warning(f"⚠️ Fallback to now(): {received_at}")
+                else:
+                    received_at = datetime.now()
+                    logger.warning(f"⚠️ No date found, using now(): {received_at}")
             
             # PHASE 2: RFC822 für Body + Complete Envelope Parsing
             body_data = conn.fetch([mail_id], ['RFC822'])

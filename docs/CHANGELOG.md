@@ -8,6 +8,79 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed - IMAP ENVELOPE Address Object Parsing (2026-01-05)
+
+#### Problem
+Sender und Datum wurden in der Email-Detailansicht als "N/A" bzw. mit falscher Zeit angezeigt:
+- "Von: N/A" obwohl Absender im Email-Body sichtbar war
+- Datum zeigte Fetch-Zeit (18:08) statt Email-Sendezeit (07:15)
+
+#### Root Causes
+1. **IMAPClient Address-Objekte**: Neuere IMAPClient-Versionen geben `Address(name=..., mailbox=..., host=...)` Objekte zurück, nicht mehr Tuples `[name, route, mailbox, host]`
+2. **TypeError verschluckt**: `'Address' object is not subscriptable` wurde im `except` Block abgefangen und als "N/A" gespeichert
+3. **envelope.date statt INTERNALDATE**: Das Sendedatum aus envelope.date kann unzuverlässig sein, INTERNALDATE vom Server ist besser
+
+#### Solutions Implemented
+
+**1. Address-Object Support**
+- ✅ **Typ-Erkennung**: `hasattr(from_addr, 'name')` prüft ob Address-Objekt oder Tuple
+- ✅ **Attribut-Zugriff**: `from_addr.name`, `from_addr.mailbox`, `from_addr.host` für neue Versionen
+- ✅ **Fallback**: Tuple-Zugriff `from_addr[0]`, `from_addr[2]`, `from_addr[3]` für alte Versionen
+- ✅ **Debug-Logging**: `📧 ENVELOPE.from_ raw:` zeigt exakte Datenstruktur
+- Files: `src/06_mail_fetcher.py` (Sender parsing)
+
+**2. INTERNALDATE für zuverlässiges Datum**
+- ✅ **IMAP Fetch erweitert**: `INTERNALDATE` zusätzlich zu `ENVELOPE`
+- ✅ **Priorität**: INTERNALDATE (Server-Empfangszeit) > envelope.date (Sende-Header) > now()
+- ✅ **Logging**: `📅 Using INTERNALDATE:` vs `📅 Using envelope.date:`
+- Files: `src/06_mail_fetcher.py` (Date parsing)
+
+**3. Exception-Handling pro Feld**
+- ✅ **Separate try-catch**: Jedes Feld (Subject/Sender/To/Cc/Bcc/Body) hat eigenen Block
+- ✅ **Keine Totalausfälle**: Wenn To-Parsing fehlschlägt, wird Sender trotzdem angezeigt
+- ✅ **Bessere Fehlermeldungen**: `logger.error()` mit `type(e).__name__` und raw-Daten
+- Files: `src/01_web_app.py` (email_detail Entschlüsselung)
+
+**4. To/Cc/Bcc JSON-Parsing**
+- ✅ **JSON-Format erkannt**: `[{"name": "...", "email": "..."}]` aus DB
+- ✅ **Formatierung**: `"Name <email>"` oder nur `email` wenn kein Name
+- ✅ **Komma-getrennt**: Mehrere Empfänger als Liste dargestellt
+- Files: `src/01_web_app.py` (To/Cc/Bcc Decryption)
+
+**5. Semantische Suche Account-Filter**
+- ✅ **Element-ID korrigiert**: `accountSelect` statt `accountFilter`
+- ✅ **Parameter-Übergabe**: `account_id` wird korrekt an API gesendet
+- Files: `templates/list_view.html` (performSemanticSearch)
+
+#### Technical Details
+
+**Before (Error):**
+```
+❌ Sender parsing failed: TypeError: 'Address' object is not subscriptable
+raw envelope.from_=(Address(name=b'Dr. Peter Beispiel', route=None, mailbox=b'peter.beispiel', host=b'example.com'),)
+```
+
+**After (Success):**
+```
+📧 ENVELOPE.from_ raw: (Address(name=b'Dr. Peter Beispiel', ...)
+✅ Parsed sender: "Dr. Peter Beispiel" <peter.beispiel@example.com>
+📅 Using INTERNALDATE: 2026-01-05 07:15:23
+```
+
+#### Impact
+- ✅ Absender wird korrekt angezeigt (nicht mehr "N/A")
+- ✅ Datum zeigt echte Email-Zeit (nicht Fetch-Zeit)
+- ✅ To/Cc/Bcc werden formatiert angezeigt (nicht raw JSON)
+- ✅ Semantische Suche respektiert Account-Filter
+- ✅ Robusteres Error-Handling ohne Totalausfälle
+
+#### Files Changed
+- `src/06_mail_fetcher.py`: Address-Object Support + INTERNALDATE + Debug-Logging
+- `src/01_web_app.py`: Separate try-catch + JSON-Parsing für To/Cc/Bcc
+- `templates/list_view.html`: Account-Filter ID korrigiert
+
+---
+
 ### Fixed - Multi-Account IMAP Performance & Timeout Issues (2026-01-05)
 
 #### Problem

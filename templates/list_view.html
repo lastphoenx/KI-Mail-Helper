@@ -349,7 +349,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         // Account-Filter: Standardmäßig nur aktueller Account
-        const accountSelect = document.getElementById('accountFilter');
+        const accountSelect = document.getElementById('accountSelect');
         if (accountSelect && accountSelect.value) {
             params.append('account_id', accountSelect.value);
         }
