@@ -240,21 +240,88 @@ class MailFetcher:
         self.port = port
         self.connection: Optional[IMAPClient] = None
 
-    def connect(self):
-        """Stellt Verbindung zum IMAP-Server her (IMAPClient)"""
-        try:
-            self.connection = IMAPClient(
-                host=self.server,
-                port=self.port,
-                ssl=True,
-                timeout=30.0
-            )
-            self.connection.login(self.username, self.password)
-            print(f"✅ Verbunden mit {self.server}")
-        except (IMAPClientError, Exception) as e:
-            logger.debug(f"Connection error details: {e}")
-            print("❌ Verbindungsfehler: Authentifizierung fehlgeschlagen")
-            raise ConnectionError("IMAP connection failed") from None
+    def connect(self, retry_count: int = 2):
+        """Stellt Verbindung zum IMAP-Server her (IMAPClient)
+        
+        Args:
+            retry_count: Anzahl Wiederholungen bei Timeout (default: 2)
+        """
+        last_error = None
+        
+        for attempt in range(retry_count + 1):
+            try:
+                # Phase 1: TCP Connection (erhöhter Timeout für langsame Server)
+                self.connection = IMAPClient(
+                    host=self.server,
+                    port=self.port,
+                    ssl=True,
+                    timeout=60.0  # Erhöht von 30s auf 60s für langsame SSL-Handshakes
+                )
+                print(f"✅ TCP-Verbindung zu {self.server}:{self.port} erfolgreich")
+                
+                # Phase 2: IMAP Login
+                self.connection.login(self.username, self.password)
+                print(f"✅ Login erfolgreich für {self.username}")
+                return  # Erfolg - fertig!
+                
+            except TimeoutError as e:
+                last_error = e
+                if attempt < retry_count:
+                    logger.warning(f"Timeout bei Verbindung zu {self.server} (Versuch {attempt + 1}/{retry_count + 1}), versuche erneut...")
+                    print(f"⏳ Timeout - versuche erneut ({attempt + 2}/{retry_count + 1})...")
+                    continue  # Nächster Versuch
+                # Letzter Versuch fehlgeschlagen
+                error_msg = f"Timeout beim Verbinden zu {self.server}:{self.port}"
+                logger.error(f"{error_msg}: {e}")
+                print(f"❌ {error_msg}")
+                print(f"   💡 Überprüfe: Server-Adresse und Port korrekt? Firewall?")
+                print(f"   💡 Server antwortet langsam - {retry_count + 1} Versuche fehlgeschlagen")
+                raise ConnectionError(f"IMAP timeout: {error_msg}") from None
+                
+            except IMAPClientError as e:
+                last_error = e
+                error_str = str(e).lower()
+                
+                # Spezifische Fehleranalyse
+                if 'auth' in error_str or 'login' in error_str or 'credentials' in error_str:
+                    logger.error(f"Login fehlgeschlagen für {self.username}@{self.server}: {e}")
+                    print(f"❌ Authentifizierung fehlgeschlagen")
+                    print(f"   💡 Überprüfe: Benutzername = {self.username}")
+                    print(f"   💡 Überprüfe: Passwort korrekt? (App-Passwort bei 2FA?)")
+                    raise ConnectionError(f"Authentication failed: Wrong username or password") from None
+                    
+                elif 'ssl' in error_str or 'certificate' in error_str or 'tls' in error_str:
+                    logger.error(f"SSL-Fehler bei {self.server}:{self.port}: {e}")
+                    print(f"❌ SSL/TLS-Fehler: {e}")
+                    print(f"   💡 Versuche: Port 143 (STARTTLS) statt 993 (SSL)?")
+                    raise ConnectionError(f"SSL error: {e}") from None
+                    
+                elif 'refused' in error_str or 'port' in error_str:
+                    logger.error(f"Port {self.port} bei {self.server} nicht erreichbar: {e}")
+                    print(f"❌ Verbindung abgelehnt zu {self.server}:{self.port}")
+                    print(f"   💡 Überprüfe: Port korrekt? (Standard: 993 oder 143)")
+                    raise ConnectionError(f"Connection refused: Port {self.port}") from None
+                    
+                else:
+                    logger.error(f"IMAP-Fehler bei {self.server}: {e}")
+                    print(f"❌ IMAP-Fehler: {e}")
+                    raise ConnectionError(f"IMAP error: {e}") from None
+                    
+            except OSError as e:
+                last_error = e
+                # Network-level errors (DNS, routing, etc.)
+                error_msg = f"Netzwerk-Fehler: {e}"
+                logger.error(f"{error_msg} bei {self.server}:{self.port}")
+                print(f"❌ {error_msg}")
+                print(f"   💡 Überprüfe: Server-Adresse korrekt? DNS funktioniert?")
+                raise ConnectionError(f"Network error: {e}") from None
+                
+            except Exception as e:
+                last_error = e
+                logger.error(f"Unerwarteter Fehler beim Connect: {type(e).__name__}: {e}")
+                print(f"❌ Fehler: {type(e).__name__}: {e}")
+                raise ConnectionError(f"Connection failed: {e}") from None
+            raise ConnectionError(f"Connection failed: {e}") from None
 
     def disconnect(self):
         """Schließt IMAP-Verbindung"""

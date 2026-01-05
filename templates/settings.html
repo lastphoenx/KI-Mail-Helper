@@ -233,22 +233,42 @@
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="alert alert-success mb-0">
-                                        <strong>✅ Nur diese Ordner (Include)</strong>
-                                        <small class="d-block text-muted mb-2 mt-1">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <strong>✅ Nur diese Ordner (Include)</strong>
+                                            <div class="btn-group btn-group-sm" role="group">
+                                                <button type="button" class="btn btn-outline-success btn-sm" id="selectAllIncludes">
+                                                    <i class="bi bi-check-all"></i> Alle
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" id="selectNoneIncludes">
+                                                    <i class="bi bi-x"></i> Keine
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <small class="d-block text-muted mb-2">
                                             💡 Keine Auswahl = Alle Ordner werden synchronisiert
                                         </small>
-                                        <div id="includeFoldersContainer" class="mt-2">
+                                        <div id="includeFoldersContainer" class="mt-2" style="max-height: 400px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px; padding: 10px; background: white;">
                                             <small class="text-muted">Wähle einen Account und klicke "Ordner laden"</small>
                                         </div>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
                                     <div class="alert alert-warning mb-0">
-                                        <strong>❌ Diese Ordner ignorieren (Exclude)</strong>
-                                        <small class="d-block text-muted mb-2 mt-1">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <strong>❌ Diese Ordner ignorieren (Exclude)</strong>
+                                            <div class="btn-group btn-group-sm" role="group">
+                                                <button type="button" class="btn btn-outline-warning btn-sm" id="selectAllExcludes">
+                                                    <i class="bi bi-check-all"></i> Alle
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" id="selectNoneExcludes">
+                                                    <i class="bi bi-x"></i> Keine
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <small class="d-block text-muted mb-2">
                                             Standard: Keine Ordner ausgeschlossen. Wähle gezielt aus.
                                         </small>
-                                        <div id="excludeFoldersContainer" class="mt-2">
+                                        <div id="excludeFoldersContainer" class="mt-2" style="max-height: 400px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px; padding: 10px; background: white;">
                                             <small class="text-muted">Keine Ausschlüsse gesetzt</small>
                                         </div>
                                     </div>
@@ -1173,10 +1193,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.log('✅ Filter geladen für Account', filterData.account_name);
                     
                     // Phase 13C Part 6+: Ordner sofort laden (mit aktuellen Filtern!)
-                    // Kurzer Timeout damit Browser Input-Felder erst updaten kann
-                    setTimeout(() => {
+                    // Debounce: Warte kurz, falls User schnell zwischen Accounts wechselt
+                    if (loadFoldersDebounceTimer) {
+                        clearTimeout(loadFoldersDebounceTimer);
+                    }
+                    loadFoldersDebounceTimer = setTimeout(() => {
                         loadFoldersForFilter();
-                    }, 50);
+                        loadFoldersDebounceTimer = null;
+                    }, 200);
                     
                 } catch (e) {
                     console.warn('Filter-Laden fehlgeschlagen:', e);
@@ -1228,6 +1252,62 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Speichere letzte Daten global für Updates
     window.lastFetchData = null;
+
+    // Alle auswählen/abwählen Funktionen (global für CSP-Kompatibilität)
+    window.toggleAllIncludes = function(selectAll) {
+        const checkboxes = document.querySelectorAll('input[name="include_folders"]');
+        console.log(`Toggle all includes: ${selectAll}, found ${checkboxes.length} checkboxes`);
+        checkboxes.forEach(cb => {
+            if (cb.checked !== selectAll) {
+                cb.checked = selectAll;
+            }
+        });
+        // Update preview nach Massenänderung
+        if (window.lastFetchData) {
+            updateFetchPreview(window.lastFetchData);
+        }
+    };
+
+    window.toggleAllExcludes = function(selectAll) {
+        const checkboxes = document.querySelectorAll('input[name="exclude_folders"]');
+        console.log(`Toggle all excludes: ${selectAll}, found ${checkboxes.length} checkboxes`);
+        checkboxes.forEach(cb => {
+            if (cb.checked !== selectAll) {
+                cb.checked = selectAll;
+            }
+        });
+        // Update preview nach Massenänderung
+        if (window.lastFetchData) {
+            updateFetchPreview(window.lastFetchData);
+        }
+    };
+
+    // Binde Event Listener an die Buttons (wird nach dem Laden aufgerufen)
+    window.bindToggleButtons = function() {
+        // Include Buttons
+        const selectAllIncBtn = document.getElementById('selectAllIncludes');
+        const selectNoneIncBtn = document.getElementById('selectNoneIncludes');
+        if (selectAllIncBtn) {
+            selectAllIncBtn.onclick = () => window.toggleAllIncludes(true);
+            console.log('✅ Bound selectAllIncludes button');
+        }
+        if (selectNoneIncBtn) {
+            selectNoneIncBtn.onclick = () => window.toggleAllIncludes(false);
+            console.log('✅ Bound selectNoneIncludes button');
+        }
+
+        // Exclude Buttons
+        const selectAllExcBtn = document.getElementById('selectAllExcludes');
+        const selectNoneExcBtn = document.getElementById('selectNoneExcludes');
+        if (selectAllExcBtn) {
+            selectAllExcBtn.onclick = () => window.toggleAllExcludes(true);
+            console.log('✅ Bound selectAllExcludes button');
+        }
+        if (selectNoneExcBtn) {
+            selectNoneExcBtn.onclick = () => window.toggleAllExcludes(false);
+            console.log('✅ Bound selectNoneExcludes button');
+        }
+    };
     
     [mailsPerFolderInput, maxTotalInput, unseenCheckbox, sinceDateInput].forEach(el => {
         if (el) {
@@ -1249,12 +1329,32 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Phase 13C Part 5: Ordner für Filter laden
+// Tracking für laufende Requests
+let currentMailCountRequest = null;
+let loadFoldersDebounceTimer = null;
+let lastLoadedAccountId = null;
+
 async function loadFoldersForFilter() {
     const accountId = document.getElementById('folderAccountSelect').value;
     if (!accountId) {
         alert('Bitte zuerst einen Account auswählen');
         return;
     }
+    
+    // Verhindere doppelte Requests für denselben Account
+    if (lastLoadedAccountId === accountId && currentMailCountRequest) {
+        console.log('⏭️ Request für Account', accountId, 'läuft bereits - überspringe');
+        return;
+    }
+    
+    // Breche vorherigen Request ab wenn Account gewechselt wurde
+    if (currentMailCountRequest && lastLoadedAccountId !== accountId) {
+        console.log('❌ Breche alten Request ab (Account-Wechsel)');
+        currentMailCountRequest.abort();
+        currentMailCountRequest = null;
+    }
+    
+    lastLoadedAccountId = accountId;
     
     const includeContainer = document.getElementById('includeFoldersContainer');
     const excludeContainer = document.getElementById('excludeFoldersContainer');
@@ -1268,6 +1368,15 @@ async function loadFoldersForFilter() {
         const sinceDate = sinceDateInput ? sinceDateInput.value : '';
         const unseenOnly = document.getElementById('unseenOnly')?.checked || false;
         
+        // 🎯 Lade gespeicherte include_folders vom Account
+        let includeFolders = [];
+        if (window.accountFilterData && window.accountFilterData.include_folders) {
+            includeFolders = window.accountFilterData.include_folders;
+        }
+        // ⚠️ WICHTIG: Wenn keine include_folders gespeichert, nehme ALLE (Default-Verhalten)
+        // Das passiert beim ersten Laden eines Accounts ohne gespeicherte Filter
+        const sendIncludeFolders = includeFolders.length > 0;
+        
         let url = `/account/${accountId}/mail-count`;
         const params = [];
         if (sinceDate) {
@@ -1276,15 +1385,38 @@ async function loadFoldersForFilter() {
         if (unseenOnly) {
             params.push(`unseen_only=true`);
         }
+        // 🎯 Schicke include_folders mit (nur diese werden für SINCE gezählt!)
+        if (sendIncludeFolders) {
+            params.push(`include_folders=${encodeURIComponent(JSON.stringify(includeFolders))}`);
+            console.log(`🎯 SINCE-Count nur für ${includeFolders.length} ausgewählte Ordner`);
+        } else {
+            console.log('📂 Keine Filter gespeichert - zeige nur STATUS (ohne SINCE)');
+        }
         if (params.length > 0) {
             url += '?' + params.join('&');
         }
         
-        const response = await fetch(url);
+        console.log('🔄 Fetching:', url);
+        
+        // AbortController für abbruchbare Requests
+        const abortController = new AbortController();
+        currentMailCountRequest = abortController;
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+            },
+            credentials: 'same-origin',
+            signal: abortController.signal
+        });
+        
+        console.log('📥 Response status:', response.status);
         
         // Prüfe HTTP-Status
         if (!response.ok) {
             const errorText = await response.text();
+            console.error('❌ Response error:', errorText);
             throw new Error(`Server-Fehler (${response.status}): ${errorText.substring(0, 100)}`);
         }
         
@@ -1309,6 +1441,7 @@ async function loadFoldersForFilter() {
         
         // Speichere Daten global für spätere Updates
         window.lastFetchData = data;
+        currentMailCountRequest = null;
         
         // Phase 13C Part 6: Gespeicherte Auswahl vom Account laden
         let savedInclude = [];
@@ -1320,10 +1453,10 @@ async function loadFoldersForFilter() {
             console.log('📋 Filter vom Account:', { savedInclude, savedExclude });
         }
         
-        // Include Checkboxen
+        // Include Checkboxen mit hierarchischer Darstellung
         includeContainer.innerHTML = ''; // Clear first
-        const includeRow = document.createElement('div');
-        includeRow.className = 'row g-2';
+        const includeList = document.createElement('div');
+        includeList.className = 'folder-list';
         
         folders.forEach(folderName => {
             const checked = savedInclude.length === 0 || savedInclude.includes(folderName);
@@ -1331,12 +1464,15 @@ async function loadFoldersForFilter() {
             const folderData = data.folders[folderName] || {};
             const mailCount = folderData.total || 0;
             const unseenCount = folderData.unseen || 0;
+            const sinceCount = folderData.since; // kann null/undefined sein
             
-            const col = document.createElement('div');
-            col.className = 'col-md-6';
+            // Berechne Einrückung basierend auf Slashes
+            const depth = (folderName.match(/\//g) || []).length;
+            const indent = depth * 20; // 20px pro Level
             
             const formCheck = document.createElement('div');
-            formCheck.className = 'form-check';
+            formCheck.className = 'form-check mb-1';
+            formCheck.style.paddingLeft = (indent + 25) + 'px'; // Base padding + indent
             
             const checkbox = document.createElement('input');
             checkbox.className = 'form-check-input';
@@ -1349,20 +1485,34 @@ async function loadFoldersForFilter() {
             const label = document.createElement('label');
             label.className = 'form-check-label';
             label.htmlFor = 'inc_' + safeFolderId;
-            label.textContent = folderName + ' ';
+            label.style.fontSize = '0.9rem';
+            label.style.wordBreak = 'break-word';
+            
+            // Zeige nur den letzten Teil des Pfads, wenn tief verschachtelt
+            const displayName = depth > 0 ? '└ ' + folderName.split('/').pop() : folderName;
+            label.textContent = displayName + ' ';
+            label.title = folderName; // Tooltip mit vollem Pfad
             
             const badge = document.createElement('span');
             badge.className = 'badge bg-secondary ms-1';
-            badge.textContent = mailCount + '/' + unseenCount;
+            badge.style.fontSize = '0.75rem';
+            // Zeige SINCE-Count wenn vorhanden, sonst total/unseen
+            if (sinceCount !== null && sinceCount !== undefined) {
+                badge.className = 'badge bg-primary ms-1'; // Blau für SINCE-Filtered
+                badge.textContent = sinceCount + ' (gefiltert)';
+                badge.title = `${sinceCount} Mails seit Filter (${mailCount} total, ${unseenCount} ungelesen)`;
+            } else {
+                badge.textContent = mailCount + '/' + unseenCount;
+                badge.title = `${mailCount} gesamt, ${unseenCount} ungelesen`;
+            }
             label.appendChild(badge);
             
             formCheck.appendChild(checkbox);
             formCheck.appendChild(label);
-            col.appendChild(formCheck);
-            includeRow.appendChild(col);
+            includeList.appendChild(formCheck);
         });
         
-        includeContainer.appendChild(includeRow);
+        includeContainer.appendChild(includeList);
         
         const hint = document.createElement('small');
         hint.className = 'text-muted d-block mt-2';
@@ -1374,10 +1524,10 @@ async function loadFoldersForFilter() {
             cb.addEventListener('change', () => updateFetchPreview(data));
         });
         
-        // Exclude Checkboxen
+        // Exclude Checkboxen mit hierarchischer Darstellung
         excludeContainer.innerHTML = ''; // Clear first
-        const excludeRow = document.createElement('div');
-        excludeRow.className = 'row g-2';
+        const excludeList = document.createElement('div');
+        excludeList.className = 'folder-list';
         
         folders.forEach(folderName => {
             // Nur gespeicherte Excludes verwenden, KEINE Auto-Selektion mehr
@@ -1387,11 +1537,13 @@ async function loadFoldersForFilter() {
             const mailCount = folderData.total || 0;
             const unseenCount = folderData.unseen || 0;
             
-            const col = document.createElement('div');
-            col.className = 'col-md-6';
+            // Berechne Einrückung basierend auf Slashes
+            const depth = (folderName.match(/\//g) || []).length;
+            const indent = depth * 20; // 20px pro Level
             
             const formCheck = document.createElement('div');
-            formCheck.className = 'form-check';
+            formCheck.className = 'form-check mb-1';
+            formCheck.style.paddingLeft = (indent + 25) + 'px'; // Base padding + indent
             
             const checkbox = document.createElement('input');
             checkbox.className = 'form-check-input';
@@ -1404,33 +1556,65 @@ async function loadFoldersForFilter() {
             const label = document.createElement('label');
             label.className = 'form-check-label';
             label.htmlFor = 'exc_' + safeFolderId;
-            label.textContent = folderName + ' ';
+            label.style.fontSize = '0.9rem';
+            label.style.wordBreak = 'break-word';
+            
+            // Zeige nur den letzten Teil des Pfads, wenn tief verschachtelt
+            const displayName = depth > 0 ? '└ ' + folderName.split('/').pop() : folderName;
+            label.textContent = displayName + ' ';
+            label.title = folderName; // Tooltip mit vollem Pfad
             
             const badge = document.createElement('span');
             badge.className = 'badge bg-secondary ms-1';
+            badge.style.fontSize = '0.75rem';
             badge.textContent = mailCount + '/' + unseenCount;
+            badge.title = `${mailCount} gesamt, ${unseenCount} ungelesen`;
             label.appendChild(badge);
             
             formCheck.appendChild(checkbox);
             formCheck.appendChild(label);
-            col.appendChild(formCheck);
-            excludeRow.appendChild(col);
+            excludeList.appendChild(formCheck);
         });
         
-        excludeContainer.appendChild(excludeRow);
+        excludeContainer.appendChild(excludeList);
         
         // Event Listener für Exclude Checkboxen
         document.querySelectorAll('input[name="exclude_folders"]').forEach(cb => {
             cb.addEventListener('change', () => updateFetchPreview(data));
         });
         
+        // ✅ WICHTIG: Binde Toggle-Buttons NACHDEM die Container erstellt wurden
+        if (typeof window.bindToggleButtons === 'function') {
+            window.bindToggleButtons();
+        } else {
+            console.error('❌ window.bindToggleButtons is not defined!');
+        }
+        
         // Trigger initial preview mit kompletten Daten (inkl. summary)
         updateFetchPreview(data);
         
     } catch (error) {
-        console.error('Fehler beim Laden der Ordner:', error);
-        includeContainer.innerHTML = `<small class="text-danger">Fehler: ${error.message}</small>`;
-        excludeContainer.innerHTML = `<small class="text-danger">Fehler: ${error.message}</small>`;
+        // Handle AbortError separat (normal bei Account-Wechsel)
+        if (error.name === 'AbortError') {
+            console.log('🛑 Request abgebrochen (normal bei Account-Wechsel)');
+            currentMailCountRequest = null;
+            return;
+        }
+        
+        console.error('❌ Fehler beim Laden der Ordner:', error);
+        console.error('Error stack:', error.stack);
+        
+        let errorMessage = 'Fehler beim Laden der Ordner';
+        if (error.message) {
+            errorMessage = error.message;
+        }
+        if (error.name === 'TypeError' && error.message.includes('NetworkError')) {
+            errorMessage = 'Netzwerkfehler - Ist der Server erreichbar? Probiere die Seite neu zu laden (F5).';
+        }
+        
+        includeContainer.innerHTML = `<small class="text-danger">${errorMessage}</small>`;
+        excludeContainer.innerHTML = `<small class="text-danger">${errorMessage}</small>`;
+        currentMailCountRequest = null;
     }
 }
 

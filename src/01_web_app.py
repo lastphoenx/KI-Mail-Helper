@@ -5817,6 +5817,11 @@ def move_email_to_trash(email_id):
         db.close()
 
 
+# 🚀 PERFORMANCE: Cache für mail-count (verhindert wiederholte IMAP-Queries)
+# Cache-Format: {account_id: {'timestamp': float, 'data': dict}}
+mail_count_cache = {}
+MAIL_COUNT_CACHE_TTL = 30  # Sekunden
+
 @app.route("/account/<int:account_id>/mail-count", methods=["GET"])
 @login_required
 def get_account_mail_count(account_id):
@@ -5826,7 +5831,24 @@ def get_account_mail_count(account_id):
     - Zeigt User wie viele Mails remote vorhanden sind
     - User kann dann entscheiden: Alle holen oder in Portionen?
     Phase 13C Part 6+: Auch SINCE-Date Count für exakte Schätzung
+    
+    Performance: Mit 30s Cache um doppelte Requests zu vermeiden
     """
+    import time
+    
+    # 🚀 Cache-Check: Verwende gecachte Daten wenn < 30s alt
+    cache_key = account_id
+    current_time = time.time()
+    
+    if cache_key in mail_count_cache:
+        cache_entry = mail_count_cache[cache_key]
+        cache_age = current_time - cache_entry['timestamp']
+        if cache_age < MAIL_COUNT_CACHE_TTL:
+            logger.info(f"⚡ Cache-Hit für Account {account_id} (Alter: {cache_age:.1f}s)")
+            return jsonify(cache_entry['data'])
+        else:
+            logger.debug(f"🗑️ Cache abgelaufen für Account {account_id} ({cache_age:.1f}s)")
+    
     db = get_db_session()
     
     # Optional: since_date für SINCE count (Format: YYYY-MM-DD)
@@ -5842,6 +5864,19 @@ def get_account_mail_count(account_id):
     
     # Optional: unseen_only für kombinierte Filter
     unseen_only = request.args.get('unseen_only', '').lower() == 'true'
+    
+    # 🎯 NEU: include_folders als JSON-Array (nur für diese Ordner SINCE-Search durchführen!)
+    include_folders_param = request.args.get('include_folders')
+    include_folders_set = None
+    if include_folders_param:
+        try:
+            import json
+            include_folders_list = json.loads(include_folders_param)
+            include_folders_set = set(include_folders_list) if include_folders_list else None
+            logger.info(f"🎯 SINCE-Search nur für {len(include_folders_set)} Include-Ordner")
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning(f"Ungültiges include_folders Format: {e}")
+            include_folders_set = None
 
     try:
         user = get_current_user_model(db)
@@ -5905,25 +5940,31 @@ def get_account_mail_count(account_id):
                     messages_count = status_dict.get(b'MESSAGES', 0)
                     unseen_count = status_dict.get(b'UNSEEN', 0)
                     
-                    # Phase 13C Part 6+: SINCE count wenn since_date gegeben (kombiniert mit unseen_only)
+                    # 🎯 PERFORMANCE FIX: SINCE-Search nur für include_folders
+                    # - Alle 132 Ordner: STATUS (schnell, ~5s)
+                    # - Nur ausgewählte Ordner (z.B. 10): SELECT+SEARCH (~2-3s)
+                    # - Total: ~7-8s statt 120s!
                     since_count = None
-                    if since_date:
-                        try:
-                            # SELECT folder für SEARCH (readonly)
-                            fetcher.connection.select_folder(folder_name, readonly=True)
-                            # IMAP SEARCH SINCE format: DD-Mon-YYYY
-                            date_str = since_date.strftime("%d-%b-%Y")
-                            
-                            # Build search criteria: SINCE [+ UNSEEN]
-                            search_criteria = ['SINCE', date_str]
-                            if unseen_only:
-                                search_criteria.append('UNSEEN')
-                            
-                            since_messages = fetcher.connection.search(search_criteria)
-                            since_count = len(since_messages) if since_messages else 0
-                        except Exception as search_err:
-                            logger.debug(f"SINCE search failed für {folder_display}: {search_err}")
-                            since_count = None
+                    if since_date and include_folders_set is not None:
+                        # Nur wenn dieser Ordner in include_folders ist
+                        if folder_display in include_folders_set:
+                            try:
+                                # SELECT folder für SEARCH (readonly)
+                                fetcher.connection.select_folder(folder_name, readonly=True)
+                                # IMAP SEARCH SINCE format: DD-Mon-YYYY
+                                date_str = since_date.strftime("%d-%b-%Y")
+                                
+                                # Build search criteria: SINCE [+ UNSEEN]
+                                search_criteria = ['SINCE', date_str]
+                                if unseen_only:
+                                    search_criteria.append('UNSEEN')
+                                
+                                since_messages = fetcher.connection.search(search_criteria)
+                                since_count = len(since_messages) if since_messages else 0
+                                logger.debug(f"✅ SINCE-Search für {folder_display}: {since_count} Mails")
+                            except Exception as search_err:
+                                logger.debug(f"SINCE search failed für {folder_display}: {search_err}")
+                                since_count = None
                     
                     folder_counts[folder_display] = {
                         "total": messages_count,
@@ -5942,7 +5983,7 @@ def get_account_mail_count(account_id):
                 models.RawEmail.deleted_at.is_(None)
             ).count()
 
-            return jsonify({
+            result_data = {
                 "account_id": account_id,
                 "folders": folder_counts,
                 "summary": {
@@ -5951,7 +5992,16 @@ def get_account_mail_count(account_id):
                     "total_local": total_local,
                     "delta": total_remote - total_local
                 }
-            })
+            }
+            
+            # 💾 Cache für 30s speichern
+            mail_count_cache[cache_key] = {
+                'timestamp': current_time,
+                'data': result_data
+            }
+            logger.info(f"💾 Cache gespeichert für Account {account_id} (132 Ordner)")
+            
+            return jsonify(result_data)
 
         finally:
             fetcher.disconnect()

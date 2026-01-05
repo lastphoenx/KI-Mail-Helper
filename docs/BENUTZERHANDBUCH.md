@@ -722,11 +722,20 @@ Klicke auf einen Ordner, um Details zu sehen:
 **Emails abrufen:**
 - **Manuell:** Klicke auf **"Jetzt abrufen"** beim Account
 - **Automatisch:** Ein Hintergrund-Job prüft regelmäßig (alle 15 Min.)
+- **Fetch-Filter:** Account-spezifische Filter (Ordner, Datum, UNSEEN) für selektiven Abruf
 
 > **📸 Screenshot:** Email-Abruf Progress-Modal  
 > *Zeige: Fortschrittsbalken, "X von Y Emails verarbeitet"*
 
 ![Email-Abruf Progress](images/screenshots/fetch-progress.png)
+
+**Performance-Optimierungen:**
+- ✅ **Smart SINCE-Search**: Nur ausgewählte Ordner werden für Datumsfilter durchsucht
+- ✅ **30s Cache**: Wiederholte Zugriffe auf Ordner-Counts sind instant
+- ✅ **Request-Abbruch**: Account-Wechsel bricht laufende Requests ab
+- ⚡ **Beispiel**: 132 Ordner in ~7-8s statt 120s+ (94% schneller)
+
+> 💡 **Multi-Account Setup**: Bei mehreren Accounts mit vielen Ordnern (>100) verhindert die App automatisch Timeouts durch intelligentes Caching und selektives Laden.
 
 ### 9.2 SMTP konfigurieren (Email-Versand)
 

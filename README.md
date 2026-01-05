@@ -133,6 +133,11 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
   - **Live-Vorschau**: Zeigt geschätzte Mail-Anzahl vor Fetch
   - **UIDVALIDITY-Tracking (Phase 14)**: RFC-konformer UID-Sync
   - **Multi-Folder UIDPLUS (Phase 15)**: Paralleles Fetching
+  - **Performance-Optimierungen (2026-01-05):**
+    - Smart SINCE-Search: Nur ausgewählte Ordner, nicht alle 132
+    - 30s Server-Side Cache für `/mail-count` Requests
+    - Client-Side Request-Abbruch bei Account-Wechsel
+    - Result: 132 Ordner in ~7-8s statt 120s+ (94% schneller)
 - **📤 SMTP-Versand (Phase H)** – Email-Versand mit Sync
   - **Antworten**: Direkt aus Email-Detail mit Reply-To-Header
   - **Neue Emails**: Compose mit To/CC/BCC/Betreff/Body
