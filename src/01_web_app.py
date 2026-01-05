@@ -1248,6 +1248,9 @@ def email_detail(email_id):
         master_key = session.get("master_key")
         decrypted_subject = ""
         decrypted_sender = ""
+        decrypted_to = ""
+        decrypted_cc = ""
+        decrypted_bcc = ""
         decrypted_body = ""
         decrypted_summary_de = ""
         decrypted_text_de = ""
@@ -1261,6 +1264,15 @@ def email_detail(email_id):
                 )
                 decrypted_sender = encryption.EmailDataManager.decrypt_email_sender(
                     raw.encrypted_sender or "", master_key
+                )
+                decrypted_to = encryption.EmailDataManager.decrypt_email_sender(
+                    raw.encrypted_to or "", master_key
+                )
+                decrypted_cc = encryption.EmailDataManager.decrypt_email_sender(
+                    raw.encrypted_cc or "", master_key
+                )
+                decrypted_bcc = encryption.EmailDataManager.decrypt_email_sender(
+                    raw.encrypted_bcc or "", master_key
                 )
                 decrypted_body = encryption.EmailDataManager.decrypt_email_body(
                     raw.encrypted_body or "", master_key
@@ -1300,6 +1312,9 @@ def email_detail(email_id):
             raw=raw,
             decrypted_subject=decrypted_subject,
             decrypted_sender=decrypted_sender,
+            decrypted_to=decrypted_to,
+            decrypted_cc=decrypted_cc,
+            decrypted_bcc=decrypted_bcc,
             decrypted_body=decrypted_body,
             decrypted_summary_de=decrypted_summary_de,
             decrypted_text_de=decrypted_text_de,
@@ -2740,6 +2755,12 @@ def api_semantic_search():
         try:
             limit = int(request.args.get("limit", 20))
             threshold = float(request.args.get("threshold", 0.25))
+            account_id = request.args.get("account_id")  # Optional: Filter nach Account
+            if account_id:
+                try:
+                    account_id = int(account_id)
+                except ValueError:
+                    account_id = None
         except ValueError:
             return jsonify({"error": "Invalid limit or threshold parameter"}), 400
             
@@ -2753,7 +2774,8 @@ def api_semantic_search():
                 query=query,
                 user_id=user.id,
                 limit=limit,
-                threshold=threshold
+                threshold=threshold,
+                account_id=account_id  # Übergebe Account-Filter
             )
             
             # Ergebnisse formatieren (mit Decryption)
@@ -2841,6 +2863,12 @@ def api_find_similar_emails(email_id):
             
         try:
             limit = int(request.args.get("limit", 5))
+            account_id = request.args.get("account_id")
+            if account_id:
+                try:
+                    account_id = int(account_id)
+                except ValueError:
+                    account_id = None  # Default: nur gleicher Account
         except ValueError:
             return jsonify({"error": "Invalid limit parameter"}), 400
             
@@ -2858,7 +2886,8 @@ def api_find_similar_emails(email_id):
             search_service = semantic_search.SemanticSearchService(db)
             results = search_service.find_similar(
                 email_id=email_id,
-                limit=limit
+                limit=limit,
+                account_id=account_id  # Übergebe Account-Filter (None = gleicher Account)
             )
             
             # Ergebnisse formatieren (mit Decryption)

@@ -340,7 +340,8 @@ class SemanticSearchService:
         self,
         email_id: int,
         limit: int = 5,
-        threshold: float = HIGH_SIMILARITY_THRESHOLD
+        threshold: float = HIGH_SIMILARITY_THRESHOLD,
+        account_id: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
         Findet ähnliche Emails zu einer gegebenen Email.
@@ -349,6 +350,7 @@ class SemanticSearchService:
             email_id: ID der Referenz-Email
             limit: Maximale Anzahl ähnlicher Emails
             threshold: Minimale Similarity (höher als bei Search!)
+            account_id: Optional - nur in bestimmtem Account suchen
             
         Returns:
             Liste von ähnlichen Emails (sortiert nach Similarity)
@@ -367,7 +369,7 @@ class SemanticSearchService:
                 return []
             
             # 2. Alle anderen Emails des Users mit Embeddings
-            other_emails = (
+            query_obj = (
                 self.db.query(models.RawEmail)
                 .filter(
                     models.RawEmail.user_id == ref_email.user_id,
@@ -375,8 +377,18 @@ class SemanticSearchService:
                     models.RawEmail.deleted_at.is_(None),
                     models.RawEmail.email_embedding.isnot(None)
                 )
-                .all()
             )
+            
+            # Account-Filter: Default ist gleicher Account wie Referenz-Email
+            if account_id is None:
+                # Standard: nur gleicher Account
+                query_obj = query_obj.filter(models.RawEmail.mail_account_id == ref_email.mail_account_id)
+            elif account_id > 0:
+                # Explizit angegebener Account
+                query_obj = query_obj.filter(models.RawEmail.mail_account_id == account_id)
+            # Wenn account_id == -1: alle Accounts (kein Filter)
+            
+            other_emails = query_obj.all()
             
             # 3. Similarity berechnen
             results = []

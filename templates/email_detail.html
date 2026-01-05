@@ -52,13 +52,16 @@
             </div>
             <div class="col-auto">
                 <small class="text-muted">
-                    📅 {{ email.received_at.strftime('%d.%m.%Y %H:%M') if email.received_at else 'Kein Datum' }}
+                    📅 {{ raw.received_at.strftime('%d.%m.%Y %H:%M') if raw.received_at else 'Kein Datum' }}
                 </small>
             </div>
         </div>
         <div class="row mt-2">
-            <div class="col">
-                <strong>📧 Von:</strong> {{ decrypted_sender|default('Unbekannt') }}
+            <div class="col-md-12">
+                <div><strong>📧 Von:</strong> {{ decrypted_sender|default('Unbekannt') }}</div>
+                {% if decrypted_to %}<div class="mt-1"><strong>📬 An:</strong> {{ decrypted_to }}</div>{% endif %}
+                {% if decrypted_cc %}<div class="mt-1"><strong>📋 Cc:</strong> {{ decrypted_cc }}</div>{% endif %}
+                {% if decrypted_bcc %}<div class="mt-1"><strong>🔒 Bcc:</strong> {{ decrypted_bcc }}</div>{% endif %}
             </div>
         </div>
     </div>

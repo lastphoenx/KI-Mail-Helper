@@ -348,6 +348,12 @@ document.addEventListener('DOMContentLoaded', function() {
             threshold: 0.25
         });
         
+        // Account-Filter: Standardmäßig nur aktueller Account
+        const accountSelect = document.getElementById('accountFilter');
+        if (accountSelect && accountSelect.value) {
+            params.append('account_id', accountSelect.value);
+        }
+        
         fetch(`/api/search/semantic?${params}`)
             .then(response => {
                 if (!response.ok) {
