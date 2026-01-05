@@ -326,18 +326,30 @@ Die KI analysiert jede Email und liefert:
 ### 5.3 Bewertung korrigieren
 
 > **📸 Screenshot:** "Bewertung korrigieren" Modal  
-> *Zeige: Slider für Dringlichkeit/Wichtigkeit, Kategorie-Dropdown, Spam-Checkbox*
+> *Zeige: Radio-Buttons für Dringlichkeit/Wichtigkeit, Kategorie-Dropdown, Spam-Toggle*
 
 ![Bewertung korrigieren Modal](images/screenshots/correct-rating.png)
 
 Wenn die KI falsch lag, kannst du die Bewertung korrigieren:
 
-1. Klicke auf **"Bewertung korrigieren"**
-2. Passe Dringlichkeit/Wichtigkeit an
-3. Ändere ggf. die Kategorie
-4. Klicke auf **"Speichern"**
+1. Klicke auf **"✏️ Bewertung korrigieren"** (gelber Button oben in der Detail-Ansicht)
+2. Passe **Dringlichkeit** (1-3) und **Wichtigkeit** (1-3) mit Radio-Buttons an
+3. Ändere ggf. die **Kategorie** (Nur Information / Aktion erforderlich / Dringend)
+4. Setze den **Spam-Toggle** falls die E-Mail Spam ist
+5. Füge optional eine **Notiz** hinzu (warum du korrigiert hast)
+6. Klicke auf **"💾 Speichern & als Training markieren"**
 
-> 💡 **Wichtig:** Deine Korrekturen werden für zukünftiges Machine Learning gespeichert. Je mehr du korrigierst, desto besser wird die KI!
+**Was passiert nach dem Speichern?**
+
+✅ **Sofortige Anzeige:** Deine Korrektur wird in der Detail-Ansicht als "User-Korrektur" Sektion angezeigt  
+✅ **Online-Learning:** Das System lernt **sofort** aus deiner Korrektur (kein Neutraining nötig)  
+✅ **Priorität:** User-Korrekturen haben höchste Priorität in der Anzeige (user_override > optimize > initial)  
+✅ **4 Classifier:** Trainiert werden Dringlichkeit, Wichtigkeit, Spam und Kategorie  
+✅ **Embeddings:** Nutzt lokales Ollama (all-minilm:22m) für Vektorisierung  
+
+> 💡 **Wichtig:** Das Learning funktioniert nur wenn Ollama läuft! Cloud-APIs (OpenAI/Claude) können die Initial-Analyse machen, aber das Training braucht lokale Embeddings.
+
+> 🎯 **Tipp:** Je mehr du korrigierst, desto besser wird die KI bei ähnlichen E-Mails! Das System merkt sich Muster über Embeddings.
 
 ### 5.4 Email optimieren / neu verarbeiten
 

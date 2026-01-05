@@ -325,6 +325,16 @@
                             <code>{{ email.kategorie_aktion if email.kategorie_aktion else 'N/A' }}</code>
                         </td>
                     </tr>
+                    <tr>
+                        <td><strong>🚫 Spam:</strong></td>
+                        <td>
+                            {% if email.spam_flag %}
+                            <span class="badge bg-danger">⚠️ JA</span>
+                            {% else %}
+                            <span class="badge bg-success">✓ Nein</span>
+                            {% endif %}
+                        </td>
+                    </tr>
                     {% if email.optimization_status and email.optimization_status != 'pending' %}
                     <tr>
                         <td colspan="2"><hr class="my-2"></td>
@@ -374,6 +384,68 @@
                             <code>{{ email.optimize_kategorie_aktion if email.optimize_kategorie_aktion else 'N/A' }}</code>
                         </td>
                     </tr>
+                    <tr>
+                        <td><strong>🚫 Neuer Spam:</strong></td>
+                        <td>
+                            {% if email.optimize_spam_flag is not none %}
+                                {% if email.optimize_spam_flag %}
+                                <span class="badge bg-danger">⚠️ JA</span>
+                                {% else %}
+                                <span class="badge bg-success">✓ Nein</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    
+                    {% if email.correction_timestamp %}
+                    <tr>
+                        <td colspan="2"><hr class="my-2"></td>
+                    </tr>
+                    <tr>
+                        <td><strong>✏️ User-Korrektur:</strong></td>
+                        <td>
+                            <span class="badge bg-warning text-dark">✓ Gespeichert</span>
+                            {% if email.correction_timestamp %}
+                            <small class="text-muted">({{ email.correction_timestamp.strftime('%d.%m.%Y %H:%M') }})</small>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% if email.user_override_dringlichkeit is not none or email.user_override_wichtigkeit is not none %}
+                    <tr>
+                        <td><strong>📊 Korrigierte Einstufung:</strong></td>
+                        <td>
+                            {% if email.user_override_dringlichkeit is not none %}
+                            <span class="badge bg-secondary">D: {{ email.user_override_dringlichkeit }}</span>
+                            {% endif %}
+                            {% if email.user_override_wichtigkeit is not none %}
+                            <span class="badge bg-secondary">W: {{ email.user_override_wichtigkeit }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if email.user_override_kategorie %}
+                    <tr>
+                        <td><strong>🎯 Korrigierte Kategorie:</strong></td>
+                        <td>
+                            <code>{{ email.user_override_kategorie }}</code>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if email.user_override_spam_flag is not none %}
+                    <tr>
+                        <td><strong>🚫 Korrigierter Spam:</strong></td>
+                        <td>
+                            {% if email.user_override_spam_flag %}
+                            <span class="badge bg-danger">⚠️ JA</span>
+                            {% else %}
+                            <span class="badge bg-success">✓ Nein</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
                     {% endif %}
                 </tbody>
             </table>
@@ -393,7 +465,10 @@
         <!-- Action Buttons Section -->
         <div class="card bg-light p-3">
             <div class="action-buttons">
-                <button class="btn btn-primary w-100" id="reprocessBtn">
+                <button class="btn btn-warning w-100" id="correctBtn" data-bs-toggle="modal" data-bs-target="#correctionModal">
+                    ✏️ Bewertung korrigieren
+                </button>
+                <button class="btn btn-primary w-100 mt-2" id="reprocessBtn">
                     🔄 Base-Pass neu
                 </button>
                 <button class="btn btn-outline-secondary w-100 mt-2" id="optimizeBtn">
@@ -452,6 +527,8 @@
 </div>
 
 <script nonce="{{ csp_nonce() }}">
+const emailId = {{ email.id }};
+
 function getCsrfToken() {
     return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 }
@@ -1685,6 +1762,77 @@ document.addEventListener('DOMContentLoaded', function() {
             if (name === 'csrf_token') return value;
         }
         return '';
+    }
+    
+    // ===== Bewertung Korrigieren Modal =====
+    const correctionModal = document.getElementById('correctionModal');
+    if (correctionModal) {
+        correctionModal.addEventListener('show.bs.modal', async function() {
+            // Aktuelle Werte vorausfüllen (Priorität: user_override > optimize > initial)
+            const currentDring = {{ email.user_override_dringlichkeit if email.user_override_dringlichkeit is not none else (email.optimize_dringlichkeit if email.optimize_dringlichkeit is not none else email.dringlichkeit) if email.dringlichkeit else 'null' }};
+            const currentWich = {{ email.user_override_wichtigkeit if email.user_override_wichtigkeit is not none else (email.optimize_wichtigkeit if email.optimize_wichtigkeit is not none else email.wichtigkeit) if email.wichtigkeit else 'null' }};
+            const currentKat = "{{ email.user_override_kategorie if email.user_override_kategorie else (email.optimize_kategorie_aktion if email.optimize_kategorie_aktion else email.kategorie_aktion) if email.kategorie_aktion else 'aktion_erforderlich' }}";
+            // Lade neuesten Spam-Wert: user_override > optimize > initial
+            const currentSpam = {{ 'true' if (email.user_override_spam_flag if email.user_override_spam_flag is not none else (email.optimize_spam_flag if email.optimize_spam_flag is not none else email.spam_flag)) else 'false' }};
+            
+            if (currentDring) {
+                document.querySelector(`input[name="dringlichkeit"][value="${currentDring}"]`).checked = true;
+            }
+            if (currentWich) {
+                document.querySelector(`input[name="wichtigkeit"][value="${currentWich}"]`).checked = true;
+            }
+            document.getElementById('kategorie').value = currentKat;
+            document.getElementById('spamFlag').checked = currentSpam;
+        });
+        
+        // Speichern Button
+        document.getElementById('saveCorrectionBtn').addEventListener('click', async function() {
+            const dring = document.querySelector('input[name="dringlichkeit"]:checked')?.value;
+            const wich = document.querySelector('input[name="wichtigkeit"]:checked')?.value;
+            const kat = document.getElementById('kategorie').value;
+            const spam = document.getElementById('spamFlag').checked;
+            const note = document.getElementById('noteInput').value;
+            
+            const correctionData = {
+                dringlichkeit: dring ? parseInt(dring) : null,
+                wichtigkeit: wich ? parseInt(wich) : null,
+                kategorie: kat,
+                spam_flag: spam,
+                note: note
+            };
+            
+            this.disabled = true;
+            this.innerHTML = '⏳ Speichern...';
+            
+            try {
+                const response = await fetch(`/email/${emailId}/correct`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify(correctionData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    alert('✅ Korrektur gespeichert! Die E-Mail wird für das Training verwendet.');
+                    bootstrap.Modal.getInstance(correctionModal).hide();
+                    location.reload(); // Seite neu laden um aktualisierte Werte anzuzeigen
+                } else {
+                    alert('❌ Fehler: ' + (data.error || 'Unbekannter Fehler'));
+                    this.disabled = false;
+                    this.innerHTML = '💾 Speichern & als Training markieren';
+                }
+            } catch (error) {
+                console.error('Korrektur speichern fehlgeschlagen:', error);
+                alert('❌ Netzwerk-Fehler: ' + error.message);
+                this.disabled = false;
+                this.innerHTML = '💾 Speichern & als Training markieren';
+            }
+        });
     }
 });
 </script>

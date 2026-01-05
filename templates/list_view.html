@@ -221,12 +221,23 @@
                     </small>
                     <p class="mb-2 mt-2">{{ email._decrypted_summary_de|default('Keine Zusammenfassung verfügbar')|truncate(200) }}</p>
                     <div class="small text-muted mb-2">
-                        {% if email.optimization_status == 'done' and email.optimize_dringlichkeit is not none and email.optimization_completed_at and email.processed_at and email.optimization_completed_at > email.processed_at %}
+                        {% if email.user_override_dringlichkeit is not none or email.user_override_wichtigkeit is not none %}
+                        {# User-Korrektur hat höchste Priorität #}
+                        <span class="badge bg-warning text-dark me-1">✏️ Korrigiert</span>
+                        Dringlichkeit: {{ email.user_override_dringlichkeit if email.user_override_dringlichkeit is not none else email.dringlichkeit }} | 
+                        Wichtigkeit: {{ email.user_override_wichtigkeit if email.user_override_wichtigkeit is not none else email.wichtigkeit }} |
+                        Aktion: {{ (email.user_override_kategorie if email.user_override_kategorie else email.kategorie_aktion)|replace('_',' ') }}
+                        {% set final_spam = email.user_override_spam_flag if email.user_override_spam_flag is not none else email.spam_flag %}
+                        {% if final_spam %}<span class="badge bg-danger ms-2">🚫 SPAM</span>{% endif %}
+                        {% elif email.optimization_status == 'done' and email.optimize_dringlichkeit is not none and email.optimization_completed_at and email.processed_at and email.optimization_completed_at > email.processed_at %}
                         Dringlichkeit: {{ email.optimize_dringlichkeit }} | Wichtigkeit: {{ email.optimize_wichtigkeit }} |
-                        Aktion: {{ email.optimize_kategorie_aktion|replace('_',' ') if email.optimize_kategorie_aktion else email.kategorie_aktion|replace('_',' ') }} | Spam: {{ 'Ja' if email.optimize_spam_flag else 'Nein' }}
+                        Aktion: {{ email.optimize_kategorie_aktion|replace('_',' ') if email.optimize_kategorie_aktion else email.kategorie_aktion|replace('_',' ') }}
+                        {% set final_spam = email.optimize_spam_flag if email.optimize_spam_flag is not none else email.spam_flag %}
+                        {% if final_spam %}<span class="badge bg-danger ms-2">🚫 SPAM</span>{% endif %}
                         {% else %}
                         Dringlichkeit: {{ email.dringlichkeit }} | Wichtigkeit: {{ email.wichtigkeit }} |
-                        Aktion: {{ email.kategorie_aktion|replace('_',' ') }} | Spam: {{ 'Ja' if email.spam_flag else 'Nein' }}
+                        Aktion: {{ email.kategorie_aktion|replace('_',' ') }}
+                        {% if email.spam_flag %}<span class="badge bg-danger ms-2">🚫 SPAM</span>{% endif %}
                         {% endif %}
                     </div>
                     {% if email.email_tags %}

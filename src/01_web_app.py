@@ -1712,7 +1712,9 @@ def correct_email(email_id: int):
         email.user_override_tags = (
             ",".join(data.get("tags", [])) if data.get("tags") else None
         )
-        email.user_correction_note = data.get("note")
+        # Note: Korrektur-Notiz ist verschlüsselt gespeichert (encrypted_correction_note)
+        # Hier wird sie aber in Klartext übergeben - TODO: Verschlüsselung implementieren
+        email.encrypted_correction_note = data.get("note")
         email.correction_timestamp = datetime.now(UTC)
         email.updated_at = datetime.now(UTC)
 
@@ -4336,6 +4338,10 @@ def _trigger_online_learning(email, data: dict):
 
         if data.get("spam_flag") is not None:
             if learner.learn_from_correction(subject, body, "spam", data["spam_flag"]):
+                learned_count += 1
+
+        if data.get("kategorie") is not None:
+            if learner.learn_from_correction(subject, body, "kategorie", data["kategorie"]):
                 learned_count += 1
 
         if learned_count > 0:

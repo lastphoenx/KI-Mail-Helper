@@ -11,6 +11,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **Zero-Knowledge Encryption** – AES-256-GCM, DEK/KEK-Pattern, Master-Key nur im RAM
 - **3×3 Prioritäts-Matrix** – Dringlichkeit × Wichtigkeit mit Farbcodierung
 - **Multi-Provider AI** – Lokale Modelle (Ollama) oder Cloud (Claude, OpenAI, Mistral)
+- **Online-Learning System** – SGD-Classifier lernt aus User-Korrekturen (4 Classifier: D/W/Spam/Kategorie)
 - **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (14 Bedingungen)
 - **Semantische Suche** – Embeddings für "finde ähnliche Emails"
 - **Tag-System** – Manuell + KI-Vorschläge basierend auf gelernten Mustern
@@ -53,6 +54,7 @@ Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher
 
 **Aktuelle Features (Stand Januar 2026):**
 - 🎯 **Core System:** Zero-Knowledge Encryption, 3×3 Prioritäts-Matrix, Multi-Provider AI
+- 🧠 **Online-Learning:** SGD-Classifier mit inkrementellem Training aus User-Korrekturen (D/W/Spam/Kategorie)
 - 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
 - 📥 **Fetch:** IMAP/Gmail OAuth mit account-spezifischen Filtern (Ordner, Datum, UNSEEN)
 - 📤 **Send:** SMTP-Versand mit automatischer Sent-Ordner-Synchronisation
@@ -73,6 +75,7 @@ This repository was created with multiple AI systems. So far, the codebase has b
 
 **Current Features (January 2026):**
 - 🎯 **Core System:** Zero-Knowledge Encryption, 3×3 Priority Matrix, Multi-Provider AI
+- 🧠 **Online-Learning:** SGD classifiers with incremental training from user corrections (D/W/Spam/Category)
 - 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
 - 📥 **Fetch:** IMAP/Gmail OAuth with account-specific filters (folders, date, UNSEEN)
 - 📤 **Send:** SMTP with automatic Sent folder sync

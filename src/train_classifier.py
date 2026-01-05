@@ -51,7 +51,7 @@ class OnlineLearner:
     ohne komplettes Neutraining aller Daten.
     """
     
-    CLASSIFIER_TYPES = ["dringlichkeit", "wichtigkeit", "spam"]
+    CLASSIFIER_TYPES = ["dringlichkeit", "wichtigkeit", "spam", "kategorie"]
     
     def __init__(self, ollama_base_url: str = "http://127.0.0.1:11434"):
         if not HAS_SKLEARN:
@@ -120,15 +120,15 @@ class OnlineLearner:
         subject: str,
         body: str,
         correction_type: str,
-        correction_value: int | bool,
+        correction_value: int | bool | str,
     ) -> bool:
         """Inkrementelles Lernen aus einer einzelnen User-Korrektur.
         
         Args:
             subject: E-Mail Betreff
             body: E-Mail Body
-            correction_type: "dringlichkeit", "wichtigkeit", oder "spam"
-            correction_value: Korrigierter Wert (1-3 oder True/False)
+            correction_type: "dringlichkeit", "wichtigkeit", "spam", oder "kategorie"
+            correction_value: Korrigierter Wert (1-3, True/False, oder Kategorie-String)
             
         Returns:
             True wenn erfolgreich gelernt
@@ -149,6 +149,11 @@ class OnlineLearner:
         if correction_type == "spam":
             y = np.array([1 if correction_value else 0])
             classes = np.array([0, 1])
+        elif correction_type == "kategorie":
+            # Kategorie String → int (nur_information=0, aktion_erforderlich=1, dringend=2)
+            label_map = {"nur_information": 0, "aktion_erforderlich": 1, "dringend": 2}
+            y = np.array([label_map.get(str(correction_value), 1)])  # Default: aktion_erforderlich
+            classes = np.array([0, 1, 2])
         else:
             y = np.array([int(correction_value)])
             classes = np.array([1, 2, 3])  # Dringlichkeit/Wichtigkeit 1-3

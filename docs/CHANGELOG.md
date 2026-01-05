@@ -8,6 +8,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added - Phase Learning-System: Online-Learning & User-Korrekturen (2026-01-05)
+
+#### Online-Learning mit SGD-Classifiers
+**User-Corrections & Incremental Training**
+- ✅ Bewertung-Korrigieren UI: Button "✏️ Bewertung korrigieren" in Email-Detail prominent platziert
+- ✅ Modal mit Radio-Buttons für Dringlichkeit (1-3), Wichtigkeit (1-3), Kategorie-Dropdown, Spam-Toggle
+- ✅ User-Override Priorität: user_override_* > optimize_* > initial Felder in Anzeigelogik
+- ✅ 4 SGD-Classifiers: Dringlichkeit, Wichtigkeit, Spam, **Kategorie** (neu!)
+- ✅ Sofortiges Training: `_trigger_online_learning()` nach jeder Korrektur
+- ✅ Kategorie-Learning: Mapping nur_information=0, aktion_erforderlich=1, dringend=2
+- ✅ User-Korrektur Sektion in Detail-Ansicht mit Zeitstempel
+- ✅ Badge "✏️ Korrigiert" in Listen-Ansicht wenn user_override Werte gesetzt
+- Files: src/train_classifier.py (CLASSIFIER_TYPES +kategorie), src/01_web_app.py (_trigger_online_learning +kategorie)
+- Commits: TBD
+
+**Spam-Anzeige konsistent über alle Ansichten**
+- ✅ Detail Initial: spam_flag angezeigt
+- ✅ Detail Optimize: optimize_spam_flag Zeile hinzugefügt (fehlte vorher!)
+- ✅ Detail User-Korrektur: user_override_spam_flag Zeile hinzugefügt
+- ✅ Liste: Prioritätslogik user_override > optimize > initial für Spam-Badge
+- ✅ Badge "🚫 SPAM" nur wenn aktuellster Wert = True
+- Files: templates/email_detail.html, templates/list_view.html
+
+**Tags aus Correction-Modal entfernt**
+- ✅ Redundanz eliminiert: Tag-System nutzt Embedding-Learning (nicht SGD)
+- ✅ Hinweis im Modal: "ℹ️ Tags verwalten Sie direkt in der E-Mail-Ansicht"
+- ✅ Klare Trennung: SGD für feste Klassen (D/W/S/K), Embeddings für semantische Tags
+- Files: templates/base.html (Modal vereinfacht), templates/email_detail.html (Tag-Loading entfernt)
+
+**Dokumentation aktualisiert**
+- ✅ BENUTZERHANDBUCH.md Sektion 5.3 erweitert mit Learning-Details
+- ✅ README.md Feature-Liste ergänzt: "Online-Learning System"
+- ✅ doc/erledigt/PHASE_LEARNING_SYSTEM_COMPLETE.md erstellt (vollständige Dokumentation)
+
 ### Added - Phase F.2: 3-Settings System (Embedding/Base/Optimize) (2026-01-03)
 
 #### AI Architecture Refactoring
