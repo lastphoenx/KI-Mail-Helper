@@ -2752,9 +2752,9 @@ def tag_suggestions_page():
         db.close()
 
 
-@app.route("/api/tag-suggestions", methods=["GET"])
+@app.route("/api/tag-suggestions", methods=["GET"], endpoint="api_get_pending_tag_suggestions")
 @login_required
-def api_get_tag_suggestions():
+def api_get_pending_tag_suggestions():
     """API: Pending Vorschläge abrufen"""
     db = get_db_session()
     try:
@@ -5859,7 +5859,7 @@ def purge_mail_account(account_id):
 
 @app.route("/jobs/<string:job_id>", methods=["GET"])
 @login_required
-@limiter.limit("200 per hour")  # Erhöht für lange Background-Jobs (Embedding-Generation)
+@limiter.limit("1200 per hour")  # Erhöht für lange Background-Jobs (Embedding-Generation)
 def job_status(job_id: str):
     """Liefert Status-Infos zu einem Hintergrundjob."""
     status = job_queue.get_status(job_id, current_user.id)

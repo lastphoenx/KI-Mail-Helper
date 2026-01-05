@@ -8,6 +8,112 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added - Tag Suggestion Queue System (2026-01-05)
+
+#### Complete Tag Suggestion Queue Implementation
+
+**Features:**
+- ✅ **Tag Suggestion Queue**: Neue Tabelle `tag_suggestion_queue` für User-kontrollierte Tag-Erstellung
+- ✅ **User Setting**: `enable_tag_suggestion_queue` Toggle in Settings
+- ✅ **Service Layer**: Kompletter `TagSuggestionService` mit approve/reject/merge/batch Operationen
+- ✅ **API Endpoints**: 7 neue Endpoints unter `/api/tag-suggestions/*`
+- ✅ **UI Page**: Neue `/tag-suggestions` Seite mit Pending-List und Actions
+- ✅ **Processing Integration**: Phase 10 in `12_processing.py` nutzt Queue wenn aktiviert
+- ✅ **Analytics**: Suggestion Stats (pending/approved/rejected/merged counts)
+
+**Workflow:**
+1. AI schlägt Tag "Rechnung" vor
+2. Tag existiert nicht → Queue (wenn enabled) oder Log (wenn disabled)
+3. User besucht `/tag-suggestions` → Sieht alle Pending Vorschläge
+4. User kann: Approve (→ Tag erstellen), Reject (→ verwerfen), Merge (→ zu existierendem Tag)
+5. Batch-Actions: Alle annehmen/ablehnen auf einmal
+
+**Files:**
+- `src/services/tag_suggestion_service.py`: Neue Service-Klasse (350+ LOC)
+- `src/02_models.py`: `TagSuggestionQueue` Model + User Setting
+- `src/01_web_app.py`: 7 neue API Endpoints + UI Route
+- `templates/tag_suggestions.html`: Neue UI Page (200+ LOC)
+- `templates/base.html`: Navbar Link zu Tag-Suggestions
+- `src/12_processing.py`: Queue Integration in Phase 10
+- `migrations/versions/ph_tag_queue.py`: DB Migration
+- `doc/Changelogs/CHANGELOG_2026-01-05_queue.md`: Full Documentation
+
+**Impact:**
+- ✅ User hat jetzt volle Kontrolle über Tag-Erstellung
+- ✅ Verhindert Tag-Explosion durch AI-Vorschläge
+- ✅ Ermöglicht graduelle Tag-Taxonomie-Entwicklung
+- ✅ Analytics zeigen Akzeptanz-Rate der AI-Vorschläge
+
+### Fixed - Tag Auto-Creation & Job Modal Race Condition (2026-01-05)
+
+#### Patch #1: Tag Auto-Creation deaktiviert
+
+**Problem:** System erstellte automatisch Tags ohne User-Kontrolle, was zu Tag-Explosion führte.
+
+**Solution:**
+- ✅ Neue Methode `TagManager.get_tag_by_name()` (nur lesen, nicht erstellen)
+- ✅ Phase 10 in `12_processing.py` nutzt nur noch existierende Tags
+- ✅ Nicht-existierende Tags werden geloggt (Vorbereitung für Queue-System)
+
+**Files:**
+- `src/services/tag_manager.py`: `get_tag_by_name()` hinzugefügt
+- `src/12_processing.py`: Phase 10 nutzt `get_tag_by_name()` statt `get_or_create_tag()`
+
+**Impact:**
+- ✅ Keine automatische Tag-Erstellung mehr durch AI
+- ✅ User behält volle Kontrolle über Tag-Taxonomie
+- ✅ Logs zeigen "💡 AI suggested tag 'X' - nicht vorhanden, übersprungen"
+
+#### Patch #2: Job Modal Race Condition behoben
+
+**Problem:** Wenn zwei Jobs parallel laufen, springt das Progress-Modal wild zwischen beiden hin und her.
+
+**Solution:**
+- ✅ Neue Variable `currentActiveJobId` trackt welcher Job das Modal "besitzt"
+- ✅ Updates von nicht-aktiven Jobs werden ignoriert (Console: "🛑 Poll ignoriert")
+- ✅ "Neuer Job gewinnt" bei Konflikt (bessere UX)
+- ✅ Alle Exit-Punkte (done, error, timeout, catch) resetten `currentActiveJobId = null`
+
+**Files:**
+- `templates/settings.html`: `currentActiveJobId` Tracking in `pollJobStatus()` und `pollBatchReprocessStatus()`
+
+**Impact:**
+- ✅ Modal zeigt konsistent nur noch den aktiven Job
+- ✅ Kein wildes Springen mehr zwischen parallelen Jobs
+- ✅ Console-Logs zeigen Job-Ownership-Transfers transparent
+
+**Documentation:** `/doc/Changelogs/CHANGELOG_2026-01-05_patches.md`
+
+### Fixed - Rate Limit für Job Status erhöht (2026-01-05)
+
+**Problem:** Job Status Polling mit 5s Intervall führte zu 429 Too Many Requests (200/h Limit).
+
+**Solution:**
+- ✅ Rate Limit für `/jobs/<job_id>` von 200/h auf 1200/h erhöht
+- ✅ Ermöglicht ~720 Requests/h bei 5s Polling (mit Reserve)
+
+**Files:**
+- `src/01_web_app.py`: `@limiter.limit("1200 per hour")` für job_status Endpoint
+
+**Impact:**
+- ✅ Keine 429 Errors mehr bei langen Background-Jobs
+- ✅ Polling kann durchgehend laufen ohne Rate-Limit zu treffen
+
+### Fixed - Endpoint Name Collision (2026-01-05)
+
+**Problem:** Zwei Endpoints mit gleichem Funktionsnamen `api_get_tag_suggestions` führten zu AssertionError beim Start.
+
+**Solution:**
+- ✅ Queue-Endpoint umbenannt zu `api_get_pending_tag_suggestions`
+- ✅ Expliziter Endpoint-Name gesetzt: `endpoint="api_get_pending_tag_suggestions"`
+
+**Files:**
+- `src/01_web_app.py`: Funktions- und Endpoint-Name des Queue-Endpoints angepasst
+
+**Impact:**
+- ✅ Flask startet ohne Fehler
+- ✅ Beide Tag-Suggestion-Endpoints funktionieren parallel
+
 ### Fixed - IMAP ENVELOPE Address Object Parsing (2026-01-05)
 
 #### Problem

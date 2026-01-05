@@ -1,7 +1,7 @@
 # 🎯 KI-Mail-Helper - Roadmap
 
 **Stand:** 05.01.2026  
-**Letzte Aktualisierung:** Nach Phase Learning-System  
+**Letzte Aktualisierung:** Nach Tag Suggestion Queue + Patches  
 
 ---
 
@@ -15,6 +15,7 @@
 | H | SMTP Mail-Versand | 01/2026 |
 | INV | User-Verwaltung + Exakte Fetch-Filter | 01/2026 |
 | Learning | Online-Learning mit 4 SGD-Classifiers + Bewertung korrigieren UI | 05.01.2026 |
+| **Tag Queue** | **Tag Suggestion Queue System (User-kontrollierte Tag-Erstellung)** | **05.01.2026** |
 
 **Dokumentation:** Siehe `/doc/erledigt/` für Detail-Dokumentation abgeschlossener Phasen.
 
