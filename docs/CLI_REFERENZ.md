@@ -452,7 +452,7 @@ python3 scripts/list_accounts.py --db /path/to/emails.db
 +----+------------------+-----------+--------+------+
 | ID | Account-Name     | User      | Aktiv  | Auth |
 +====+==================+===========+========+======+
-|  1 | martina          | thomas    | Ja     | imap |
+|  1 | gmx.ch           | thomas    | Ja     | imap |
 |  3 | work-gmail       | thomas    | Ja     | oauth|
 |  5 | personal         | admin     | Nein   | imap |
 +----+------------------+-----------+--------+------+
@@ -463,7 +463,10 @@ python3 scripts/list_accounts.py --db /path/to/emails.db
 **Direkt per SQL:**
 
 ```bash
-# Alle Accounts mit User-Zuordnung
+# Schneller One-Liner (mit formatierter Ausgabe)
+sqlite3 -header -column emails.db "SELECT ma.id AS account_id, ma.name AS account_name, u.username AS user_login, ma.enabled AS active FROM mail_accounts ma JOIN users u ON ma.user_id = u.id ORDER BY u.username, ma.name;"
+
+# Alle Accounts mit User-Zuordnung (Multiline für Lesbarkeit)
 sqlite3 emails.db <<EOF
 SELECT 
     ma.id AS account_id,
