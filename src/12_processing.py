@@ -488,125 +488,134 @@ def process_pending_raw_emails(
                 was_answered_at_processing=was_answered,  # Optimiert!
             )
 
-            session.add(processed_email)
-            # Transaction Fix: Don't commit inside loop - batch commit at end
-            
-            # Phase 10: Auto-assign suggested_tags from AI
-            suggested_tags = ai_result.get("suggested_tags", [])
-            if suggested_tags and isinstance(suggested_tags, list):
-                try:
-                    tag_manager_mod = importlib.import_module(".services.tag_manager", "src")
-                    
-                    # Muss committen damit processed_email.id verfügbar ist
-                    session.flush()
-                    
-                    for tag_name in suggested_tags[:5]:  # Max 5 Tags
-                        if not tag_name or not isinstance(tag_name, str):
-                            continue
+            # 🐛 BUG-002 FIX: Transaction-Management mit try-except-rollback
+            try:
+                session.add(processed_email)
+                # Transaction Fix: Don't commit inside loop - batch commit at end
+                
+                # Phase 10: Auto-assign suggested_tags from AI
+                suggested_tags = ai_result.get("suggested_tags", [])
+                if suggested_tags and isinstance(suggested_tags, list):
+                    try:
+                        tag_manager_mod = importlib.import_module(".services.tag_manager", "src")
                         
-                        tag_name = tag_name.strip()[:50]  # Max 50 chars
-                        if not tag_name:
-                            continue
+                        # Muss flushen damit processed_email.id verfügbar ist
+                        session.flush()
                         
-                        try:
-                            # Get or create tag für diesen User
-                            tag = tag_manager_mod.TagManager.get_or_create_tag(
-                                db=session,
-                                user_id=user.id,
-                                name=tag_name,
-                                color="#3B82F6"  # Default blue
-                            )
+                        for tag_name in suggested_tags[:5]:  # Max 5 Tags
+                            if not tag_name or not isinstance(tag_name, str):
+                                continue
                             
-                            # Assign tag zu email
-                            tag_manager_mod.TagManager.assign_tag(
-                                db=session,
-                                email_id=processed_email.id,
-                                tag_id=tag.id,
-                                user_id=user.id
-                            )
-                            logger.debug(f"📌 Tag '{tag_name}' assigned to email {processed_email.id}")
-                        except Exception as tag_err:
-                            logger.warning(f"⚠️  Tag-Assignment fehlgeschlagen für '{tag_name}': {tag_err}")
+                            tag_name = tag_name.strip()[:50]  # Max 50 chars
+                            if not tag_name:
+                                continue
                             
-                except Exception as e:
-                    logger.warning(f"⚠️  Tag-Manager nicht verfügbar oder Fehler: {e}")
-            
-            # Phase F.2: Smart Tag Auto-Suggestions basierend auf Email-Embeddings
-            if raw_email.email_embedding:
-                try:
-                    tag_manager_mod = importlib.import_module(".services.tag_manager", "src")
-                    
-                    # Bereits zugewiesene Tags holen (um Duplikate zu vermeiden)
-                    session.flush()  # Ensure processed_email.id is available
-                    already_assigned_tag_ids = [
-                        assignment.tag_id 
-                        for assignment in session.query(models.EmailTagAssignment)
-                        .filter_by(email_id=processed_email.id).all()
-                    ]
-                    
-                    # Phase F.2 Enhanced: Tag-Suggestions mit dynamischen Thresholds
-                    # min_similarity=None → Nutzt dynamischen Threshold basierend auf Tag-Anzahl (70-80%)
-                    tag_suggestions = tag_manager_mod.TagManager.suggest_tags_by_email_embedding(
-                        db=session,
-                        user_id=user.id,
-                        email_embedding_bytes=raw_email.email_embedding,
-                        top_k=5,
-                        min_similarity=None,  # Dynamisch: 70% bei <= 5 Tags, 75% bei 6-15, 80% bei >= 16
-                        exclude_tag_ids=already_assigned_tag_ids
-                    )
-                    
-                    # Auto-Assignment vs. Manuelle Vorschläge:
-                    # >= 80% (AUTO_ASSIGN_SIMILARITY_THRESHOLD) → Auto-assign
-                    # 70-79% (get_suggestion_threshold) → Nur Vorschlag für UI
-                    auto_assigned_count = 0
-                    manual_suggestions = []
-                    
-                    # Import der Threshold-Konstante
-                    AUTO_ASSIGN_THRESHOLD = tag_manager_mod.AUTO_ASSIGN_SIMILARITY_THRESHOLD
-                    
-                    for tag, similarity in tag_suggestions:
-                        if similarity >= AUTO_ASSIGN_THRESHOLD:
-                            # Auto-Assign für sehr sichere Matches (>= 80%)
                             try:
+                                # Get or create tag für diesen User
+                                tag = tag_manager_mod.TagManager.get_or_create_tag(
+                                    db=session,
+                                    user_id=user.id,
+                                    name=tag_name,
+                                    color="#3B82F6"  # Default blue
+                                )
+                                
+                                # Assign tag zu email
                                 tag_manager_mod.TagManager.assign_tag(
                                     db=session,
                                     email_id=processed_email.id,
                                     tag_id=tag.id,
                                     user_id=user.id
                                 )
-                                auto_assigned_count += 1
-                                logger.info(
-                                    f"🏷️  ✅ AUTO-ASSIGNED Tag '{tag.name}' ({similarity:.0%} similarity) "
-                                    f"to email {processed_email.id}"
-                                )
-                            except Exception as assign_err:
-                                logger.warning(f"⚠️  Auto-assignment fehlgeschlagen für '{tag.name}': {assign_err}")
-                        else:
-                            # Für UI-Suggestions speichern (similarity >= threshold aber < 80%)
-                            manual_suggestions.append({
-                                "name": tag.name,
-                                "id": tag.id,
-                                "similarity": round(similarity, 3)
-                            })
-                            logger.debug(f"💡 Suggested Tag '{tag.name}' ({similarity:.0%}) for manual review")
-                    
-                    if auto_assigned_count > 0:
-                        logger.info(f"✅ Phase F.2: {auto_assigned_count} Tags auto-assigned")
-                    
-                    if manual_suggestions:
-                        # TODO: Suggested_tags könnten in ProcessedEmail.metadata gespeichert werden
-                        logger.debug(f"💡 Phase F.2: {len(manual_suggestions)} manual tag suggestions available")
-                    
-                except Exception as e:
-                    logger.warning(f"⚠️  Phase F.2 Tag-Suggestions fehlgeschlagen: {e}")
-            
-            processed_count += 1
+                                logger.debug(f"📌 Tag '{tag_name}' assigned to email {processed_email.id}")
+                            except Exception as tag_err:
+                                logger.warning(f"⚠️  Tag-Assignment fehlgeschlagen für '{tag_name}': {tag_err}")
+                                
+                    except Exception as e:
+                        logger.warning(f"⚠️  Tag-Manager nicht verfügbar oder Fehler: {e}")
+                
+                # Phase F.2: Smart Tag Auto-Suggestions basierend auf Email-Embeddings
+                if raw_email.email_embedding:
+                    try:
+                        tag_manager_mod = importlib.import_module(".services.tag_manager", "src")
+                        
+                        # Bereits zugewiesene Tags holen (um Duplikate zu vermeiden)
+                        session.flush()  # Ensure processed_email.id is available
+                        already_assigned_tag_ids = [
+                            assignment.tag_id 
+                            for assignment in session.query(models.EmailTagAssignment)
+                            .filter_by(email_id=processed_email.id).all()
+                        ]
+                        
+                        # Phase F.2 Enhanced: Tag-Suggestions mit dynamischen Thresholds
+                        # min_similarity=None → Nutzt dynamischen Threshold basierend auf Tag-Anzahl (70-80%)
+                        tag_suggestions = tag_manager_mod.TagManager.suggest_tags_by_email_embedding(
+                            db=session,
+                            user_id=user.id,
+                            email_embedding_bytes=raw_email.email_embedding,
+                            top_k=5,
+                            min_similarity=None,  # Dynamisch: 70% bei <= 5 Tags, 75% bei 6-15, 80% bei >= 16
+                            exclude_tag_ids=already_assigned_tag_ids
+                        )
+                        
+                        # Auto-Assignment vs. Manuelle Vorschläge:
+                        # >= 80% (AUTO_ASSIGN_SIMILARITY_THRESHOLD) → Auto-assign
+                        # 70-79% (get_suggestion_threshold) → Nur Vorschlag für UI
+                        auto_assigned_count = 0
+                        manual_suggestions = []
+                        
+                        # Import der Threshold-Konstante
+                        AUTO_ASSIGN_THRESHOLD = tag_manager_mod.AUTO_ASSIGN_SIMILARITY_THRESHOLD
+                        
+                        for tag, similarity in tag_suggestions:
+                            if similarity >= AUTO_ASSIGN_THRESHOLD:
+                                # Auto-Assign für sehr sichere Matches (>= 80%)
+                                try:
+                                    tag_manager_mod.TagManager.assign_tag(
+                                        db=session,
+                                        email_id=processed_email.id,
+                                        tag_id=tag.id,
+                                        user_id=user.id
+                                    )
+                                    auto_assigned_count += 1
+                                    logger.info(
+                                        f"🏷️  ✅ AUTO-ASSIGNED Tag '{tag.name}' ({similarity:.0%} similarity) "
+                                        f"to email {processed_email.id}"
+                                    )
+                                except Exception as assign_err:
+                                    logger.warning(f"⚠️  Auto-assignment fehlgeschlagen für '{tag.name}': {assign_err}")
+                            else:
+                                # Für UI-Suggestions speichern (similarity >= threshold aber < 80%)
+                                manual_suggestions.append({
+                                    "name": tag.name,
+                                    "id": tag.id,
+                                    "similarity": round(similarity, 3)
+                                })
+                                logger.debug(f"💡 Suggested Tag '{tag.name}' ({similarity:.0%}) for manual review")
+                        
+                        if auto_assigned_count > 0:
+                            logger.info(f"✅ Phase F.2: {auto_assigned_count} Tags auto-assigned")
+                        
+                        if manual_suggestions:
+                            # TODO: Suggested_tags könnten in ProcessedEmail.metadata gespeichert werden
+                            logger.debug(f"💡 Phase F.2: {len(manual_suggestions)} manual tag suggestions available")
+                        
+                    except Exception as e:
+                        logger.warning(f"⚠️  Phase F.2 Tag-Suggestions fehlgeschlagen: {e}")
+                
+                processed_count += 1
 
-            logger.info(
-                "✅ Mail verarbeitet: Score=%s, Farbe=%s",
-                priority["score"],
-                priority["farbe"],
-            )
+                logger.info(
+                    "✅ Mail verarbeitet: Score=%s, Farbe=%s",
+                    priority["score"],
+                    priority["farbe"],
+                )
+            
+            except Exception as process_err:
+                # 🐛 BUG-002 FIX: Rollback bei Fehler während session.add()
+                session.rollback()
+                logger.error(f"❌ Fehler bei Email-Verarbeitung (ID {raw_email.id}): {process_err}")
+                # Continue mit nächster Email statt abzubrechen
+                continue
 
         except IntegrityError:
             session.rollback()

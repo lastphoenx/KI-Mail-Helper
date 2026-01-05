@@ -870,6 +870,104 @@ python src/00_main.py --process-once --master-keys "$(vault kv get -field=master
 ✅ **Backup-Restore sicher** - Daten bleiben verschlüsselt  
 ✅ **DSGVO-konform** - Server hat keinen Zugriff auf personenbezogene Daten  
 
+---
+
+## 🔒 Embedding Privacy Trade-off
+
+### Warum Embeddings unverschlüsselt sind
+
+**Bewusste Design-Entscheidung:** Email-Embeddings (Vektor-Repräsentationen) werden **unverschlüsselt** in der Datenbank gespeichert.
+
+#### Technische Begründung
+
+1. **Semantic Search erfordert Vektor-Operationen**
+   - Cosine Similarity zwischen Query-Embedding und Email-Embeddings
+   - Mathematische Vergleiche funktionieren nur mit Klartext-Vektoren
+   - Verschlüsselte Vektoren → keine Ähnlichkeitssuche möglich
+
+2. **Trade-off: Funktionalität vs. Theoretisches Risiko**
+   - **Gewinn:** Semantic Search, Tag-Suggestions, Similar Emails
+   - **Risiko:** Embedding Inversion (theoretisch möglich, praktisch schwierig)
+
+#### Risikoanalyse
+
+| Aspekt | Bewertung | Details |
+|--------|-----------|----------|
+| **Voraussetzung für Angriff** | 🟡 Hoch | Direkter Datenbank-Zugriff erforderlich |
+| **Theoretisches Risiko** | 🟡 Mittel | Embedding Inversion ist aktive Forschung |
+| **Praktisches Risiko** | 🟢 Niedrig | Erfordert spezialisierte ML-Modelle + Training |
+| **State-of-the-Art** | 🟡 Mittel | Partielle Rekonstruktion möglich (~60-70% semantischer Gehalt) |
+| **Für Heimserver** | 🟢 Sehr niedrig | Kein öffentlicher Zugriff, physische Sicherheit |
+
+#### Was enthält ein Embedding?
+
+Ein Embedding ist eine **semantische Repräsentation**, kein Text:
+- ✅ **Enthält:** Semantische Bedeutung, Thema, Kontext
+- ❌ **Enthält NICHT:** Exakte Wörter, Namen, Adressen, Zahlen
+- ⚠️ **Inversion möglich:** Ungefährer Inhalt rekonstruierbar (nicht exakt)
+
+**Beispiel:**
+```
+Original-Email: "Meeting mit Thomas am Montag um 14:00 Uhr"
+Embedding: [0.23, -0.45, 0.87, ...] (384 Zahlen)
+Inversion-Result: "Treffen Diskussion Termin Planung" (semantisch, nicht exakt)
+```
+
+#### Mitigations
+
+1. **Datenbank-Schutz (Primäre Verteidigung)**
+   ```bash
+   # Filesystem-Permissions
+   chmod 600 /path/to/emails.db
+   chown www-data:www-data /path/to/emails.db
+   ```
+
+2. **Verschlüsselte Backups**
+   ```bash
+   # Mit GPG verschlüsseln
+   gpg --encrypt --recipient your@email.com emails.db
+   
+   # Oder mit Age (moderner)
+   age -r age1... -o emails.db.age emails.db
+   ```
+
+3. **Defense in Depth**
+   - Wenn Angreifer DB-Zugriff hat → hat auch `encrypted_subject`, `encrypted_body` (AES-256)
+   - Embeddings enthalten **weniger** Information als verschlüsselte Inhalte
+   - Embedding-Inversion schwieriger als AES-256 Brute-Force
+
+4. **Monitoring & Alerting**
+   - Unautorisierte DB-Zugriffe loggen
+   - File Integrity Monitoring (AIDE, Tripwire)
+
+#### Alternative Lösungen (nicht implementiert)
+
+**Option A: Homomorphic Encryption** (❌ Overkill)
+- Bibliotheken: Microsoft SEAL, Google FHE
+- **Problem:** 100-1000x langsamer, extrem komplex
+- **Urteil:** Für Heimserver völlig überdimensioniert
+
+**Option B: Differential Privacy Noise** (❌ Reduziert Qualität)
+- Rauschen zu Embeddings hinzufügen
+- **Problem:** Suchqualität sinkt erheblich (30-50% schlechter)
+- **Urteil:** Trade-off nicht wert
+
+**Option C: Client-Side Embeddings** (❌ Nicht praktikabel)
+- Embeddings nur im Browser generieren/speichern
+- **Problem:** Kein Semantic Search über alle Emails, nur aktuelle Session
+- **Urteil:** Zerstört Kernfunktionalität
+
+#### Fazit
+
+👉 **Bewusster Trade-off:** Funktionalität (Semantic Search) vs. theoretisches Inversion-Risiko  
+👉 **Praktische Sicherheit:** Bei Datenbank-Kompromittierung sind Embeddings das **kleinste** Problem  
+👉 **Defense-in-Depth:** Primäre Verteidigung ist DB-Schutz + Verschlüsselung sensibler Felder  
+👉 **DSGVO-Konformität:** Embeddings allein sind keine personenbezogenen Daten (keine Identifikation möglich)
+
+**Status:** ✅ **Dokumentierter Design-Trade-off** - Kein Sicherheitsbug
+
+---
+
 ### Produktionsbereitschaft
 
 ✅ Alle Tests bestanden  

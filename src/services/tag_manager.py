@@ -421,7 +421,7 @@ class TagManager:
         if not tag:
             raise ValueError("Tag nicht gefunden")
         
-        # Prüfe ob bereits zugewiesen
+        # Prüfe ob bereits zugewiesen (schneller Check)
         existing = (
             db.query(models.EmailTagAssignment)
             .filter(
@@ -437,16 +437,22 @@ class TagManager:
         assignment = models.EmailTagAssignment(email_id=email_id, tag_id=tag_id)
         db.add(assignment)
         
+        # 🐛 BUG-003 FIX: Race-Condition durch flush() + graceful IntegrityError
         try:
+            db.flush()  # Sofort prüfen, nicht erst bei commit()
             db.commit()
             
             # Phase F.2 Learning: Update learned_embedding nach jeder Zuweisung!
             TagManager.update_learned_embedding(db, tag_id, user_id)
             
+            logger.debug(f"✅ Tag {tag_id} erfolgreich zu Email {email_id} zugewiesen")
             return True
+            
         except IntegrityError:
+            # Race Condition: Anderer Worker war schneller
             db.rollback()
-            return False
+            logger.debug(f"Tag {tag_id} bereits an Email {email_id} zugewiesen (Race-Condition)")
+            return False  # Success semantisch (Endzustand stimmt)
 
     @staticmethod
     def remove_tag(db: Session, email_id: int, tag_id: int, user_id: int) -> bool:

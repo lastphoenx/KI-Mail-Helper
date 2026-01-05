@@ -2699,6 +2699,7 @@ def _update_user_override_tags(db, email_id: int, user_id: int, tag_manager_mod)
 
 @app.route("/api/search/semantic", methods=["GET"])
 @login_required
+@limiter.limit("30 per minute")  # 🐛 BUG-012 FIX: Rate Limit für rechenintensive Semantic Search
 def api_semantic_search():
     """
     API: Semantische E-Mail-Suche (Phase F.1)
@@ -2808,6 +2809,7 @@ def api_semantic_search():
 
 @app.route("/api/emails/<int:email_id>/similar", methods=["GET"])
 @login_required
+@limiter.limit("40 per minute")  # 🐛 BUG-012 FIX: Rate Limit für Embedding-Vergleiche
 def api_find_similar_emails(email_id):
     """
     API: Ähnliche E-Mails finden (Phase F.1)
@@ -4153,6 +4155,7 @@ def api_check_embedding_compatibility(email_id):
 
 @app.route("/api/emails/<int:email_id>/reprocess", methods=["POST"])
 @login_required
+@limiter.limit("10 per minute")  # 🐛 BUG-012 FIX: Rate Limit für AI-Reprocessing
 def api_reprocess_email(email_id):
     """
     API: Email neu verarbeiten (Phase F.2 Enhanced)
@@ -4298,6 +4301,7 @@ def api_reprocess_email(email_id):
 
 @app.route("/api/batch-reprocess-embeddings", methods=["POST"])
 @login_required
+@limiter.limit("5 per minute")  # 🐛 BUG-012 FIX: Strenge Rate Limit - sehr rechenintensiv!
 def api_batch_reprocess_embeddings():
     """
     Batch-Reprocess: Regeneriert Embeddings für ALLE Emails (async mit Progress)
@@ -5301,6 +5305,7 @@ def imap_diagnostics():
 
 @app.route("/api/imap-diagnostics/<int:account_id>", methods=["POST"])
 @login_required
+@limiter.limit("10 per minute")  # 🐛 BUG-012 FIX: Rate Limit für IMAP-Tests
 def api_imap_diagnostics(account_id):
     """API: Run IMAP diagnostics for a specific account"""
     db = get_db_session()
