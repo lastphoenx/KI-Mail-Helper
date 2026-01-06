@@ -595,21 +595,35 @@ def process_pending_raw_emails(
                         
                         for tag, similarity in tag_suggestions:
                             if similarity >= AUTO_ASSIGN_THRESHOLD:
-                                # Auto-Assign für sehr sichere Matches (>= 80%)
-                                try:
-                                    tag_manager_mod.TagManager.assign_tag(
-                                        db=session,
-                                        email_id=processed_email.id,
-                                        tag_id=tag.id,
-                                        user_id=user.id
-                                    )
-                                    auto_assigned_count += 1
+                                # PATCH 2026-01-06: Respektiere enable_tag_suggestion_queue Flag
+                                # Siehe: doc/offen/PATCH_PHASE_F2_QUEUE_FLAG_BUG.md
+                                if user.enable_tag_suggestion_queue:
+                                    # Auto-Assign für sehr sichere Matches (>= 80%)
+                                    try:
+                                        tag_manager_mod.TagManager.assign_tag(
+                                            db=session,
+                                            email_id=processed_email.id,
+                                            tag_id=tag.id,
+                                            user_id=user.id
+                                        )
+                                        auto_assigned_count += 1
+                                        logger.info(
+                                            f"🏷️  ✅ AUTO-ASSIGNED Tag '{tag.name}' ({similarity:.0%} similarity) "
+                                            f"to email {processed_email.id}"
+                                        )
+                                    except Exception as assign_err:
+                                        logger.warning(f"⚠️  Auto-assignment fehlgeschlagen für '{tag.name}': {assign_err}")
+                                else:
+                                    # User hat Auto-Actions deaktiviert → Nur als Suggestion zurückgeben
                                     logger.info(
-                                        f"🏷️  ✅ AUTO-ASSIGNED Tag '{tag.name}' ({similarity:.0%} similarity) "
-                                        f"to email {processed_email.id}"
+                                        f"⏭️  SKIP AUTO-ASSIGN: Tag '{tag.name}' ({similarity:.0%}) - "
+                                        f"Auto-Actions disabled by user (enable_tag_suggestion_queue=False)"
                                     )
-                                except Exception as assign_err:
-                                    logger.warning(f"⚠️  Auto-assignment fehlgeschlagen für '{tag.name}': {assign_err}")
+                                    manual_suggestions.append({
+                                        "name": tag.name,
+                                        "id": tag.id,
+                                        "similarity": round(similarity, 3)
+                                    })
                             else:
                                 # Für UI-Suggestions speichern (similarity >= threshold aber < 80%)
                                 manual_suggestions.append({

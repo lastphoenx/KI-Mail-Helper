@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Import models module
 from importlib import import_module
-models = import_module("02_models")
+models = import_module("src.02_models")
 
 
 class TagSuggestionService:

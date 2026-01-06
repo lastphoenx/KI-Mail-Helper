@@ -48,7 +48,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
-                    <button type="button" class="btn btn-primary" onclick="saveSettings()">💾 Speichern</button>
+                    <button type="button" class="btn btn-primary" id="saveSettingsBtn">💾 Speichern</button>
                 </div>
             </div>
         </div>
@@ -97,10 +97,10 @@
     <div class="row mb-3">
         <div class="col-md-12">
             <div class="btn-group" role="group">
-                <button type="button" class="btn btn-sm btn-outline-success" onclick="batchApprove()">
+                <button type="button" class="btn btn-sm btn-outline-success" id="batchApproveBtn">
                     ✅ Alle annehmen
                 </button>
-                <button type="button" class="btn btn-sm btn-outline-danger" onclick="batchReject()">
+                <button type="button" class="btn btn-sm btn-outline-danger" id="batchRejectBtn">
                     ❌ Alle ablehnen
                 </button>
             </div>
@@ -132,7 +132,8 @@
                         <div class="btn-group btn-group-sm" role="group">
                             <!-- Approve -->
                             <button type="button" class="btn btn-outline-success" 
-                                    onclick="approveSuggestion({{ suggestion.id }})">
+                                    data-suggestion-id="{{ suggestion.id }}" 
+                                    data-action="approve">
                                 ✅ Annehmen
                             </button>
 
@@ -147,7 +148,9 @@
                                         {% for tag in user_tags %}
                                         <li>
                                             <a class="dropdown-item" 
-                                               onclick="mergeSuggestion({{ suggestion.id }}, {{ tag.id }})">
+                                               data-suggestion-id="{{ suggestion.id }}"
+                                               data-tag-id="{{ tag.id }}"
+                                               data-action="merge">
                                                 <span style="display: inline-block; width: 12px; height: 12px; 
                                                              background-color: {{ tag.color }}; 
                                                              border-radius: 50%; vertical-align: middle; margin-right: 8px;"></span>
@@ -163,7 +166,8 @@
 
                             <!-- Reject -->
                             <button type="button" class="btn btn-outline-danger" 
-                                    onclick="rejectSuggestion({{ suggestion.id }})">
+                                    data-suggestion-id="{{ suggestion.id }}" 
+                                    data-action="reject">
                                 ❌ Ablehnen
                             </button>
                         </div>
@@ -180,7 +184,7 @@
     {% endif %}
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // API Base
 const API_BASE = '{{ url_for("index") }}';
 
@@ -338,6 +342,53 @@ async function saveSettings() {
         alert(`❌ Fehler: ${err}`);
     }
 }
+
+// Event Listeners nach DOM geladen
+document.addEventListener('DOMContentLoaded', function() {
+    // Save Settings Button
+    const saveBtn = document.getElementById('saveSettingsBtn');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', saveSettings);
+    }
+    
+    // Batch Approve Button
+    const batchApproveBtn = document.getElementById('batchApproveBtn');
+    if (batchApproveBtn) {
+        batchApproveBtn.addEventListener('click', batchApprove);
+    }
+    
+    // Batch Reject Button
+    const batchRejectBtn = document.getElementById('batchRejectBtn');
+    if (batchRejectBtn) {
+        batchRejectBtn.addEventListener('click', batchReject);
+    }
+    
+    // Approve Buttons
+    document.querySelectorAll('[data-action="approve"]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const suggestionId = parseInt(this.getAttribute('data-suggestion-id'));
+            approveSuggestion(suggestionId);
+        });
+    });
+    
+    // Reject Buttons
+    document.querySelectorAll('[data-action="reject"]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const suggestionId = parseInt(this.getAttribute('data-suggestion-id'));
+            rejectSuggestion(suggestionId);
+        });
+    });
+    
+    // Merge Links
+    document.querySelectorAll('[data-action="merge"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const suggestionId = parseInt(this.getAttribute('data-suggestion-id'));
+            const tagId = parseInt(this.getAttribute('data-tag-id'));
+            mergeSuggestion(suggestionId, tagId);
+        });
+    });
+});
 </script>
 
 <style>

@@ -2746,6 +2746,7 @@ def tag_suggestions_page():
             user_tags=user_tags,
             stats=stats,
             queue_enabled=user.enable_tag_suggestion_queue,
+            csp_nonce=g.csp_nonce
         )
 
     finally:
