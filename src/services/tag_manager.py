@@ -828,6 +828,27 @@ class TagManager:
                 f"Dot product: {np.dot(email_embedding, tag_embedding):.4f}"
             )
             
+            # 🚫 Phase F.3: Negative Feedback berücksichtigen
+            negative_sim = get_negative_similarity(email_embedding, tag)
+            penalty = 0.0
+            
+            if negative_sim > 0.0:
+                penalty = calculate_negative_penalty(
+                    positive_similarity=similarity,
+                    negative_similarity=negative_sim,
+                    negative_count=tag.negative_count or 0,
+                    max_penalty=0.20
+                )
+                # Penalty vom Similarity-Score abziehen
+                original_similarity = similarity
+                similarity = max(0.0, similarity - penalty)
+                
+                logger.info(
+                    f"🚫 Tag '{tag.name}': Negative feedback applied "
+                    f"(neg_sim={negative_sim:.3f}, penalty={penalty:.3f}, "
+                    f"{original_similarity:.3f} → {similarity:.3f})"
+                )
+            
             # 🆕 Source-spezifische Thresholds holen
             suggest_threshold, auto_assign_threshold = TagEmbeddingCache._get_thresholds_for_tag(tag)
             
@@ -1019,5 +1040,270 @@ class TagManager:
             logger.error(f"update_learned_embedding fehlgeschlagen: {e}")
             db.rollback()
             return False
+
+
+# ============================================================================
+# 🚫 Phase F.3: Negative Feedback für Tag-Learning
+# ============================================================================
+
+def add_negative_example(
+    db: Session,
+    tag_id: int,
+    email_id: int,
+    rejection_source: str = "ui"
+) -> bool:
+    """Fügt ein negatives Beispiel für ein Tag hinzu.
+    
+    Args:
+        db: Database session
+        tag_id: ID des abgelehnten Tags
+        email_id: ID der Email
+        rejection_source: Quelle der Ablehnung ("ui", "rule", "threshold")
+        
+    Returns:
+        True wenn erfolgreich, False bei Fehler
+    """
+    try:
+        # Prüfen ob Tag und Email existieren
+        tag = db.query(models.EmailTag).filter_by(id=tag_id).first()
+        if not tag:
+            logger.error(f"Tag {tag_id} nicht gefunden")
+            return False
+            
+        email = db.query(models.ProcessedEmail).filter_by(id=email_id).first()
+        if not email:
+            logger.error(f"Email {email_id} nicht gefunden")
+            return False
+        
+        # Embedding der Email holen
+        raw_email = db.query(models.RawEmail).filter_by(id=email.raw_email_id).first()
+        if not raw_email or not raw_email.email_embedding:
+            logger.warning(f"Email {email_id} hat kein Embedding")
+            return False
+        
+        # Prüfen ob bereits existiert (unique constraint)
+        existing = db.query(models.TagNegativeExample).filter_by(
+            tag_id=tag_id,
+            email_id=email_id
+        ).first()
+        
+        if existing:
+            logger.info(f"⚠️  Negative example für Tag '{tag.name}' + Email {email_id} existiert bereits")
+            return True
+        
+        # Negatives Beispiel erstellen
+        negative_example = models.TagNegativeExample(
+            tag_id=tag_id,
+            email_id=email_id,
+            negative_embedding=raw_email.email_embedding,
+            rejection_source=rejection_source,
+            created_at=datetime.now(UTC)
+        )
+        db.add(negative_example)
+        db.flush()
+        
+        # Negative Embedding für Tag updaten
+        update_negative_embedding(db, tag_id)
+        
+        db.commit()
+        
+        logger.info(
+            f"🚫 Tag '{tag.name}': Negative example added "
+            f"(email={email_id}, source={rejection_source})"
+        )
+        return True
+        
+    except Exception as e:
+        logger.error(f"add_negative_example fehlgeschlagen: {e}")
+        db.rollback()
+        return False
+
+
+def remove_negative_example(
+    db: Session,
+    tag_id: int,
+    email_id: int
+) -> bool:
+    """Entfernt ein negatives Beispiel (z.B. wenn User doch zuweist).
+    
+    Args:
+        db: Database session
+        tag_id: ID des Tags
+        email_id: ID der Email
+        
+    Returns:
+        True wenn erfolgreich, False bei Fehler
+    """
+    try:
+        negative_example = db.query(models.TagNegativeExample).filter_by(
+            tag_id=tag_id,
+            email_id=email_id
+        ).first()
+        
+        if not negative_example:
+            logger.warning(f"Kein negative example für Tag {tag_id} + Email {email_id} gefunden")
+            return False
+        
+        db.delete(negative_example)
+        db.flush()
+        
+        # Negative Embedding neu berechnen
+        update_negative_embedding(db, tag_id)
+        
+        db.commit()
+        
+        tag = db.query(models.EmailTag).filter_by(id=tag_id).first()
+        logger.info(f"✅ Tag '{tag.name}': Negative example removed (email={email_id})")
+        return True
+        
+    except Exception as e:
+        logger.error(f"remove_negative_example fehlgeschlagen: {e}")
+        db.rollback()
+        return False
+
+
+def update_negative_embedding(
+    db: Session,
+    tag_id: int
+) -> bool:
+    """Berechnet das negative Embedding für ein Tag aus allen negativen Beispielen.
+    
+    Args:
+        db: Database session
+        tag_id: ID des Tags
+        
+    Returns:
+        True wenn erfolgreich, False bei Fehler
+    """
+    try:
+        tag = db.query(models.EmailTag).filter_by(id=tag_id).first()
+        if not tag:
+            logger.error(f"Tag {tag_id} nicht gefunden")
+            return False
+        
+        # Alle negativen Beispiele holen
+        negative_examples = db.query(models.TagNegativeExample).filter_by(
+            tag_id=tag_id
+        ).all()
+        
+        if not negative_examples:
+            # Keine negativen Beispiele → negative_embedding löschen
+            tag.negative_embedding = None
+            tag.negative_updated_at = None
+            tag.negative_count = 0
+            db.commit()
+            logger.info(f"🚫 Tag '{tag.name}': Keine negative examples, embedding gelöscht")
+            return True
+        
+        # Embeddings sammeln
+        embeddings = []
+        for example in negative_examples:
+            try:
+                emb = np.frombuffer(example.negative_embedding, dtype=np.float32)
+                embeddings.append(emb)
+            except Exception as e:
+                logger.warning(f"Konnte negative_embedding nicht lesen: {e}")
+                continue
+        
+        if not embeddings:
+            logger.warning(f"Keine validen embeddings für Tag {tag_id}")
+            return False
+        
+        # Mittelwert berechnen (genau wie bei learned_embedding)
+        negative_embedding = np.mean(embeddings, axis=0)
+        
+        # In DB speichern
+        tag.negative_embedding = negative_embedding.tobytes()
+        tag.negative_updated_at = datetime.now(UTC)
+        tag.negative_count = len(embeddings)
+        db.commit()
+        
+        # Cache invalidieren
+        TagEmbeddingCache.invalidate_tag_cache(tag_id, tag.user_id)
+        
+        logger.info(
+            f"🚫 Tag '{tag.name}': Negative embedding updated from "
+            f"{len(embeddings)} rejected emails"
+        )
+        return True
+        
+    except Exception as e:
+        logger.error(f"update_negative_embedding fehlgeschlagen: {e}")
+        db.rollback()
+        return False
+
+
+def get_negative_similarity(
+    email_embedding: np.ndarray,
+    tag: models.EmailTag
+) -> float:
+    """Berechnet die Ähnlichkeit zwischen Email und negativem Tag-Embedding.
+    
+    Args:
+        email_embedding: Email-Embedding als numpy array
+        tag: Tag-Objekt mit negative_embedding
+        
+    Returns:
+        Similarity-Score (0-1), oder 0.0 wenn kein negative_embedding
+    """
+    if not tag.negative_embedding:
+        return 0.0
+    
+    try:
+        negative_embedding = np.frombuffer(tag.negative_embedding, dtype=np.float32)
+        return TagEmbeddingCache.compute_similarity(email_embedding, negative_embedding)
+    except Exception as e:
+        logger.warning(f"Konnte negative_similarity nicht berechnen: {e}")
+        return 0.0
+
+
+def calculate_negative_penalty(
+    positive_similarity: float,
+    negative_similarity: float,
+    negative_count: int = 1,
+    max_penalty: float = 0.20
+) -> float:
+    """Berechnet Penalty basierend auf Ähnlichkeit zu negativen Beispielen.
+    
+    Strategie:
+    - Wenn negative_similarity > positive_similarity: Volle Penalty
+    - Sonst: Graduelle Penalty basierend auf Verhältnis
+    - Je mehr negative examples, desto höher die Penalty (bis max_penalty)
+    
+    Args:
+        positive_similarity: Similarity zum Tag-Embedding
+        negative_similarity: Similarity zum negative-Embedding
+        negative_count: Anzahl negativer Beispiele
+        max_penalty: Maximale Penalty (0.0-1.0)
+        
+    Returns:
+        Penalty-Wert (0.0 - max_penalty)
+    """
+    if negative_similarity <= 0.0:
+        return 0.0
+    
+    # Basis-Penalty: Verhältnis der Similarities
+    ratio = negative_similarity / max(positive_similarity, 0.01)
+    
+    # Wenn negative stärker als positive → volle Penalty
+    if ratio >= 1.0:
+        base_penalty = max_penalty
+    else:
+        # Graduelle Penalty: 0.5 ratio = 50% penalty
+        base_penalty = max_penalty * ratio
+    
+    # Count-Bonus: Mehr negative examples = höhere Confidence = höhere Penalty
+    # 1 example: 1.0x, 3 examples: 1.15x, 5+ examples: 1.3x
+    count_factor = min(1.0 + (negative_count - 1) * 0.075, 1.3)
+    
+    penalty = min(base_penalty * count_factor, max_penalty)
+    
+    logger.debug(
+        f"🚫 Negative penalty: pos={positive_similarity:.3f}, "
+        f"neg={negative_similarity:.3f}, count={negative_count}, "
+        f"→ penalty={penalty:.3f} (ratio={ratio:.2f}, factor={count_factor:.2f})"
+    )
+    
+    return penalty
 
 

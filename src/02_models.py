@@ -115,10 +115,18 @@ class EmailTag(Base):
     # If NULL: Fallback to description/name embedding
     learned_embedding = Column(LargeBinary, nullable=True)
     embedding_updated_at = Column(DateTime, nullable=True)
+    
+    # Phase NEGATIVE-FEEDBACK: Aggregated negative embedding (v2.0)
+    # Mean of all rejected emails for this tag
+    # Used to reduce false positive suggestions
+    negative_embedding = Column(LargeBinary, nullable=True)
+    negative_updated_at = Column(DateTime, nullable=True)
+    negative_count = Column(Integer, default=0)
 
     # Relationships
     user = relationship("User", back_populates="email_tags")
     assignments = relationship("EmailTagAssignment", back_populates="tag", cascade="all, delete-orphan")
+    negative_examples = relationship("TagNegativeExample", back_populates="tag", cascade="all, delete-orphan")
 
     # Constraints
     __table_args__ = (UniqueConstraint("user_id", "name", name="uq_user_tag_name"),)
@@ -140,6 +148,43 @@ class EmailTagAssignment(Base):
 
     # Constraints
     __table_args__ = (UniqueConstraint("email_id", "tag_id", name="uq_email_tag"),)
+
+
+class TagNegativeExample(Base):
+    """Negativ-Beispiele für Tag-Learning (Phase NEGATIVE-FEEDBACK v2.0)
+    
+    Speichert Emails, die der User explizit als "passt nicht" für einen Tag
+    markiert hat. Diese werden bei der Similarity-Berechnung als Penalty verwendet.
+    
+    Das System berechnet ein aggregiertes negative_embedding (Durchschnitt aller
+    Rejections) und nutzt dies, um False Positives zu reduzieren.
+    """
+    
+    __tablename__ = "tag_negative_examples"
+    
+    id = Column(Integer, primary_key=True)
+    tag_id = Column(Integer, ForeignKey("email_tags.id", ondelete="CASCADE"), nullable=False)
+    email_id = Column(Integer, ForeignKey("processed_emails.id", ondelete="CASCADE"), nullable=False)
+    
+    # Embedding-Kopie (da Email-Embedding sich ändern könnte)
+    negative_embedding = Column(LargeBinary, nullable=False)
+    
+    # Metadaten
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Woher kam die Ablehnung? ("suggestion" | "auto_assign")
+    # NICHT "manual" - nur explizite Rejections!
+    rejection_source = Column(String(20), default="suggestion")
+    
+    # Relationships
+    tag = relationship("EmailTag", back_populates="negative_examples")
+    email = relationship("ProcessedEmail", backref="negative_tag_examples")
+    
+    # Constraints: Eine Email kann nur einmal pro Tag als Negativ markiert werden
+    __table_args__ = (
+        UniqueConstraint("tag_id", "email_id", name="uq_tag_negative_email"),
+        Index("ix_tag_negative_tag_id", "tag_id"),
+    )
 
 
 class TagSuggestionQueue(Base):

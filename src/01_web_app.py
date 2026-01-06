@@ -2718,6 +2718,93 @@ def api_remove_tag_from_email(email_id, tag_id):
         db.close()
 
 
+@app.route("/api/emails/<int:email_id>/tags/<int:tag_id>/reject", methods=["POST"])
+@login_required
+def api_reject_tag_for_email(email_id, tag_id):
+    """🚫 Phase F.3: Tag-Vorschlag ablehnen und als negatives Beispiel speichern"""
+    db = get_db_session()
+
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        try:
+            tag_manager_mod = importlib.import_module("src.services.tag_manager")
+            
+            # Negative example hinzufügen
+            success = tag_manager_mod.add_negative_example(
+                db, tag_id, email_id, rejection_source="ui"
+            )
+
+            if not success:
+                return jsonify({"error": "Konnte negatives Beispiel nicht speichern"}), 500
+
+            return jsonify({"success": True})
+        except Exception as e:
+            logger.error(f"Fehler beim Ablehnen von Tag {tag_id} für Email {email_id}: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
+
+
+@app.route("/api/tags/<int:tag_id>/negative-examples", methods=["GET"])
+@login_required
+def api_get_negative_examples(tag_id):
+    """📊 Phase F.3: Liste negativer Beispiele für ein Tag abrufen"""
+    db = get_db_session()
+
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        try:
+            models_mod = importlib.import_module("src.02_models")
+            
+            # Tag validieren (gehört User?)
+            tag = db.query(models_mod.EmailTag).filter_by(
+                id=tag_id, user_id=user.id
+            ).first()
+            
+            if not tag:
+                return jsonify({"error": "Tag nicht gefunden"}), 404
+            
+            # Negative examples holen
+            negative_examples = db.query(models_mod.TagNegativeExample).filter_by(
+                tag_id=tag_id
+            ).all()
+            
+            result = []
+            for example in negative_examples:
+                email = db.query(models_mod.ProcessedEmail).filter_by(
+                    id=example.email_id
+                ).first()
+                
+                if email:
+                    result.append({
+                        "email_id": example.email_id,
+                        "subject": email.subject,
+                        "created_at": example.created_at.isoformat() if example.created_at else None,
+                        "rejection_source": example.rejection_source
+                    })
+            
+            return jsonify({
+                "tag_id": tag_id,
+                "tag_name": tag.name,
+                "negative_count": tag.negative_count or 0,
+                "examples": result
+            })
+            
+        except Exception as e:
+            logger.error(f"Fehler beim Abrufen negativer Beispiele für Tag {tag_id}: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    finally:
+        db.close()
+
+
 # ============================================================================
 # Phase TAG-QUEUE: Tag Suggestion Queue Endpoints
 # ============================================================================

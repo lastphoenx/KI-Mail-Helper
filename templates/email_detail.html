@@ -907,10 +907,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Add each suggestion as a clickable badge
                 data.suggestions.forEach(suggestion => {
+                    const container = document.createElement('span');
+                    container.className = 'd-inline-flex align-items-center me-1 mb-1';
+                    container.style.position = 'relative';
+                    
                     const badge = document.createElement('span');
-                    badge.className = 'badge me-1 mb-1';
+                    badge.className = 'badge';
                     badge.style.cursor = 'pointer';
                     badge.style.backgroundColor = suggestion.color || '#3B82F6';
+                    badge.style.paddingRight = '24px'; // Space for X button
                     
                     // Similarity color coding
                     const similarity = suggestion.similarity || 0;
@@ -949,7 +954,62 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     });
                     
-                    suggestionsList.appendChild(badge);
+                    // 🚫 Phase F.3: Reject button
+                    const rejectBtn = document.createElement('span');
+                    rejectBtn.innerHTML = '×';
+                    rejectBtn.className = 'position-absolute';
+                    rejectBtn.style.cssText = 'right: 4px; top: 50%; transform: translateY(-50%); cursor: pointer; font-size: 18px; font-weight: bold; color: rgba(255,255,255,0.7); line-height: 1;';
+                    rejectBtn.title = 'Tag ablehnen (wird als negatives Beispiel gespeichert)';
+                    
+                    rejectBtn.addEventListener('click', async (e) => {
+                        e.stopPropagation(); // Don't trigger badge click
+                        
+                        if (!confirm(`Tag "${suggestion.name}" ablehnen?\n\nDieser Tag wird als negatives Beispiel für diese Art von Emails gespeichert.`)) {
+                            return;
+                        }
+                        
+                        try {
+                            const rejectResponse = await fetch(`/api/emails/${emailId}/tags/${suggestion.id}/reject`, {
+                                method: 'POST',
+                                headers: { 
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': getCsrfToken()
+                                },
+                                credentials: 'include'
+                            });
+                            
+                            if (rejectResponse.ok) {
+                                // Remove suggestion from UI
+                                container.remove();
+                                
+                                // If no more suggestions, hide box
+                                if (suggestionsList.children.length === 0) {
+                                    suggestionsBox.style.display = 'none';
+                                }
+                                
+                                console.log(`🚫 Tag "${suggestion.name}" als negatives Beispiel gespeichert`);
+                            } else {
+                                const errorData = await rejectResponse.json();
+                                alert('Fehler: ' + (errorData.error || 'Tag konnte nicht abgelehnt werden'));
+                            }
+                        } catch (error) {
+                            alert('Fehler beim Ablehnen: ' + error.message);
+                        }
+                    });
+                    
+                    // Hover effects
+                    rejectBtn.addEventListener('mouseenter', () => {
+                        rejectBtn.style.color = 'rgba(255,255,255,1)';
+                        rejectBtn.style.transform = 'translateY(-50%) scale(1.2)';
+                    });
+                    rejectBtn.addEventListener('mouseleave', () => {
+                        rejectBtn.style.color = 'rgba(255,255,255,0.7)';
+                        rejectBtn.style.transform = 'translateY(-50%) scale(1)';
+                    });
+                    
+                    container.appendChild(badge);
+                    container.appendChild(rejectBtn);
+                    suggestionsList.appendChild(container);
                 });
                 
                 // Show the suggestions box
