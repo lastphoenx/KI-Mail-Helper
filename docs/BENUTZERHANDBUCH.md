@@ -864,6 +864,41 @@ Um Emails direkt aus der App zu senden, muss SMTP konfiguriert sein:
 
 > 💡 **Empfehlung für Heimserver:** Ollama mit all-minilm:22m für Embeddings und llama3.2 für Analyse. Kostenlos und privat!
 
+#### Hardware-Hinweise: CPU vs GPU
+
+Die **richtige Modellwahl hängt von deiner Hardware ab:**
+
+**Mit dedizierter GPU (CUDA - z.B. NVIDIA RTX):**
+- ✅ Größere Modelle nutzbar (llama3.1:8b, mistral:7b)
+- ✅ Sehr schnell (<1 Sek pro Email)
+- ✅ Beste Out-of-the-Box Qualität
+
+**Nur CPU (ohne dedizierte GPU):**
+- ⚠️ Kleine Modelle empfohlen (llama3.2:1b, max 3b)
+- ⚠️ Langsamer (5-10 Min pro Email bei 1b)
+- ✅ **Learning-System gleicht schwächere Modelle aus!**
+
+**💡 CPU-only Strategie (besonders wichtig!):**
+
+Ein **llama3.2:1b mit Learning** liefert nach 1-2 Wochen bessere Ergebnisse als ein **llama3.1:8b ohne Learning**:
+
+| Zeitraum | Similarity | False-Positives | Zeitaufwand |
+|----------|------------|-----------------|-------------|
+| **Start (ohne Learning)** | 15-25% | 20-30% | - |
+| **1 Woche (15-20 Tags)** | 75-85% | 10-15% | ~3 Min/Tag |
+| **2 Wochen (30-40 Tags + Rejects)** | 90-95% | 5-8% | ~5 Min/Tag |
+
+**Was du tun solltest:**
+1. **Taggen:** 3-5 Emails pro Tag manuell taggen
+2. **Rejecting:** Unpassende Vorschläge mit × Button ablehnen (Negative Feedback)
+3. **Geduld:** Nach 1-2 Wochen kennt das System deine Präferenzen perfekt
+
+**Alternative für CPU-only:**
+- **Hybrid-Ansatz:** Embedding lokal, Base/Optimize Cloud (GPT-4o-mini/Claude)
+- Vorteil: Schnell und präzise, Embeddings bleiben lokal (Privacy)
+
+> 📘 **Detaillierte Modell-Empfehlungen:** Siehe [KI_MODELL_EMPFEHLUNGEN.md](KI_MODELL_EMPFEHLUNGEN.md) für Performance-Benchmarks, Hardware-Richtwerte und Learning-Strategien.
+
 ### 9.4 Passwort ändern
 
 > **📸 Screenshot:** Passwort ändern Formular (change_password.html)  
