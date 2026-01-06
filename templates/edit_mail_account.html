@@ -117,10 +117,11 @@
                 
                 <div class="mb-3">
                     <label for="signature_text" class="form-label">Signatur-Text</label>
-                    <textarea class="form-control" id="signature_text" name="signature_text" rows="4" 
+                    <textarea class="form-control" id="signature_text" name="signature_text" rows="4" maxlength="2000"
                               placeholder="z.B.&#10;Mit freundlichen Grüßen&#10;Max Mustermann&#10;Abteilung IT">{{ account.decrypted_signature_text or '' }}</textarea>
                     <small class="text-muted">
-                        Diese Signatur wird nur verwendet, wenn die Checkbox aktiviert ist. Wird verschlüsselt gespeichert.
+                        Diese Signatur wird nur verwendet, wenn die Checkbox aktiviert ist. Wird verschlüsselt gespeichert.<br>
+                        ⚠️ <strong>Priorität:</strong> Diese Account-Signatur > Stil-Signatur > Globale Signatur
                     </small>
                 </div>
                 

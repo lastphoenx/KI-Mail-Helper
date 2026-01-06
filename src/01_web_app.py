@@ -5823,14 +5823,41 @@ def edit_mail_account(account_id):
             
             if signature_enabled:
                 signature_text = request.form.get("signature_text", "").strip()
-                if signature_text:
-                    # Verschlüssele Signatur mit Master-Key (wie andere Account-Daten)
+                if not signature_text:
+                    # Validierung: signature_enabled aber Text leer
+                    return (
+                        render_template(
+                            "edit_mail_account.html",
+                            account=account,
+                            error="Signatur aktiviert aber Text ist leer. Bitte Text eingeben oder Checkbox deaktivieren.",
+                        ),
+                        400,
+                    )
+                if len(signature_text) > 2000:
+                    return (
+                        render_template(
+                            "edit_mail_account.html",
+                            account=account,
+                            error="Signatur zu lang (max. 2000 Zeichen).",
+                        ),
+                        400,
+                    )
+                # Verschlüssele Signatur mit Master-Key (wie andere Account-Daten)
+                try:
                     encrypted_signature = encryption.CredentialManager.encrypt_email_address(
                         signature_text, master_key
                     )
                     account.encrypted_signature_text = encrypted_signature
-                else:
-                    account.encrypted_signature_text = None
+                except Exception as e:
+                    logger.error(f"Failed to encrypt account signature: {e}")
+                    return (
+                        render_template(
+                            "edit_mail_account.html",
+                            account=account,
+                            error="Fehler beim Verschlüsseln der Signatur.",
+                        ),
+                        500,
+                    )
             else:
                 # Wenn deaktiviert, lösche verschlüsselte Signatur
                 account.encrypted_signature_text = None

@@ -369,11 +369,12 @@ Beziehe dich auf den Inhalt der Original-E-Mail und halte den vorgegebenen Ton e
         # 🆕 User-Style-Settings laden
         from src.services.reply_style_service import ReplyStyleService
         try:
+            # get_effective_settings liefert bereits: Style > Global
             effective_settings = ReplyStyleService.get_effective_settings(
                 db, user_id, tone, master_key
             )
             
-            # 🆕 Phase I.2: Account-Signatur hat Priorität
+            # 🆕 Phase I.2: Account-Signatur hat höchste Priorität (überschreibt Style + Global)
             if account_id and master_key:
                 account_signature = ReplyStyleService.get_account_signature(
                     db, account_id, master_key
@@ -381,7 +382,7 @@ Beziehe dich auf den Inhalt der Original-E-Mail und halte den vorgegebenen Ton e
                 if account_signature:
                     effective_settings["signature_text"] = account_signature
                     effective_settings["signature_enabled"] = True
-                    logger.info(f"Using account-specific signature for account {account_id}")
+                    logger.info(f"✍️ Using account-specific signature for account {account_id} (Priority: Account > Style > Global)")
             
         except Exception as e:
             logger.error(f"Failed to load reply style settings: {e}")

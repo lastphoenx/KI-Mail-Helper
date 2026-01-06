@@ -68,9 +68,10 @@
                         </label>
                     </div>
                     <textarea id="global-signature-text" 
-                              class="form-control font-monospace" rows="3"
+                              class="form-control font-monospace" rows="3" maxlength="2000"
                               placeholder="z.B. Mike&#10;Technischer Support&#10;Firma GmbH&#10;+41 79 123 45 67"></textarea>
-                    <small class="form-text text-muted">💡 Tipp: Mehrzeilige Signaturen mit Enter-Taste</small>
+                    <small class="form-text text-muted">💡 Tipp: Mehrzeilige Signaturen mit Enter-Taste<br>
+                    ⚠️ <strong>Priorität:</strong> Account-Signatur > Stil-Signatur > Diese globale Signatur</small>
                 </div>
                 
                 <!-- Zusätzliche Anweisungen -->
@@ -286,9 +287,24 @@ function renderStyleTab(styleKey) {
                 <label for="style-custom-instructions" class="form-label fw-bold">
                     💬 Zusätzliche Anweisungen für diesen Stil
                 </label>
-                <textarea id="style-custom-instructions" class="form-control" rows="3"
+                <textarea id="style-custom-instructions" class="form-control" rows="3" maxlength="2000"
                           placeholder="z.B. Bei Ablehnungen immer eine Alternative anbieten">${style.custom_instructions || ''}</textarea>
                 <small class="form-text text-muted">💡 Diese Anweisungen ergänzen die globalen Anweisungen speziell für diesen Stil.</small>
+            </div>
+            
+            <div class="col-md-12">
+                <hr class="my-3">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="style-signature-enabled" ${style.signature_enabled ? 'checked' : ''}>
+                    <label class="form-check-label fw-bold" for="style-signature-enabled">
+                        ✍️ Stil-spezifische Signatur verwenden
+                    </label>
+                </div>
+                <label for="style-signature-text" class="form-label fw-bold">Signatur-Text für diesen Stil</label>
+                <textarea id="style-signature-text" class="form-control font-monospace" rows="3" maxlength="2000"
+                          placeholder="Von Global übernehmen oder individuell für diesen Stil">${style.signature_text || ''}</textarea>
+                <small class="form-text text-muted">Global: ${global.signature_text || '(keine)'}<br>
+                ⚠️ <strong>Priorität:</strong> Account-Signatur > Diese Stil-Signatur > Globale Signatur</small>
             </div>
         </div>
         
@@ -306,12 +322,16 @@ function renderStyleTab(styleKey) {
     const salutation = document.getElementById('style-salutation');
     const closing = document.getElementById('style-closing');
     const customInstr = document.getElementById('style-custom-instructions');
+    const signatureEnabled = document.getElementById('style-signature-enabled');
+    const signatureText = document.getElementById('style-signature-text');
     const resetBtn = document.getElementById('reset-style-btn');
     
     if (addressForm) addressForm.addEventListener('change', markUnsaved);
     if (salutation) salutation.addEventListener('change', markUnsaved);
     if (closing) closing.addEventListener('change', markUnsaved);
     if (customInstr) customInstr.addEventListener('change', markUnsaved);
+    if (signatureEnabled) signatureEnabled.addEventListener('change', markUnsaved);
+    if (signatureText) signatureText.addEventListener('change', markUnsaved);
     if (resetBtn) resetBtn.addEventListener('click', () => resetStyleToGlobal(styleKey));
 }
 
@@ -374,11 +394,24 @@ async function saveAllSettings() {
         
         if (!globalResponse.ok) throw new Error('Failed to save global settings');
         
+        // Validierung: signature_enabled=true erfordert signature_text
+        const styleSignatureEnabled = document.getElementById('style-signature-enabled')?.checked || false;
+        const styleSignatureText = document.getElementById('style-signature-text')?.value?.trim() || '';
+        
+        if (styleSignatureEnabled && !styleSignatureText) {
+            showToast('⚠️ Stil-Signatur aktiviert aber Text ist leer!', 'error');
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-lg"></i> Alle Änderungen speichern';
+            return;
+        }
+        
         // Aktuellen Stil speichern (falls geändert)
         const styleData = {
             address_form: document.getElementById('style-address-form')?.value || null,
             salutation: document.getElementById('style-salutation')?.value || null,
             closing: document.getElementById('style-closing')?.value || null,
+            signature_enabled: styleSignatureEnabled,
+            signature_text: styleSignatureText || null,
             custom_instructions: document.getElementById('style-custom-instructions')?.value || null,
         };
         

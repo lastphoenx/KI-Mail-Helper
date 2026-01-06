@@ -127,8 +127,8 @@ class ReplyStyleService:
                                 user_setting.encrypted_signature_text, master_key
                             )
                         except Exception as e:
-                            logger.error(f"Failed to decrypt signature_text: {e}")
-                            result[style_key]["signature_text"] = None
+                            logger.error(f"Failed to decrypt signature_text for style '{style_key}': {e}")
+                            result[style_key]["signature_text"] = "[FEHLER: Entschlüsselung fehlgeschlagen]"
                     
                     if user_setting.encrypted_custom_instructions:
                         try:
@@ -137,8 +137,8 @@ class ReplyStyleService:
                                 user_setting.encrypted_custom_instructions, master_key
                             )
                         except Exception as e:
-                            logger.error(f"Failed to decrypt custom_instructions: {e}")
-                            result[style_key]["custom_instructions"] = None
+                            logger.error(f"Failed to decrypt custom_instructions for style '{style_key}': {e}")
+                            result[style_key]["custom_instructions"] = "[FEHLER: Entschlüsselung fehlgeschlagen]"
                 else:
                     # Ohne master_key: Felder als verschlüsselt markieren
                     result[style_key]["signature_text"] = None
@@ -274,6 +274,10 @@ class ReplyStyleService:
         ).first()
         
         if existing:
+            # Validierung: signature_enabled=True erfordert signature_text
+            if settings.get("signature_enabled") and not settings.get("signature_text", "").strip():
+                raise ValueError("signature_enabled is True but signature_text is empty")
+            
             # Update
             for field in ["address_form", "salutation", "closing", "signature_enabled"]:
                 if field in settings:
@@ -303,6 +307,10 @@ class ReplyStyleService:
             logger.info(f"✅ Updated reply style '{style_key}' for user {user_id}")
             return existing
         else:
+            # Validierung: signature_enabled=True erfordert signature_text
+            if settings.get("signature_enabled") and not settings.get("signature_text", "").strip():
+                raise ValueError("signature_enabled is True but signature_text is empty")
+            
             # Create
             encrypted_signature = None
             encrypted_instructions = None
