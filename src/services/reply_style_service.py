@@ -199,6 +199,7 @@ class ReplyStyleService:
                         )
                     except Exception as e:
                         logger.error(f"Failed to decrypt global signature_text: {e}")
+                        result["signature_text"] = "[FEHLER: Entschlüsselung fehlgeschlagen]"
                 
                 if user_global.encrypted_custom_instructions:
                     try:
@@ -208,6 +209,7 @@ class ReplyStyleService:
                         )
                     except Exception as e:
                         logger.error(f"Failed to decrypt global custom_instructions: {e}")
+                        result["custom_instructions"] = "[FEHLER: Entschlüsselung fehlgeschlagen]"
         
         # 4. User Style-Specific überschreiben (höchste Priorität)
         user_style = db.query(models.ReplyStyleSettings).filter(
@@ -231,6 +233,7 @@ class ReplyStyleService:
                         )
                     except Exception as e:
                         logger.error(f"Failed to decrypt style signature_text: {e}")
+                        result["signature_text"] = "[FEHLER: Entschlüsselung fehlgeschlagen]"
                 
                 if user_style.encrypted_custom_instructions:
                     try:
@@ -240,6 +243,7 @@ class ReplyStyleService:
                         )
                     except Exception as e:
                         logger.error(f"Failed to decrypt style custom_instructions: {e}")
+                        result["custom_instructions"] = "[FEHLER: Entschlüsselung fehlgeschlagen]"
         
         logger.debug(f"Effective settings for user {user_id}, style '{style_key}': {result}")
         return result
