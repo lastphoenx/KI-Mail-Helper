@@ -141,6 +141,11 @@ class EmailTagAssignment(Base):
     email_id = Column(Integer, ForeignKey("processed_emails.id", ondelete="CASCADE"), nullable=False)
     tag_id = Column(Integer, ForeignKey("email_tags.id", ondelete="CASCADE"), nullable=False)
     assigned_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Phase F.3: Auto-Assignment Flag
+    # True = Tag wurde automatisch zugewiesen (≥80% Similarity)
+    # False = Tag wurde manuell zugewiesen
+    auto_assigned = Column(Boolean, default=False, nullable=False)
 
     # Relationships
     email = relationship("ProcessedEmail", back_populates="tag_assignments")
@@ -334,6 +339,11 @@ class User(Base):
     # Wenn aktiviert: AI-Vorschläge für nicht-existierende Tags kommen in Queue
     # User kann dann approve/reject/merge mit eigenen Tags
     enable_tag_suggestion_queue = Column(Boolean, default=False)
+    
+    # Phase F.3: Auto-Assignment für bestehende Tags (Default: AUS)
+    # Wenn aktiviert: Tags mit ≥80% Similarity werden automatisch zugewiesen
+    # Unabhängig von enable_tag_suggestion_queue (verschiedene Features!)
+    enable_auto_assignment = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(

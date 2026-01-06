@@ -445,7 +445,7 @@ class TagManager:
         )
 
     @staticmethod
-    def assign_tag(db: Session, email_id: int, tag_id: int, user_id: int) -> bool:
+    def assign_tag(db: Session, email_id: int, tag_id: int, user_id: int, auto_assigned: bool = False) -> bool:
         """Weist Tag zu Email zu
         
         Args:
@@ -453,6 +453,7 @@ class TagManager:
             email_id: ProcessedEmail ID
             tag_id: EmailTag ID
             user_id: User ID (zur Validierung)
+            auto_assigned: True wenn automatisch zugewiesen (≥80% Similarity)
             
         Returns:
             True wenn erfolgreich, False wenn bereits zugewiesen
@@ -495,8 +496,12 @@ class TagManager:
         if existing:
             return False  # Bereits zugewiesen
         
-        # Erstelle Assignment
-        assignment = models.EmailTagAssignment(email_id=email_id, tag_id=tag_id)
+        # Erstelle Assignment mit auto_assigned Flag
+        assignment = models.EmailTagAssignment(
+            email_id=email_id, 
+            tag_id=tag_id,
+            auto_assigned=auto_assigned  # Phase F.3: Track Auto-Assignment
+        )
         db.add(assignment)
         
         # 🐛 BUG-003 FIX: Race-Condition durch flush() + graceful IntegrityError

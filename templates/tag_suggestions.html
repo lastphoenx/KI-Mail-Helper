@@ -31,19 +31,33 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="form-check form-switch">
+                    <!-- Queue Toggle -->
+                    <div class="form-check form-switch mb-3">
                         <input class="form-check-input" type="checkbox" id="enableQueueToggle" 
                                {% if queue_enabled %}checked{% endif %}>
                         <label class="form-check-label" for="enableQueueToggle">
-                            KI-Tag-Vorschläge aktivieren
+                            💡 Tag-Vorschläge für neue Tags aktivieren (Queue)
                         </label>
                     </div>
-                    <small class="text-muted d-block mt-2">
-                        Wenn aktiviert: AI-Vorschläge für nicht-existierende Tags werden in dieser Queue gesammelt.
-                        Sie können dann entscheiden, ob Sie neue Tags erstellen oder existierende verwenden möchten.
+                    <small class="text-muted d-block mt-1 mb-3">
+                        KI kann neue Tag-Namen vorschlagen, die Sie bestätigen müssen.
                     </small>
-                    <div class="alert alert-info mt-3 mb-0">
-                        ℹ️ Tags werden <strong>niemals automatisch</strong> erstellt. Sie entscheiden immer selbst!
+                    
+                    <!-- Auto-Assignment Toggle (NEW) -->
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="enableAutoAssignToggle"
+                               {% if auto_assignment_enabled %}checked{% endif %}>
+                        <label class="form-check-label" for="enableAutoAssignToggle">
+                            ⚡ Automatische Tag-Zuweisung aktivieren
+                        </label>
+                    </div>
+                    <small class="text-muted d-block mt-1">
+                        Bestehende Tags werden bei ≥80% Ähnlichkeit automatisch zugewiesen.
+                    </small>
+                    
+                    <div class="alert alert-warning mt-3 mb-0">
+                        ⚠️ <strong>Empfehlung:</strong> Teste Auto-Assignment erst mit wenigen Emails, 
+                        bevor du es permanent aktivierst!
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -319,7 +333,8 @@ async function batchReject() {
 
 // Save Settings
 async function saveSettings() {
-    const enabled = document.getElementById('enableQueueToggle').checked;
+    const queueEnabled = document.getElementById('enableQueueToggle').checked;
+    const autoAssignEnabled = document.getElementById('enableAutoAssignToggle').checked;
 
     try {
         const response = await fetch('/api/tag-suggestions/settings', {
@@ -328,7 +343,10 @@ async function saveSettings() {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
             },
-            body: JSON.stringify({ enabled })
+            body: JSON.stringify({ 
+                enable_tag_suggestion_queue: queueEnabled,
+                enable_auto_assignment: autoAssignEnabled
+            })
         });
 
         const data = await response.json();

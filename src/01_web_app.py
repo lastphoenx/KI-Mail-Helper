@@ -2833,6 +2833,7 @@ def tag_suggestions_page():
             user_tags=user_tags,
             stats=stats,
             queue_enabled=user.enable_tag_suggestion_queue,
+            auto_assignment_enabled=user.enable_auto_assignment,  # NEW
             csp_nonce=g.csp_nonce
         )
 
@@ -2993,7 +2994,7 @@ def api_batch_approve_suggestions():
 @app.route("/api/tag-suggestions/settings", methods=["GET", "POST"])
 @login_required
 def api_tag_suggestion_settings():
-    """API: Queue-Einstellungen lesen/setzen"""
+    """API: Tag-Suggestion & Auto-Assignment Einstellungen lesen/setzen"""
     db = get_db_session()
     try:
         user = get_current_user_model(db)
@@ -3001,13 +3002,27 @@ def api_tag_suggestion_settings():
             return jsonify({"error": "Unauthorized"}), 401
 
         if request.method == "GET":
-            return jsonify({"enabled": user.enable_tag_suggestion_queue})
+            return jsonify({
+                "enable_tag_suggestion_queue": user.enable_tag_suggestion_queue,
+                "enable_auto_assignment": user.enable_auto_assignment
+            })
 
+        # POST: Update settings
         data = request.get_json()
-        user.enable_tag_suggestion_queue = data.get("enabled", False)
+        
+        if "enable_tag_suggestion_queue" in data:
+            user.enable_tag_suggestion_queue = data["enable_tag_suggestion_queue"]
+        
+        if "enable_auto_assignment" in data:
+            user.enable_auto_assignment = data["enable_auto_assignment"]
+        
         db.commit()
 
-        return jsonify({"success": True, "enabled": user.enable_tag_suggestion_queue})
+        return jsonify({
+            "success": True, 
+            "enable_tag_suggestion_queue": user.enable_tag_suggestion_queue,
+            "enable_auto_assignment": user.enable_auto_assignment
+        })
 
     finally:
         db.close()
