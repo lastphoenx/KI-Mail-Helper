@@ -369,6 +369,9 @@ class User(Base):
     sender_patterns = relationship(
         "SenderPattern", back_populates="user", cascade="all, delete-orphan"
     )
+    reply_style_settings = relationship(
+        "ReplyStyleSettings", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def set_password(self, password: str):
         """Hasht das Passwort (mit Längen-Validierung)"""
@@ -945,6 +948,54 @@ class EmailFolder(Base):
 
     def __repr__(self):
         return f"<EmailFolder(id={self.id}, account={self.mail_account_id}, name='{self.name}')>"
+
+
+class ReplyStyleSettings(Base):
+    """Benutzerdefinierte Einstellungen für Antwort-Stile (Feature Reply Styles)
+    
+    Hybrid-Ansatz:
+    - style_key = "global" → Wirkt auf alle Stile
+    - style_key = "formal|friendly|brief|decline" → Überschreibt Global für diesen Stil
+    
+    Verschlüsselte Felder:
+    - signature_text → encrypted_signature_text (Zero-Knowledge)
+    - custom_instructions → encrypted_custom_instructions (Zero-Knowledge)
+    """
+    
+    __tablename__ = "reply_style_settings"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    
+    # Welcher Stil? "global" oder "formal", "friendly", "brief", "decline"
+    style_key = Column(String(20), nullable=False, default="global")
+    
+    # Anrede-Einstellungen (Klartext, nicht sensibel)
+    address_form = Column(String(10), nullable=True)  # "du", "sie", "auto"
+    salutation = Column(String(100), nullable=True)   # z.B. "Liebe/r", "Sehr geehrte/r", "Hallo"
+    
+    # Gruss-Einstellungen (Klartext, nicht sensibel)
+    closing = Column(String(100), nullable=True)      # z.B. "Beste Grüsse", "Mit freundlichen Grüssen"
+    
+    # Signatur (verschlüsselt)
+    signature_enabled = Column(Boolean, default=False)
+    encrypted_signature_text = Column(Text, nullable=True)  # Verschlüsselt (z.B. "Mike" oder "Mike\nFirma GmbH")
+    
+    # Zusätzliche Anweisungen für KI (verschlüsselt)
+    encrypted_custom_instructions = Column(Text, nullable=True)  # Freitext für KI
+    
+    # Metadaten
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    
+    # Relationships
+    user = relationship("User", back_populates="reply_style_settings")
+    
+    # Constraints: Ein Setting pro User pro Style
+    __table_args__ = (
+        UniqueConstraint("user_id", "style_key", name="uq_user_style_key"),
+        Index("ix_reply_style_user_id", "user_id"),
+    )
 
 
 class AutoRule(Base):

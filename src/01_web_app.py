@@ -2063,6 +2063,13 @@ def api_get_models_for_provider(provider: str):
         }), 500
 
 
+@app.route("/reply-styles")
+@login_required
+def reply_styles_page():
+    """Seite für Antwort-Stil-Einstellungen (Feature: FEATURE_REPLY_STYLES)"""
+    return render_template("reply_styles.html")
+
+
 @app.route("/settings")
 @login_required
 def settings():
@@ -3441,13 +3448,18 @@ def api_generate_reply(email_id):
             client = ai_client.build_client(provider, model=resolved_model)
             
             generator = reply_generator_mod.ReplyGenerator(ai_client=client)
-            result = generator.generate_reply(
+            
+            # 🆕 Use generate_reply_with_user_style() for personalized replies
+            result = generator.generate_reply_with_user_style(
+                db=db,
+                user_id=user.id,
                 original_subject=decrypted_subject,
                 original_body=decrypted_body,
                 original_sender=decrypted_sender,
                 tone=tone,
                 thread_context=thread_context if thread_context else None,
-                has_attachments=raw_email.has_attachments or False
+                has_attachments=raw_email.has_attachments or False,
+                master_key=master_key
             )
             
             if result["success"]:
@@ -3498,6 +3510,254 @@ def api_get_reply_tones():
 
 
 # ===== End Phase G.1 =====
+
+
+# ===== Reply Styles Settings API (Feature: FEATURE_REPLY_STYLES) =====
+
+@app.route("/api/reply-styles", methods=["GET"])
+@login_required
+def api_get_reply_styles():
+    """Holt alle Reply-Style-Settings des Users
+    
+    Returns:
+        {
+            "global": {
+                "address_form": "du",
+                "salutation": "Liebe/r",
+                "closing": "Beste Grüsse",
+                "signature_enabled": true,
+                "signature_text": "Mike",
+                "custom_instructions": "In unserer Firma..."
+            },
+            "formal": {...},
+            "friendly": {...},
+            "brief": {...},
+            "decline": {...}
+        }
+    """
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        # Zero-Knowledge: Brauchen master_key zum Entschlüsseln
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key nicht verfügbar"}), 401
+        
+        from src.services.reply_style_service import ReplyStyleService
+        settings = ReplyStyleService.get_user_settings(db, user.id, master_key)
+        
+        return jsonify(settings)
+    except Exception as e:
+        logger.error(f"Failed to get reply styles: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@app.route("/api/reply-styles/<style_key>", methods=["GET"])
+@login_required
+def api_get_reply_style(style_key: str):
+    """Holt effektive Settings für einen spezifischen Stil
+    
+    Merged: Defaults → Global → Style-Specific
+    
+    Returns:
+        {
+            "style_key": "formal",
+            "settings": {
+                "address_form": "sie",
+                "salutation": "Sehr geehrte/r",
+                ...
+            }
+        }
+    """
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key nicht verfügbar"}), 401
+        
+        from src.services.reply_style_service import ReplyStyleService
+        try:
+            settings = ReplyStyleService.get_effective_settings(
+                db, user.id, style_key, master_key
+            )
+            return jsonify({"style_key": style_key, "settings": settings})
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Failed to get reply style: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@app.route("/api/reply-styles/<style_key>", methods=["PUT"])
+@login_required
+def api_save_reply_style(style_key: str):
+    """Speichert Settings für einen Stil
+    
+    Body:
+        {
+            "address_form": "du",
+            "salutation": "Liebe/r",
+            "closing": "Beste Grüsse",
+            "signature_enabled": true,
+            "signature_text": "Mike",
+            "custom_instructions": "..."
+        }
+    
+    Note: NULL-Werte werden übernommen (= "Von Global erben")
+    """
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key nicht verfügbar"}), 401
+        
+        data = request.get_json() or {}
+        
+        from src.services.reply_style_service import ReplyStyleService
+        try:
+            setting = ReplyStyleService.save_settings(
+                db, user.id, style_key, data, master_key
+            )
+            return jsonify({
+                "success": True,
+                "style_key": style_key,
+                "message": f"Einstellungen für '{style_key}' gespeichert"
+            })
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Failed to save reply style: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@app.route("/api/reply-styles/<style_key>", methods=["DELETE"])
+@login_required
+def api_delete_reply_style_override(style_key: str):
+    """Löscht Style-spezifische Überschreibung (setzt auf Global zurück)
+    
+    Note: "global" kann nicht gelöscht werden
+    """
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        from src.services.reply_style_service import ReplyStyleService
+        success = ReplyStyleService.delete_style_override(db, user.id, style_key)
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "message": f"Überschreibung für '{style_key}' gelöscht, nutze jetzt Global"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Konnte nicht löschen (evtl. 'global' oder nicht vorhanden)"
+            }), 400
+    except Exception as e:
+        logger.error(f"Failed to delete reply style override: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@app.route("/api/reply-styles/preview", methods=["POST"])
+@login_required
+def api_preview_reply_style():
+    """Generiert eine Vorschau mit den aktuellen Settings
+    
+    Body:
+        {
+            "style_key": "formal",
+            "sample_sender": "Max Mustermann <max@example.com>"  // optional
+        }
+    
+    Returns:
+        {
+            "preview_text": "Sehr geehrter Herr Mustermann,\n\n[Ihr Text hier]\n\nMit freundlichen Grüssen\nMike",
+            "settings_used": {...}
+        }
+    """
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key nicht verfügbar"}), 401
+        
+        data = request.get_json() or {}
+        style_key = data.get("style_key", "formal")
+        sample_sender = data.get("sample_sender", "Max Mustermann <max@example.com>")
+        
+        from src.services.reply_style_service import ReplyStyleService
+        
+        try:
+            settings = ReplyStyleService.get_effective_settings(
+                db, user.id, style_key, master_key
+            )
+        except ValueError:
+            return jsonify({"error": "Invalid style_key"}), 400
+        
+        # Einfache Vorschau bauen (ohne KI)
+        preview_parts = []
+        
+        # Anrede
+        salutation = settings.get("salutation", "Hallo")
+        # Extrahiere Name aus Sender
+        name = sample_sender.split("<")[0].strip() if "<" in sample_sender else sample_sender
+        if name:
+            preview_parts.append(f"{salutation} {name},")
+        else:
+            preview_parts.append(f"{salutation},")
+        
+        preview_parts.append("")
+        preview_parts.append("[Ihr Antwort-Text wird hier erscheinen...]")
+        preview_parts.append("")
+        
+        # Gruss
+        closing = settings.get("closing", "Grüsse")
+        preview_parts.append(closing)
+        
+        # Signatur
+        if settings.get("signature_enabled") and settings.get("signature_text"):
+            preview_parts.append(settings["signature_text"])
+        
+        return jsonify({
+            "preview_text": "\n".join(preview_parts),
+            "settings_used": settings
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to preview reply style: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+# ===== End Reply Styles API =====
+
 
 
 # ===== Phase G.2: Auto-Action Rules Engine =====

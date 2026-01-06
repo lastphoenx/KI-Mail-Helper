@@ -39,15 +39,20 @@
    - 7.5 Vorgefertigte Templates
    - 7.6 Regel testen (Dry-Run)
    - 7.7 Statistiken
-8. [IMAP-Diagnostics](#8-imap-diagnostics)
-9. [Einstellungen](#9-einstellungen)
-   - 9.1 Mail-Accounts verwalten
-   - 9.2 SMTP konfigurieren (Email-Versand)
-   - 9.3 KI-Provider konfigurieren
-   - 9.4 Passwort ändern
-   - 9.5 2FA & Recovery-Codes
-10. [Sicherheit & Datenschutz](#10-sicherheit--datenschutz)
-11. [Fehlerbehebung](#11-fehlerbehebung)
+8. [Antwort-Stile](#8-antwort-stile)
+   - 8.1 Globale Einstellungen
+   - 8.2 Stil-spezifische Anpassungen
+   - 8.3 Merge-Logik verstehen
+   - 8.4 Preview-Funktion
+9. [IMAP-Diagnostics](#9-imap-diagnostics)
+10. [Einstellungen](#10-einstellungen)
+   - 10.1 Mail-Accounts verwalten
+   - 10.2 SMTP konfigurieren (Email-Versand)
+   - 10.3 KI-Provider konfigurieren
+   - 10.4 Passwort ändern
+   - 10.5 2FA & Recovery-Codes
+11. [Sicherheit & Datenschutz](#11-sicherheit--datenschutz)
+12. [Fehlerbehebung](#12-fehlerbehebung)
 
 ---
 
@@ -698,7 +703,124 @@ Jede Regel zeigt:
 
 ---
 
-## 8. IMAP-Diagnostics
+## 8. Antwort-Stile
+
+> **📸 Screenshot:** Antwort-Stile Einstellungsseite (/reply-styles)  
+> *Zeige: Globale Einstellungen Card + Stil-Tabs (Formell, Freundlich, Kurz, Ablehnung)*
+
+![Antwort-Stile](images/screenshots/reply-styles.png)
+
+Über **Einstellungen → Antwort-Stile** kannst du anpassen, wie die KI Antwort-Entwürfe generiert.
+
+### 8.1 Globale Einstellungen
+
+Diese Einstellungen gelten als Standard für alle Antwort-Stile:
+
+| Feld | Beschreibung | Beispiel |
+|------|--------------|----------|
+| **Anrede-Form** | Automatisch, Du oder Sie | `auto` (erkennt aus Email) |
+| **Standard-Anrede** | Wie beginnt die Antwort? | `Liebe/r`, `Guten Tag` |
+| **Grussformel** | Wie endet die Antwort? | `Beste Grüsse`, `Herzliche Grüsse` |
+| **Signatur anhängen** | Checkbox + Textarea | Mehrzeilig möglich |
+| **Zusätzliche Anweisungen** | Spezielle Vorgaben für die KI | "Wir duzen uns in der Firma" |
+
+**Beispiel Signatur:**
+```
+Mike Weber
+Technischer Support
+Firma GmbH
++41 79 123 45 67
+```
+
+> 💡 **Tipp:** Leere Felder = KI entscheidet automatisch basierend auf dem Email-Inhalt.
+
+### 8.2 Stil-spezifische Anpassungen
+
+Die 4 Antwort-Stile können individuell überschrieben werden:
+
+| Stil | Standard-Verhalten | Typische Anpassungen |
+|------|-------------------|----------------------|
+| **📜 Formell** | Höflich, distanziert, Sie-Form | "Sehr geehrte/r", "Mit freundlichen Grüssen" |
+| **😊 Freundlich** | Warmherzig, persönlich, Du-Form | "Liebe/r", "Herzliche Grüsse" |
+| **⚡ Kurz** | Prägnant, direkt, ohne Floskeln | "Hallo", "Grüsse" |
+| **❌ Ablehnung** | Höflich ablehnen mit Alternative | "Leider müssen wir ablehnen, aber..." |
+
+**Wann überschreiben?**
+- Du möchtest für **formelle** Emails immer "Sie" verwenden
+- Du möchtest für **freundliche** Emails eine andere Signatur
+- Du möchtest bei **Ablehnungen** spezielle Anweisungen ("Immer Alternative anbieten")
+
+> **📸 Screenshot:** Stil-spezifischer Tab (z.B. "Formell")  
+> *Zeige: Info-Box "Leere Felder übernehmen Global" + Formular-Felder + "Überschreibungen löschen" Button*
+
+![Stil-spezifische Einstellungen](images/screenshots/reply-styles-formal.png)
+
+### 8.3 Merge-Logik verstehen
+
+Die KI kombiniert deine Einstellungen in 3 Stufen:
+
+```
+┌─────────────────────────────────────────────┐
+│ 1️⃣ SYSTEM DEFAULTS                          │
+│    (Eingebaute Standard-Prompts)            │
+└─────────────────────────────────────────────┘
+                   ↓ überschrieben von
+┌─────────────────────────────────────────────┐
+│ 2️⃣ GLOBAL SETTINGS                          │
+│    (Deine globalen Einstellungen)           │
+└─────────────────────────────────────────────┘
+                   ↓ überschrieben von
+┌─────────────────────────────────────────────┐
+│ 3️⃣ STYLE-SPECIFIC OVERRIDES                │
+│    (Nur gefüllte Felder des gewählten Stils)│
+└─────────────────────────────────────────────┘
+```
+
+**Beispiel:**
+
+| Feld | Global | Formell (Override) | Ergebnis |
+|------|--------|-------------------|----------|
+| Anrede-Form | `auto` | `sie` | **sie** (überschrieben) |
+| Anrede | `Hallo` | *(leer)* | **Hallo** (von Global) |
+| Grussformel | `Beste Grüsse` | `Mit freundlichen Grüssen` | **Mit freundlichen Grüssen** (überschrieben) |
+| Signatur | Mike | *(leer)* | **Mike** (von Global) |
+
+### 8.4 Preview-Funktion
+
+> **📸 Screenshot:** Preview-Bereich mit Muster-Antwort  
+> *Zeige: Textarea mit generiertem Preview-Text*
+
+![Antwort-Preview](images/screenshots/reply-styles-preview.png)
+
+Die Preview zeigt dir sofort, wie eine Antwort mit deinen aktuellen Einstellungen aussieht:
+
+1. Wähle einen Stil-Tab (z.B. "Freundlich")
+2. Ändere Einstellungen
+3. Klicke auf **"Aktualisieren"** oder warte kurz
+4. Preview wird automatisch aktualisiert
+
+**Preview-Beispiel:**
+```
+Liebe/r Max Mustermann,
+
+[Ihr Antwort-Text wird hier erscheinen...]
+
+Herzliche Grüsse
+Mike Weber
+Technischer Support
+```
+
+### 8.5 Änderungen speichern
+
+1. **"Alle Änderungen speichern"** – Speichert globale + aktuelle Stil-Einstellungen
+2. **"Überschreibungen löschen"** – Setzt Stil-spezifische Änderungen zurück auf Global
+3. **"Auf Standard zurücksetzen"** – Löscht ALLE Anpassungen (Global + alle Stile)
+
+> ⚠️ Alle Signatur-Texte und Custom Instructions werden **verschlüsselt** in der Datenbank gespeichert (Zero-Knowledge).
+
+---
+
+## 9. IMAP-Diagnostics
 
 > **📸 Screenshot:** IMAP-Diagnostics Dashboard (/imap-diagnostics)  
 > *Zeige: Account-Auswahl, Test-Buttons, Ergebnis-Bereich*
@@ -753,14 +875,14 @@ Klicke auf einen Ordner, um Details zu sehen:
 
 ---
 
-## 9. Einstellungen
+## 10. Einstellungen
 
 > **📸 Screenshot:** Einstellungen-Seite komplett (settings.html)  
 > *Zeige: Alle Sektionen (Mail-Accounts, KI, SMTP, Sicherheit)*
 
 ![Einstellungen](images/screenshots/settings.png)
 
-### 9.1 Mail-Accounts verwalten
+### 10.1 Mail-Accounts verwalten
 
 > **📸 Screenshot:** Mail-Account Liste in Einstellungen  
 > *Zeige: Account-Karten mit Status, Bearbeiten/Löschen Buttons*
@@ -812,7 +934,7 @@ Klicke auf einen Ordner, um Details zu sehen:
 
 > 💡 **Multi-Account Setup**: Bei mehreren Accounts mit vielen Ordnern (>100) verhindert die App automatisch Timeouts durch intelligentes Caching und selektives Laden.
 
-### 9.2 SMTP konfigurieren (Email-Versand)
+### 10.2 SMTP konfigurieren (Email-Versand)
 
 > **📸 Screenshot:** SMTP-Einstellungen im Account-Formular  
 > *Zeige: SMTP-Server, Port, Verschlüsselung, optionale separate Credentials*
@@ -838,7 +960,7 @@ Um Emails direkt aus der App zu senden, muss SMTP konfiguriert sein:
 2. Klicke auf **"🔌 SMTP testen"**
 3. Bei Erfolg: "✅ SMTP-Verbindung erfolgreich"
 
-### 9.3 KI-Provider konfigurieren
+### 10.3 KI-Provider konfigurieren
 
 > **📸 Screenshot:** KI-Einstellungen Sektion  
 > *Zeige: Provider-Dropdown, 3 Modell-Auswahlen*
@@ -899,7 +1021,7 @@ Ein **llama3.2:1b mit Learning** liefert nach 1-2 Wochen bessere Ergebnisse als 
 
 > 📘 **Detaillierte Modell-Empfehlungen:** Siehe [KI_MODELL_EMPFEHLUNGEN.md](KI_MODELL_EMPFEHLUNGEN.md) für Performance-Benchmarks, Hardware-Richtwerte und Learning-Strategien.
 
-### 9.4 Passwort ändern
+### 10.4 Passwort ändern
 
 > **📸 Screenshot:** Passwort ändern Formular (change_password.html)  
 > *Zeige: Altes Passwort, Neues Passwort (2x), Anforderungen-Liste*
@@ -914,7 +1036,7 @@ Ein **llama3.2:1b mit Learning** liefert nach 1-2 Wochen bessere Ergebnisse als 
 
 > ⚠️ Nach der Passwort-Änderung wirst du automatisch ausgeloggt. Deine verschlüsselten Daten bleiben erhalten – nur der Verschlüsselungsschlüssel wird neu verpackt.
 
-### 9.5 2FA & Recovery-Codes
+### 10.5 2FA & Recovery-Codes
 
 > **📸 Screenshot:** 2FA-Sektion in Einstellungen  
 > *Zeige: 2FA-Status, "Recovery-Codes regenerieren" Button*
@@ -928,7 +1050,7 @@ Ein **llama3.2:1b mit Learning** liefert nach 1-2 Wochen bessere Ergebnisse als 
 
 ---
 
-## 10. Sicherheit & Datenschutz
+## 11. Sicherheit & Datenschutz
 
 ### Zero-Knowledge-Architektur
 
@@ -973,7 +1095,7 @@ Die App verwendet eine Zero-Knowledge-Architektur. Das bedeutet:
 
 ---
 
-## 11. Fehlerbehebung
+## 12. Fehlerbehebung
 
 ### "Emails werden nicht abgerufen"
 

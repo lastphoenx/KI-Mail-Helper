@@ -8,6 +8,59 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added - Reply-Styles: Anpassbare Antwort-Generierung (2026-01-06)
+
+#### Phase I.1: Customizable Reply Styles System
+
+**Features:**
+- ✅ **Globale Einstellungen**: Standard-Anrede, Grussformel, Signatur, Custom Instructions für alle Stile
+- ✅ **Stil-spezifische Überschreibungen**: Formal, Freundlich, Kurz, Ablehnung - jeder Stil kann individuell angepasst werden
+- ✅ **Hybrid Merge-Logic**: DEFAULT → GLOBAL → STYLE-SPECIFIC (3-stufige Priorität)
+- ✅ **Database Schema**:
+  - Neue Tabelle `reply_style_settings` mit encrypted fields (signature_text, custom_instructions)
+  - User-spezifische Settings mit DEK/KEK-Verschlüsselung
+- ✅ **Service Layer**: `ReplyStyleService` mit merge logic und encryption handling
+- ✅ **API Endpoints**:
+  - `GET /api/reply-styles` - Alle User-Settings abrufen
+  - `GET /api/reply-styles/<style_key>` - Effektive Settings für Style
+  - `PUT /api/reply-styles/<style_key>` - Settings speichern
+  - `DELETE /api/reply-styles/<style_key>` - Style-Override löschen
+  - `POST /api/reply-styles/preview` - Preview generieren
+- ✅ **UI**: Bootstrap-basierte Settings-Seite mit Tab-Navigation und Live-Preview
+- ✅ **Integration**: `ReplyGenerator.generate_reply_with_user_style()` verwendet Settings automatisch
+
+**Konfigurierbare Felder:**
+- Anrede-Form: auto/du/sie
+- Standard-Anrede: z.B. "Liebe/r", "Guten Tag"
+- Grussformel: z.B. "Beste Grüsse", "Herzliche Grüsse"
+- Signatur: Mehrzeilig, optional
+- Custom Instructions: Zusätzliche KI-Anweisungen pro Stil
+
+**Workflow:**
+1. User konfiguriert globale Defaults in `/reply-styles`
+2. Optional: Style-spezifische Überschreibungen (z.B. "Formal" = Sie, "Freundlich" = Du)
+3. Reply-Generator merged Settings automatisch beim Generieren
+4. Preview zeigt Ergebnis mit aktuellen Einstellungen
+
+**Files:**
+- `migrations/versions/28d68dd1186b_add_reply_style_settings_table.py`: DB Migration
+- `src/02_models.py`: ReplyStyleSettings Model
+- `src/services/reply_style_service.py`: Business Logic (377 lines)
+- `src/reply_generator.py`: generate_reply_with_user_style() method
+- `src/01_web_app.py`: 6 neue Routes + API Endpoints
+- `templates/reply_styles.html`: Bootstrap UI mit Tab-Navigation
+- `templates/base.html`: Navigation Link hinzugefügt
+
+**Impact:**
+- ✅ Professionelle Antworten mit persönlicher Note
+- ✅ Konsistente Kommunikation über verschiedene Stile
+- ✅ Zero-Knowledge compliant (encrypted signatures)
+- ✅ Flexibel: User kann global + style-specific konfigurieren
+
+**Documentation:** `/doc/offen/FEATURE_REPLY_STYLES.md`
+
+---
+
 ### Added - Negative Feedback für Tag-Learning (2026-01-06)
 
 #### Phase F.3: Tag-Learning mit Negative Examples

@@ -26,6 +26,7 @@ Usage:
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -316,3 +317,134 @@ Beziehe dich auf den Inhalt der Original-E-Mail und halte den vorgegebenen Ton e
             }
             for key, config in TONE_PROMPTS.items()
         }
+    
+    def generate_reply_with_user_style(
+        self,
+        db: Session,
+        user_id: int,
+        original_subject: str,
+        original_body: str,
+        original_sender: str = "",
+        tone: str = "formal",
+        thread_context: Optional[str] = None,
+        language: str = "de",
+        has_attachments: bool = False,
+        attachment_names: Optional[list] = None,
+        master_key: str = None
+    ) -> Dict[str, Any]:
+        """
+        Generiert Antwort-Entwurf MIT User-spezifischen Stil-Einstellungen.
+        
+        Unterschied zu generate_reply():
+        - Lädt User-Einstellungen aus DB
+        - Merged mit Base-Tone-Instructions
+        - Wendet Anrede, Gruss, Signatur, Custom Instructions an
+        
+        Args:
+            db: SQLAlchemy Session
+            user_id: User ID für Style-Settings
+            master_key: Zum Entschlüsseln von Signatur/Instructions
+            ... (rest wie generate_reply)
+        
+        Returns:
+            Dict mit reply_text, tone_used, settings_applied, etc.
+        """
+        if not self.ai_client:
+            return {
+                "success": False,
+                "error": "AI-Client nicht verfügbar",
+                "reply_text": "",
+                "tone_used": tone,
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Validiere Ton
+        if tone not in TONE_PROMPTS:
+            logger.warning(f"Unknown tone '{tone}', falling back to 'formal'")
+            tone = "formal"
+        
+        # 🆕 User-Style-Settings laden
+        from src.services.reply_style_service import ReplyStyleService
+        try:
+            effective_settings = ReplyStyleService.get_effective_settings(
+                db, user_id, tone, master_key
+            )
+        except Exception as e:
+            logger.error(f"Failed to load reply style settings: {e}")
+            # Fallback auf Standard-Verhalten
+            effective_settings = {}
+        
+        # 🆕 Kombinierte Instructions bauen
+        base_instructions = TONE_PROMPTS[tone]["instructions"]
+        if effective_settings:
+            enhanced_instructions = ReplyStyleService.build_style_instructions(
+                effective_settings, 
+                base_instructions
+            )
+        else:
+            enhanced_instructions = base_instructions
+        
+        # User-Prompt bauen (wie bisher, aber mit enhanced_instructions)
+        user_prompt = self._build_user_prompt(
+            original_subject=original_subject,
+            original_body=original_body,
+            original_sender=original_sender,
+            tone_instructions=enhanced_instructions,  # 🆕 Enhanced!
+            thread_context=thread_context,
+            language=language,
+            has_attachments=has_attachments,
+            attachment_names=attachment_names,
+        )
+        
+        # KI-Aufruf (wie bisher)
+        try:
+            logger.info(f"🤖 Generiere Reply-Entwurf mit User-Stil (Ton: {tone})")
+            
+            # Nutze generate_text() - in Phase G.2 zu allen AI Clients hinzugefügt
+            if hasattr(self.ai_client, 'generate_text'):
+                reply_text = self.ai_client.generate_text(
+                    system_prompt=REPLY_GENERATION_SYSTEM_PROMPT,
+                    user_prompt=user_prompt,
+                    max_tokens=1000
+                )
+            else:
+                # Fallback für ältere Clients ohne generate_text()
+                logger.warning("AI-Client hat keine generate_text() Methode, nutze Fallback")
+                result = self.ai_client.analyze_email(
+                    subject=original_subject,
+                    body=f"GENERATE REPLY:\n{user_prompt}",
+                    context=thread_context
+                )
+                reply_text = result.get("summary_de", "")
+            
+            # Cleanup
+            reply_text = self._cleanup_reply_text(reply_text)
+            
+            logger.info(f"✅ Reply-Entwurf mit User-Stil generiert ({len(reply_text)} chars)")
+            
+            return {
+                "success": True,
+                "reply_text": reply_text,
+                "tone_used": tone,
+                "tone_name": TONE_PROMPTS[tone]["name"],
+                "tone_icon": TONE_PROMPTS[tone]["icon"],
+                "timestamp": datetime.now().isoformat(),
+                "settings_applied": {
+                    "address_form": effective_settings.get("address_form"),
+                    "salutation": effective_settings.get("salutation"),
+                    "closing": effective_settings.get("closing"),
+                    "has_signature": effective_settings.get("signature_enabled", False),
+                } if effective_settings else None,
+                "error": None
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Reply-Generierung mit User-Stil fehlgeschlagen: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "reply_text": "",
+                "tone_used": tone,
+                "timestamp": datetime.now().isoformat()
+            }
+
