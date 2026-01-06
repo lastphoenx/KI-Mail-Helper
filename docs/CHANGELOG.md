@@ -10,6 +10,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added - Reply-Styles: Anpassbare Antwort-Generierung (2026-01-06)
 
+#### Phase I.2: Account-Specific Signatures
+
+**Features:**
+- ✅ **Account-spezifische Signaturen**: Jeder Mail-Account kann eigene Signatur definieren
+- ✅ **Prioritätslogik**: Account-Signatur > User-Style-Signatur > Globale Signatur
+- ✅ **Verschlüsselung**: Signaturen mit Master-Key verschlüsselt (Zero-Knowledge)
+- ✅ **UI Integration**: Checkbox + Textarea in Account-Edit-Seite
+- ✅ **Database Schema**: 
+  - `mail_accounts.signature_enabled` (Boolean)
+  - `mail_accounts.encrypted_signature_text` (Text, verschlüsselt)
+- ✅ **Service Layer**: `ReplyStyleService.get_account_signature()` für Entschlüsselung
+- ✅ **Generator Integration**: `ReplyGenerator.generate_reply_with_user_style()` nutzt Account-Signatur automatisch
+
+**Use Case:**
+- Geschäftlich: `max.mustermann@firma.ch` → Formelle Firma-Signatur
+- Privat: `max@gmail.com` → Lässige private Signatur
+- Uni: `m.mustermann@students.example.com` → Studenten-Signatur
+
+**Workflow:**
+1. Gehe zu **Einstellungen** → Account bearbeiten
+2. Aktiviere **"Account-spezifische Signatur verwenden"**
+3. Gib Signatur-Text ein (mehrzeilig möglich)
+4. Speichern → Signatur wird verschlüsselt gespeichert
+5. Bei Reply-Generierung für Emails von diesem Account wird automatisch die Account-Signatur verwendet
+
+**Files:**
+- `migrations/versions/8af742a5077b_add_account_signature_fields.py`: DB Migration
+- `src/02_models.py`: MailAccount mit signature_enabled, encrypted_signature_text
+- `src/services/reply_style_service.py`: get_account_signature() method
+- `src/reply_generator.py`: Account-Signatur Prioritätslogik
+- `src/01_web_app.py`: Account-Edit Backend + API Integration
+- `templates/edit_mail_account.html`: UI für Account-Signatur
+
+---
+
 #### Phase I.1: Customizable Reply Styles System
 
 **Features:**

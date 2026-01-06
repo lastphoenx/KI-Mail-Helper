@@ -55,6 +55,34 @@ class ReplyStyleService:
     """Service für Antwort-Stil-Einstellungen"""
     
     @staticmethod
+    def get_account_signature(db: Session, account_id: int, master_key: str) -> Optional[str]:
+        """Holt Account-spezifische Signatur
+        
+        Args:
+            db: Session
+            account_id: Mail Account ID
+            master_key: Master-Key aus Session zum Entschlüsseln
+        
+        Returns:
+            Signatur-Text oder None
+        """
+        account = db.query(models.MailAccount).filter(
+            models.MailAccount.id == account_id
+        ).first()
+        
+        if not account or not account.signature_enabled or not account.encrypted_signature_text:
+            return None
+        
+        try:
+            from src import encryption as enc
+            return enc.EncryptionManager.decrypt_data(
+                account.encrypted_signature_text, master_key
+            )
+        except Exception as e:
+            logger.error(f"Failed to decrypt account signature: {e}")
+            return None
+    
+    @staticmethod
     def get_user_settings(db: Session, user_id: int, master_key: str = None) -> Dict[str, Any]:
         """Holt alle Style-Settings eines Users
         

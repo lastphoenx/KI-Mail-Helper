@@ -330,7 +330,8 @@ Beziehe dich auf den Inhalt der Original-E-Mail und halte den vorgegebenen Ton e
         language: str = "de",
         has_attachments: bool = False,
         attachment_names: Optional[list] = None,
-        master_key: str = None
+        master_key: str = None,
+        account_id: int = None
     ) -> Dict[str, Any]:
         """
         Generiert Antwort-Entwurf MIT User-spezifischen Stil-Einstellungen.
@@ -339,11 +340,13 @@ Beziehe dich auf den Inhalt der Original-E-Mail und halte den vorgegebenen Ton e
         - Lädt User-Einstellungen aus DB
         - Merged mit Base-Tone-Instructions
         - Wendet Anrede, Gruss, Signatur, Custom Instructions an
+        - Priorität: Account-Signatur > User-Style-Signatur
         
         Args:
             db: SQLAlchemy Session
             user_id: User ID für Style-Settings
             master_key: Zum Entschlüsseln von Signatur/Instructions
+            account_id: Optional - Mail Account ID für Account-Signatur
             ... (rest wie generate_reply)
         
         Returns:
@@ -369,6 +372,17 @@ Beziehe dich auf den Inhalt der Original-E-Mail und halte den vorgegebenen Ton e
             effective_settings = ReplyStyleService.get_effective_settings(
                 db, user_id, tone, master_key
             )
+            
+            # 🆕 Phase I.2: Account-Signatur hat Priorität
+            if account_id and master_key:
+                account_signature = ReplyStyleService.get_account_signature(
+                    db, account_id, master_key
+                )
+                if account_signature:
+                    effective_settings["signature_text"] = account_signature
+                    effective_settings["signature_enabled"] = True
+                    logger.info(f"Using account-specific signature for account {account_id}")
+            
         except Exception as e:
             logger.error(f"Failed to load reply style settings: {e}")
             # Fallback auf Standard-Verhalten

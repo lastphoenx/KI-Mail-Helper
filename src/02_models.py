@@ -550,6 +550,10 @@ class MailAccount(Base):
     detected_provider = Column(String(50), nullable=True)
     server_name = Column(String(255), nullable=True)
     server_version = Column(String(100), nullable=True)
+    
+    # ===== PHASE I.2: ACCOUNT-SPECIFIC SIGNATURES =====
+    signature_enabled = Column(Boolean, default=False, nullable=True)
+    encrypted_signature_text = Column(Text, nullable=True)  # verschlüsselt mit Master-Key (wie andere Account-Daten)
 
     # Relationship
     user = relationship("User", back_populates="mail_accounts")

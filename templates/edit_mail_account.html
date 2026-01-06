@@ -101,6 +101,31 @@
                 
                 <hr class="my-4">
                 
+                <!-- 🆕 Phase I.2: Account-spezifische Signatur -->
+                <h4 class="mt-4 mb-3">✍️ Account-Signatur <small class="text-muted">(optional)</small></h4>
+                <p class="text-muted">
+                    Lege eine individuelle Signatur für diesen Account fest. Diese wird automatisch an Antworten angehängt und überschreibt die globale Signatur.
+                </p>
+                
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="signature_enabled" name="signature_enabled" 
+                           {% if account.signature_enabled %}checked{% endif %}>
+                    <label class="form-check-label" for="signature_enabled">
+                        Account-spezifische Signatur verwenden
+                    </label>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="signature_text" class="form-label">Signatur-Text</label>
+                    <textarea class="form-control" id="signature_text" name="signature_text" rows="4" 
+                              placeholder="z.B.&#10;Mit freundlichen Grüßen&#10;Max Mustermann&#10;Abteilung IT">{{ account.decrypted_signature_text or '' }}</textarea>
+                    <small class="text-muted">
+                        Diese Signatur wird nur verwendet, wenn die Checkbox aktiviert ist. Wird verschlüsselt gespeichert.
+                    </small>
+                </div>
+                
+                <hr class="my-4">
+                
                 <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                     <a href="/settings" class="btn btn-secondary">Abbrechen</a>
                     <button type="submit" class="btn btn-primary">Speichern</button>

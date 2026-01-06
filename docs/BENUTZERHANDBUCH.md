@@ -908,7 +908,17 @@ Klicke auf einen Ordner, um Details zu sehen:
 **Account bearbeiten:**
 1. Klicke auf **"Bearbeiten"** beim gewünschten Account
 2. Ändere Server, Port oder Zugangsdaten
-3. Klicke auf **"Speichern"**
+3. **🆕 Account-Signatur konfigurieren** (Optional):
+   - Aktiviere **"Account-spezifische Signatur verwenden"**
+   - Gib deine Signatur ein (mehrzeilig möglich)
+   - Diese Signatur wird automatisch bei Antworten für Emails von diesem Account verwendet
+   - Priorität: Account-Signatur > User-Style-Signatur > Globale Signatur
+4. Klicke auf **"Speichern"**
+
+> 💡 **Anwendungsfall Account-Signaturen:**
+> - **Geschäftlich:** `max@firma.ch` → "Mit freundlichen Grüssen, Max Mustermann, IT-Abteilung"
+> - **Privat:** `max@gmail.com` → "Liebe Grüsse, Max"
+> - **Uni:** `m.mustermann@students.example.com` → "Beste Grüsse, Max Mustermann, Student Informatik"
 
 **Account löschen:**
 1. Klicke auf **"Löschen"**

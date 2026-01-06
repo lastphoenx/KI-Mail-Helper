@@ -3450,6 +3450,7 @@ def api_generate_reply(email_id):
             generator = reply_generator_mod.ReplyGenerator(ai_client=client)
             
             # 🆕 Use generate_reply_with_user_style() for personalized replies
+            # Phase I.2: Pass account_id für Account-spezifische Signaturen
             result = generator.generate_reply_with_user_style(
                 db=db,
                 user_id=user.id,
@@ -3459,7 +3460,8 @@ def api_generate_reply(email_id):
                 tone=tone,
                 thread_context=thread_context if thread_context else None,
                 has_attachments=raw_email.has_attachments or False,
-                master_key=master_key
+                master_key=master_key,
+                account_id=raw_email.account_id
             )
             
             if result["success"]:
@@ -5815,6 +5817,24 @@ def edit_mail_account(account_id):
                 )
                 account.encrypted_smtp_password = encrypted_smtp_password
 
+            # Phase I.2: Account-spezifische Signatur
+            signature_enabled = request.form.get("signature_enabled") == "on"
+            account.signature_enabled = signature_enabled
+            
+            if signature_enabled:
+                signature_text = request.form.get("signature_text", "").strip()
+                if signature_text:
+                    # Verschlüssele Signatur mit Master-Key (wie andere Account-Daten)
+                    encrypted_signature = encryption.CredentialManager.encrypt_email_address(
+                        signature_text, master_key
+                    )
+                    account.encrypted_signature_text = encrypted_signature
+                else:
+                    account.encrypted_signature_text = None
+            else:
+                # Wenn deaktiviert, lösche verschlüsselte Signatur
+                account.encrypted_signature_text = None
+
             db.commit()
             logger.info(f"✅ Mail-Account '{account.name}' aktualisiert")
 
@@ -5844,6 +5864,15 @@ def edit_mail_account(account_id):
                             account.encrypted_smtp_username, master_key
                         )
                     )
+                # Phase I.2: Entschlüssele Account-Signatur
+                if account.signature_enabled and account.encrypted_signature_text:
+                    account.decrypted_signature_text = (
+                        encryption.CredentialManager.decrypt_email_address(
+                            account.encrypted_signature_text, master_key
+                        )
+                    )
+                else:
+                    account.decrypted_signature_text = None
             except Exception as e:
                 logger.warning(f"Konnte Account {account.id} nicht entschlüsseln: {e}")
                 account.imap_server = "***verschlüsselt***"

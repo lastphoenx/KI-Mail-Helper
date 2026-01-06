@@ -13,7 +13,8 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **Multi-Provider AI** – Lokale Modelle (Ollama) oder Cloud (Claude, OpenAI, Mistral)
 - **Online-Learning System** – SGD-Classifier lernt aus User-Korrekturen (4 Classifier: D/W/Spam/Kategorie)
 - **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (14 Bedingungen)
-- **Customizable Reply Styles** – Anrede, Grussformel, Signatur & Instructions pro Stil konfigurierbar
+- **Customizable Reply Styles** – Anrede, Grussformel, Signatur & Instructions pro Stil + Account-spezifisch
+- **Account-Specific Signatures** – Individuelle Signaturen pro Mail-Account (Geschäft/Privat/Uni)
 - **Semantische Suche** – Embeddings für "finde ähnliche Emails"
 - **Tag-System** – Manuell + KI-Vorschläge basierend auf gelernten Mustern
 - **IMAP & Gmail OAuth** – Funktioniert mit GMX, Gmail, Outlook, etc.
@@ -27,7 +28,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 ## Status
 
 **Version:** 1.0.0  
-**Development:** Aktiv (Phase I.1 - Reply Styles abgeschlossen)  
+**Development:** Aktiv (Phase I.2 - Account Signatures abgeschlossen)  
 **Stability:** Production-ready für Single-User-Deployment  
 **Next:** Bulk Operations, Pipeline Integration
 
