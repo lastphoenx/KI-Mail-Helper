@@ -8,6 +8,126 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added - Negative Feedback für Tag-Learning (2026-01-06)
+
+#### Phase F.3: Tag-Learning mit Negative Examples
+
+**Features:**
+- ✅ **Negative Feedback System**: Tags lernen von abgelehnten Vorschlägen
+- ✅ **Database Schema**: 
+  - Neue Tabelle `tag_negative_examples` für abgelehnte Tag-Zuweisungen
+  - EmailTag erweitert: `negative_embedding`, `negative_updated_at`, `negative_count`
+- ✅ **Reject Buttons**: × Button auf Tag-Suggestions in Email-Detail
+- ✅ **Penalty System**: 0-20% Score-Reduktion basierend auf Similarity zu negativen Embeddings
+- ✅ **Count-Bonus**: Mehr Rejects = höhere Confidence = stärkere Penalty (1.0x → 1.3x)
+- ✅ **API Endpoints**:
+  - `POST /api/emails/<id>/tags/<tag_id>/reject` - Tag ablehnen
+  - `GET /api/tags/<tag_id>/negative-examples` - Negative Beispiele abrufen
+
+**Workflow:**
+1. Email mit unpassendem Tag-Vorschlag "Arbeit"
+2. User klickt × bei "Arbeit" → Speichert als negative_example
+3. System berechnet `negative_embedding` (Mittelwert aller Rejects)
+4. Nächste ähnliche Email: Penalty wird vom Similarity-Score abgezogen
+5. Tag fällt unter Threshold → wird nicht mehr vorgeschlagen ✅
+
+**Files:**
+- `migrations/versions/b6d112c59087_*.py`: Schema Migration
+- `src/02_models.py`: TagNegativeExample Model + EmailTag Extensions
+- `src/services/tag_manager.py`: 6 neue Funktionen (add/remove/update/get/calculate/integrate)
+- `src/01_web_app.py`: 2 neue API Endpoints
+- `templates/email_detail.html`: Reject-Buttons mit Hover-Effekt
+
+**Impact:**
+- ✅ System lernt von Negativ-Feedback
+- ✅ Weniger false-positive Tag-Suggestions
+- ✅ User hat Kontrolle über Tag-Semantik
+- ✅ Zero-Knowledge compliant (encrypted embeddings)
+
+**Documentation:** `/doc/Changelogs/CHANGELOG_NEGATIVE_FEEDBACK.md`
+
+### Fixed - Auto-Assignment Flag von Queue-Flag getrennt (2026-01-06)
+
+#### Architektur-Refactoring: Zwei separate Feature-Flags
+
+**Problem:** Ein Flag (`enable_tag_suggestion_queue`) steuerte fälschlicherweise ZWEI Features:
+1. Queue für NEUE Tags
+2. Auto-Assignment für BESTEHENDE Tags
+
+Dies verhinderte sinnvolle Kombinationen wie "Queue OFF + Auto-Assignment ON".
+
+**Solution:**
+- ✅ **Zwei separate Flags**:
+  - `enable_tag_suggestion_queue` → Queue für neue Tag-Namen
+  - `enable_auto_assignment` → Auto-Zuweisung bestehender Tags (≥80%)
+- ✅ **Database Schema**: 
+  - `users.enable_auto_assignment` (Boolean, default=False)
+  - `email_tag_assignments.auto_assigned` (Boolean, tracking)
+- ✅ **Backend Logic**: `src/12_processing.py` nutzt korrektes Flag
+- ✅ **API Endpoints**: GET/POST `/api/tag-suggestions/settings` mit beiden Flags
+- ✅ **UI Settings**: Zwei separate Toggles in Tag-Suggestions Modal
+
+**Feature Matrix:**
+| Queue | Auto | Verhalten |
+|-------|------|-----------|
+| OFF | OFF | Nur manuelle Vorschläge |
+| OFF | ON | Bestehende Tags automatisch |
+| ON | OFF | Queue + manuelle Zuweisung |
+| ON | ON | Queue + Auto-Assignment |
+
+**Files:**
+- `migrations/versions/13710d93ee9c_*.py`: Schema Migration
+- `src/02_models.py`: User + EmailTagAssignment Models
+- `src/12_processing.py`: Flag-Check korrigiert (Zeile 600)
+- `src/services/tag_manager.py`: `assign_tag()` mit `auto_assigned` Parameter
+- `src/01_web_app.py`: Settings API erweitert
+- `templates/tag_suggestions.html`: Zwei Toggles + JavaScript
+
+**Impact:**
+- ✅ Saubere Architektur (Ein Flag = Ein Feature)
+- ✅ Alle 4 Kombinationen möglich
+- ✅ Basis für Negative Feedback (Auto-Assignment Tracking)
+- ✅ Backward Compatible (beide Flags default=False)
+
+**Documentation:** `/doc/Changelogs/CHANGELOG_AUTO_ASSIGNMENT_FLAG.md`  
+**Design Doc:** `/doc/erledigt/REFACTOR_SPLIT_AUTO_ASSIGNMENT_FLAG.md`
+
+### Fixed - Phase F.2 Queue-Flag Bug & CSP Compliance (2026-01-06)
+
+#### Bugfix: enable_tag_suggestion_queue wird respektiert
+
+**Problem:** Phase F.2 ignorierte das `enable_tag_suggestion_queue` Flag und machte immer Auto-Actions.
+
+**Solution:**
+- ✅ Flag-Check in `12_processing.py` für Auto-Assignment hinzugefügt
+- ✅ Logging zeigt ob Auto-Actions disabled sind
+
+**Files:**
+- `src/12_processing.py`: Flag-Respekt bei Auto-Assignment
+- `doc/offen/PATCH_PHASE_F2_QUEUE_FLAG_BUG.md`: Dokumentation
+
+**Impact:**
+- ✅ User hat jetzt echte Kontrolle über Auto-Actions
+- ⚠️ Wurde durch Refactoring (siehe oben) mit korrektem Flag ersetzt
+
+#### CSP Compliance: /tag-suggestions Event Listeners
+
+**Problem:** `onclick` Inline-Handlers violaten Content-Security-Policy.
+
+**Solution:**
+- ✅ 6 Inline-Handler durch Event Listeners ersetzt
+- ✅ `csp_nonce` zu Template-Context hinzugefügt
+
+**Files:**
+- `templates/tag_suggestions.html`: Event Listeners statt inline `onclick`
+- `src/01_web_app.py`: `csp_nonce=g.csp_nonce` im render_template
+
+**Impact:**
+- ✅ Keine CSP-Violations mehr
+- ✅ Sauberer Code (Trennung HTML/JS)
+
+**Documentation:** `/doc/Changelogs/CHANGELOG_2026-01-06_phase_f2_csp_fixes.md`
+
 ### Added - Tag Suggestion Queue System (2026-01-05)
 
 #### Complete Tag Suggestion Queue Implementation

@@ -37,7 +37,8 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ Phase 15: Multi-Folder UIDPLUS Support
 - ✅ Phase E: Thread-Context & Conversation View
 - ✅ Phase F1: Semantic Search mit Embeddings
-- ✅ Phase F2: Smart Tag Suggestions & Learning
+- ✅ Phase F2: Smart Tag Suggestions & Learning (Enhanced 2026-01-06)
+- ✅ Phase F.3: Negative Feedback für Tag-Learning
 - ✅ Phase G: AI Action Engine (Reply Generator + Auto-Rules)
 - ✅ Phase H: SMTP Mail-Versand mit Sent-Sync
 
@@ -156,12 +157,23 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
   - **"Finde ähnliche"**: Ähnlichkeitssuche basierend auf Semantik
   - **Fast**: Cosine Similarity mit NumPy
   - **User-spezifisch**: Nur eigene Emails durchsuchbar
-- **🏷️ Smart Tag-System (Phase F2)** – KI-gestützte Tag-Vorschläge
-  - **Auto-Tagging**: KI schlägt 1-5 semantische Tags vor (suggested_tags)
-  - **Tag-Management**: Create/Edit/Delete mit 7 Farben + Email-Count
+- **🏷️ Smart Tag-System (Phase F2 Enhanced)** – KI-gestützte Tag-Vorschläge mit Learning
+  - **Embedding-basierte Suggestions**: Semantische Ähnlichkeit zwischen Email und Tag-Embeddings
+  - **Learning-Hierarchie**: 
+    1. `learned_embedding` (aggregiert aus assigned emails) - Beste Qualität!
+    2. `description` Embedding (semantische Beschreibung)
+    3. `name` Embedding (nur Tag-Name)
+  - **Tag-Suggestion Queue** (`/tag-suggestions`): KI schlägt NEUE Tag-Namen vor → User genehmigt/merged/ablehnt
+  - **Auto-Assignment**: Bestehende Tags werden bei ≥80% Similarity automatisch zugewiesen (optional)
+  - **Separate Flags**: `enable_tag_suggestion_queue` (neue Tags) vs `enable_auto_assignment` (bestehende Tags)
+  - **Negative Feedback (Phase F.3)**: 
+    - Reject-Buttons (×) auf Tag-Vorschlägen in Email-Detail
+    - System lernt von Ablehnungen und schlägt unpassende Tags nicht mehr vor
+    - Penalty-System: 0-20% Score-Reduktion basierend auf Similarity zu negativen Beispielen
+    - Count-Bonus: Mehr Rejects = höhere Confidence = stärkere Penalty
+  - **Tag-Management**: Create/Edit/Delete mit 7 Farben + Email-Count + Statistics
   - **Multi-Tag-Filter**: Kombiniere Tags mit Farbe/Done/Suche
-  - **Learning-Integration**: Manuelle Tag-Änderungen → ML-Training (user_override_tags)
-  - **Performance**: Eager Loading verhindert n+1 Queries (2 Queries für 100 Emails)
+  - **Performance**: Preloading aller Tag-Embeddings (1× Batch statt 11-13× einzelne Calls)
 - **🤖 AI Action Engine (Phase G)** – Automatisierung & KI-Assistenz
   - **G.1 Reply Draft Generator**: KI generiert Antwort-Entwürfe mit 4 Ton-Varianten (Formell/Freundlich/Kurz/Ablehnend)
   - **G.2 Auto-Rules Engine**: Automatische Email-Aktionen mit Bedingungen & Aktionen

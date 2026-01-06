@@ -1,7 +1,7 @@
 # 📧 KI-Mail-Helper – Benutzerhandbuch
 
 **Version:** 1.0  
-**Stand:** 4. Januar 2026
+**Stand:** 6. Januar 2026
 
 ---
 
@@ -491,31 +491,106 @@ Jeder Tag zeigt:
 ### 6.3 KI-gestützte Tag-Vorschläge
 
 > **📸 Screenshot:** Tag-Vorschläge in Email-Detail (Suggestion-Badges)  
-> *Zeige: Vorgeschlagene Tags als klickbare Badges*
+> *Zeige: Vorgeschlagene Tags als klickbare Badges mit × Buttons*
 
 ![Tag-Vorschläge](images/screenshots/tag-suggestions.png)
 
-Die KI schlägt automatisch Tags vor, basierend auf:
+Die KI schlägt automatisch Tags vor, basierend auf semantischer Ähnlichkeit.
 
-**Zwei Arten von Tag-Embeddings:**
+#### Tag-Embedding-Hierarchie (Learning-System)
 
-| Art | Quelle | Qualität |
-|-----|--------|----------|
-| **Gelernt** | Manuell zugewiesene Tags | ⭐⭐⭐⭐⭐ Beste Ergebnisse |
-| **Beschreibung** | Tag-Name als Text | ⭐⭐⭐ Gut für neue Tags |
+Das System nutzt eine 3-stufige Hierarchie für beste Ergebnisse:
+
+| Stufe | Quelle | Qualität | Beschreibung |
+|-------|--------|----------|--------------|
+| 1️⃣ **Learned** | Aggregierte Embeddings aus zugewiesenen Emails | ⭐⭐⭐⭐⭐ | Beste Ergebnisse! Lernt aus deinem Verhalten |
+| 2️⃣ **Description** | Tag-Beschreibung als Text-Embedding | ⭐⭐⭐⭐ | Gut für neue Tags mit Beschreibung |
+| 3️⃣ **Name** | Nur Tag-Name als Embedding | ⭐⭐⭐ | Fallback wenn keine anderen Daten vorhanden |
 
 **So funktioniert's:**
 1. Jede Email bekommt ein **Embedding** (semantischer Fingerabdruck)
-2. Jeder Tag hat ebenfalls ein Embedding
-3. Die KI vergleicht: "Wie ähnlich ist diese Email zu Emails mit Tag X?"
-4. Tags mit hoher Ähnlichkeit (>70%) werden vorgeschlagen
+2. Jeder Tag hat ein Embedding (learned/description/name)
+3. Die KI berechnet: "Wie ähnlich ist diese Email zu Emails mit Tag X?"
+4. Tags mit hoher Ähnlichkeit werden vorgeschlagen
+
+**Confidence-Levels:**
+- **≥85%** 🟢 Sehr hohe Übereinstimmung (grüner Rand)
+- **≥75%** 🟡 Gute Übereinstimmung (oranger Rand)
+- **≥70%** ⚫ OK-Übereinstimmung (grauer Rand)
+
+**In Email-Detail:**
+- Klick auf **Badge** → Tag wird zugewiesen
+- Klick auf **×** → Tag wird abgelehnt (Negative Feedback)
+
+#### Negative Feedback (Phase F.3)
+
+> **Neu seit 2026-01-06:** Das System lernt auch von Ablehnungen!
+
+**Workflow:**
+1. Email über "Projekt X" wird geöffnet
+2. KI schlägt unpassenden Tag "Arbeit" vor (75% Match)
+3. Du klickst auf **×** (Reject-Button)
+4. System speichert dies als **negative example**
+5. Nächste ähnliche Email: "Arbeit" bekommt Penalty und wird nicht mehr vorgeschlagen! ✅
+
+**Wie Penalty funktioniert:**
+- System berechnet `negative_embedding` (Mittelwert aller Ablehnungen)
+- Bei neuer Suggestion: Penalty = Similarity-Verhältnis × Count-Bonus
+- Penalty wird vom Score abgezogen (0-20%)
+- Je mehr Rejects (Count-Bonus), desto stärker die Penalty
+
+**Beispiel:**
+```
+Tag "Arbeit" für Freizeit-Email:
+- Original Similarity: 75%
+- Negative Similarity: 72%
+- 3 Rejects gespeichert
+→ Penalty: ~14% (ratio 0.96 × count_factor 1.15)
+→ Final Score: 61% → unter Threshold → NICHT vorgeschlagen ✅
+```
+
+#### Tag-Suggestion-Queue (`/tag-suggestions`)
+
+> **📸 Screenshot:** Tag-Suggestions Queue Seite  
+> *Zeige: Pending-Liste mit Approve/Reject/Merge Buttons*
+
+![Tag-Suggestions Queue](images/screenshots/tag-suggestions-queue.png)
+
+Wenn die KI **neue Tag-Namen** vorschlägt, landen diese in der Queue.
+
+**Zugriff:** **💡 Tag-Vorschläge** in der Navigation
+
+**Actions:**
+- **✅ Approve**: Erstellt den Tag und weist ihn zu
+- **❌ Reject**: Verwirft den Vorschlag
+- **🔀 Merge**: Ordnet zu existierendem Tag zu
+- **Batch**: Alle auf einmal annehmen/ablehnen
+
+**Zwei Einstellungen:**
+
+| Setting | Was es macht | Default |
+|---------|--------------|---------|
+| **💡 Tag-Vorschläge für neue Tags** | KI darf neue Tag-Namen vorschlagen | OFF |
+| **⚡ Automatische Tag-Zuweisung** | Bestehende Tags bei ≥80% automatisch zuweisen | OFF |
+
+> ⚙️ **Einstellungen ändern:** Klicke auf ⚙️ Button rechts oben auf `/tag-suggestions` Seite
+
+**Kombinationen:**
+
+| Queue | Auto | Verhalten |
+|-------|------|-----------|
+| OFF | OFF | Nur manuelle Vorschläge in Email-Detail |
+| OFF | ON | Bestehende Tags automatisch, keine neuen Vorschläge |
+| ON | OFF | Queue für neue Tags, manuelle Zuweisung |
+| ON | ON | Queue + Auto-Assignment (volle KI-Automation) |
 
 **Lernen aus deinem Verhalten:**
 - Je mehr Emails du manuell taggst, desto besser werden die Vorschläge
 - Das System lernt: "Emails über Rechnungen bekommen meist den Tag 'Finanzen'"
 - Nach ~5-10 manuellen Zuweisungen pro Tag werden Vorschläge sehr genau
+- **Negative Feedback** verhindert false-positives
 
-> 💡 **Tipp:** Starte mit wenigen Tags und tagge konsequent. Die KI lernt schnell!
+> 💡 **Tipp:** Starte mit wenigen Tags, tagge konsequent, und nutze × Button für unpassende Vorschläge!
 
 ---
 
