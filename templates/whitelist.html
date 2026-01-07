@@ -3,7 +3,7 @@
 {% block title %}Whitelist Manager - Mail Helper{% endblock %}
 
 {% block content %}
-<div class="container-xxl mt-4">
+<div class="container-xxl mt-4 pb-5 mb-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h2 class="mb-1">🎯 Whitelist Manager</h2>
@@ -16,19 +16,15 @@
         </div>
     </div>
 
-    <!-- Global UrgencyBooster Toggle -->
-    <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#0f172a,#1e1b4b);color:#f8fafc;">
+    <!-- UrgencyBooster pro Account -->
+    <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#e8f0ff,#f7fafc);color:#0f172a;">
+        <div class="card-header" style="background: linear-gradient(135deg, #d7e3ff, #f1f5f9);">
+            <h5 class="mb-0">⚡ UrgencyBooster pro Account</h5>
+            <p class="small text-muted mb-0 mt-2">Aktiviert automatische Erhöhung der Dringlichkeit für vertrauenswürdige Absender pro E-Mail-Account</p>
+        </div>
         <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h5 class="mb-1">⚡ UrgencyBooster (Global)</h5>
-                    <p class="mb-0 small">
-                        Erhöht Dringlichkeit von Emails vertrauenswürdiger Absender automatisch
-                    </p>
-                </div>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="urgencyBoosterToggle" checked style="width: 3.5em; height: 1.5em;">
-                </div>
+            <div id="urgencyBoosterSettings" class="row g-3">
+                <!-- Wird mit JavaScript gefüllt -->
             </div>
         </div>
     </div>
@@ -37,8 +33,8 @@
     <div class="row g-4">
         <!-- LEFT COLUMN: List & Management -->
         <div class="col-lg-8">
-            <div class="card bg-dark text-light border-secondary">
-                <div class="card-header bg-gradient" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-gradient" style="background: linear-gradient(135deg, #e5e7eb, #f8fafc);">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h6 class="mb-0">📋 Bestehende Einträge</h6>
                         <div class="d-flex gap-2">
@@ -52,16 +48,16 @@
                     <!-- Filter & Account Selector -->
                     <div class="row g-2 mt-3">
                         <div class="col-md-6">
-                            <select class="form-select form-select-sm bg-dark text-light border-secondary" id="whitelistAccountSelectorV2">
+                            <select class="form-select form-select-sm" id="whitelistAccountSelectorV2">
                                 <option value="">🌍 Alle anzeigen</option>
                                 <option value="global">🌐 Nur Global</option>
                                 {% for account in mail_accounts %}
-                                <option value="{{ account.id }}">📧 {{ account.name }}</option>
+                                <option value="{{ account.id }}">📧 {{ account.imap_username or account.decrypted_imap_username or account.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" 
+                            <input type="text" class="form-control form-control-sm" 
                                    id="filterPatternInput" placeholder="🔍 Pattern suchen...">
                         </div>
                     </div>
@@ -78,9 +74,9 @@
                     </div>
                 </div>
                 
-                <div class="card-footer bg-dark border-secondary">
+                <div class="card-footer bg-light border-top">
                     <div class="d-flex justify-content-between align-items-center">
-                    <small class="text-light opacity-75">Limit: 500 pro Account</small>
+                    <small class="text-muted">Limit: 500 pro Account</small>
                         <div class="btn-group btn-group-sm" role="group">
                             <button type="button" class="btn btn-outline-danger" id="deleteSelectedBtn" disabled>
                                 🗑️ Ausgewählte löschen
@@ -97,20 +93,20 @@
         <!-- RIGHT COLUMN: Add Form -->
         <div class="col-lg-4">
             <!-- Add New Form -->
-            <div class="card bg-dark text-light border-success mb-4">
-                <div class="card-header bg-gradient" style="background: linear-gradient(135deg, #064e3b, #022c22);">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-gradient" style="background: linear-gradient(135deg, #e0f2fe, #ecfeff);">
                     <h6 class="mb-0">➕ Neuer Eintrag</h6>
                 </div>
                 <div class="card-body">
                     <div class="mb-3">
                         <label for="trustedSenderPatternV2" class="form-label small">Absender-Muster</label>
-                        <input type="text" class="form-control bg-dark text-light border-secondary" 
+                        <input type="text" class="form-control" 
                                id="trustedSenderPatternV2" 
                                placeholder="z.B. boss@company.de">
                     </div>
                     <div class="mb-3">
                         <label for="trustedSenderTypeV2" class="form-label small">Typ</label>
-                        <select class="form-select bg-dark text-light border-secondary" id="trustedSenderTypeV2">
+                        <select class="form-select" id="trustedSenderTypeV2">
                             <option value="exact">🔒 Exakt - nur boss@company.de</option>
                             <option value="email_domain">👥 Wildcard - alle @company.de</option>
                             <option value="domain">🏢 Domain + Subdomains (z.B. mail.company.de)</option>
@@ -118,24 +114,18 @@
                     </div>
                     <div class="mb-3">
                         <label for="trustedSenderAccountIdV2" class="form-label small">Account</label>
-                        <select class="form-select bg-dark text-light border-secondary" id="trustedSenderAccountIdV2">
+                        <select class="form-select" id="trustedSenderAccountIdV2">
                             <option value="">🌍 Global (alle Accounts)</option>
                             {% for account in mail_accounts %}
-                            <option value="{{ account.id }}">📧 {{ account.name }}</option>
+                            <option value="{{ account.id }}">📧 {{ account.imap_username or account.decrypted_imap_username or account.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="mb-3">
                         <label for="trustedSenderLabelV2" class="form-label small">Label (optional)</label>
-                        <input type="text" class="form-control bg-dark text-light border-secondary" 
+                        <input type="text" class="form-control" 
                                id="trustedSenderLabelV2" 
                                placeholder="z.B. CEO, HR">
-                    </div>
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" id="trustedSenderUseBoosterV2" checked>
-                        <label class="form-check-label small" for="trustedSenderUseBoosterV2">
-                            ⚡ UrgencyBooster aktivieren
-                        </label>
                     </div>
                     <button type="button" class="btn btn-success w-100" id="addTrustedSenderBtnV2">
                         ➕ Hinzufügen
@@ -148,15 +138,25 @@
     <!-- Quick Suggestions - Full Width -->
     <div class="row mt-4">
         <div class="col-12">
-            <div class="card bg-dark text-light border-info">
-                <div class="card-header bg-gradient d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #0c4a6e, #082f49);">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-gradient d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #e0f2fe, #eef2ff);">
                     <h6 class="mb-0">💡 Schnell-Vorschläge</h6>
                     <button type="button" class="btn btn-outline-info btn-sm" id="loadSuggestionsBtnV2">
                         🔍 Vorschläge laden
                     </button>
                 </div>
                 <div class="card-body">
-                    <p class="small text-secondary mb-3">Basierend auf deinem Email-Verlauf – klicke auf ➕ um einen Vorschlag zur Whitelist hinzuzufügen</p>
+                    <p class="small text-muted mb-3">Basierend auf deinem Email-Verlauf – klicke auf ➕ um einen Vorschlag zur Whitelist hinzuzufügen</p>
+                    <div class="mb-3">
+                        <label class="form-label small mb-2">📧 Account für Vorschläge:</label>
+                        <select class="form-select form-select-sm" id="suggestionsAccountSelectorV2">
+                            <option value="">🌍 Alle anzeigen</option>
+                            <option value="global">🌐 Nur Global</option>
+                            {% for account in mail_accounts %}
+                            <option value="{{ account.id }}">📧 {{ account.imap_username or account.decrypted_imap_username or account.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                     <div id="suggestionsListV2" style="display: none;">
                         <div class="row g-2" id="suggestionsGrid">
                             <!-- Suggestions loaded here as cards in a grid -->
@@ -184,7 +184,20 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function getCsrfToken() {
+    const token = document.querySelector('meta[name="csrf-token"]');
+    return token ? token.getAttribute('content') : '';
+}
+
 async function safeFetch(url, options = {}) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken && !options.headers) {
+        options.headers = {};
+    }
+    if (csrfToken && options.headers) {
+        options.headers['X-CSRFToken'] = csrfToken;
+    }
+    
     try {
         const response = await fetch(url, options);
         if (!response.ok) {
@@ -486,7 +499,6 @@ async function addTrustedSenderV2() {
     const pattern = document.getElementById('trustedSenderPatternV2').value.trim();
     const type = document.getElementById('trustedSenderTypeV2').value;
     const label = document.getElementById('trustedSenderLabelV2').value.trim() || null;
-    const useBooster = document.getElementById('trustedSenderUseBoosterV2').checked;
     const accountId = document.getElementById('trustedSenderAccountIdV2').value || null;
     
     const validation = validateTrustedSenderInput(pattern, type, label);
@@ -501,21 +513,18 @@ async function addTrustedSenderV2() {
         btn.disabled = true;
         btn.textContent = '⏳ Füge hinzu...';
         
-        const response = await safeFetch('/api/trusted-senders', {
+        const data = await safeFetch('/api/trusted-senders', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 sender_pattern: pattern,
                 pattern_type: type,
                 label: label,
-                use_urgency_booster: useBooster,
+                use_urgency_booster: true,
                 account_id: accountId ? parseInt(accountId) : null
             })
         });
         
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
         
         
         
@@ -528,7 +537,6 @@ async function addTrustedSenderV2() {
         document.getElementById('trustedSenderPatternV2').value = '';
         document.getElementById('trustedSenderLabelV2').value = '';
         document.getElementById('trustedSenderTypeV2').value = 'exact';
-        document.getElementById('trustedSenderUseBoosterV2').checked = true;
         document.getElementById('trustedSenderAccountIdV2').value = '';
         
         // Reload list
@@ -551,12 +559,19 @@ async function addTrustedSenderV2() {
 async function loadSuggestionsV2() {
     const btn = document.getElementById('loadSuggestionsBtnV2');
     const list = document.getElementById('suggestionsListV2');
+    const accountSelector = document.getElementById('suggestionsAccountSelectorV2');
     
     btn.disabled = true;
     btn.textContent = '⏳ Laden...';
     
     try {
-        const response = await safeFetch('/api/trusted-senders/suggestions', {
+        const selectedAccountId = accountSelector ? accountSelector.value : '';
+        let url = '/api/trusted-senders/suggestions';
+        if (selectedAccountId && selectedAccountId !== 'global') {
+            url += `?account_id=${selectedAccountId}`;
+        }
+        
+        const data = await safeFetch(url, {
             method: 'GET',
             headers: {'Content-Type': 'application/json'}
         });
@@ -606,9 +621,11 @@ async function loadSuggestionsV2() {
                     console.error('Decode failed:', e);
                 }
                 const type = this.getAttribute('data-type');
+                const selectedAccount = document.getElementById('suggestionsAccountSelectorV2').value;
                 
                 document.getElementById('trustedSenderPatternV2').value = sender;
                 document.getElementById('trustedSenderTypeV2').value = type;
+                document.getElementById('trustedSenderAccountIdV2').value = selectedAccount === 'global' ? '' : selectedAccount;
                 document.getElementById('trustedSenderPatternV2').focus();
             });
         });
@@ -714,46 +731,83 @@ function showToast(message, type = 'success') {
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     `;
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    console.log(`[Toast] ${type}: ${message}`);
+    setTimeout(() => toast.remove(), 5000);
 }
 
-// Global UrgencyBooster toggle
-async function toggleUrgencyBoosterGlobal(enabled) {
+// Load UrgencyBooster settings für alle Accounts
+async function loadUrgencyBoosterSettingsV2() {
     try {
-        const response = await safeFetch('/api/settings/urgency-booster', {
+        const container = document.getElementById('urgencyBoosterSettings');
+        container.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Laden...</span></div>';
+        
+        const data = await safeFetch('/api/accounts/urgency-booster-settings', {
+            method: 'GET',
+            headers: {'Content-Type': 'application/json'}
+        });
+        
+        if (!data.success) {
+            container.innerHTML = `<div class="alert alert-danger small">Fehler: ${data.error}</div>`;
+            return;
+        }
+        
+        if (!data.accounts || data.accounts.length === 0) {
+            container.innerHTML = '<div class="text-muted small">Keine Accounts konfiguriert</div>';
+            return;
+        }
+        
+        container.innerHTML = data.accounts.map(account => `
+            <div class="col-md-6 col-lg-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="card-title mb-1 text-dark">${escapeHtml(account.email || account.imap_username || account.name)}</h6>
+                                <p class="card-text small text-muted">${escapeHtml(account.name || '')}</p>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input booster-toggle" type="checkbox" 
+                                       ${account.urgency_booster_enabled ? 'checked' : ''} 
+                                       data-account-id="${account.id}"
+                                       style="width: 3.5em; height: 1.5em;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        
+        // Bind toggle events
+        container.querySelectorAll('.booster-toggle').forEach(toggle => {
+            toggle.addEventListener('change', function() {
+                toggleUrgencyBoosterForAccount(parseInt(this.dataset.accountId), this.checked);
+            });
+        });
+    } catch (error) {
+        console.error('Error loading booster settings:', error);
+        document.getElementById('urgencyBoosterSettings').innerHTML = `<div class="alert alert-danger small">Fehler beim Laden</div>`;
+    }
+}
+
+// Toggle UrgencyBooster für einen Account
+async function toggleUrgencyBoosterForAccount(accountId, enabled) {
+    try {
+        const data = await safeFetch(`/api/accounts/${accountId}/urgency-booster`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({urgency_booster_enabled: enabled})
         });
         
-        
         if (data.success) {
             showToast(enabled ? '✅ UrgencyBooster aktiviert' : '⭕ UrgencyBooster deaktiviert', 'info');
         } else {
-            alert('Fehler: ' + data.error);
-            document.getElementById('urgencyBoosterToggle').checked = !enabled;
+            showToast('Fehler beim Speichern', 'danger');
+            loadUrgencyBoosterSettingsV2();
         }
     } catch (error) {
-        console.error('Error toggling global booster:', error);
-        alert('Fehler beim Aktualisieren');
-        document.getElementById('urgencyBoosterToggle').checked = !enabled;
-    }
-}
-
-// Load urgency booster status
-async function loadUrgencyBoosterStatus() {
-    try {
-        const data = await safeFetch('/api/settings/urgency-booster', {
-            method: 'GET',
-            headers: {'Content-Type': 'application/json'}
-        });
-        
-        
-        if (data.success) {
-            document.getElementById('urgencyBoosterToggle').checked = data.urgency_booster_enabled;
-        }
-    } catch (error) {
-        console.error('Error loading booster status:', error);
+        console.error('Error toggling booster:', error);
+        showToast('Fehler beim Aktualisieren', 'danger');
+        loadUrgencyBoosterSettingsV2();
     }
 }
 
@@ -761,7 +815,7 @@ async function loadUrgencyBoosterStatus() {
 document.addEventListener('DOMContentLoaded', function() {
     // Load initial data
     loadTrustedSendersListV2();
-    loadUrgencyBoosterStatus();
+    loadUrgencyBoosterSettingsV2();
     
     // Bind event listeners
     const addBtn = document.getElementById('addTrustedSenderBtnV2');
