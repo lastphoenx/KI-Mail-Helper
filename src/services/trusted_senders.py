@@ -406,6 +406,9 @@ class TrustedSenderManager:
         
         decryption_errors = 0
         
+        # Use dict to deduplicate by email address and sum counts
+        suggestions_dict = {}
+        
         for encrypted_sender, count in frequent_senders:
             try:
                 sender = encryption.EmailDataManager.decrypt_email_sender(encrypted_sender, master_key)
@@ -446,14 +449,16 @@ class TrustedSenderManager:
                 # Normalisiere Sender mittels prepare_suggestion()
                 clean_sender = prepare_suggestion(sender, suggested_type)
                 
-                suggestions.append({
-                    'sender': clean_sender,
-                    'email_count': count,
-                    'suggested_pattern_type': suggested_type
-                })
-                
-                if len(suggestions) >= limit:
-                    break
+                # Deduplicate: If email already in dict, sum the counts
+                if clean_sender in suggestions_dict:
+                    suggestions_dict[clean_sender]['email_count'] += count
+                    logger.info(f"Duplicate found - summing count for {clean_sender}: {suggestions_dict[clean_sender]['email_count']}")
+                else:
+                    suggestions_dict[clean_sender] = {
+                        'sender': clean_sender,
+                        'email_count': count,
+                        'suggested_pattern_type': suggested_type
+                    }
             
             except Exception as e:
                 decryption_errors += 1
@@ -463,5 +468,8 @@ class TrustedSenderManager:
                     logger.warning("Too many decryption errors, aborting suggestions")
                     break
         
-        logger.info(f"Suggestions: Returning {len(suggestions)} suggestions")
+        # Convert dict to list and limit
+        suggestions = list(suggestions_dict.values())[:limit]
+        
+        logger.info(f"Suggestions: Returning {len(suggestions)} suggestions (after deduplication)")
         return suggestions
