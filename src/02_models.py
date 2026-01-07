@@ -562,6 +562,9 @@ class MailAccount(Base):
     signature_enabled = Column(Boolean, default=False, nullable=True)
     encrypted_signature_text = Column(Text, nullable=True)  # verschlüsselt mit Master-Key (wie andere Account-Daten)
 
+    # ===== PHASE X: ACCOUNT-LEVEL URGENCY BOOSTER =====
+    urgency_booster_enabled = Column(Boolean, default=True, nullable=False)
+
     # Relationship
     user = relationship("User", back_populates="mail_accounts")
     raw_emails = relationship(

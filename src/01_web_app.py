@@ -2173,6 +2173,21 @@ def whitelist():
         # Get mail accounts for dropdown
         mail_accounts = db.query(models.MailAccount).filter_by(user_id=user.id).all()
         
+        # Zero-Knowledge: Entschlüssele Email-Adressen für Anzeige
+        master_key = session.get("master_key")
+        if master_key and mail_accounts:
+            for account in mail_accounts:
+                if account.auth_type == "imap" and account.encrypted_imap_username:
+                    try:
+                        account.decrypted_imap_username = (
+                            encryption.EmailDataManager.decrypt_email_sender(
+                                account.encrypted_imap_username, master_key
+                            )
+                        )
+                    except Exception as e:
+                        logger.warning(f"Fehler beim Entschlüsseln der Account-Email: {e}")
+                        account.decrypted_imap_username = None
+        
         return render_template(
             "whitelist.html",
             user=user,
@@ -7349,17 +7364,18 @@ def api_add_trusted_sender():
         if not data:
             return {"success": False, "error": "No JSON data"}, 400
         
-        sender_pattern = data.get("sender_pattern", "").strip()
-        pattern_type = data.get("pattern_type", "email").strip()  # email, email_domain, domain
-        label = data.get("label", "").strip() or None
+        sender_pattern = (data.get("sender_pattern") or "").strip()
+        pattern_type = (data.get("pattern_type") or "exact").strip()
+        label = (data.get("label") or "").strip() or None
         use_urgency_booster = data.get("use_urgency_booster", True)
-        account_id = data.get("account_id", None)  # None = global, int = specific account
+        account_id = data.get("account_id")
         
         if not sender_pattern:
-            return {"success": False, "error": "sender_pattern required"}, 400
+            return {"success": False, "error": "sender_pattern erforderlich"}, 400
         
-        if pattern_type not in ["exact", "email_domain", "domain"]:
-            return {"success": False, "error": "Invalid pattern_type"}, 400
+        # Normalisiere pattern_type
+        if not pattern_type or pattern_type not in ["exact", "email_domain", "domain"]:
+            pattern_type = "exact"
         
         # Use TrustedSenderManager to add with validation
         trusted_senders_mod = importlib.import_module(".services.trusted_senders", "src")
@@ -7557,6 +7573,86 @@ def api_set_urgency_booster():
         }, 200
     except Exception as e:
         logger.error(f"Error setting urgency booster: {e}")
+        db.rollback()
+        return {"success": False, "error": str(e)}, 500
+    finally:
+        db.close()
+
+
+@app.route("/api/accounts/urgency-booster-settings", methods=["GET"])
+@login_required
+def api_get_accounts_urgency_booster_settings():
+    """Get UrgencyBooster settings for all user accounts"""
+    db = get_db_session()
+    try:
+        models_mod = importlib.import_module(".02_models", "src")
+        
+        accounts = db.query(models_mod.MailAccount).filter_by(user_id=current_user.id).order_by(models_mod.MailAccount.name).all()
+        
+        # Get master key for decryption
+        master_key = session.get("master_key")
+        
+        accounts_data = []
+        for account in accounts:
+            # Decrypt IMAP username for display
+            decrypted_email = None
+            if master_key and account.encrypted_imap_username:
+                try:
+                    decrypted_email = encryption.EmailDataManager.decrypt_email_sender(
+                        account.encrypted_imap_username, master_key
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not decrypt email for account {account.id}: {e}")
+            
+            accounts_data.append({
+                'id': account.id,
+                'name': account.name,
+                'decrypted_imap_username': decrypted_email,
+                'urgency_booster_enabled': getattr(account, 'urgency_booster_enabled', True)
+            })
+        
+        return {
+            "success": True,
+            "accounts": accounts_data
+        }, 200
+    except Exception as e:
+        logger.error(f"Error getting accounts urgency booster settings: {e}")
+        return {"success": False, "error": str(e)}, 500
+    finally:
+        db.close()
+
+
+@app.route("/api/accounts/<int:account_id>/urgency-booster", methods=["POST"])
+@login_required
+def api_set_account_urgency_booster(account_id):
+    """Set UrgencyBooster for a specific account"""
+    db = get_db_session()
+    try:
+        data = request.get_json()
+        if not data:
+            return {"success": False, "error": "No JSON data"}, 400
+        
+        enabled = data.get("urgency_booster_enabled", True)
+        
+        models_mod = importlib.import_module(".02_models", "src")
+        account = db.query(models_mod.MailAccount).filter_by(
+            id=account_id,
+            user_id=current_user.id
+        ).first()
+        
+        if not account:
+            return {"success": False, "error": "Account nicht gefunden"}, 404
+        
+        account.urgency_booster_enabled = bool(enabled)
+        db.commit()
+        
+        logger.info(f"UrgencyBooster for account {account_id} (user {current_user.id}): {enabled}")
+        return {
+            "success": True,
+            "urgency_booster_enabled": account.urgency_booster_enabled
+        }, 200
+    except Exception as e:
+        logger.error(f"Error setting account urgency booster: {e}")
         db.rollback()
         return {"success": False, "error": str(e)}, 500
     finally:

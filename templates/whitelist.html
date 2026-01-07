@@ -17,10 +17,10 @@
     </div>
 
     <!-- UrgencyBooster pro Account -->
-    <div class="card border-0 shadow-sm mb-4 text-dark">
-        <div class="card-header bg-light">
-            <h5 class="mb-0">⚡ UrgencyBooster pro Account</h5>
-            <p class="small text-muted mb-0 mt-2">Aktiviert automatische Erhöhung der Dringlichkeit für vertrauenswürdige Absender pro E-Mail-Account</p>
+    <div class="card border-0 shadow-sm mb-4 bg-dark text-light">
+        <div class="card-header" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
+            <h5 class="mb-0 text-light">⚡ UrgencyBooster pro Account</h5>
+            <p class="small text-light opacity-75 mb-0 mt-2">Aktiviert automatische Erhöhung der Dringlichkeit für vertrauenswürdige Absender pro E-Mail-Account</p>
         </div>
         <div class="card-body">
             <div id="urgencyBoosterSettings" class="row g-3">
@@ -33,10 +33,10 @@
     <div class="row g-4">
         <!-- LEFT COLUMN: List & Management -->
         <div class="col-lg-8">
-            <div class="card border-0 shadow-sm text-dark">
-                <div class="card-header bg-light">
+            <div class="card border-0 shadow-sm bg-dark text-light">
+                <div class="card-header" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <h6 class="mb-0">📋 Bestehende Einträge</h6>
+                        <h6 class="mb-0 text-light">📋 Bestehende Einträge</h6>
                         <div class="d-flex gap-2">
                             <span class="badge bg-info" id="trustedSendersCount">0</span>
                             <button type="button" class="btn btn-sm btn-outline-warning" id="refreshListBtn" title="Liste aktualisieren">
@@ -48,16 +48,16 @@
                     <!-- Filter & Account Selector -->
                     <div class="row g-2 mt-3">
                         <div class="col-md-6">
-                            <select class="form-select form-select-sm" id="whitelistAccountSelectorV2">
+                            <select class="form-select form-select-sm bg-dark text-light border-secondary" id="whitelistAccountSelectorV2">
                                 <option value="">🌍 Alle anzeigen</option>
                                 <option value="global">🌐 Nur Global</option>
                                 {% for account in mail_accounts %}
-                                <option value="{{ account.id }}">📧 {{ account.imap_username or account.decrypted_imap_username or account.email or account.name }}</option>
+                                <option value="{{ account.id }}">📧 {{ account.decrypted_imap_username or account.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <input type="text" class="form-control form-control-sm" 
+                            <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" 
                                    id="filterPatternInput" placeholder="🔍 Pattern suchen...">
                         </div>
                     </div>
@@ -74,9 +74,9 @@
                     </div>
                 </div>
                 
-                <div class="card-footer bg-light border-top">
+                <div class="card-footer bg-dark border-secondary">
                     <div class="d-flex justify-content-between align-items-center">
-                    <small class="text-muted">Limit: 500 pro Account</small>
+                    <small class="text-light opacity-75">Limit: 500 pro Account</small>
                         <div class="btn-group btn-group-sm" role="group">
                             <button type="button" class="btn btn-outline-danger" id="deleteSelectedBtn" disabled>
                                 🗑️ Ausgewählte löschen
@@ -93,37 +93,37 @@
         <!-- RIGHT COLUMN: Add Form -->
         <div class="col-lg-4">
             <!-- Add New Form -->
-            <div class="card border-0 shadow-sm mb-4 text-dark">
-                <div class="card-header bg-light">
-                    <h6 class="mb-0">➕ Neuer Eintrag</h6>
+            <div class="card border-0 shadow-sm mb-4 bg-dark text-light">
+                <div class="card-header" style="background: linear-gradient(135deg, #064e3b, #022c22);">
+                    <h6 class="mb-0 text-light">➕ Neuer Eintrag</h6>
                 </div>
                 <div class="card-body">
                     <div class="mb-3">
-                        <label for="trustedSenderPatternV2" class="form-label small">Absender-Muster</label>
-                        <input type="text" class="form-control" 
+                        <label for="trustedSenderPatternV2" class="form-label small text-light">Absender-Muster</label>
+                        <input type="text" class="form-control bg-dark text-light border-secondary" 
                                id="trustedSenderPatternV2" 
                                placeholder="z.B. boss@company.de">
                     </div>
                     <div class="mb-3">
-                        <label for="trustedSenderTypeV2" class="form-label small">Typ</label>
-                        <select class="form-select" id="trustedSenderTypeV2">
+                        <label for="trustedSenderTypeV2" class="form-label small text-light">Typ</label>
+                        <select class="form-select bg-dark text-light border-secondary" id="trustedSenderTypeV2">
                             <option value="exact">🔒 Exakt - nur boss@company.de</option>
                             <option value="email_domain">👥 Wildcard - alle @company.de</option>
                             <option value="domain">🏢 Domain + Subdomains (z.B. mail.company.de)</option>
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label for="trustedSenderAccountIdV2" class="form-label small">Account</label>
-                        <select class="form-select" id="trustedSenderAccountIdV2">
+                        <label for="trustedSenderAccountIdV2" class="form-label small text-light">Account</label>
+                        <select class="form-select bg-dark text-light border-secondary" id="trustedSenderAccountIdV2">
                             <option value="">🌍 Global (alle Accounts)</option>
                             {% for account in mail_accounts %}
-                            <option value="{{ account.id }}">📧 {{ account.imap_username or account.decrypted_imap_username or account.email or account.name }}</option>
+                            <option value="{{ account.id }}">📧 {{ account.decrypted_imap_username or account.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label for="trustedSenderLabelV2" class="form-label small">Label (optional)</label>
-                        <input type="text" class="form-control" 
+                        <label for="trustedSenderLabelV2" class="form-label small text-light">Label (optional)</label>
+                        <input type="text" class="form-control bg-dark text-light border-secondary" 
                                id="trustedSenderLabelV2" 
                                placeholder="z.B. CEO, HR">
                     </div>
@@ -138,22 +138,22 @@
     <!-- Quick Suggestions - Full Width -->
     <div class="row mt-4">
         <div class="col-12">
-            <div class="card border-0 shadow-sm text-dark">
-                <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0">💡 Schnell-Vorschläge</h6>
+            <div class="card border-0 shadow-sm bg-dark text-light">
+                <div class="card-header d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #0c4a6e, #082f49);">
+                    <h6 class="mb-0 text-light">💡 Schnell-Vorschläge</h6>
                     <button type="button" class="btn btn-outline-info btn-sm" id="loadSuggestionsBtnV2">
                         🔍 Vorschläge laden
                     </button>
                 </div>
                 <div class="card-body">
-                    <p class="small text-muted mb-3">Basierend auf deinem Email-Verlauf – klicke auf ➕ um einen Vorschlag zur Whitelist hinzuzufügen</p>
+                    <p class="small text-light opacity-75 mb-3">Basierend auf deinem Email-Verlauf – klicke auf ➕ um einen Vorschlag zur Whitelist hinzuzufügen</p>
                     <div class="mb-3">
-                        <label class="form-label small mb-2">📧 Account für Vorschläge:</label>
-                        <select class="form-select form-select-sm" id="suggestionsAccountSelectorV2">
+                        <label class="form-label small text-light mb-2">📧 Account für Vorschläge:</label>
+                        <select class="form-select form-select-sm bg-dark text-light border-secondary" id="suggestionsAccountSelectorV2">
                             <option value="">🌍 Alle anzeigen</option>
                             <option value="global">🌐 Nur Global</option>
                             {% for account in mail_accounts %}
-                            <option value="{{ account.id }}">📧 {{ account.imap_username or account.decrypted_imap_username or account.email or account.name }}</option>
+                            <option value="{{ account.id }}">📧 {{ account.decrypted_imap_username or account.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -758,12 +758,12 @@ async function loadUrgencyBoosterSettingsV2() {
         
         container.innerHTML = data.accounts.map(account => `
             <div class="col-md-6 col-lg-4">
-                <div class="card border-0 shadow-sm h-100">
+                <div class="card bg-dark border-secondary h-100">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start">
                             <div>
-                                <h6 class="card-title mb-1 text-dark">${escapeHtml(account.imap_username || account.decrypted_imap_username || account.email || account.name)}</h6>
-                                <p class="card-text small text-muted">${escapeHtml(account.name || '')}</p>
+                                <h6 class="card-title mb-1 text-light">${escapeHtml(account.decrypted_imap_username || account.imap_username || account.email || account.name)}</h6>
+                                <p class="card-text small text-light opacity-75">${escapeHtml(account.name || '')}</p>
                             </div>
                             <div class="form-check form-switch">
                                 <input class="form-check-input booster-toggle" type="checkbox" 
