@@ -288,8 +288,8 @@ async function loadTrustedSendersListV2() {
                     
                     <div style="flex-grow: 1;">
                         <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
-                            <select class="form-select form-select-sm" style="width: auto;" 
-                                    onchange="updateSenderTypeV2(${sender.id}, this.value)">
+                            <select class="form-select form-select-sm sender-type-select" style="width: auto;" 
+                                    data-sender-id="${sender.id}">
                                 <option value="exact" ${sender.pattern_type === 'exact' ? 'selected' : ''}>🔒 Exakt</option>
                                 <option value="email_domain" ${sender.pattern_type === 'email_domain' ? 'selected' : ''}>👥 Wildcard</option>
                                 <option value="domain" ${sender.pattern_type === 'domain' ? 'selected' : ''}>🏢 Domain + Subdomains</option>
@@ -323,18 +323,14 @@ async function loadTrustedSendersListV2() {
                     </div>
                     
                     <div class="d-flex flex-column gap-1">
-                        <button type="button" class="btn btn-sm btn-outline-primary" 
-                                onclick="toggleUrgencyBoosterV2(${sender.id}, ${!sender.use_urgency_booster})"
-                                title="UrgencyBooster umschalten">
-                            ${sender.use_urgency_booster ? '⚡→⭕' : '⭕→⚡'}
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-warning" 
-                                onclick="editSenderLabelV2(${sender.id}, '${(sender.label || '').replace(/'/g, "\\'")}')"
+                        <button type="button" class="btn btn-sm btn-outline-warning edit-sender-btn" 
+                                data-sender-id="${sender.id}"
+                                data-sender-label="${(sender.label || '').replace(/'/g, "\\'")}" 
                                 title="Label bearbeiten">
                             ✏️
                         </button>
-                        <button type="button" class="btn btn-sm btn-outline-danger" 
-                                onclick="deleteSenderV2(${sender.id})"
+                        <button type="button" class="btn btn-sm btn-outline-danger delete-sender-btn" 
+                                data-sender-id="${sender.id}"
                                 title="Löschen">
                             🗑️
                         </button>
@@ -388,26 +384,6 @@ async function updateSenderTypeV2(senderId, newType) {
 }
 
 // Toggle urgency booster
-async function toggleUrgencyBoosterV2(senderId, newValue) {
-    try {
-        const response = await safeFetch(`/api/trusted-senders/${senderId}`, {
-            method: 'PATCH',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({use_urgency_booster: newValue})
-        });
-        
-        
-        if (data.success) {
-            loadTrustedSendersListV2();
-        } else {
-            alert('Fehler: ' + data.error);
-        }
-    } catch (error) {
-        console.error('Error toggling booster:', error);
-        alert('Fehler beim Aktualisieren');
-    }
-}
-
 // Edit sender label
 async function editSenderLabelV2(senderId, currentLabel) {
     const newLabel = prompt('Neues Label eingeben:', currentLabel);
@@ -877,6 +853,30 @@ document.addEventListener('DOMContentLoaded', function() {
             toggleUrgencyBoosterGlobal(e.target.checked);
         });
     }
+    
+    // Event delegation for dynamically created buttons
+    document.addEventListener('click', function(e) {
+        // Edit sender label
+        if (e.target.classList.contains('edit-sender-btn')) {
+            const senderId = e.target.dataset.senderId;
+            const currentLabel = e.target.dataset.senderLabel;
+            editSenderLabelV2(parseInt(senderId), currentLabel);
+        }
+        
+        // Delete sender
+        if (e.target.classList.contains('delete-sender-btn')) {
+            const senderId = e.target.dataset.senderId;
+            deleteSenderV2(parseInt(senderId));
+        }
+    });
+    
+    // Event delegation for sender type select changes
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('sender-type-select')) {
+            const senderId = e.target.dataset.senderId;
+            updateSenderTypeV2(parseInt(senderId), e.target.value);
+        }
+    });
 });
 </script>
 {% endblock %}
