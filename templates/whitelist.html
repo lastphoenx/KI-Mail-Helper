@@ -17,8 +17,8 @@
     </div>
 
     <!-- UrgencyBooster pro Account -->
-    <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#e8f0ff,#f7fafc);color:#0f172a;">
-        <div class="card-header" style="background: linear-gradient(135deg, #d7e3ff, #f1f5f9);">
+    <div class="card border-0 shadow-sm mb-4 text-dark">
+        <div class="card-header bg-light">
             <h5 class="mb-0">⚡ UrgencyBooster pro Account</h5>
             <p class="small text-muted mb-0 mt-2">Aktiviert automatische Erhöhung der Dringlichkeit für vertrauenswürdige Absender pro E-Mail-Account</p>
         </div>
@@ -33,8 +33,8 @@
     <div class="row g-4">
         <!-- LEFT COLUMN: List & Management -->
         <div class="col-lg-8">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-gradient" style="background: linear-gradient(135deg, #e5e7eb, #f8fafc);">
+            <div class="card border-0 shadow-sm text-dark">
+                <div class="card-header bg-light">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h6 class="mb-0">📋 Bestehende Einträge</h6>
                         <div class="d-flex gap-2">
@@ -52,7 +52,7 @@
                                 <option value="">🌍 Alle anzeigen</option>
                                 <option value="global">🌐 Nur Global</option>
                                 {% for account in mail_accounts %}
-                                <option value="{{ account.id }}">📧 {{ account.imap_username or account.decrypted_imap_username or account.name }}</option>
+                                <option value="{{ account.id }}">📧 {{ account.imap_username or account.decrypted_imap_username or account.email or account.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -93,8 +93,8 @@
         <!-- RIGHT COLUMN: Add Form -->
         <div class="col-lg-4">
             <!-- Add New Form -->
-            <div class="card border-0 shadow-sm mb-4">
-                <div class="card-header bg-gradient" style="background: linear-gradient(135deg, #e0f2fe, #ecfeff);">
+            <div class="card border-0 shadow-sm mb-4 text-dark">
+                <div class="card-header bg-light">
                     <h6 class="mb-0">➕ Neuer Eintrag</h6>
                 </div>
                 <div class="card-body">
@@ -117,7 +117,7 @@
                         <select class="form-select" id="trustedSenderAccountIdV2">
                             <option value="">🌍 Global (alle Accounts)</option>
                             {% for account in mail_accounts %}
-                            <option value="{{ account.id }}">📧 {{ account.imap_username or account.decrypted_imap_username or account.name }}</option>
+                            <option value="{{ account.id }}">📧 {{ account.imap_username or account.decrypted_imap_username or account.email or account.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -138,8 +138,8 @@
     <!-- Quick Suggestions - Full Width -->
     <div class="row mt-4">
         <div class="col-12">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-gradient d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #e0f2fe, #eef2ff);">
+            <div class="card border-0 shadow-sm text-dark">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
                     <h6 class="mb-0">💡 Schnell-Vorschläge</h6>
                     <button type="button" class="btn btn-outline-info btn-sm" id="loadSuggestionsBtnV2">
                         🔍 Vorschläge laden
@@ -153,7 +153,7 @@
                             <option value="">🌍 Alle anzeigen</option>
                             <option value="global">🌐 Nur Global</option>
                             {% for account in mail_accounts %}
-                            <option value="{{ account.id }}">📧 {{ account.imap_username or account.decrypted_imap_username or account.name }}</option>
+                            <option value="{{ account.id }}">📧 {{ account.imap_username or account.decrypted_imap_username or account.email or account.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -303,7 +303,7 @@ async function loadTrustedSendersListV2() {
                             
                             ${sender.use_urgency_booster ? 
                                 `<span class="badge bg-success">⚡ Booster</span>` : 
-                                `<span class="badge bg-dark border">⭕ Kein Booster</span>`
+                                `<span class="badge bg-secondary">⭕ Kein Booster</span>`
                             }
                         </div>
                         
@@ -597,7 +597,7 @@ async function loadSuggestionsV2() {
                 <div class="col-md-6 col-lg-4 col-xl-3">
                     <div class="border border-info rounded p-2 h-100 d-flex justify-content-between align-items-center" style="background: rgba(6, 182, 212, 0.1);">
                         <div style="flex-grow: 1; min-width: 0;">
-                            <div class="small font-monospace text-light text-truncate" title="${safeSender}">${safeSender}</div>
+                            <div class="small font-monospace text-dark text-truncate" title="${safeSender}">${safeSender}</div>
                             <div class="small text-secondary">📧 ${suggestion.email_count} Mails</div>
                         </div>
                         <button type="button" class="btn btn-sm btn-success ms-2 suggestion-add-btn-v2"
@@ -762,7 +762,7 @@ async function loadUrgencyBoosterSettingsV2() {
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start">
                             <div>
-                                <h6 class="card-title mb-1 text-dark">${escapeHtml(account.email || account.imap_username || account.name)}</h6>
+                                <h6 class="card-title mb-1 text-dark">${escapeHtml(account.imap_username || account.decrypted_imap_username || account.email || account.name)}</h6>
                                 <p class="card-text small text-muted">${escapeHtml(account.name || '')}</p>
                             </div>
                             <div class="form-check form-switch">
