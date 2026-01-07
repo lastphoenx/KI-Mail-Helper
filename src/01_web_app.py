@@ -7326,9 +7326,7 @@ def api_list_trusted_senders():
                 (models_mod.TrustedSender.account_id == account_id) |
                 (models_mod.TrustedSender.account_id.is_(None))
             )
-        else:
-            # No account_id: only global senders
-            query = query.filter(models_mod.TrustedSender.account_id.is_(None))
+        # else: No filter - show ALL trusted senders (global + account-specific)
         
         trusted_senders = query.all()
         
