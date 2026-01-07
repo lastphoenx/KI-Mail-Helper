@@ -398,10 +398,26 @@ def process_pending_raw_emails(
                 )
 
             logger.info("🤖 Analysiere gespeicherte Mail: %s...", subject_preview)
+            
+            # Phase X: Get user's urgency_booster setting
+            user_enabled_booster = True  # default
+            try:
+                models_mod = importlib.import_module(".02_models", "src")
+                user = session.query(models_mod.User).filter_by(id=raw_email.user_id).first()
+                if user:
+                    user_enabled_booster = user.urgency_booster_enabled
+            except Exception as e:
+                logger.debug(f"Failed to fetch urgency_booster setting: {e}")
+            
             ai_result = active_ai.analyze_email(
                 subject=decrypted_subject or "",
                 body=clean_body,
-                context=context_str if context_str else None  # Phase E: Pass context to AI
+                sender=decrypted_sender or "",  # Phase X: Trusted Senders + UrgencyBooster
+                language="de",  # Phase X: UrgencyBooster needs language hint
+                context=context_str if context_str else None,  # Phase E: Pass context to AI
+                user_id=raw_email.user_id,  # Phase X: For trusted sender lookup
+                db=session,  # Phase X: Database access for trusted sender check
+                user_enabled_booster=user_enabled_booster  # Phase X: User preference
             )
             
             # Phase 11d: Sender-Pattern-Hinweis anwenden (wenn vorhanden)

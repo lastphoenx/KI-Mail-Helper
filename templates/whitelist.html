@@ -404,6 +404,44 @@ async function deleteSenderV2(senderId) {
     }
 }
 
+// Validation helper for trusted sender input
+function validateTrustedSenderInput(pattern, type, label) {
+    const emailRegex = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
+    const domainRegex = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/i;
+    
+    if (!pattern) {
+        return { valid: false, error: 'Bitte Absender-Muster eingeben' };
+    }
+    
+    if (pattern.length > 255) {
+        return { valid: false, error: 'Pattern zu lang (max 255 Zeichen)' };
+    }
+    
+    if (type === 'exact') {
+        if (!emailRegex.test(pattern)) {
+            return { valid: false, error: 'Ungültiges Email-Format (z.B. boss@company.de)' };
+        }
+    } else if (type === 'email_domain') {
+        if (!pattern.startsWith('@')) {
+            return { valid: false, error: 'Domain-Pattern muss mit @ beginnen (z.B. @company.de)' };
+        }
+        const domainPart = pattern.substring(1);
+        if (!domainRegex.test(domainPart)) {
+            return { valid: false, error: 'Ungültiges Domain-Format nach @ (z.B. @company.de)' };
+        }
+    } else if (type === 'domain') {
+        if (!domainRegex.test(pattern)) {
+            return { valid: false, error: 'Ungültiges Domain-Format (z.B. company.de)' };
+        }
+    }
+    
+    if (label && label.length > 100) {
+        return { valid: false, error: 'Label zu lang (max 100 Zeichen)' };
+    }
+    
+    return { valid: true };
+}
+
 // Add new trusted sender V2
 async function addTrustedSenderV2() {
     const pattern = document.getElementById('trustedSenderPatternV2').value.trim();
@@ -412,8 +450,9 @@ async function addTrustedSenderV2() {
     const useBooster = document.getElementById('trustedSenderUseBoosterV2').checked;
     const accountId = document.getElementById('trustedSenderAccountIdV2').value || null;
     
-    if (!pattern) {
-        alert('⚠️ Bitte Absender-Muster eingeben');
+    const validation = validateTrustedSenderInput(pattern, type, label);
+    if (!validation.valid) {
+        showToast(`⚠️ ${validation.error}`, 'danger');
         document.getElementById('trustedSenderPatternV2').focus();
         return;
     }

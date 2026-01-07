@@ -69,7 +69,8 @@ class AIClient(ABC):
 
     @abstractmethod
     def analyze_email(
-        self, subject: str, body: str, language: str = "de", context: Optional[str] = None
+        self, subject: str, body: str, language: str = "de", context: Optional[str] = None,
+        **kwargs  # Phase X: Accept but ignore sender, user_id, db, user_enabled_booster
     ) -> Dict[str, Any]:
         """Analysiert eine Mail und liefert strukturierte Ergebnisse.
         
@@ -78,6 +79,7 @@ class AIClient(ABC):
             body: Email body (sanitized)
             language: Target language for analysis
             context: Optional thread context (Phase E) with previous emails
+            **kwargs: Phase X - sender, user_id, db, user_enabled_booster (only used in LocalOllamaClient)
         """
         raise NotImplementedError
     
@@ -860,9 +862,18 @@ class LocalOllamaClient(AIClient):
         }
 
     def analyze_email(
-        self, subject: str, body: str, language: str = "de", context: Optional[str] = None
+        self, subject: str, body: str, 
+        sender: str = "",  # Phase X: UrgencyBooster
+        language: str = "de", context: Optional[str] = None,
+        user_id: Optional[int] = None,  # Phase X: UrgencyBooster
+        db = None,  # Phase X: UrgencyBooster
+        user_enabled_booster: bool = True,  # Phase X: UrgencyBooster
+        **kwargs  # Accept but ignore other Phase-X params
     ) -> Dict[str, Any]:
-        """Dispatcher: nutzt Embedding-Heuristiken oder Chat-LLM je nach Modelltyp."""
+        """Dispatcher: nutzt Embedding-Heuristiken oder Chat-LLM je nach Modelltyp.
+        
+        Phase X: Mit optionalem UrgencyBooster für Trusted Senders (Ollama CPU-only).
+        """
         # Security: Sanitize inputs before API calls
         subject = _sanitize_email_input(subject, max_length=500)
         body = _sanitize_email_input(body, max_length=50000)
@@ -871,13 +882,42 @@ class LocalOllamaClient(AIClient):
 
         if self._is_embedding_model:
             # Note: Embeddings don't use context yet
-            return self._analyze_with_embeddings(subject, body, sender="")
-        return self._analyze_with_chat(subject, body, language, context=context)
+            return self._analyze_with_embeddings(subject, body, sender=sender)
+        return self._analyze_with_chat(subject, body, sender=sender, language=language, 
+                                      context=context, user_id=user_id, db=db, 
+                                      user_enabled_booster=user_enabled_booster)
 
     def _analyze_with_chat(
-        self, subject: str, body: str, language: str = "de", context: Optional[str] = None
+        self, subject: str, body: str, sender: str = "", language: str = "de", 
+        context: Optional[str] = None, user_id: Optional[int] = None, db = None,
+        user_enabled_booster: bool = True
     ) -> Dict[str, Any]:
-        """Analysiert eine Mail mit Chat-LLM (Standard)."""
+        """Analysiert eine Mail mit Chat-LLM (Standard).
+        
+        Phase X: Versucht UrgencyBooster für Trusted Senders vor LLM-Analyse.
+        """
+        # Phase X: UrgencyBooster pre-check for Trusted Senders
+        if sender and user_id and db and user_enabled_booster:
+            try:
+                from importlib import import_module
+                trusted_senders_module = import_module(".services.trusted_senders", "src")
+                if trusted_senders_module.TrustedSenderManager.is_trusted_sender(db, user_id, sender):
+                    # Trusted sender + booster enabled: use UrgencyBooster
+                    try:
+                        from src.services.urgency_booster import get_urgency_booster
+                        urgency_booster = get_urgency_booster()
+                        result = urgency_booster.analyze_urgency(subject, body, sender)
+                        if result.get("confidence", 0) >= 0.6:  # High confidence
+                            logger.info("UrgencyBooster: High confidence (%f) for trusted sender", 
+                                       result.get("confidence"))
+                            return result
+                    except Exception as e:
+                        logger.debug("UrgencyBooster analyze failed: %s", str(e))
+                        # Fall through to standard LLM analysis
+            except Exception as e:
+                logger.debug("Phase X checks failed: %s", str(e))
+                # Fall through to standard analysis
+        
         messages = _build_standard_messages(
             subject=subject, body=body, language=language, context=context
         )
@@ -1011,7 +1051,8 @@ class OpenAIClient(AIClient):
         self.retry_delay = 2  # Sekunden
 
     def analyze_email(
-        self, subject: str, body: str, language: str = "de", context: Optional[str] = None
+        self, subject: str, body: str, language: str = "de", context: Optional[str] = None,
+        **kwargs  # Phase X: Accept but ignore sender, user_id, db, user_enabled_booster
     ) -> Dict[str, Any]:
         # Security: Sanitize inputs before API calls
         subject = _sanitize_email_input(subject, max_length=500)
@@ -1251,7 +1292,8 @@ class AnthropicClient(AIClient):
         self.retry_delay = 2  # Sekunden
 
     def analyze_email(
-        self, subject: str, body: str, language: str = "de", context: Optional[str] = None
+        self, subject: str, body: str, language: str = "de", context: Optional[str] = None,
+        **kwargs  # Phase X: Accept but ignore sender, user_id, db, user_enabled_booster
     ) -> Dict[str, Any]:
         # Security: Sanitize inputs before API calls
         subject = _sanitize_email_input(subject, max_length=500)
@@ -1456,7 +1498,8 @@ class MistralClient(AIClient):
         self.retry_delay = 2
     
     def analyze_email(
-        self, subject: str, body: str, language: str = "de", context: Optional[str] = None
+        self, subject: str, body: str, language: str = "de", context: Optional[str] = None,
+        **kwargs  # Phase X: Accept but ignore sender, user_id, db, user_enabled_booster
     ) -> Dict[str, Any]:
         # Security: Sanitize inputs before API calls
         subject = _sanitize_email_input(subject, max_length=500)

@@ -14,27 +14,84 @@ WICHTIG: Läuft NUR auf Trusted Senders (User-definiert)!
 
 import logging
 import re
+import threading
+import signal
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Lazy Loading: spaCy wird erst bei Bedarf geladen
+
+class RegexTimeoutError(Exception):
+    """Raised when regex operation exceeds timeout"""
+    pass
+
+
+def _regex_timeout_handler(signum, frame):
+    """Signal handler for regex timeout"""
+    raise RegexTimeoutError("Regex pattern matching timeout")
+
+
+def safe_regex_search(pattern: str, text: str, timeout_seconds: int = 2) -> Optional[re.Match]:
+    """
+    Regex-Suche mit Timeout-Schutz gegen ReDoS-Angriffe.
+    
+    Args:
+        pattern: Regex pattern
+        text: Text to search in
+        timeout_seconds: Timeout in seconds (default 2)
+    
+    Returns:
+        Match object or None
+    """
+    try:
+        signal.signal(signal.SIGALRM, _regex_timeout_handler)
+        signal.alarm(timeout_seconds)
+        result = re.search(pattern, text, re.IGNORECASE)
+        signal.alarm(0)
+        return result
+    except RegexTimeoutError:
+        logger.warning(f"⚠️ Regex timeout on pattern: {pattern[:80]}...")
+        return None
+    except Exception as e:
+        signal.alarm(0)
+        logger.error(f"Error in safe_regex_search: {e}")
+        return None
+
 _spacy_de = None
+_spacy_lock = threading.Lock()
+
+ACTION_VERBS_SET = {
+    'senden', 'schicken', 'überweisen', 'bezahlen',
+    'bestätigen', 'antworten', 'rückmelden',
+    'prüfen', 'genehmigen', 'unterschreiben'
+}
+
+AUTHORITY_TITLES_SET = {
+    'ceo', 'geschäftsführer', 'direktor',
+    'vorstand', 'präsident', 'chef'
+}
+
+INVOICE_KEYWORDS_SET = {
+    'rechnung', 'invoice', 'zahlungserinnerung',
+    'rechnungsnummer', 'payment reminder'
+}
 
 
 def _load_spacy_de():
-    """Lädt deutsches spaCy Model (lazy)"""
+    """Lädt deutsches spaCy Model (lazy) mit Thread-Safety"""
     global _spacy_de
     if _spacy_de is None:
-        try:
-            import spacy
-            _spacy_de = spacy.load("de_core_news_sm")
-            logger.info("✅ spaCy Deutsch-Model geladen (de_core_news_sm)")
-        except Exception as e:
-            logger.warning(f"⚠️ spaCy Deutsch-Model konnte nicht geladen werden: {e}")
-            logger.warning(f"   Installieren Sie mit: python -m spacy download de_core_news_sm")
-            _spacy_de = False
+        with _spacy_lock:
+            if _spacy_de is None:
+                try:
+                    import spacy
+                    _spacy_de = spacy.load("de_core_news_sm")
+                    logger.info("✅ spaCy Deutsch-Model geladen (de_core_news_sm)")
+                except Exception as e:
+                    logger.warning(f"⚠️ spaCy Deutsch-Model konnte nicht geladen werden: {e}")
+                    logger.warning(f"   Installieren Sie mit: python -m spacy download de_core_news_sm")
+                    _spacy_de = False
     return _spacy_de if _spacy_de else None
 
 
@@ -184,26 +241,27 @@ class UrgencyBooster:
         return result
     
     def _analyze_money(self, doc, text: str) -> Dict:
-        """Extrahiert Geldbeträge"""
+        """Extrahiert Geldbeträge mit Timeout-Schutz"""
         result = {'amount': None, 'currency': None}
         
-        # spaCy MONEY Entities
-        for ent in doc.ents:
-            if ent.label_ == "MONEY":
-                amount = self._parse_money_string(ent.text)
-                if amount:
-                    result['amount'] = amount
-                    result['currency'] = 'EUR' if '€' in ent.text or 'eur' in ent.text.lower() else 'USD'
-                    return result
+        try:
+            for ent in doc.ents:
+                if ent.label_ == "MONEY":
+                    amount = self._parse_money_string(ent.text)
+                    if amount:
+                        result['amount'] = amount
+                        result['currency'] = 'EUR' if '€' in ent.text or 'eur' in ent.text.lower() else 'USD'
+                        return result
+        except Exception as e:
+            logger.debug(f"spaCy MONEY entity parsing failed: {e}")
         
-        # Regex Fallback
         money_patterns = [
             r'(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*€',
             r'(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*EUR',
         ]
         
         for pattern in money_patterns:
-            match = re.search(pattern, text)
+            match = safe_regex_search(pattern, text)
             if match:
                 amount = self._parse_money_string(match.group(1))
                 if amount:
@@ -214,89 +272,112 @@ class UrgencyBooster:
         return result
     
     def _parse_money_string(self, amount_str: str) -> Optional[float]:
-        """Parst Geldbeträge: "1.500,00" → 1500.0"""
+        """
+        Parst Geldbeträge mit korrekter DE/US Format-Erkennung.
+        
+        DE: 1.234,56 → 1234.56
+        US: 1,234.56 → 1234.56
+        
+        Heuristik: Last separator determines decimal point
+        """
         try:
             amount_str = re.sub(r'[€$£¥]', '', amount_str).strip()
             
+            if not amount_str:
+                return None
+            
             if ',' in amount_str and '.' in amount_str:
-                if amount_str.rindex(',') > amount_str.rindex('.'):
+                last_comma_pos = amount_str.rfind(',')
+                last_dot_pos = amount_str.rfind('.')
+                
+                if last_comma_pos > last_dot_pos:
                     amount_str = amount_str.replace('.', '').replace(',', '.')
                 else:
                     amount_str = amount_str.replace(',', '')
             elif ',' in amount_str:
-                if len(amount_str.split(',')[-1]) >= 3:
-                    amount_str = amount_str.replace(',', '')
-                else:
+                parts = amount_str.split(',')
+                if len(parts[-1]) == 2:
                     amount_str = amount_str.replace(',', '.')
+                else:
+                    amount_str = amount_str.replace(',', '')
             
             return float(amount_str)
-        except ValueError:
+        except (ValueError, AttributeError):
             return None
     
     def _extract_action_verbs(self, doc, text: str) -> List[str]:
-        """Extrahiert Action-Verben"""
-        action_keywords = [
-            'senden', 'schicken', 'überweisen', 'bezahlen',
-            'bestätigen', 'antworten', 'rückmelden',
-            'prüfen', 'genehmigen', 'unterschreiben'
-        ]
-        
+        """Extrahiert Action-Verben (optimiert mit Set)"""
         found = []
         text_lower = text.lower()
         
-        for keyword in action_keywords:
-            if keyword in text_lower and keyword not in found:
+        for keyword in ACTION_VERBS_SET:
+            if keyword in text_lower:
                 found.append(keyword)
         
         return found[:5]
     
     def _has_authority_person(self, doc, text: str, sender: str) -> bool:
-        """Prüft auf Autoritäts-Personen"""
+        """Prüft auf Autoritäts-Personen (optimiert mit Set)"""
         text_lower = text.lower()
-        
-        authority_titles = [
-            'ceo', 'geschäftsführer', 'direktor',
-            'vorstand', 'präsident', 'chef'
-        ]
-        
-        return any(title in text_lower for title in authority_titles)
+        return any(title in text_lower for title in AUTHORITY_TITLES_SET)
     
     def _is_invoice(self, text: str) -> bool:
-        """Prüft ob Email eine Rechnung ist"""
+        """Prüft ob Email eine Rechnung ist (optimiert mit Set)"""
         text_lower = text.lower()
-        
-        invoice_keywords = [
-            'rechnung', 'invoice', 'zahlungserinnerung',
-            'rechnungsnummer', 'payment reminder'
-        ]
-        
-        matches = sum(1 for kw in invoice_keywords if kw in text_lower)
+        matches = sum(1 for kw in INVOICE_KEYWORDS_SET if kw in text_lower)
         return matches >= 2
     
     def _calculate_confidence(self, signals: Dict, urgency_score: float) -> float:
-        """Berechnet Confidence-Score"""
-        confidence = 0.0
+        """
+        Berechnet Confidence-Score mit gewichteten Signalen.
         
-        signal_count = sum([
-            signals['time_pressure'],
-            signals['money_amount'] is not None,
-            len(signals['action_verbs']) > 0,
-            signals['authority_person'],
-            signals['invoice_detected']
-        ])
+        Nutzt gewichtete Durchschnitte statt additiver Bonuses,
+        um unrealistisch hohe Scores zu vermeiden.
+        """
+        signal_weights = {}
+        total_weight = 0.0
         
-        confidence += signal_count * 0.15
+        if signals['time_pressure'] and signals['deadline_hours']:
+            if signals['deadline_hours'] < 24:
+                signal_weights['deadline_critical'] = 0.40
+                total_weight += 0.40
+            elif signals['deadline_hours'] < 48:
+                signal_weights['deadline_medium'] = 0.25
+                total_weight += 0.25
+            else:
+                signal_weights['deadline_loose'] = 0.10
+                total_weight += 0.10
         
-        if urgency_score >= 0.7:
-            confidence += 0.3
-        elif urgency_score >= 0.5:
-            confidence += 0.2
+        if signals['money_amount'] is not None:
+            if signals['money_amount'] > 5000:
+                signal_weights['money_high'] = 0.25
+                total_weight += 0.25
+            else:
+                signal_weights['money_low'] = 0.15
+                total_weight += 0.15
         
         if signals['invoice_detected']:
-            confidence += 0.2
+            signal_weights['invoice'] = 0.35
+            total_weight += 0.35
         
-        if signals['time_pressure'] and signals['deadline_hours'] and signals['deadline_hours'] < 24:
-            confidence += 0.25
+        if signals['authority_person']:
+            signal_weights['authority'] = 0.20
+            total_weight += 0.20
+        
+        if len(signals['action_verbs']) > 0:
+            signal_weights['action_verbs'] = min(0.10 * len(signals['action_verbs']), 0.20)
+            total_weight += signal_weights['action_verbs']
+        
+        base_confidence = 0.0
+        if total_weight > 0:
+            base_confidence = sum(signal_weights.values()) / total_weight
+        
+        if urgency_score >= 0.7:
+            confidence = base_confidence * 0.7 + urgency_score * 0.3
+        elif urgency_score >= 0.5:
+            confidence = base_confidence * 0.6 + urgency_score * 0.4
+        else:
+            confidence = base_confidence * 0.5 + urgency_score * 0.5
         
         return min(confidence, 1.0)
     

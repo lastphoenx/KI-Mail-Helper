@@ -1,7 +1,11 @@
 """
 Known Newsletter Senders und Patterns
 Erkennt typische Newsletter basierend auf Sender, Domain und Subject-Patterns
+
+Phase X: Erweiterte Marketing & Scam-Erkennung
 """
+
+import re
 
 NEWSLETTER_DOMAINS = {
     "gmx.de",
@@ -210,6 +214,32 @@ def classify_newsletter_confidence(sender: str, subject: str, body: str = "") ->
             confidence += 0.2
 
     return min(1.0, confidence)
+
+
+def should_treat_as_newsletter(sender: str, subject: str, body: str = "") -> bool:
+    """
+    Entscheidungs-Logik mit conditional Threshold (Phase X).
+    
+    Returns:
+        True wenn Email als Newsletter behandelt werden soll
+    """
+    confidence = classify_newsletter_confidence(sender, subject, body)
+    
+    # High confidence mit starken Signalen (0.45 threshold)
+    if confidence >= 0.45:
+        strong_signals = (
+            "unsubscribe" in body.lower() or
+            "abmelden" in body.lower()
+        )
+        
+        if strong_signals:
+            return True
+    
+    # Medium confidence ohne starke Signale (0.60 threshold)
+    if confidence >= 0.60:
+        return True
+    
+    return False
 
 
 if __name__ == "__main__":
