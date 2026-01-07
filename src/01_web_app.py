@@ -7434,8 +7434,8 @@ def api_update_trusted_sender(sender_id):
                 (models_mod.TrustedSender.account_id.is_(None))
             )
         else:
-            # Only global senders
-            query = query.filter(models_mod.TrustedSender.account_id.is_(None))
+            # No account filter - allow access to all trusted senders for this user
+            pass
         
         ts = query.first()
         
@@ -7503,8 +7503,8 @@ def api_delete_trusted_sender(sender_id):
                 (models_mod.TrustedSender.account_id.is_(None))
             )
         else:
-            # Only global senders
-            query = query.filter(models_mod.TrustedSender.account_id.is_(None))
+            # No account filter - allow access to all trusted senders for this user
+            pass
         
         ts = query.first()
         
