@@ -485,9 +485,9 @@ def process_pending_raw_emails(
             # If AI analysis was skipped, use default values
             if ai_result is None:
                 ai_result = {
-                    "dringlichkeit": None,
-                    "wichtigkeit": None,
-                    "kategorie_aktion": None,
+                    "dringlichkeit": 1,  # Default: Niedrig
+                    "wichtigkeit": 1,    # Default: Niedrig
+                    "kategorie_aktion": "Sonstiges",
                     "spam_flag": False,
                     "summary_de": "",
                     "text_de": "",
