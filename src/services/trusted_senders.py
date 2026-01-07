@@ -392,12 +392,9 @@ class TrustedSenderManager:
             pattern = ts.sender_pattern.lower()
             trusted_patterns.add(pattern)
             
-            # Also track domains for better filtering
-            if ts.pattern_type == 'exact' and '@' in pattern:
-                domain = pattern.split('@')[1]
-                trusted_domains.add(domain)
-                trusted_email_domains.add('@' + domain)
-            elif ts.pattern_type == 'email_domain' and pattern.startswith('@'):
+            # Only track domains if they are explicitly stored as domain patterns
+            # Do NOT extract domains from 'exact' patterns - they should only block the exact email
+            if ts.pattern_type == 'email_domain' and pattern.startswith('@'):
                 trusted_email_domains.add(pattern)
                 trusted_domains.add(pattern[1:])
             elif ts.pattern_type == 'domain':
