@@ -866,6 +866,7 @@ class LocalOllamaClient(AIClient):
         sender: str = "",  # Phase X: UrgencyBooster
         language: str = "de", context: Optional[str] = None,
         user_id: Optional[int] = None,  # Phase X: UrgencyBooster
+        account_id: Optional[int] = None,  # Phase X: UrgencyBooster account-specific trusted senders
         db = None,  # Phase X: UrgencyBooster
         user_enabled_booster: bool = True,  # Phase X: UrgencyBooster
         **kwargs  # Accept but ignore other Phase-X params
@@ -884,13 +885,13 @@ class LocalOllamaClient(AIClient):
             # Note: Embeddings don't use context yet
             return self._analyze_with_embeddings(subject, body, sender=sender)
         return self._analyze_with_chat(subject, body, sender=sender, language=language, 
-                                      context=context, user_id=user_id, db=db, 
+                                      context=context, user_id=user_id, account_id=account_id, db=db, 
                                       user_enabled_booster=user_enabled_booster)
 
     def _analyze_with_chat(
         self, subject: str, body: str, sender: str = "", language: str = "de", 
-        context: Optional[str] = None, user_id: Optional[int] = None, db = None,
-        user_enabled_booster: bool = True
+        context: Optional[str] = None, user_id: Optional[int] = None, account_id: Optional[int] = None,
+        db = None, user_enabled_booster: bool = True
     ) -> Dict[str, Any]:
         """Analysiert eine Mail mit Chat-LLM (Standard).
         
@@ -901,18 +902,24 @@ class LocalOllamaClient(AIClient):
             try:
                 from importlib import import_module
                 trusted_senders_module = import_module(".services.trusted_senders", "src")
-                if trusted_senders_module.TrustedSenderManager.is_trusted_sender(db, user_id, sender):
+                # Check with account_id for account-specific + global trusted senders
+                trusted_result = trusted_senders_module.TrustedSenderManager.is_trusted_sender(
+                    db, user_id, sender, account_id=account_id
+                )
+                if trusted_result and trusted_result.get('use_urgency_booster'):
                     # Trusted sender + booster enabled: use UrgencyBooster
+                    logger.info(f"🎯 UrgencyBooster: Trusted sender detected (pattern={trusted_result.get('pattern')}, type={trusted_result.get('pattern_type')})")
                     try:
                         from src.services.urgency_booster import get_urgency_booster
                         urgency_booster = get_urgency_booster()
                         result = urgency_booster.analyze_urgency(subject, body, sender)
                         if result.get("confidence", 0) >= 0.6:  # High confidence
-                            logger.info("UrgencyBooster: High confidence (%f) for trusted sender", 
-                                       result.get("confidence"))
+                            logger.info(f"✅ UrgencyBooster: High confidence ({result.get('confidence'):.2f}) for trusted sender {sender}")
                             return result
+                        else:
+                            logger.info(f"⚠️ UrgencyBooster: Low confidence ({result.get('confidence', 0):.2f}), falling back to LLM")
                     except Exception as e:
-                        logger.debug("UrgencyBooster analyze failed: %s", str(e))
+                        logger.warning(f"UrgencyBooster analyze failed: {e}")
                         # Fall through to standard LLM analysis
             except Exception as e:
                 logger.debug("Phase X checks failed: %s", str(e))

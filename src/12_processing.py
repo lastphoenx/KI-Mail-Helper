@@ -416,6 +416,7 @@ def process_pending_raw_emails(
                 language="de",  # Phase X: UrgencyBooster needs language hint
                 context=context_str if context_str else None,  # Phase E: Pass context to AI
                 user_id=raw_email.user_id,  # Phase X: For trusted sender lookup
+                account_id=raw_email.mail_account_id,  # Phase X: Account-specific trusted senders
                 db=session,  # Phase X: Database access for trusted sender check
                 user_enabled_booster=user_enabled_booster  # Phase X: User preference
             )

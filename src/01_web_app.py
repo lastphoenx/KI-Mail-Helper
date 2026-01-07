@@ -6813,10 +6813,10 @@ def get_account_folders(account_id):
                     continue
                 # folder_name is bytes, decode UTF-7 via mail_fetcher_mod
                 folder_display = mail_fetcher_mod.decode_imap_folder_name(folder_name)
-                folders.append(folder_display)
+                folders.append({"name": folder_display})
 
-            folders.sort()
-            return jsonify({"folders": folders})
+            folders.sort(key=lambda x: x['name'])
+            return jsonify({"success": True, "folders": folders})
 
         finally:
             fetcher.disconnect()
@@ -7698,6 +7698,366 @@ def api_get_trusted_senders_suggestions():
     except Exception as e:
         logger.error(f"Error getting trusted sender suggestions: {e}")
         return {"success": False, "error": str(e)}, 500
+
+
+# ============================================================================
+# IMAP Sender Scanner - Pre-Fetch Whitelist Setup (Phase X.3)
+# ============================================================================
+
+# Concurrent Scan Prevention (in-memory lock)
+_active_scans = set()  # Set von account_ids die gerade scannen
+
+# Rate-Limiting pro User (60s Cooldown zwischen Scans)
+_last_scan_time = {}  # Dict: user_id -> timestamp
+SCAN_COOLDOWN_SECONDS = 60  # Minimum Zeit zwischen Scans
+
+
+def check_scan_rate_limit(user_id: int) -> tuple:
+    """
+    Prüft ob User sein Rate-Limit für IMAP-Scans überschritten hat.
+    
+    Returns:
+        (allowed: bool, seconds_remaining: int)
+    """
+    import time
+    current_time = time.time()
+    last_scan = _last_scan_time.get(user_id)
+    
+    if last_scan is None:
+        # Erster Scan
+        _last_scan_time[user_id] = current_time
+        return (True, 0)
+    
+    elapsed = current_time - last_scan
+    
+    if elapsed < SCAN_COOLDOWN_SECONDS:
+        seconds_remaining = int(SCAN_COOLDOWN_SECONDS - elapsed)
+        return (False, seconds_remaining)
+    
+    # Cooldown abgelaufen
+    _last_scan_time[user_id] = current_time
+    return (True, 0)
+
+
+@app.route("/whitelist-imap-setup")
+@login_required
+def whitelist_imap_setup_page():
+    """
+    Separate Seite für IMAP-Setup (Pre-Fetch Absender-Scan).
+    Ermöglicht Bulk-Whitelist ohne Mails zu importieren.
+    """
+    master_key = session.get('master_key')
+    if not master_key:
+        flash('Bitte erst einloggen', 'warning')
+        return redirect(url_for('login'))
+    
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect(url_for("login"))
+        
+        # Alle Mail-Accounts des Users laden
+        mail_accounts = db.query(models.MailAccount).filter_by(user_id=user.id).all()
+        
+        # Zero-Knowledge: Entschlüssele Credentials für Anzeige
+        if master_key and mail_accounts:
+            for account in mail_accounts:
+                if account.auth_type == "imap":
+                    try:
+                        if account.encrypted_imap_server:
+                            account.decrypted_imap_server = encryption.EmailDataManager.decrypt_email_sender(
+                                account.encrypted_imap_server, master_key
+                            )
+                        if account.encrypted_imap_username:
+                            account.decrypted_imap_username = encryption.EmailDataManager.decrypt_email_sender(
+                                account.encrypted_imap_username, master_key
+                            )
+                    except Exception as e:
+                        logger.warning(f"Fehler beim Entschlüsseln der Account-Daten: {e}")
+                        account.decrypted_imap_server = None
+                        account.decrypted_imap_username = None
+        
+        return render_template(
+            'whitelist_imap_setup.html',
+            user=user,
+            mail_accounts=mail_accounts
+        )
+    finally:
+        db.close()
+
+
+@app.route('/api/scan-account-senders/<int:account_id>', methods=['POST'])
+@login_required
+def api_scan_account_senders(account_id):
+    """
+    Scannt Mail-Account nach Absendern (nur IMAP-Header, kein Full-Fetch).
+    
+    Security:
+        - Account-Ownership validiert (CRITICAL)
+        - Concurrent-Scan Prevention
+        - Rate-Limiting (60s Cooldown)
+        - CSRF-Token required
+    
+    POST Body:
+    {
+        "folder": "INBOX",  // default: INBOX
+        "limit": 1000       // default: 1000 (Max für Timeout-Prevention)
+    }
+    
+    Returns:
+        {
+            "success": true,
+            "senders": [{"email": str, "name": str, "count": int, "suggested_type": str}, ...],
+            "total_senders": int,
+            "total_emails": int,
+            "scanned_emails": int,
+            "limited": bool
+        }
+    """
+    master_key = session.get('master_key')
+    if not master_key:
+        return jsonify({
+            'success': False,
+            'error': 'Nicht authentifiziert'
+        }), 401
+    
+    # CRITICAL: Account-Ownership validieren
+    db = get_db_session()
+    try:
+        account = db.query(models.MailAccount).filter_by(
+            id=account_id,
+            user_id=current_user.id  # ✅ User darf nur eigene Accounts scannen
+        ).first()
+        
+        if not account:
+            logger.warning(f"Unauthorized scan attempt: account_id={account_id}, user_id={current_user.id}")
+            return jsonify({
+                'success': False,
+                'error': 'Account nicht gefunden oder keine Berechtigung'
+            }), 404
+        
+        # Rate-Limiting prüfen
+        allowed, seconds_remaining = check_scan_rate_limit(current_user.id)
+        if not allowed:
+            return jsonify({
+                'success': False,
+                'error': f'Rate-Limit erreicht. Bitte warte noch {seconds_remaining} Sekunden.',
+                'seconds_remaining': seconds_remaining
+            }), 429  # HTTP 429 Too Many Requests
+        
+        # Concurrent-Scan Prevention
+        if account_id in _active_scans:
+            return jsonify({
+                'success': False,
+                'error': 'Scan läuft bereits für diesen Account. Bitte warten.'
+            }), 409  # HTTP 409 Conflict
+        
+        # Request-Body parsen
+        data = request.get_json() or {}
+        folder = data.get('folder', 'INBOX')
+        limit = data.get('limit', 1000)
+        
+        # Limit validieren
+        if not isinstance(limit, int) or limit < 1 or limit > 5000:
+            return jsonify({
+                'success': False,
+                'error': 'Limit muss zwischen 1 und 5000 liegen'
+            }), 400
+        
+        # Credentials entschlüsseln
+        try:
+            imap_server = encryption.EmailDataManager.decrypt_email_sender(
+                account.encrypted_imap_server, master_key
+            )
+            imap_username = encryption.EmailDataManager.decrypt_email_sender(
+                account.encrypted_imap_username, master_key
+            )
+            imap_password = encryption.EmailDataManager.decrypt_email_sender(
+                account.encrypted_imap_password, master_key
+            )
+        except Exception as e:
+            logger.error(f"Decryption error for account {account_id}: {e}")
+            return jsonify({
+                'success': False,
+                'error': 'Fehler beim Entschlüsseln der Credentials'
+            }), 500
+        
+        # Scan-Lock setzen
+        _active_scans.add(account_id)
+        
+        try:
+            # IMAP-Scan durchführen
+            from src.services.imap_sender_scanner import scan_account_senders
+            
+            result = scan_account_senders(
+                imap_server=imap_server,
+                imap_username=imap_username,
+                imap_password=imap_password,
+                folder=folder,
+                limit=limit
+            )
+            
+            return jsonify(result)
+        
+        finally:
+            # Scan-Lock immer freigeben
+            _active_scans.discard(account_id)
+    
+    finally:
+        db.close()
+
+
+@app.route('/api/trusted-senders/bulk-add', methods=['POST'])
+@login_required
+def api_bulk_add_trusted_senders():
+    """
+    Fügt mehrere Absender zur Whitelist hinzu (Bulk-Insert).
+    
+    Duplikat-Handling:
+        - Existierende Sender werden übersprungen (Skip + Warning)
+        - Transactional mit Rollback bei kritischen Fehlern
+        - Detailed Error-Reporting
+    
+    POST Body:
+    {
+        "senders": [
+            {"pattern": "boss@firma.de", "type": "exact", "label": "Chef"},
+            ...
+        ],
+        "account_id": 1  // optional: null = global
+    }
+    
+    Returns:
+        {
+            "success": true,
+            "added": int,
+            "skipped": int,
+            "details": {
+                "added": [str, ...],
+                "skipped": [{"pattern": str, "reason": str}, ...]
+            }
+        }
+    """
+    master_key = session.get('master_key')
+    if not master_key:
+        return jsonify({
+            'success': False,
+            'error': 'Nicht authentifiziert'
+        }), 401
+    
+    db = get_db_session()
+    try:
+        data = request.get_json()
+        if not data or 'senders' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Keine Absender angegeben'
+            }), 400
+        
+        senders = data.get('senders', [])
+        account_id = data.get('account_id')
+        
+        logger.info(f"📥 Bulk-Add Request: {len(senders)} Absender für User {current_user.id}, Account {account_id}")
+        
+        # Account validieren (falls angegeben)
+        if account_id is not None:
+            account = db.query(models.MailAccount).filter_by(
+                id=account_id,
+                user_id=current_user.id  # ✅ Ownership-Check
+            ).first()
+            
+            if not account:
+                return jsonify({
+                    'success': False,
+                    'error': 'Account nicht gefunden oder keine Berechtigung'
+                }), 404
+        
+        added = []
+        skipped = []
+        
+        # Import Service
+        from src.services.trusted_senders import TrustedSenderManager
+        
+        # TRANSACTIONAL Bulk-Add
+        try:
+            for sender_data in senders:
+                try:
+                    pattern = sender_data.get('pattern', '').strip()
+                    pattern_type = sender_data.get('type', 'exact')
+                    label = sender_data.get('label', '').strip() or None
+                    
+                    logger.debug(f"  Processing: {pattern} ({pattern_type})")
+                    
+                    if not pattern:
+                        skipped.append({
+                            'pattern': pattern,
+                            'reason': 'Leeres Pattern'
+                        })
+                        continue
+                    
+                    # Hinzufügen (Duplikat-Check im Service)
+                    result = TrustedSenderManager.add_trusted_sender(
+                        db=db,
+                        user_id=current_user.id,
+                        sender_pattern=pattern,
+                        pattern_type=pattern_type,
+                        label=label,
+                        account_id=account_id
+                    )
+                    
+                    if result.get('success'):
+                        if result.get('already_exists'):
+                            # Duplikat - skippen
+                            logger.info(f"  ⚠️  Duplikat: {pattern}")
+                            skipped.append({
+                                'pattern': pattern,
+                                'reason': result.get('message', 'Absender existiert bereits')
+                            })
+                        else:
+                            # Erfolgreich hinzugefügt
+                            logger.info(f"  ✅ Hinzugefügt: {pattern}")
+                            added.append(pattern)
+                    else:
+                        # Fehler (z.B. Validierung, Limit)
+                        logger.warning(f"  ❌ Fehler für {pattern}: {result.get('error')}")
+                        skipped.append({
+                            'pattern': pattern,
+                            'reason': result.get('error', 'Unbekannter Fehler')
+                        })
+                        
+                except Exception as e:
+                    logger.error(f"Bulk-Add Error for {sender_data}: {e}")
+                    skipped.append({
+                        'pattern': sender_data.get('pattern', 'unknown'),
+                        'reason': f"Exception: {str(e)}"
+                    })
+            
+            # Alle erfolgreich → Commit
+            db.commit()
+            
+            logger.info(f"✅ Bulk-Add abgeschlossen: {len(added)} hinzugefügt, {len(skipped)} übersprungen")
+            
+        except Exception as critical_error:
+            # Kritischer Fehler → ROLLBACK alles!
+            logger.error(f"CRITICAL: Bulk-Add Transaction failed, rolling back: {critical_error}")
+            db.rollback()
+            
+            return jsonify({
+                'success': False,
+                'error': f'Kritischer Fehler: {str(critical_error)}. Keine Änderungen wurden gespeichert.'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'added': len(added),
+            'skipped': len(skipped),
+            'details': {
+                'added': added,
+                'skipped': skipped
+            }
+        })
+    
     finally:
         db.close()
 
