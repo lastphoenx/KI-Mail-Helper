@@ -899,6 +899,7 @@ class LocalOllamaClient(AIClient):
         """
         # Phase X: UrgencyBooster pre-check for Trusted Senders
         if sender and user_id and db and user_enabled_booster:
+            logger.info(f"🔍 UrgencyBooster check: sender={sender[:50]}, user_id={user_id}, account_id={account_id}, booster_enabled={user_enabled_booster}")
             try:
                 from importlib import import_module
                 trusted_senders_module = import_module(".services.trusted_senders", "src")
@@ -906,6 +907,7 @@ class LocalOllamaClient(AIClient):
                 trusted_result = trusted_senders_module.TrustedSenderManager.is_trusted_sender(
                     db, user_id, sender, account_id=account_id
                 )
+                logger.info(f"🔍 Trusted sender check result: {trusted_result}")
                 if trusted_result and trusted_result.get('use_urgency_booster'):
                     # Trusted sender + booster enabled: use UrgencyBooster
                     logger.info(f"🎯 UrgencyBooster: Trusted sender detected (pattern={trusted_result.get('pattern')}, type={trusted_result.get('pattern_type')})")
@@ -922,7 +924,7 @@ class LocalOllamaClient(AIClient):
                         logger.warning(f"UrgencyBooster analyze failed: {e}")
                         # Fall through to standard LLM analysis
             except Exception as e:
-                logger.debug("Phase X checks failed: %s", str(e))
+                logger.warning(f"Phase X checks failed: {e}", exc_info=True)
                 # Fall through to standard analysis
         
         messages = _build_standard_messages(
