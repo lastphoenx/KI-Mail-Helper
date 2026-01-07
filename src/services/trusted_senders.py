@@ -404,8 +404,8 @@ class TrustedSenderManager:
                 trusted_domains.add(pattern)
         
         logger.info(f"Suggestions: Found {len(trusted_patterns)} trusted patterns, {len(trusted_domains)} domains, {len(trusted_email_domains)} email domains")
-        logger.debug(f"Trusted patterns: {trusted_patterns}")
-        logger.debug(f"Trusted domains: {trusted_domains}")
+        logger.info(f"Trusted patterns: {trusted_patterns}")
+        logger.info(f"Trusted domains: {trusted_domains}")
         
         decryption_errors = 0
         
@@ -414,11 +414,11 @@ class TrustedSenderManager:
                 sender = encryption.EmailDataManager.decrypt_email_sender(encrypted_sender, master_key)
                 sender_lower = sender.lower()
                 
-                logger.debug(f"Checking suggestion: {sender_lower}")
+                logger.info(f"Checking suggestion: {sender_lower}")
                 
                 # Check against existing patterns more comprehensively
                 if sender_lower in trusted_patterns:
-                    logger.debug(f"Skipping {sender_lower} - exact pattern match")
+                    logger.info(f"Skipping {sender_lower} - exact pattern match")
                     continue
                 
                 # For email addresses, check domain patterns
@@ -431,10 +431,10 @@ class TrustedSenderManager:
                         email_domain in trusted_email_domains or
                         email_domain in trusted_patterns or 
                         domain in trusted_patterns):
-                        logger.debug(f"Skipping {sender_lower} - domain/email_domain match")
+                        logger.info(f"Skipping {sender_lower} - domain/email_domain match")
                         continue
                     
-                    logger.debug(f"Including suggestion: {sender_lower}")
+                    logger.info(f"Including suggestion: {sender_lower}")
                     
                     # Default zu 'exact', aber könnte auf email_domain wechseln
                     # (wenn später mehrere @domain.ch Mails sichtbar sind)

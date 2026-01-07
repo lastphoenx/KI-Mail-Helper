@@ -7387,7 +7387,7 @@ def api_add_trusted_sender():
                 label=label
             )
             if ts and ts.get('success'):
-                return {
+                response = {
                     "success": True,
                     "sender": {
                         "id": ts['id'],
@@ -7395,7 +7395,12 @@ def api_add_trusted_sender():
                         "pattern_type": ts['pattern_type'],
                         "label": ts['label']
                     }
-                }, 201
+                }
+                # Pass through already_exists flag if present
+                if ts.get('already_exists'):
+                    response['already_exists'] = True
+                    response['message'] = ts.get('message', 'Sender bereits in Liste')
+                return response, 201
             elif ts and not ts.get('success'):
                 return {"success": False, "error": ts.get('error', 'Unknown error')}, 400
             else:
