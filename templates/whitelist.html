@@ -33,14 +33,13 @@
     <div class="row g-4">
         <!-- LEFT COLUMN: List & Management -->
         <div class="col-lg-8">
-            <div class="card border-0 shadow-sm bg-dark text-light">
+            <div class="card border-0 shadow-sm bg-dark text-light" style="min-height: 600px;">
                 <div class="card-header" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h6 class="mb-0 text-light">📋 Bestehende Einträge</h6>
                         <div class="d-flex gap-2">
-                            <span class="badge bg-info" id="trustedSendersCount">0</span>
-                            <button type="button" class="btn btn-sm btn-outline-warning" id="refreshListBtn" title="Liste aktualisieren">
-                                🔄
+                            <button type="button" class="btn btn-sm btn-primary" id="refreshListBtn" title="Liste aktualisieren">
+                                🔄 Aktualisieren
                             </button>
                         </div>
                     </div>
@@ -75,13 +74,13 @@
                 </div>
                 
                 <div class="card-footer bg-dark border-secondary">
-                    <div class="d-flex justify-content-between align-items-center">
-                    <small class="text-light opacity-75">Limit: 500 pro Account</small>
-                        <div class="btn-group btn-group-sm" role="group">
-                            <button type="button" class="btn btn-outline-danger" id="deleteSelectedBtn" disabled>
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <small class="text-light opacity-75">Limit: 500 pro Account</small>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button type="button" class="btn btn-danger btn-sm" id="deleteSelectedBtn" disabled>
                                 🗑️ Ausgewählte löschen
                             </button>
-                            <button type="button" class="btn btn-outline-secondary" id="selectAllBtn">
+                            <button type="button" class="btn btn-outline-light btn-sm" id="selectAllBtn">
                                 ☑️ Alle auswählen
                             </button>
                         </div>
@@ -93,7 +92,7 @@
         <!-- RIGHT COLUMN: Add Form -->
         <div class="col-lg-4">
             <!-- Add New Form -->
-            <div class="card border-0 shadow-sm mb-4 bg-dark text-light">
+            <div class="card border-0 shadow-sm mb-4 bg-dark text-light" style="min-height: 600px;">
                 <div class="card-header" style="background: linear-gradient(135deg, #064e3b, #022c22);">
                     <h6 class="mb-0 text-light">➕ Neuer Eintrag</h6>
                 </div>
@@ -141,7 +140,7 @@
             <div class="card border-0 shadow-sm bg-dark text-light">
                 <div class="card-header d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #0c4a6e, #082f49);">
                     <h6 class="mb-0 text-light">💡 Schnell-Vorschläge</h6>
-                    <button type="button" class="btn btn-outline-info btn-sm" id="loadSuggestionsBtnV2">
+                    <button type="button" class="btn btn-info btn-sm" id="loadSuggestionsBtnV2">
                         🔍 Vorschläge laden
                     </button>
                 </div>
@@ -270,10 +269,10 @@ async function loadTrustedSendersListV2() {
         
         if (senders.length === 0) {
             list.innerHTML = `
-                <div class="text-center text-muted py-5">
+                <div class="text-center text-light py-5">
                     <div class="mb-2">📭</div>
                     <div>Keine Einträge gefunden</div>
-                    ${filterText ? '<small>Versuche einen anderen Filter</small>' : ''}
+                    ${filterText ? '<small class="text-light opacity-75">Versuche einen anderen Filter</small>' : ''}
                 </div>
             `;
             return;
@@ -310,11 +309,11 @@ async function loadTrustedSendersListV2() {
                         <div class="font-monospace small mb-1">${escapeHtml(sender.sender_pattern)}</div>
                         
                         ${sender.label ? 
-                            `<div class="small text-muted">📝 ${sender.label}</div>` : 
+                            `<div class="small text-light opacity-75">📝 ${sender.label}</div>` : 
                             ''
                         }
                         
-                        <div class="small text-muted mt-1">
+                        <div class="small text-light opacity-75 mt-1">
                             📧 ${sender.email_count} Emails
                             ${sender.last_seen_at ? 
                                 ` • Zuletzt: ${new Date(sender.last_seen_at).toLocaleDateString('de-DE')}` : 
@@ -597,8 +596,8 @@ async function loadSuggestionsV2() {
                 <div class="col-md-6 col-lg-4 col-xl-3">
                     <div class="border border-info rounded p-2 h-100 d-flex justify-content-between align-items-center" style="background: rgba(6, 182, 212, 0.1);">
                         <div style="flex-grow: 1; min-width: 0;">
-                            <div class="small font-monospace text-dark text-truncate" title="${safeSender}">${safeSender}</div>
-                            <div class="small text-secondary">📧 ${suggestion.email_count} Mails</div>
+                            <div class="small font-monospace text-info text-truncate fw-bold" title="${safeSender}">${safeSender}</div>
+                            <div class="small text-info opacity-75">📧 ${suggestion.email_count} Mails</div>
                         </div>
                         <button type="button" class="btn btn-sm btn-success ms-2 suggestion-add-btn-v2"
                                 data-sender-raw="${encodedSender}"

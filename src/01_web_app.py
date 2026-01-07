@@ -7386,20 +7386,20 @@ def api_add_trusted_sender():
                 sender_pattern=sender_pattern,
                 account_id=account_id,
                 pattern_type=pattern_type,
-                label=label,
-                use_urgency_booster=use_urgency_booster
+                label=label
             )
-            if ts:
+            if ts and ts.get('success'):
                 return {
                     "success": True,
                     "sender": {
-                        "id": ts.id,
-                        "sender_pattern": ts.sender_pattern,
-                        "pattern_type": ts.pattern_type,
-                        "label": ts.label,
-                        "use_urgency_booster": ts.use_urgency_booster
+                        "id": ts['id'],
+                        "sender_pattern": ts['sender_pattern'],
+                        "pattern_type": ts['pattern_type'],
+                        "label": ts['label']
                     }
                 }, 201
+            elif ts and not ts.get('success'):
+                return {"success": False, "error": ts.get('error', 'Unknown error')}, 400
             else:
                 return {"success": False, "error": "Failed to add trusted sender"}, 400
         except ValueError as e:
