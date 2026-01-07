@@ -515,8 +515,12 @@ async function addTrustedSenderV2() {
         // Reload list
         loadTrustedSendersListV2();
         
-        // Show success toast
-        showToast('✅ Absender hinzugefügt!', 'success');
+        // Show appropriate message
+        if (data.already_exists) {
+            showToast(`ℹ️ ${data.message}`, 'info');
+        } else {
+            showToast('✅ Absender hinzugefügt!', 'success');
+        }
         
     } catch (error) {
         console.error('Error adding sender:', error);

@@ -249,9 +249,13 @@ class TrustedSenderManager:
         
         if existing:
             return {
-                'success': False,
-                'error': 'Sender bereits in Liste',
-                'existing_id': existing.id
+                'success': True,
+                'already_exists': True,
+                'id': existing.id,
+                'sender_pattern': existing.sender_pattern,
+                'pattern_type': existing.pattern_type,
+                'label': existing.label,
+                'message': 'Sender bereits in Liste'
             }
         
         # Create
