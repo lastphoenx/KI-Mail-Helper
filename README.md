@@ -16,6 +16,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **Customizable Reply Styles** – Anrede, Grussformel, Signatur & Instructions pro Stil + Account-spezifisch
 - **Account-Specific Signatures** – Individuelle Signaturen pro Mail-Account (Geschäft/Privat/Uni)
 - **Trusted Senders + UrgencyBooster** – Account-basierte Whitelist mit Urgency-Override (Global + Per-Account)
+- **Dedizierte Whitelist-Seite** – `/whitelist` mit 2-Spalten-Layout, Batch-Operationen und Live-Filter
 - **Semantische Suche** – Embeddings für "finde ähnliche Emails"
 - **Tag-System** – Manuell + KI-Vorschläge basierend auf gelernten Mustern
 - **IMAP & Gmail OAuth** – Funktioniert mit GMX, Gmail, Outlook, etc.
@@ -28,8 +29,8 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## Status
 
-**Version:** 1.1.0  
-**Development:** Aktiv (Phase X - Trusted Senders abgeschlossen)  
+**Version:** 1.1.1  
+**Development:** Aktiv (Phase X.2 - Whitelist UI abgeschlossen)  
 **Stability:** Production-ready für Single-User-Deployment  
 **Next:** Bulk Operations, Pipeline Integration
 
@@ -47,6 +48,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ Phase I.1: Customizable Reply Styles (4 Stile)
 - ✅ Phase I.2: Account-Specific Signatures
 - ✅ Phase X: Trusted Senders + UrgencyBooster (Account-Based)
+- ✅ Phase X.2: Dedizierte Whitelist-Seite (/whitelist)
 
 ---
 

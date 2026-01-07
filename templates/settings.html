@@ -434,9 +434,7 @@
                             <!-- Suggestions will be loaded here -->
                         </div>
                     </div>
-                </div>
-            </div>
-
+﻿                    <!-- ========================================= -->
             <h4>Mail-Accounts</h4>
             
             {% if mail_accounts %}
@@ -1938,13 +1936,15 @@ async function loadTrustedSendersList() {
         list.innerHTML = data.senders.map(sender => `
             <div class="list-group-item bg-dark text-light d-flex justify-content-between align-items-start gap-2 py-3">
                 <div style="flex-grow: 1;">
-                    <div class="d-flex gap-2 align-items-center mb-1">
-                        <small class="badge ${sender.pattern_type === 'exact' ? 'bg-success' : 'bg-info'}">
-                            ${sender.pattern_type === 'exact' ? '🔒 Exakt' : 
-                              sender.pattern_type === 'email_domain' ? '👥 Domain' : '🏢 Domain+Subs'}
-                        </small>
-                        ${sender.account_id ? `<small class="badge bg-warning text-dark">Account ${sender.account_id}</small>` : 
-                          `<small class="badge bg-secondary">Global</small>`}
+                    <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
+                        <select class="form-select form-select-sm" style="width: auto; padding: 0.25rem 0.5rem; font-size: 0.85rem;" 
+                                onchange="editTrustedSenderType(${sender.id}, this.value)">
+                            <option value="exact" ${sender.pattern_type === 'exact' ? 'selected' : ''}>🔒 Exakt</option>
+                            <option value="email_domain" ${sender.pattern_type === 'email_domain' ? 'selected' : ''}>👥 Domain</option>
+                            <option value="domain" ${sender.pattern_type === 'domain' ? 'selected' : ''}>🏢 Domain+Subs</option>
+                        </select>
+                        ${sender.account_id ? `<small class="badge bg-warning text-dark">📧 Account ${sender.account_id}</small>` : 
+                          `<small class="badge bg-secondary">🌍 Global</small>`}
                     </div>
                     <div class="font-monospace small text-light">${sender.sender_pattern}</div>
                     ${sender.label ? `<small class="text-muted d-block">📝 ${sender.label}</small>` : ''}
@@ -1953,7 +1953,7 @@ async function loadTrustedSendersList() {
                         ${sender.last_seen_at ? ` • Zuletzt: ${new Date(sender.last_seen_at).toLocaleDateString('de-DE')}` : ''}
                     </small>
                 </div>
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-1 flex-wrap">
                     <button type="button" class="btn btn-sm btn-outline-light" 
                             onclick="toggleUrgencyBooster(${sender.id}, ${!sender.use_urgency_booster})"
                             title="UrgencyBooster ${sender.use_urgency_booster ? 'deaktivieren' : 'aktivieren'}">
@@ -2011,6 +2011,36 @@ async function toggleUrgencyBooster(senderId, newValue) {
     }
 }
 
+// Edit trusted sender type
+async function editTrustedSenderType(senderId, newType) {
+    try {
+        const accountSelector = document.getElementById('whitelistAccountSelector');
+        const accountId = accountSelector ? accountSelector.value : '';
+        
+        const url = accountId ? 
+            `/api/trusted-senders/${senderId}?account_id=${accountId}` : 
+            `/api/trusted-senders/${senderId}`;
+        
+        const response = await fetch(url, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({pattern_type: newType})
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            loadTrustedSendersList();
+        } else {
+            alert('Fehler: ' + data.error);
+            loadTrustedSendersList(); // Refresh to revert dropdown
+        }
+    } catch (error) {
+        console.error('Error updating sender type:', error);
+        alert('Fehler beim Aktualisieren');
+        loadTrustedSendersList(); // Refresh to revert dropdown
+    }
+}
+
 // Delete a trusted sender
 async function deleteTrustedSender(senderId) {
     if (!confirm('Diesen Sender wirklich löschen?')) return;
@@ -2042,29 +2072,51 @@ async function deleteTrustedSender(senderId) {
 
 // Add new trusted sender (Account-Aware)
 async function addTrustedSender() {
-    const pattern = document.getElementById('trustedSenderPattern').value.trim();
-    const type = document.getElementById('trustedSenderType').value;
-    const label = document.getElementById('trustedSenderLabel').value.trim() || null;
-    const useBooster = document.getElementById('trustedSenderUseBooster').checked;
-    const accountId = document.getElementById('trustedSenderAccountId').value || null;
+    const patternInput = document.getElementById('trustedSenderPattern');
+    const typeSelect = document.getElementById('trustedSenderType');
+    const labelInput = document.getElementById('trustedSenderLabel');
+    const boosterCheckbox = document.getElementById('trustedSenderUseBooster');
+    const accountSelect = document.getElementById('trustedSenderAccountId');
+    
+    // Validation
+    if (!patternInput || !typeSelect || !boosterCheckbox) {
+        console.error('Required form elements not found');
+        alert('Fehler: Formularelemente nicht gefunden');
+        return;
+    }
+    
+    const pattern = patternInput.value.trim();
+    const type = typeSelect.value;
+    const label = labelInput ? labelInput.value.trim() : '';
+    const useBooster = boosterCheckbox.checked;
+    const accountId = accountSelect ? accountSelect.value : '';
     
     if (!pattern) {
-        alert('Bitte Absender-Muster eingeben');
+        alert('⚠️ Bitte Absender-Muster eingeben');
+        patternInput.focus();
         return;
     }
     
     try {
+        const addBtn = document.getElementById('addTrustedSenderBtn');
+        if (addBtn) addBtn.disabled = true;
+        
         const response = await fetch('/api/trusted-senders', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 sender_pattern: pattern,
                 pattern_type: type,
-                label: label,
+                label: label || null,
                 use_urgency_booster: useBooster,
                 account_id: accountId ? parseInt(accountId) : null
             })
         });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
         const data = await response.json();
         
         if (!data.success) {
@@ -2072,17 +2124,21 @@ async function addTrustedSender() {
             return;
         }
         
-        // Reset form and reload list
-        document.getElementById('trustedSenderPattern').value = '';
-        document.getElementById('trustedSenderLabel').value = '';
-        document.getElementById('trustedSenderType').value = 'exact';
-        document.getElementById('trustedSenderUseBooster').checked = true;
-        document.getElementById('trustedSenderAccountId').value = '';
+        // Reset form
+        patternInput.value = '';
+        if (labelInput) labelInput.value = '';
+        typeSelect.value = 'exact';
+        boosterCheckbox.checked = true;
+        if (accountSelect) accountSelect.value = '';
         
-        alert('✅ Absender hinzugefügt');
+        alert('✅ Absender hinzugefügt!');
         loadTrustedSendersList();
     } catch (error) {
+        console.error('Error adding trusted sender:', error);
         alert(`❌ Fehler: ${error.message}`);
+    } finally {
+        const addBtn = document.getElementById('addTrustedSenderBtn');
+        if (addBtn) addBtn.disabled = false;
     }
 }
 
@@ -2157,23 +2213,26 @@ async function loadSuggestions() {
         }
         
         list.innerHTML = data.suggestions.map((suggestion, idx) => {
-            const sender = suggestion.sender.replace(/[&<>"']/g, c => ({
+            const rawSender = suggestion.sender || '';
+            const safeSender = rawSender.replace(/[&<>"']/g, c => ({
                 '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
             }[c]));
+            // Base64-encode den Rohwert, damit Quotes/<> sicher im data-Attribut landen
+            const encodedSender = btoa(unescape(encodeURIComponent(rawSender)));
             const type = suggestion.suggested_pattern_type || 'exact';
             const typeDisplay = type === 'exact' ? 'Exakt' : type === 'email_domain' ? 'Domain (@)' : 'Subdomain';
             return `
             <div class="bg-dark text-light p-3 mb-2 rounded border border-info" style="background: linear-gradient(135deg, #1a2332, #0f1419) !important;">
                 <div class="d-flex justify-content-between align-items-start gap-2">
                     <div style="flex-grow: 1;">
-                        <div class="font-monospace small" style="color: #4ade80; font-weight: 600;">${sender}</div>
+                        <div class="font-monospace small" style="color: #4ade80; font-weight: 600;">${safeSender}</div>
                         <div style="font-size: 0.75rem; color: #cbd5e1; margin-top: 4px;">
                             <span style="background: #334155; padding: 2px 6px; border-radius: 3px; display: inline-block;">${typeDisplay}</span>
                             <span style="color: #94a3b8; margin-left: 8px;">📧 ${suggestion.email_count} Email${suggestion.email_count > 1 ? 's' : ''}</span>
                         </div>
                     </div>
                     <button type="button" class="btn btn-sm btn-success suggestion-add-btn"
-                            data-sender="${sender}"
+                            data-sender-raw="${encodedSender}"
                             data-type="${type}"
                             style="white-space: nowrap;">
                         ✅ Hinzufügen
@@ -2186,7 +2245,14 @@ async function loadSuggestions() {
         // Attach event listeners to all suggestion buttons
         list.querySelectorAll('.suggestion-add-btn').forEach(btn => {
             btn.addEventListener('click', function() {
-                const sender = this.getAttribute('data-sender');
+                const encodedSender = this.getAttribute('data-sender-raw') || '';
+                let sender = '';
+                try {
+                    sender = decodeURIComponent(escape(atob(encodedSender)));
+                } catch (e) {
+                    console.error('Decode sender failed:', e);
+                    sender = '';
+                }
                 const type = this.getAttribute('data-type');
                 addSuggestionToTrusted(sender, type);
             });
@@ -2217,7 +2283,12 @@ async function addSuggestionToTrusted(pattern, type) {
     document.getElementById('trustedSenderAccountId').value = currentAccountId;
     
     // Scroll to form
-    document.querySelector('input[name="since_date"]').scrollIntoView({ behavior: 'smooth' });
+    // Scroll to form - use the pattern input
+    const patternInput = document.getElementById('trustedSenderPattern');
+    if (patternInput) {
+        patternInput.scrollIntoView({ behavior: 'smooth' });
+        patternInput.focus();
+    }
 }
 
 // Initialize Phase X event listeners
@@ -2254,5 +2325,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+﻿
+// ========================================
 </script>
 {% endblock %}

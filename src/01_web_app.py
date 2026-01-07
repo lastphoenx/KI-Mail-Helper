@@ -2159,6 +2159,29 @@ def settings():
         db.close()
 
 
+@app.route("/whitelist")
+@login_required
+def whitelist():
+    """Whitelist/Trusted Senders Management Page"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect(url_for("login"))
+        
+        # Get mail accounts for dropdown
+        mail_accounts = db.query(models.MailAccount).filter_by(user_id=user.id).all()
+        
+        return render_template(
+            "whitelist.html",
+            user=user,
+            mail_accounts=mail_accounts
+        )
+    
+    finally:
+        db.close()
+
 @app.route("/settings/fetch-config", methods=["POST"])
 @login_required
 def save_fetch_config():
@@ -7415,6 +7438,14 @@ def api_update_trusted_sender(sender_id):
         
         if "label" in data:
             ts.label = data.get("label", "").strip() or None
+        
+        if "pattern_type" in data:
+            valid_types = ["exact", "email_domain", "domain"]
+            new_type = data.get("pattern_type", "").strip().lower()
+            if new_type in valid_types:
+                ts.pattern_type = new_type
+            else:
+                return {"success": False, "error": f"Invalid pattern_type: {new_type}"}, 400
         
         db.commit()
         return {

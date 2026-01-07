@@ -1043,10 +1043,13 @@ Ein **llama3.2:1b mit Learning** liefert nach 1-2 Wochen bessere Ergebnisse als 
 - ✅ **3 Pattern-Typen**: Exakt, Domain (@example.com), Domain+Subdomains
 - ✅ **Vorschläge**: System schlägt häufige Absender vor
 - ✅ **UrgencyBooster**: Automatische Urgency-Override für gewhitelistete Sender
+- ✅ **Dedizierte Seite**: `/whitelist` mit 2-Spalten-Layout
+- ✅ **Batch-Operationen**: Mehrere Einträge auf einmal löschen
+- ✅ **Live-Filter**: Suche nach Pattern-Namen
 
 **So funktioniert's:**
 
-1. **Gehe zu Settings → Phase X: Trusted Senders + UrgencyBooster**
+1. **Gehe zu 🛡️ Whitelist** (in der Navigation) ODER zu Settings → Phase X
 
 2. **Wähle Account-Kontext:**
    - 🌍 **Global (alle Accounts)**: Whitelist gilt für ALLE deine Mail-Accounts

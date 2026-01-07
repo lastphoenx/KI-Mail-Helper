@@ -8,6 +8,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added - Phase X.2: Dedizierte Whitelist-Seite (2026-01-07)
+
+#### Neue `/whitelist` Seite
+
+**Features:**
+- ✅ **Eigenständige Seite**: `/whitelist` Route mit dediziertem Template
+- ✅ **2-Spalten-Layout**: Links Liste, rechts Add-Form + Vorschläge
+- ✅ **Live-Filter**: Suche nach Pattern-Namen mit 300ms Debounce
+- ✅ **Account-Filter**: Alle / Nur Global / Spezifischer Account
+- ✅ **Batch-Operationen**: Mehrere Einträge auf einmal auswählen und löschen
+- ✅ **Inline-Editing**: Typ, Label und UrgencyBooster direkt in der Liste ändern
+- ✅ **Toast-Notifications**: Erfolgs-Meldungen bei Aktionen
+- ✅ **Navigation**: Direkter Link im Navbar (🛡️ Whitelist)
+
+**Technische Details:**
+- Route: `/whitelist` in `src/01_web_app.py`
+- Template: `templates/whitelist.html`
+- Navigation: Link in `templates/base.html`
+- CSP: Nonce-Support für inline Scripts
+
+---
+
 ### Added - Phase X: Trusted Senders + UrgencyBooster (2026-01-07)
 
 #### Phase X: Account-Based Whitelist System
