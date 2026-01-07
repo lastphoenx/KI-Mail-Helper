@@ -47,6 +47,8 @@ emails.db
 # Logs
 *.log
 logs/
+server.log
+server_test.log
 
 # Code Reviews (SENSIBEL - nicht auf GitHub!)
 review_output/
