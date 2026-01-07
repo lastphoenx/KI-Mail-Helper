@@ -169,6 +169,39 @@
 
 // Selected items tracking
 let selectedSenders = new Set();
+let filterTimeout = null;
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function safeFetch(url, options = {}) {
+    try {
+        const response = await safeFetch(url, options);
+        if (!response.ok) {
+            let errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+            try {
+                const errorData = await response.json();
+                errorMsg = errorData.error || errorMsg;
+            } catch {}
+            throw new Error(errorMsg);
+        }
+        try {
+            return await response.json();
+        } catch (e) {
+            throw new Error('Invalid JSON response from server');
+        }
+    } catch (error) {
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+            throw new Error('Netzwerkfehler: Server nicht erreichbar');
+        }
+        throw error;
+    }
+}
+
 
 // Load trusted senders list V2 with filters
 async function loadTrustedSendersListV2() {
@@ -184,11 +217,11 @@ async function loadTrustedSendersListV2() {
             url += `?account_id=${selectedAccountId}`;
         }
         
-        const response = await fetch(url, {
+        const response = await safeFetch(url, {
             method: 'GET',
             headers: {'Content-Type': 'application/json'}
         });
-        const data = await response.json();
+        
         
         if (!data.success) {
             console.error('Failed to load trusted senders:', data.error);
@@ -256,7 +289,7 @@ async function loadTrustedSendersListV2() {
                             }
                         </div>
                         
-                        <div class="font-monospace small mb-1">${sender.sender_pattern}</div>
+                        <div class="font-monospace small mb-1">${escapeHtml(sender.sender_pattern)}</div>
                         
                         ${sender.label ? 
                             `<div class="small text-muted">📝 ${sender.label}</div>` : 
@@ -308,21 +341,22 @@ async function loadTrustedSendersListV2() {
         
     } catch (error) {
         console.error('Error loading trusted senders V2:', error);
+        showToast(`Fehler: ${error.message}`, 'danger');
         document.getElementById('trustedSendersListV2').innerHTML = 
-            `<div class="alert alert-danger m-3">Fehler beim Laden: ${error.message}</div>`;
+            `<div class="alert alert-danger m-3"><strong>Fehler beim Laden:</strong> ${escapeHtml(error.message)}</div>`;
     }
 }
 
 // Update sender type
 async function updateSenderTypeV2(senderId, newType) {
     try {
-        const response = await fetch(`/api/trusted-senders/${senderId}`, {
+        const response = await safeFetch(`/api/trusted-senders/${senderId}`, {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({pattern_type: newType})
         });
         
-        const data = await response.json();
+        
         if (data.success) {
             console.log('✅ Type updated');
         } else {
@@ -339,13 +373,13 @@ async function updateSenderTypeV2(senderId, newType) {
 // Toggle urgency booster
 async function toggleUrgencyBoosterV2(senderId, newValue) {
     try {
-        const response = await fetch(`/api/trusted-senders/${senderId}`, {
+        const response = await safeFetch(`/api/trusted-senders/${senderId}`, {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({use_urgency_booster: newValue})
         });
         
-        const data = await response.json();
+        
         if (data.success) {
             loadTrustedSendersListV2();
         } else {
@@ -363,13 +397,13 @@ async function editSenderLabelV2(senderId, currentLabel) {
     if (newLabel === null) return; // Cancelled
     
     try {
-        const response = await fetch(`/api/trusted-senders/${senderId}`, {
+        const response = await safeFetch(`/api/trusted-senders/${senderId}`, {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({label: newLabel.trim() || null})
         });
         
-        const data = await response.json();
+        
         if (data.success) {
             loadTrustedSendersListV2();
         } else {
@@ -386,12 +420,12 @@ async function deleteSenderV2(senderId) {
     if (!confirm('Diesen Eintrag wirklich löschen?')) return;
     
     try {
-        const response = await fetch(`/api/trusted-senders/${senderId}`, {
+        const response = await safeFetch(`/api/trusted-senders/${senderId}`, {
             method: 'DELETE',
             headers: {'Content-Type': 'application/json'}
         });
         
-        const data = await response.json();
+        
         if (data.success) {
             selectedSenders.delete(senderId);
             loadTrustedSendersListV2();
@@ -462,7 +496,7 @@ async function addTrustedSenderV2() {
         btn.disabled = true;
         btn.textContent = '⏳ Füge hinzu...';
         
-        const response = await fetch('/api/trusted-senders', {
+        const response = await safeFetch('/api/trusted-senders', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -478,7 +512,7 @@ async function addTrustedSenderV2() {
             throw new Error(`HTTP ${response.status}`);
         }
         
-        const data = await response.json();
+        
         
         if (!data.success) {
             alert(`❌ Fehler: ${data.error}`);
@@ -517,11 +551,11 @@ async function loadSuggestionsV2() {
     btn.textContent = '⏳ Laden...';
     
     try {
-        const response = await fetch('/api/trusted-senders/suggestions', {
+        const response = await safeFetch('/api/trusted-senders/suggestions', {
             method: 'GET',
             headers: {'Content-Type': 'application/json'}
         });
-        const data = await response.json();
+        
         
         if (!data.success || data.suggestions.length === 0) {
             list.innerHTML = '<div class="text-muted small">Keine Vorschläge verfügbar</div>';
@@ -605,37 +639,46 @@ function toggleSelectAll() {
 async function deleteSelected() {
     if (selectedSenders.size === 0) return;
     
-    if (!confirm(`Wirklich ${selectedSenders.size} Einträge löschen?`)) return;
+    const count = selectedSenders.size;
+    if (!confirm(`Wirklich ${count} Einträge löschen?`)) return;
     
-    const btn = document.getElementById('deleteSelectedBtn');
-    btn.disabled = true;
-    btn.textContent = '⏳ Lösche...';
+    const deleteBtn = document.getElementById('deleteSelectedBtn');
+    const origText = deleteBtn.textContent;
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = '🔄 Lösche...';
     
-    let deleted = 0;
-    let failed = 0;
-    
-    for (const senderId of selectedSenders) {
-        try {
-            const response = await fetch(`/api/trusted-senders/${senderId}`, {
+    try {
+        const deletePromises = Array.from(selectedSenders).map(id => 
+            fetch(`/api/trusted-senders/${id}`, {
                 method: 'DELETE',
                 headers: {'Content-Type': 'application/json'}
-            });
-            const data = await response.json();
-            if (data.success) {
-                deleted++;
-            } else {
-                failed++;
-            }
-        } catch (error) {
-            failed++;
+            }).then(r => r.json())
+        );
+        
+        const results = await Promise.allSettled(deletePromises);
+        const succeeded = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+        const failed = results.filter(r => r.status === 'rejected' || !r.value.success).length;
+        
+        selectedSenders.clear();
+        updateBatchButtons();
+        
+        if (failed > 0) {
+            showToast(`${succeeded} gelöscht, ${failed} Fehler`, 'warning');
+        } else {
+            showToast(`${succeeded} Einträge erfolgreich gelöscht`, 'success');
         }
+        
+        await loadTrustedSendersListV2();
+    } catch (error) {
+        console.error('Batch delete error:', error);
+        showToast('Fehler beim Löschen', 'danger');
+    } finally {
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = origText;
     }
-    
-    selectedSenders.clear();
-    loadTrustedSendersListV2();
-    
-    alert(`✅ ${deleted} gelöscht${failed > 0 ? `, ${failed} Fehler` : ''}`);
 }
+
+// 
 
 // Update batch button states
 function updateBatchButtons() {
@@ -670,13 +713,13 @@ function showToast(message, type = 'success') {
 // Global UrgencyBooster toggle
 async function toggleUrgencyBoosterGlobal(enabled) {
     try {
-        const response = await fetch('/api/settings/urgency-booster', {
+        const response = await safeFetch('/api/settings/urgency-booster', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({urgency_booster_enabled: enabled})
         });
         
-        const data = await response.json();
+        
         if (data.success) {
             showToast(enabled ? '✅ UrgencyBooster aktiviert' : '⭕ UrgencyBooster deaktiviert', 'info');
         } else {
@@ -693,11 +736,11 @@ async function toggleUrgencyBoosterGlobal(enabled) {
 // Load urgency booster status
 async function loadUrgencyBoosterStatus() {
     try {
-        const response = await fetch('/api/settings/urgency-booster', {
+        const response = await safeFetch('/api/settings/urgency-booster', {
             method: 'GET',
             headers: {'Content-Type': 'application/json'}
         });
-        const data = await response.json();
+        
         
         if (data.success) {
             document.getElementById('urgencyBoosterToggle').checked = data.urgency_booster_enabled;
@@ -736,10 +779,16 @@ document.addEventListener('DOMContentLoaded', function() {
     
     const filterInput = document.getElementById('filterPatternInput');
     if (filterInput) {
-        let filterTimeout;
+        window.addEventListener('beforeunload', () => {
+            if (filterTimeout) clearTimeout(filterTimeout);
+        });
+        
         filterInput.addEventListener('input', () => {
-            clearTimeout(filterTimeout);
-            filterTimeout = setTimeout(loadTrustedSendersListV2, 300);
+            if (filterTimeout) clearTimeout(filterTimeout);
+            filterTimeout = setTimeout(() => {
+                loadTrustedSendersListV2();
+                filterTimeout = null;
+            }, 300);
         });
     }
     
