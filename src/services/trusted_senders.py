@@ -232,20 +232,34 @@ class TrustedSenderManager:
                 'error': f'Limit erreicht ({MAX_TRUSTED_SENDERS_PER_USER} Sender maximum)'
             }
         
-        # Check if exists (with account_id consideration)
-        existing = db.query(models.TrustedSender).filter(
-            models.TrustedSender.user_id == user_id,
-            models.TrustedSender.sender_pattern == sender_pattern,
-            models.TrustedSender.account_id == account_id  # NULL == NULL is False in SQL!
-        ).first()
+        # Check if exists - look for conflicts between global and account-specific entries
+        existing = None
         
-        # For account_id=NULL, we need special handling
+        # First check exact match (same account_id)
         if account_id is None:
             existing = db.query(models.TrustedSender).filter(
                 models.TrustedSender.user_id == user_id,
                 models.TrustedSender.sender_pattern == sender_pattern,
                 models.TrustedSender.account_id.is_(None)
             ).first()
+        else:
+            existing = db.query(models.TrustedSender).filter(
+                models.TrustedSender.user_id == user_id,
+                models.TrustedSender.sender_pattern == sender_pattern,
+                models.TrustedSender.account_id == account_id
+            ).first()
+        
+        # If no exact match, check for conflicts:
+        # - Adding global when account-specific exists
+        # - Adding account-specific when global exists  
+        if not existing:
+            conflict = db.query(models.TrustedSender).filter(
+                models.TrustedSender.user_id == user_id,
+                models.TrustedSender.sender_pattern == sender_pattern
+            ).first()
+            
+            if conflict:
+                existing = conflict  # Treat conflicts as "already exists"
         
         if existing:
             return {
@@ -352,22 +366,40 @@ class TrustedSenderManager:
         
         suggestions = []
         
-        # Get existing trusted patterns (account-aware)
-        query = db.query(models.TrustedSender).filter_by(user_id=user_id)
+        # Get existing trusted patterns (account-aware) - include all relevant entries
+        existing_query = db.query(models.TrustedSender).filter_by(user_id=user_id)
+        
         if account_id:
-            # Include account-specific AND global
-            query = query.filter(
+            # For specific account: include account-specific AND global (both block new suggestions)
+            existing_query = existing_query.filter(
                 (models.TrustedSender.account_id == account_id) |
                 (models.TrustedSender.account_id.is_(None))
             )
         else:
-            # Only global
-            query = query.filter(models.TrustedSender.account_id.is_(None))
+            # For global suggestions: include ALL (global would conflict with any account-specific)
+            # Don't filter by account - show all existing patterns
+            pass
         
-        trusted_patterns = {
-            ts.sender_pattern
-            for ts in query.all()
-        }
+        existing_senders = existing_query.all()
+        trusted_patterns = set()
+        trusted_domains = set()
+        trusted_email_domains = set()
+        
+        # Build comprehensive pattern sets
+        for ts in existing_senders:
+            pattern = ts.sender_pattern.lower()
+            trusted_patterns.add(pattern)
+            
+            # Also track domains for better filtering
+            if ts.pattern_type == 'exact' and '@' in pattern:
+                domain = pattern.split('@')[1]
+                trusted_domains.add(domain)
+                trusted_email_domains.add('@' + domain)
+            elif ts.pattern_type == 'email_domain' and pattern.startswith('@'):
+                trusted_email_domains.add(pattern)
+                trusted_domains.add(pattern[1:])
+            elif ts.pattern_type == 'domain':
+                trusted_domains.add(pattern)
         
         decryption_errors = 0
         
@@ -376,15 +408,20 @@ class TrustedSenderManager:
                 sender = encryption.EmailDataManager.decrypt_email_sender(encrypted_sender, master_key)
                 sender_lower = sender.lower()
                 
+                # Check against existing patterns more comprehensively
                 if sender_lower in trusted_patterns:
                     continue
                 
-                # Extrahiere Email für Domain-Checks
+                # For email addresses, check domain patterns
                 if '@' in sender_lower:
                     domain = sender_lower.split('@')[1]
                     email_domain = '@' + domain
                     
-                    if email_domain in trusted_patterns or domain in trusted_patterns:
+                    # Skip if domain is already trusted in any form
+                    if (domain in trusted_domains or 
+                        email_domain in trusted_email_domains or
+                        email_domain in trusted_patterns or 
+                        domain in trusted_patterns):
                         continue
                     
                     # Default zu 'exact', aber könnte auf email_domain wechseln
