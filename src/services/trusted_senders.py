@@ -232,34 +232,12 @@ class TrustedSenderManager:
                 'error': f'Limit erreicht ({MAX_TRUSTED_SENDERS_PER_USER} Sender maximum)'
             }
         
-        # Check if exists - look for conflicts between global and account-specific entries
-        existing = None
-        
-        # First check exact match (same account_id)
-        if account_id is None:
-            existing = db.query(models.TrustedSender).filter(
-                models.TrustedSender.user_id == user_id,
-                models.TrustedSender.sender_pattern == sender_pattern,
-                models.TrustedSender.account_id.is_(None)
-            ).first()
-        else:
-            existing = db.query(models.TrustedSender).filter(
-                models.TrustedSender.user_id == user_id,
-                models.TrustedSender.sender_pattern == sender_pattern,
-                models.TrustedSender.account_id == account_id
-            ).first()
-        
-        # If no exact match, check for conflicts:
-        # - Adding global when account-specific exists
-        # - Adding account-specific when global exists  
-        if not existing:
-            conflict = db.query(models.TrustedSender).filter(
-                models.TrustedSender.user_id == user_id,
-                models.TrustedSender.sender_pattern == sender_pattern
-            ).first()
-            
-            if conflict:
-                existing = conflict  # Treat conflicts as "already exists"
+        # Check if exists - database has UNIQUE(user_id, sender_pattern)
+        # So we check the same way - regardless of account_id
+        existing = db.query(models.TrustedSender).filter(
+            models.TrustedSender.user_id == user_id,
+            models.TrustedSender.sender_pattern == sender_pattern
+        ).first()
         
         if existing:
             return {
@@ -268,6 +246,9 @@ class TrustedSenderManager:
                 'id': existing.id,
                 'sender_pattern': existing.sender_pattern,
                 'pattern_type': existing.pattern_type,
+                'label': existing.label,
+                'message': 'Sender bereits in Liste'
+            }
                 'label': existing.label,
                 'message': 'Sender bereits in Liste'
             }
