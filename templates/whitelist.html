@@ -180,7 +180,7 @@ function escapeHtml(text) {
 
 async function safeFetch(url, options = {}) {
     try {
-        const response = await safeFetch(url, options);
+        const response = await fetch(url, options);
         if (!response.ok) {
             let errorMsg = `HTTP ${response.status}: ${response.statusText}`;
             try {

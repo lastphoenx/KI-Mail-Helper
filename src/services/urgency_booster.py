@@ -16,6 +16,7 @@ import logging
 import re
 import threading
 import signal
+import platform
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -36,15 +37,21 @@ def safe_regex_search(pattern: str, text: str, timeout_seconds: int = 2) -> Opti
     """
     Regex-Suche mit Timeout-Schutz gegen ReDoS-Angriffe.
     
+    Auf Unix: Signal-basierter Timeout
+    Auf Windows: Direktes Regex ohne Timeout (Windows unterstützt signal.SIGALRM nicht)
+    
     Args:
         pattern: Regex pattern
         text: Text to search in
-        timeout_seconds: Timeout in seconds (default 2)
+        timeout_seconds: Timeout in seconds (Unix only, ignored on Windows)
     
     Returns:
         Match object or None
     """
     try:
+        if platform.system() == 'Windows':
+            return re.search(pattern, text, re.IGNORECASE)
+        
         signal.signal(signal.SIGALRM, _regex_timeout_handler)
         signal.alarm(timeout_seconds)
         result = re.search(pattern, text, re.IGNORECASE)
@@ -54,7 +61,10 @@ def safe_regex_search(pattern: str, text: str, timeout_seconds: int = 2) -> Opti
         logger.warning(f"⚠️ Regex timeout on pattern: {pattern[:80]}...")
         return None
     except Exception as e:
-        signal.alarm(0)
+        try:
+            signal.alarm(0)
+        except:
+            pass
         logger.error(f"Error in safe_regex_search: {e}")
         return None
 
