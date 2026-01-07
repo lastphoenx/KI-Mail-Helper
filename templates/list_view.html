@@ -3,6 +3,7 @@
 {% block title %}E-Mail Liste - Mail Helper{% endblock %}
 
 {% block content %}
+<div class="mb-5 pb-5">
 <h1 class="mb-4">📝 E-Mail Liste</h1>
 
 <!-- Filter Bar (Phase 13) -->
@@ -275,6 +276,7 @@
         {% endfor %}
     </ul>
 </div>
+</div><!-- end mb-5 pb-5 wrapper -->
 
 <script nonce="{{ csp_nonce() }}">
 document.addEventListener('DOMContentLoaded', function() {
