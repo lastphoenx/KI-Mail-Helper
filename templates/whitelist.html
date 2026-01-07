@@ -217,11 +217,10 @@ async function loadTrustedSendersListV2() {
             url += `?account_id=${selectedAccountId}`;
         }
         
-        const response = await safeFetch(url, {
+        const data = await safeFetch(url, {
             method: 'GET',
             headers: {'Content-Type': 'application/json'}
         });
-        
         
         if (!data.success) {
             console.error('Failed to load trusted senders:', data.error);
