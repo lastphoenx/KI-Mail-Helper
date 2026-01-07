@@ -498,8 +498,7 @@ async function addTrustedSenderV2() {
             })
         });
         
-        
-        
+        console.log('Add trusted sender response:', data); // Debug log
         
         if (!data.success) {
             alert(`❌ Fehler: ${data.error}`);

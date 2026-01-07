@@ -1804,6 +1804,10 @@ function updateFetchPreview(data) {
 async function loadTrustedSendersList() {
     try {
         const accountSelector = document.getElementById('whitelistAccountSelector');
+        if (!accountSelector) {
+            console.warn('whitelistAccountSelector not found - skipping trusted senders load');
+            return;
+        }
         const selectedAccountId = accountSelector.value;
         
         // Build URL with account_id if selected
@@ -1823,6 +1827,10 @@ async function loadTrustedSendersList() {
         }
         
         const list = document.getElementById('trustedSendersList');
+        if (!list) {
+            console.warn('trustedSendersList element not found');
+            return;
+        }
         if (data.senders.length === 0) {
             list.innerHTML = '<div class="text-muted text-center py-4">Noch keine vertrauenswürdigen Absender</div>';
             return;
@@ -2047,7 +2055,10 @@ async function loadUrgencyBoosterStatus() {
         const data = await response.json();
         
         if (data.success) {
-            document.getElementById('urgencyBoosterToggle').checked = data.urgency_booster_enabled;
+            const toggleElement = document.getElementById('urgencyBoosterToggle');
+            if (toggleElement) {
+                toggleElement.checked = data.urgency_booster_enabled;
+            }
         }
     } catch (error) {
         console.error('Error loading urgency booster status:', error);
