@@ -444,6 +444,16 @@ def process_pending_raw_emails(
                 # Sender-Patterns sind optional
                 logger.debug(f"Sender-Pattern Lookup übersprungen: {e}")
             
+            # Provider/Model Tracking: Prüfe ob UrgencyBooster oder LLM verwendet wurde
+            if ai_result.get("_used_booster"):
+                # UrgencyBooster (spaCy) hat die Email verarbeitet
+                actual_provider = "urgency_booster"
+                actual_model = "spacy:de_core_news_sm"
+            else:
+                # Normales LLM hat die Email verarbeitet
+                actual_provider = ai_provider
+                actual_model = ai_model
+            
             # Sender-Pattern auch für AI-Klassifizierung aktualisieren (niedriges Gewicht)
             try:
                 sender_patterns_mod = importlib.import_module(".services.sender_patterns", "src")
@@ -507,17 +517,17 @@ def process_pending_raw_emails(
                 matrix_y=priority["matrix_y"],
                 farbe=priority["farbe"],
                 done=False,
-                base_provider=ai_provider,
-                base_model=ai_model,
+                base_provider=actual_provider,
+                base_model=actual_model,
                 imap_flags_at_processing=raw_email.imap_flags,  # Audit-Trail
                 was_seen_at_processing=was_seen,  # Optimiert!
                 was_answered_at_processing=was_answered,  # Optimiert!
             )
 
             # 🐛 BUG-002 FIX: Transaction-Management mit try-except-rollback
+            # Per-Email Commit Pattern: Jede Email wird sofort committed (bessere Concurrency)
             try:
                 session.add(processed_email)
-                # Transaction Fix: Don't commit inside loop - batch commit at end
                 
                 # Phase 10: Auto-assign suggested_tags from AI
                 # GEÄNDERT 2026-01-05: Nur existierende Tags zuweisen, keine Auto-Creation
@@ -661,6 +671,8 @@ def process_pending_raw_emails(
                     except Exception as e:
                         logger.warning(f"⚠️  Phase F.2 Tag-Suggestions fehlgeschlagen: {e}")
                 
+                # Per-Email Commit für bessere Concurrency (WAL-Mode erlaubt parallele Reads)
+                session.commit()
                 processed_count += 1
 
                 logger.info(
@@ -683,14 +695,8 @@ def process_pending_raw_emails(
             session.rollback()
             logger.error(f"❌ Fehler bei Verarbeitung: {e}")
 
-    # Commit all processed emails at once (atomic transaction)
-    try:
-        session.commit()
-        logger.info(f"✅ Batch-Commit: {processed_count} Mails erfolgreich verarbeitet")
-    except Exception as e:
-        session.rollback()
-        logger.error(f"❌ Batch-Commit fehlgeschlagen: {e}")
-        raise
+    # Alle Emails wurden einzeln committed (Per-Email Commit Pattern)
+    logger.info(f"✅ Verarbeitung abgeschlossen: {processed_count} Mails erfolgreich verarbeitet")
 
     return processed_count
 

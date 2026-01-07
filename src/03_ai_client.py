@@ -861,6 +861,67 @@ class LocalOllamaClient(AIClient):
             "text_de": body[:500] if body else "",
         }
 
+    def _convert_booster_to_llm_format(self, booster_result: Dict, subject: str, body: str) -> Dict:
+        """
+        Konvertiert UrgencyBooster-Format in Standard-LLM-Format.
+        
+        UrgencyBooster gibt:
+        - urgency_score: 0.0-1.0
+        - importance_score: 0.0-1.0
+        - category: "dringend", "aktion_erforderlich", "nur_information"
+        
+        LLM erwartet:
+        - dringlichkeit: 1-3 (integer)
+        - wichtigkeit: 1-3 (integer)
+        - kategorie_aktion: string
+        """
+        # Konvertiere Scores (0.0-1.0) zu Levels (1-3)
+        urgency_score = booster_result.get('urgency_score', 0.0)
+        importance_score = booster_result.get('importance_score', 0.0)
+        
+        # Mapping: 0.0-0.33 → 1, 0.33-0.66 → 2, 0.66-1.0 → 3
+        dringlichkeit = 1 if urgency_score < 0.33 else (2 if urgency_score < 0.66 else 3)
+        wichtigkeit = 1 if importance_score < 0.33 else (2 if importance_score < 0.66 else 3)
+        
+        # Kategorie ist bereits im richtigen Format
+        kategorie = booster_result.get('category', 'nur_information')
+        
+        # Erstelle Summary basierend auf Signalen
+        signals = booster_result.get('signals', {})
+        summary_parts = []
+        
+        if signals.get('invoice_detected'):
+            summary_parts.append("Rechnung erkannt")
+        if signals.get('time_pressure') and signals.get('deadline_hours'):
+            hours = signals['deadline_hours']
+            if hours < 24:
+                summary_parts.append(f"Deadline in {hours}h")
+            elif hours < 48:
+                summary_parts.append("Deadline morgen")
+        if signals.get('money_amount'):
+            amount = signals['money_amount']
+            summary_parts.append(f"Betrag: {amount:.2f}€")
+        if signals.get('action_verbs'):
+            verbs = signals['action_verbs'][:2]  # Erste 2
+            summary_parts.append(f"Aktion: {', '.join(verbs)}")
+        
+        if summary_parts:
+            summary = f"{subject[:50]}: {' | '.join(summary_parts)}"
+        else:
+            summary = subject[:100] if subject else "Keine Zusammenfassung"
+        
+        return {
+            "dringlichkeit": dringlichkeit,
+            "wichtigkeit": wichtigkeit,
+            "kategorie_aktion": kategorie,
+            "tags": [],  # Leer - Tag-Manager übernimmt Embedding-basierte Zuordnung
+            "suggested_tags": [],  # Leer - Tag-Manager übernimmt Embedding-basierte Zuordnung
+            "spam_flag": False,  # Trusted senders sind nie Spam
+            "summary_de": summary,
+            "text_de": body[:500] if body else "",
+            "_used_booster": True,  # Marker für Processing: Wurde mit UrgencyBooster verarbeitet
+        }
+
     def analyze_email(
         self, subject: str, body: str, 
         sender: str = "",  # Phase X: UrgencyBooster
@@ -914,12 +975,13 @@ class LocalOllamaClient(AIClient):
                     try:
                         from src.services.urgency_booster import get_urgency_booster
                         urgency_booster = get_urgency_booster()
-                        result = urgency_booster.analyze_urgency(subject, body, sender)
-                        if result.get("confidence", 0) >= 0.6:  # High confidence
-                            logger.info(f"✅ UrgencyBooster: High confidence ({result.get('confidence'):.2f}) for trusted sender {sender}")
-                            return result
+                        booster_result = urgency_booster.analyze_urgency(subject, body, sender)
+                        if booster_result.get("confidence", 0) >= 0.6:  # High confidence
+                            logger.info(f"✅ UrgencyBooster: High confidence ({booster_result.get('confidence'):.2f}) for trusted sender {sender}")
+                            # Convert UrgencyBooster format to standard LLM format
+                            return self._convert_booster_to_llm_format(booster_result, subject, body)
                         else:
-                            logger.info(f"⚠️ UrgencyBooster: Low confidence ({result.get('confidence', 0):.2f}), falling back to LLM")
+                            logger.info(f"⚠️ UrgencyBooster: Low confidence ({booster_result.get('confidence', 0):.2f}), falling back to LLM")
                     except Exception as e:
                         logger.warning(f"UrgencyBooster analyze failed: {e}")
                         # Fall through to standard LLM analysis

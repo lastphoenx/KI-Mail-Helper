@@ -305,7 +305,26 @@ def check_dek_in_session():
 
 DATABASE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "emails.db")
 
-engine = create_engine(f"sqlite:///{DATABASE_PATH}")
+# SQLite mit WAL-Mode und Timeout für Concurrency
+engine = create_engine(
+    f"sqlite:///{DATABASE_PATH}",
+    connect_args={"check_same_thread": False, "timeout": 30.0}  # 30 Sekunden Timeout
+)
+
+# SQLite Pragmas für Concurrency (WAL-Mode)
+from sqlalchemy import event
+
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_conn, connection_record):
+    """SQLite Pragmas für Multi-Worker Concurrency"""
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA busy_timeout=30000")  # 30 Sekunden
+    cursor.execute("PRAGMA wal_autocheckpoint=1000")
+    cursor.close()
+
 SessionLocal = sessionmaker(bind=engine)
 job_queue = background_jobs.BackgroundJobQueue(DATABASE_PATH)
 login_manager = LoginManager()

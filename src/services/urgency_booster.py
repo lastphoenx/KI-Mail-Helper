@@ -52,7 +52,10 @@ _spacy_lock = threading.Lock()
 ACTION_VERBS_SET = {
     'senden', 'schicken', 'überweisen', 'bezahlen',
     'bestätigen', 'antworten', 'rückmelden',
-    'prüfen', 'genehmigen', 'unterschreiben'
+    'prüfen', 'genehmigen', 'unterschreiben',
+    'bitte', 'könntest', 'würdest', 'kannst',
+    'müssen', 'sollten', 'brauche', 'benötige',
+    'erledigen', 'abschließen', 'bearbeiten', 'klären'
 }
 
 AUTHORITY_TITLES_SET = {
@@ -182,6 +185,14 @@ class UrgencyBooster:
         # Confidence
         confidence = self._calculate_confidence(signals, urgency_score)
         
+        # Debug-Logging für Trusted Senders
+        logger.info(
+            f"📊 UrgencyBooster Analysis: "
+            f"urgency={urgency_score:.2f}, importance={importance_score:.2f}, "
+            f"category={category}, confidence={confidence:.2f}, "
+            f"signals={sum([1 for k, v in signals.items() if v and k != 'deadline_hours' and k != 'money_amount'])}"
+        )
+        
         return {
             'urgency_score': urgency_score,
             'importance_score': importance_score,
@@ -220,8 +231,13 @@ class UrgencyBooster:
                 result['deadline_text'] = ent.text
                 break
         
-        # Dringlichkeits-Keywords
-        urgent_keywords = ['dringend', 'asap', 'urgent', 'sofort', 'umgehend']
+        # Dringlichkeits-Keywords (erweitert)
+        urgent_keywords = [
+            'dringend', 'asap', 'urgent', 'sofort', 'umgehend',
+            'schnell', 'baldmöglichst', 'zeitnah', 'eilig',
+            'bis spätestens', 'bis zum', 'deadline', 'termin',
+            'frist', 'rechtzeitig', 'pünktlich'
+        ]
         if any(kw in text_lower for kw in urgent_keywords):
             result['has_deadline'] = True
             result['hours_until'] = 24
@@ -321,6 +337,9 @@ class UrgencyBooster:
         
         Nutzt gewichtete Durchschnitte statt additiver Bonuses,
         um unrealistisch hohe Scores zu vermeiden.
+        
+        Wichtig: Für Trusted Senders gibt es eine Mindest-Confidence von 0.6,
+        auch wenn keine starken Dringlichkeits-Signale erkannt wurden.
         """
         signal_weights = {}
         total_weight = 0.0
@@ -356,16 +375,24 @@ class UrgencyBooster:
             signal_weights['action_verbs'] = min(0.10 * len(signals['action_verbs']), 0.20)
             total_weight += signal_weights['action_verbs']
         
+        # Berechne base_confidence aus erkannten Signalen
         base_confidence = 0.0
         if total_weight > 0:
             base_confidence = sum(signal_weights.values()) / total_weight
         
+        # Kombiniere base_confidence mit urgency_score
         if urgency_score >= 0.7:
             confidence = base_confidence * 0.7 + urgency_score * 0.3
         elif urgency_score >= 0.5:
             confidence = base_confidence * 0.6 + urgency_score * 0.4
         else:
             confidence = base_confidence * 0.5 + urgency_score * 0.5
+        
+        # WICHTIG: Mindest-Confidence von 0.6 für Trusted Senders
+        # Auch wenn keine starken Signale erkannt wurden, vertrauen wir
+        # der spaCy-Analyse für Whitelist-Absender
+        if confidence < 0.6:
+            confidence = 0.6
         
         return min(confidence, 1.0)
     
