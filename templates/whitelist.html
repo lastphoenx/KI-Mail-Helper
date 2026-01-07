@@ -646,15 +646,15 @@ async function deleteSelected() {
     
     try {
         const deletePromises = Array.from(selectedSenders).map(id => 
-            fetch(`/api/trusted-senders/${id}`, {
+            safeFetch(`/api/trusted-senders/${id}`, {
                 method: 'DELETE',
                 headers: {'Content-Type': 'application/json'}
-            }).then(r => r.json())
+            })
         );
         
         const results = await Promise.allSettled(deletePromises);
-        const succeeded = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
-        const failed = results.filter(r => r.status === 'rejected' || !r.value.success).length;
+        const succeeded = results.filter(r => r.status === 'fulfilled' && r.value && r.value.success).length;
+        const failed = results.filter(r => r.status === 'rejected' || !r.value || !r.value.success).length;
         
         selectedSenders.clear();
         updateBatchButtons();

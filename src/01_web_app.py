@@ -7451,7 +7451,8 @@ def api_update_trusted_sender(sender_id):
             ts.use_urgency_booster = bool(data["use_urgency_booster"])
         
         if "label" in data:
-            ts.label = data.get("label", "").strip() or None
+            label = data.get("label")
+            ts.label = label.strip() if label else None
         
         if "pattern_type" in data:
             valid_types = ["exact", "email_domain", "domain"]
