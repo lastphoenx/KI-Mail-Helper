@@ -49,7 +49,7 @@
    - 10.1 Mail-Accounts verwalten
    - 10.2 SMTP konfigurieren (Email-Versand)
    - 10.3 KI-Provider konfigurieren
-   - 10.4 Trusted Senders + UrgencyBooster
+   - 10.4 Absender & Abruf (Trusted Senders + AI-Control)
    - 10.5 Passwort ändern
    - 10.6 2FA & Recovery-Codes
 11. [Sicherheit & Datenschutz](#11-sicherheit--datenschutz)
@@ -1034,9 +1034,75 @@ Ein **llama3.2:1b mit Learning** liefert nach 1-2 Wochen bessere Ergebnisse als 
 
 ---
 
-### 10.4 Trusted Senders + UrgencyBooster
+### 10.4 Absender & Abruf (Trusted Senders + AI-Control)
 
-**Phase X** erlaubt dir, vertrauenswürdige Absender zu definieren, deren Emails automatisch als **"Hoch dringend"** markiert werden.
+**Phase X + X.3** erlaubt dir, pro Mail-Account zu steuern, welche AI-Features beim Abrufen neuer Mails verwendet werden.
+
+**Navigation:** 📬 **Absender & Abruf** (Menü) oder **Settings** → **Mail-Accounts**
+
+#### Warum Account-Level Kontrolle?
+
+Nach Analyse der Performance:
+- Rule-basierte Systeme (spaCy UrgencyBooster) funktionieren nur bei **expliziten Signalen** (Rechnungen, Deadlines, Geldbeträge)
+- Für **Newsletter/Marketing-Emails** mit subtilen Mustern ist **ML-Learning aus User-Korrekturen** überlegen
+- Unterschiedliche Accounts haben unterschiedliche Bedürfnisse:
+  - **Business**: Automatische Priorisierung gewünscht
+  - **Newsletter**: Manuelles Tagging für besseres Learning bevorzugt
+
+#### Zwei unabhängige Toggles pro Account:
+
+**✅ AI-Analyse beim Abruf**
+- **Aktiviert**: Komplette LLM-Analyse (Dringlichkeit, Wichtigkeit, Kategorie, Summary, Tags)
+- **Deaktiviert**: Nur Embedding erstellen, keine Bewertung → Manuelles Tagging erforderlich
+- **Vorteil deaktiviert**: Keine AI-Halluzinationen, ML-Classifier lernt nur aus echten User-Entscheidungen
+- **Nachteil deaktiviert**: Alle Emails müssen manuell klassifiziert werden
+
+**✅ UrgencyBooster (spaCy)**
+- **Aktiviert**: Schnelle Entity-basierte Analyse für Trusted Senders (100-300ms statt 2-3s LLM)
+- **Deaktiviert**: Nur LLM-Analyse, langsamer aber universell einsetzbar
+- **Vorteil aktiviert**: Performance-Boost für whitelistete Absender
+- **Nachteil aktiviert**: Funktioniert nur bei expliziten Signalen, versagt bei subtilen Mustern
+
+#### Empfohlene Konfigurationen:
+
+| Account-Typ | AI-Analyse | UrgencyBooster | Begründung |
+|-------------|------------|----------------|------------|
+| **📧 Newsletter** (GMX, Marketing) | ⭕ AUS | ⭕ AUS | Manuelles Tagging → ML lernt subtile Muster → Automatische Verbesserung |
+| **💼 Business** (Arbeit, Uni) | ✅ AN | ✅ AN | Trusted Senders profitieren von spaCy, andere von LLM |
+| **🔀 Hybrid** | ✅ AN | ⭕ AUS | Nur LLM ohne spaCy-Overhead (langsamer, aber präziser) |
+| **🎓 Pure ML** | ⭕ AUS | ⭕ AUS | Fokus auf User-Learning statt AI-Vorschläge |
+
+#### UI-Übersicht:
+
+**In Settings → Mail-Accounts Tabelle:**
+```
+martina | imap.gmx.net | Aktiv | ✅ AI ✅ Booster | [→ Ändern]
+thomas  | mail.beispiel-firma   | Aktiv | ⭕ AI ✅ Booster | [→ Ändern]
+```
+
+**Auf der Seite 📬 Absender & Abruf:**
+- Card mit detaillierten Erklärungen aller 4 Szenarien
+- Pro Account 2 Toggles (checked = aktiviert)
+- Live-Speicherung bei Toggle-Änderung
+- Toast-Benachrichtigung bei Erfolg
+
+#### So konfigurierst du es:
+
+**Variante 1: Über Settings**
+1. Gehe zu **Settings**
+2. Finde deinen Account in der **Mail-Accounts** Tabelle
+3. Klicke auf **"→ Ändern"** in der Spalte "Abruf-Einstellungen"
+4. → Wirst zu **Absender & Abruf** weitergeleitet
+
+**Variante 2: Direkt**
+1. Gehe zu **📬 Absender & Abruf** im Menü
+2. Finde deine Account-Karte
+3. Toggle **"AI-Analyse beim Abruf"** und **"UrgencyBooster (spaCy)"**
+4. Änderungen werden automatisch gespeichert
+
+#### Trusted Senders (Whitelist)
+
+**Zusätzlich zur AI-Kontrolle** kannst du vertrauenswürdige Absender definieren, deren Emails automatisch als **"Hoch dringend"** markiert werden.
 
 **Features:**
 - ✅ **Account-basiert**: Whitelist pro Mail-Account ODER global für alle

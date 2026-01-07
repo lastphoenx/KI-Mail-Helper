@@ -7631,7 +7631,8 @@ def api_get_accounts_urgency_booster_settings():
                 'id': account.id,
                 'name': account.name,
                 'decrypted_imap_username': decrypted_email,
-                'urgency_booster_enabled': getattr(account, 'urgency_booster_enabled', True)
+                'urgency_booster_enabled': getattr(account, 'urgency_booster_enabled', True),
+                'enable_ai_analysis_on_fetch': getattr(account, 'enable_ai_analysis_on_fetch', True)
             })
         
         return {
@@ -7655,7 +7656,8 @@ def api_set_account_urgency_booster(account_id):
         if not data:
             return {"success": False, "error": "No JSON data"}, 400
         
-        enabled = data.get("urgency_booster_enabled", True)
+        urgency_booster_enabled = data.get("urgency_booster_enabled", True)
+        enable_ai_analysis = data.get("enable_ai_analysis_on_fetch", True)
         
         models_mod = importlib.import_module(".02_models", "src")
         account = db.query(models_mod.MailAccount).filter_by(
@@ -7666,13 +7668,15 @@ def api_set_account_urgency_booster(account_id):
         if not account:
             return {"success": False, "error": "Account nicht gefunden"}, 404
         
-        account.urgency_booster_enabled = bool(enabled)
+        account.urgency_booster_enabled = bool(urgency_booster_enabled)
+        account.enable_ai_analysis_on_fetch = bool(enable_ai_analysis)
         db.commit()
         
-        logger.info(f"UrgencyBooster for account {account_id} (user {current_user.id}): {enabled}")
+        logger.info(f"Account {account_id} settings: urgency_booster={urgency_booster_enabled}, enable_ai={enable_ai_analysis}")
         return {
             "success": True,
-            "urgency_booster_enabled": account.urgency_booster_enabled
+            "urgency_booster_enabled": account.urgency_booster_enabled,
+            "enable_ai_analysis_on_fetch": account.enable_ai_analysis_on_fetch
         }, 200
     except Exception as e:
         logger.error(f"Error setting account urgency booster: {e}")

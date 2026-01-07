@@ -397,77 +397,103 @@ def process_pending_raw_emails(
                     f"Sender-Hint: {len(sender_hint) if sender_hint else 0} chars"
                 )
 
-            logger.info("🤖 Analysiere gespeicherte Mail: %s...", subject_preview)
-            
-            # Phase X: Get user's urgency_booster setting
-            user_enabled_booster = True  # default
+            # Phase X: Get account-level settings for AI analysis
+            enable_ai_analysis = True  # default
+            account_booster_enabled = True  # default
             try:
                 models_mod = importlib.import_module(".02_models", "src")
-                user = session.query(models_mod.User).filter_by(id=raw_email.user_id).first()
-                if user:
-                    user_enabled_booster = user.urgency_booster_enabled
+                account = session.query(models_mod.MailAccount).filter_by(id=raw_email.mail_account_id).first()
+                if account:
+                    enable_ai_analysis = account.enable_ai_analysis_on_fetch
+                    account_booster_enabled = account.urgency_booster_enabled
+                    logger.debug(f"📧 Account '{account.name}': enable_ai={enable_ai_analysis}, booster={account_booster_enabled}")
             except Exception as e:
-                logger.debug(f"Failed to fetch urgency_booster setting: {e}")
+                logger.debug(f"Failed to fetch account settings: {e}")
             
-            ai_result = active_ai.analyze_email(
-                subject=decrypted_subject or "",
-                body=clean_body,
-                sender=decrypted_sender or "",  # Phase X: Trusted Senders + UrgencyBooster
-                language="de",  # Phase X: UrgencyBooster needs language hint
-                context=context_str if context_str else None,  # Phase E: Pass context to AI
-                user_id=raw_email.user_id,  # Phase X: For trusted sender lookup
-                account_id=raw_email.mail_account_id,  # Phase X: Account-specific trusted senders
-                db=session,  # Phase X: Database access for trusted sender check
-                user_enabled_booster=user_enabled_booster  # Phase X: User preference
-            )
-            
-            # Phase 11d: Sender-Pattern-Hinweis anwenden (wenn vorhanden)
-            try:
-                sender_patterns_mod = importlib.import_module(".services.sender_patterns", "src")
-                classification_hint = sender_patterns_mod.SenderPatternManager.get_classification_hint(
-                    db=session,
-                    user_id=raw_email.user_id,
-                    sender=decrypted_sender or "",
-                    min_confidence=70,  # Nur bei hoher Konfidenz überschreiben
-                    min_emails=3
+            # Skip AI analysis if disabled - only create embedding
+            if not enable_ai_analysis:
+                logger.info("⏭️  AI-Analyse deaktiviert für Account (enable_ai_analysis_on_fetch=False)")
+                ai_result = None
+            else:
+                logger.info("🤖 Analysiere gespeicherte Mail: %s...", subject_preview)
+                
+                ai_result = active_ai.analyze_email(
+                    subject=decrypted_subject or "",
+                    body=clean_body,
+                    sender=decrypted_sender or "",  # Phase X: Trusted Senders + UrgencyBooster
+                    language="de",  # Phase X: UrgencyBooster needs language hint
+                    context=context_str if context_str else None,  # Phase E: Pass context to AI
+                    user_id=raw_email.user_id,  # Phase X: For trusted sender lookup
+                    account_id=raw_email.mail_account_id,  # Phase X: Account-specific trusted senders
+                    db=session,  # Phase X: Database access for trusted sender check
+                    user_enabled_booster=account_booster_enabled  # Phase X: Account preference
                 )
-                if classification_hint:
-                    # Bei hoher Konfidenz: Sender-Pattern überschreibt AI
-                    if classification_hint.get("category"):
-                        ai_result["kategorie_aktion"] = classification_hint["category"]
-                    if classification_hint.get("priority"):
-                        ai_result["dringlichkeit"] = classification_hint["priority"]
-                    if classification_hint.get("is_newsletter") is not None:
-                        ai_result["spam_flag"] = classification_hint["is_newsletter"]
-                    logger.debug(f"📊 Sender-Pattern angewandt (confidence={classification_hint['confidence']})")
-            except Exception as e:
-                # Sender-Patterns sind optional
-                logger.debug(f"Sender-Pattern Lookup übersprungen: {e}")
+            
+            # Phase 11d: Sender-Pattern-Hinweis anwenden (wenn vorhanden) - nur wenn AI-Analyse durchgeführt wurde
+            if ai_result:
+                try:
+                    sender_patterns_mod = importlib.import_module(".services.sender_patterns", "src")
+                    classification_hint = sender_patterns_mod.SenderPatternManager.get_classification_hint(
+                        db=session,
+                        user_id=raw_email.user_id,
+                        sender=decrypted_sender or "",
+                        min_confidence=70,  # Nur bei hoher Konfidenz überschreiben
+                        min_emails=3
+                    )
+                    if classification_hint:
+                        # Bei hoher Konfidenz: Sender-Pattern überschreibt AI
+                        if classification_hint.get("category"):
+                            ai_result["kategorie_aktion"] = classification_hint["category"]
+                        if classification_hint.get("priority"):
+                            ai_result["dringlichkeit"] = classification_hint["priority"]
+                        if classification_hint.get("is_newsletter") is not None:
+                            ai_result["spam_flag"] = classification_hint["is_newsletter"]
+                        logger.debug(f"📊 Sender-Pattern angewandt (confidence={classification_hint['confidence']})")
+                except Exception as e:
+                    # Sender-Patterns sind optional
+                    logger.debug(f"Sender-Pattern Lookup übersprungen: {e}")
             
             # Provider/Model Tracking: Prüfe ob UrgencyBooster oder LLM verwendet wurde
-            if ai_result.get("_used_booster"):
-                # UrgencyBooster (spaCy) hat die Email verarbeitet
-                actual_provider = "urgency_booster"
-                actual_model = "spacy:de_core_news_sm"
-            else:
-                # Normales LLM hat die Email verarbeitet
-                actual_provider = ai_provider
-                actual_model = ai_model
+            actual_provider = None
+            actual_model = None
+            if ai_result:
+                if ai_result.get("_used_booster"):
+                    # UrgencyBooster (spaCy) hat die Email verarbeitet
+                    actual_provider = "urgency_booster"
+                    actual_model = "spacy:de_core_news_sm"
+                else:
+                    # Normales LLM hat die Email verarbeitet
+                    actual_provider = ai_provider
+                    actual_model = ai_model
             
-            # Sender-Pattern auch für AI-Klassifizierung aktualisieren (niedriges Gewicht)
-            try:
-                sender_patterns_mod = importlib.import_module(".services.sender_patterns", "src")
-                sender_patterns_mod.SenderPatternManager.update_from_classification(
-                    db=session,
-                    user_id=raw_email.user_id,
-                    sender=decrypted_sender or "",
-                    category=ai_result.get("kategorie_aktion"),
-                    priority=ai_result.get("dringlichkeit"),
-                    is_newsletter=ai_result.get("spam_flag"),
-                    is_correction=False  # AI-Klassifizierung hat geringeres Gewicht
-                )
-            except Exception as e:
-                logger.debug(f"Sender-Pattern Update übersprungen: {e}")
+            # Sender-Pattern auch für AI-Klassifizierung aktualisieren (niedriges Gewicht) - nur wenn AI-Analyse durchgeführt wurde
+            if ai_result:
+                try:
+                    sender_patterns_mod = importlib.import_module(".services.sender_patterns", "src")
+                    sender_patterns_mod.SenderPatternManager.update_from_classification(
+                        db=session,
+                        user_id=raw_email.user_id,
+                        sender=decrypted_sender or "",
+                        category=ai_result.get("kategorie_aktion"),
+                        priority=ai_result.get("dringlichkeit"),
+                        is_newsletter=ai_result.get("spam_flag"),
+                        is_correction=False  # AI-Klassifizierung hat geringeres Gewicht
+                    )
+                except Exception as e:
+                    logger.debug(f"Sender-Pattern Update übersprungen: {e}")
+
+            # If AI analysis was skipped, use default values
+            if ai_result is None:
+                ai_result = {
+                    "dringlichkeit": None,
+                    "wichtigkeit": None,
+                    "kategorie_aktion": None,
+                    "spam_flag": False,
+                    "summary_de": "",
+                    "text_de": "",
+                    "tags": [],
+                    "suggested_tags": []
+                }
 
             priority = scoring.analyze_priority(
                 dringlichkeit=ai_result["dringlichkeit"],

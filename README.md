@@ -17,6 +17,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **Account-Specific Signatures** – Individuelle Signaturen pro Mail-Account (Geschäft/Privat/Uni)
 - **Trusted Senders + UrgencyBooster** – Account-basierte Whitelist mit Urgency-Override (Global + Per-Account)
 - **Dedizierte Whitelist-Seite** – `/whitelist` mit 2-Spalten-Layout, Batch-Operationen und Live-Filter
+- **Account-Level AI-Fetch-Control** – Separate AI-Analyse und UrgencyBooster Toggles pro Account
 - **Semantische Suche** – Embeddings für "finde ähnliche Emails"
 - **Tag-System** – Manuell + KI-Vorschläge basierend auf gelernten Mustern
 - **IMAP & Gmail OAuth** – Funktioniert mit GMX, Gmail, Outlook, etc.
@@ -49,6 +50,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ Phase I.2: Account-Specific Signatures
 - ✅ Phase X: Trusted Senders + UrgencyBooster (Account-Based)
 - ✅ Phase X.2: Dedizierte Whitelist-Seite (/whitelist)
+- ✅ Phase X.3: Account-Level AI-Fetch-Control (enable_ai_analysis_on_fetch)
 
 ---
 
@@ -191,6 +193,23 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
     - Regel-Ketten mit `has_tag` / `not_has_tag` Conditions
     - KI-Integration: `ai_suggested_tag` mit Confidence-Threshold
     - 4 Templates: Newsletter-Archiv, Spam-Filter, Important-Sender, Attachment-Archive
+- **📬 Account-Level AI-Fetch-Control (Phase X.3)** – Granulare Steuerung der AI-Analyse pro Account
+  - **2 unabhängige Toggles pro Account:**
+    - ✅ **AI-Analyse beim Abruf**: LLM-Analyse (Dringlichkeit/Wichtigkeit/Kategorie/Summary/Tags)
+    - ✅ **UrgencyBooster (spaCy)**: Schnelle Entity-basierte Analyse für Trusted Senders (100-300ms)
+  - **Flexible Strategien**:
+    - **Beide aktiviert**: Trusted Senders → spaCy Booster, alle anderen → LLM
+    - **Nur LLM**: Universelle AI-Analyse für alle Mails (langsamer, aber präziser)
+    - **Nur Embedding**: Keine automatische Bewertung → Manuelles Tagging → ML-Learning
+  - **Use Cases**:
+    - Newsletter-Accounts (GMX): AI-Analyse AUS → Manuelles Tagging → Besseres ML-Learning
+    - Business-Accounts (Beispiel-Firma): AI-Analyse AN + Booster AN → Automatische Priorisierung
+    - Hybrid: AI-Analyse AN + Booster AUS → Nur LLM ohne spaCy-Overhead
+  - **UI**: Dedizierte Seite "📬 Absender & Abruf" (`/whitelist`) mit ausführlichen Erklärungen
+  - **Settings-Integration**: Status-Badges (✅ AI ✅ Booster) in Account-Tabelle mit Link zu Konfiguration
+  - **Performance**: Keine AI-Calls bei deaktivierter Analyse → Drastisch schnelleres Fetching
+  - **Begründung**: Rule-basierte Systeme (spaCy) funktionieren nur bei expliziten Signalen (Rechnungen, Deadlines). 
+    Für Newsletter/Marketing-Mails mit subtilen Mustern ist ML-Learning aus User-Korrekturen überlegen.
 - **Dynamic Provider-Dropdowns** – Auto-Erkennung verfügbarer KI-Modelle basierend auf API-Keys
 - **Flexible Modellauswahl** – Keine Hardcodierung! llama3.2, mistral, oder beliebige Ollama/Cloud-Modelle
 - **Two-Pass Optimization** – Base-Pass (schnell) + Optimize-Pass (optional, bessere Kategorisierung)

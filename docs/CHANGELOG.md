@@ -8,6 +8,66 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added - Phase X.3: Account-Level AI-Fetch-Control (2026-01-08)
+
+#### Granulare AI-Analyse-Steuerung pro Account
+
+**Motivation:**
+Nach Analyse der UrgencyBooster-Performance (37 GMX-Newsletter-Emails):
+- 95% erhielten identische Bewertung (Dringlichkeit=1, Wichtigkeit=1)
+- Keine Differenzierung bei Marketing/Newsletter-Inhalten
+- Rule-basierte Systeme (spaCy Entity Recognition) funktionieren nur bei expliziten Signalen (Rechnungen, Deadlines, Geldbeträge)
+- Für subtile Muster ist ML-Learning aus User-Korrekturen überlegen
+
+**Solution: Flexible AI-Control pro Account**
+
+**Features:**
+- ✅ **2 unabhängige Toggles** pro Mail-Account (statt global):
+  - **AI-Analyse beim Abruf**: LLM-basierte Analyse (Dringlichkeit/Wichtigkeit/Kategorie/Summary)
+  - **UrgencyBooster (spaCy)**: Schnelle Entity-Analyse für Trusted Senders (100-300ms)
+- ✅ **Konsistente Enable-Logik**: Beide Toggles als "aktivieren" formuliert (keine Negation)
+- ✅ **Database Migration**: 
+  - Feld umbenannt: `skip_ai_analysis_on_fetch` → `enable_ai_analysis_on_fetch`
+  - Default: `TRUE` (beide Analysen aktiviert)
+- ✅ **Processing-Logic** (`src/12_processing.py`):
+  - Bei deaktivierter AI-Analyse: Nur Embedding erstellen, keine Bewertung
+  - ProcessedEmail wird mit `NULL` Werten angelegt → User setzt manuell
+- ✅ **UI-Integration**:
+  - **Menü**: "📬 Absender & Abruf" (statt "🛡️ Whitelist")
+  - **Seiten-Titel**: "🎯 Mail-Abruf Einstellungen"
+  - **Untertitel**: "Account-spezifische AI-Steuerung beim Abrufen neuer Mails..."
+  - **Erklärungen**: 4 Szenarien mit Vor-/Nachteilen erklärt (✅ aktiviert / ⭕ deaktiviert)
+  - **Settings-Badges**: Status in Account-Tabelle (✅ AI ✅ Booster) mit Link zu Konfiguration
+- ✅ **API** (`/api/accounts/<id>/urgency-booster`):
+  - GET: Gibt beide Felder zurück (`enable_ai_analysis_on_fetch`, `urgency_booster_enabled`)
+  - POST: Akzeptiert beide Settings gleichzeitig
+
+**Anwendungsfälle:**
+
+| Account-Typ | AI-Analyse | UrgencyBooster | Begründung |
+|-------------|------------|----------------|------------|
+| **Newsletter** (GMX) | ⭕ AUS | ⭕ AUS | Manuelles Tagging → ML-Classifier lernt subtile Muster |
+| **Business** (Beispiel-Firma) | ✅ AN | ✅ AN | Automatische Priorisierung, Trusted Senders profitieren von spaCy |
+| **Hybrid** | ✅ AN | ⭕ AUS | Nur LLM-Analyse (langsamer, aber universell) |
+| **Pure ML** | ⭕ AUS | ⭕ AUS | Fokus auf User-Learning statt AI-Bewertungen |
+
+**Empfehlung:**
+- **Newsletter/Marketing-Accounts**: AI-Analyse deaktivieren → Manuell taggen → SGD-Classifier lernt
+- **Business-Accounts mit echten Deadlines**: Beide aktiviert → Automatisierung
+- **Wenn unsicher**: Beide aktiviert (Default) → Nach 50-100 Mails evaluieren
+
+**Technical Details:**
+- Model: `src/02_models.py` (`MailAccount.enable_ai_analysis_on_fetch`)
+- Processing: `src/12_processing.py` (Account-Level Settings Check)
+- Template: `templates/whitelist.html` (Erweiterte Infokarte mit Szenarien)
+- Settings: `templates/settings.html` (Badges in Account-Tabelle)
+
+**Performance-Impact:**
+- Deaktivierte AI-Analyse → Keine LLM-Calls beim Fetching
+- 37 Emails × ~2-3 Sekunden LLM-Zeit = ~1-2 Minuten gespart pro Fetch
+
+---
+
 ### Added - Phase X.2: Dedizierte Whitelist-Seite (2026-01-07)
 
 #### Neue `/whitelist` Seite

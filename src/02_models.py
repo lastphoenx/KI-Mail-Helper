@@ -564,6 +564,9 @@ class MailAccount(Base):
 
     # ===== PHASE X: ACCOUNT-LEVEL URGENCY BOOSTER =====
     urgency_booster_enabled = Column(Boolean, default=True, nullable=False)
+    
+    # ===== PHASE X: ACCOUNT-LEVEL AI ANALYSIS CONTROL =====
+    enable_ai_analysis_on_fetch = Column(Boolean, default=True, nullable=False)
 
     # Relationship
     user = relationship("User", back_populates="mail_accounts")

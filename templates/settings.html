@@ -344,6 +344,7 @@
                             <th>Port</th>
                             <th>Benutzer</th>
                             <th>Status</th>
+                            <th>Abruf-Einstellungen</th>
                             <th>Aktionen</th>
                         </tr>
                     </thead>
@@ -367,6 +368,21 @@
                                 {% else %}
                                 <span class="badge bg-secondary">Inaktiv</span>
                                 {% endif %}
+                            </td>
+                            <td>
+                                <div class="d-flex flex-column gap-1">
+                                    <div class="d-flex align-items-center gap-1">
+                                        <span class="badge {% if account.enable_ai_analysis_on_fetch %}bg-success{% else %}bg-secondary{% endif %}" style="font-size: 0.75rem;">
+                                            {% if account.enable_ai_analysis_on_fetch %}✅{% else %}⭕{% endif %} AI
+                                        </span>
+                                        <span class="badge {% if account.urgency_booster_enabled %}bg-success{% else %}bg-secondary{% endif %}" style="font-size: 0.75rem;">
+                                            {% if account.urgency_booster_enabled %}✅{% else %}⭕{% endif %} Booster
+                                        </span>
+                                    </div>
+                                    <small class="text-muted" style="font-size: 0.7rem;">
+                                        <a href="/whitelist" class="text-decoration-none">→ Ändern</a>
+                                    </small>
+                                </div>
                             </td>
                             <td>
                                 <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Mail-Aktionen" style="gap:0.25rem;">
