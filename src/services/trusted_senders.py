@@ -284,18 +284,42 @@ class TrustedSenderManager:
             email_count=0
         )
         
-        db.add(trusted)
-        db.commit()
-        
-        logger.info(f"✅ User {user_id} added trusted sender: {sender_pattern} ({pattern_type})")
-        
-        return {
-            'success': True,
-            'id': trusted.id,
-            'sender_pattern': trusted.sender_pattern,
-            'pattern_type': trusted.pattern_type,
-            'label': trusted.label
-        }
+        try:
+            db.add(trusted)
+            db.commit()
+            
+            logger.info(f"✅ User {user_id} added trusted sender: {sender_pattern} ({pattern_type})")
+            
+            return {
+                'success': True,
+                'id': trusted.id,
+                'sender_pattern': trusted.sender_pattern,
+                'pattern_type': trusted.pattern_type,
+                'label': trusted.label
+            }
+        except Exception as e:
+            db.rollback()
+            # Check if it's a unique constraint violation (duplicate)
+            if "UNIQUE constraint failed" in str(e) or "unique" in str(e).lower():
+                # Find the existing entry
+                existing = db.query(models.TrustedSender).filter(
+                    models.TrustedSender.user_id == user_id,
+                    models.TrustedSender.sender_pattern == sender_pattern
+                ).first()
+                
+                if existing:
+                    return {
+                        'success': True,
+                        'already_exists': True,
+                        'id': existing.id,
+                        'sender_pattern': existing.sender_pattern,
+                        'pattern_type': existing.pattern_type,
+                        'label': existing.label,
+                        'message': 'Sender bereits in Liste'
+                    }
+            
+            # Re-raise if it's a different error
+            raise e
     
     @staticmethod
     def update_last_seen(db, trusted_sender_id: int):
@@ -401,6 +425,10 @@ class TrustedSenderManager:
             elif ts.pattern_type == 'domain':
                 trusted_domains.add(pattern)
         
+        logger.info(f"Suggestions: Found {len(trusted_patterns)} trusted patterns, {len(trusted_domains)} domains, {len(trusted_email_domains)} email domains")
+        logger.debug(f"Trusted patterns: {trusted_patterns}")
+        logger.debug(f"Trusted domains: {trusted_domains}")
+        
         decryption_errors = 0
         
         for encrypted_sender, count in frequent_senders:
@@ -408,8 +436,11 @@ class TrustedSenderManager:
                 sender = encryption.EmailDataManager.decrypt_email_sender(encrypted_sender, master_key)
                 sender_lower = sender.lower()
                 
+                logger.debug(f"Checking suggestion: {sender_lower}")
+                
                 # Check against existing patterns more comprehensively
                 if sender_lower in trusted_patterns:
+                    logger.debug(f"Skipping {sender_lower} - exact pattern match")
                     continue
                 
                 # For email addresses, check domain patterns
@@ -422,7 +453,10 @@ class TrustedSenderManager:
                         email_domain in trusted_email_domains or
                         email_domain in trusted_patterns or 
                         domain in trusted_patterns):
+                        logger.debug(f"Skipping {sender_lower} - domain/email_domain match")
                         continue
+                    
+                    logger.debug(f"Including suggestion: {sender_lower}")
                     
                     # Default zu 'exact', aber könnte auf email_domain wechseln
                     # (wenn später mehrere @domain.ch Mails sichtbar sind)
