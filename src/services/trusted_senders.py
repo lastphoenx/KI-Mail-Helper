@@ -249,9 +249,6 @@ class TrustedSenderManager:
                 'label': existing.label,
                 'message': 'Sender bereits in Liste'
             }
-                'label': existing.label,
-                'message': 'Sender bereits in Liste'
-            }
         
         # Create
         trusted = models.TrustedSender(
