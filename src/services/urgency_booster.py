@@ -15,56 +15,34 @@ WICHTIG: Läuft NUR auf Trusted Senders (User-definiert)!
 import logging
 import re
 import threading
-import signal
-import platform
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 logger = logging.getLogger(__name__)
 
 
-class RegexTimeoutError(Exception):
-    """Raised when regex operation exceeds timeout"""
-    pass
-
-
-def _regex_timeout_handler(signum, frame):
-    """Signal handler for regex timeout"""
-    raise RegexTimeoutError("Regex pattern matching timeout")
-
-
 def safe_regex_search(pattern: str, text: str, timeout_seconds: int = 2) -> Optional[re.Match]:
     """
-    Regex-Suche mit Timeout-Schutz gegen ReDoS-Angriffe.
-    
-    Auf Unix: Signal-basierter Timeout
-    Auf Windows: Direktes Regex ohne Timeout (Windows unterstützt signal.SIGALRM nicht)
+    Thread-safe regex search with timeout using ThreadPoolExecutor.
+    Works in background threads (unlike signal.alarm()).
     
     Args:
         pattern: Regex pattern
         text: Text to search in
-        timeout_seconds: Timeout in seconds (Unix only, ignored on Windows)
+        timeout_seconds: Timeout in seconds
     
     Returns:
         Match object or None
     """
     try:
-        if platform.system() == 'Windows':
-            return re.search(pattern, text, re.IGNORECASE)
-        
-        signal.signal(signal.SIGALRM, _regex_timeout_handler)
-        signal.alarm(timeout_seconds)
-        result = re.search(pattern, text, re.IGNORECASE)
-        signal.alarm(0)
-        return result
-    except RegexTimeoutError:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(re.search, pattern, text, re.IGNORECASE)
+            return future.result(timeout=timeout_seconds)
+    except TimeoutError:
         logger.warning(f"⚠️ Regex timeout on pattern: {pattern[:80]}...")
         return None
     except Exception as e:
-        try:
-            signal.alarm(0)
-        except:
-            pass
         logger.error(f"Error in safe_regex_search: {e}")
         return None
 
