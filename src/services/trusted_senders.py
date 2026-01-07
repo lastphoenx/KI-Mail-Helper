@@ -85,13 +85,20 @@ class TrustedSenderManager:
         - Wenn account_id None: Prüft nur user_id (global)
         - Wenn account_id gegeben: Prüft zuerst account-spezifische, dann globale
         
+        Args:
+            sender_email: Email address, may include display name like "Name" <email@domain.com>
+        
         Returns:
             None wenn nicht trusted
             dict mit {'id', 'label', 'use_urgency_booster', 'pattern', 'account_id'} wenn trusted
         """
         models = importlib.import_module(".02_models", "src")
         
+        # Extract email from "Display Name" <email@domain.com> format if present
         sender_lower = sender_email.lower().strip()
+        email_match = re.search(r'<(.+?)>', sender_lower)
+        if email_match:
+            sender_lower = email_match.group(1).strip()
         
         if '@' in sender_lower:
             domain = sender_lower.split('@')[1]
