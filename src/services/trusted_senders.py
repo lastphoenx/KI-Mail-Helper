@@ -414,16 +414,20 @@ class TrustedSenderManager:
                 sender = encryption.EmailDataManager.decrypt_email_sender(encrypted_sender, master_key)
                 sender_lower = sender.lower()
                 
-                logger.info(f"Checking suggestion: {sender_lower}")
+                # Extract email from "Display Name" <email@domain.com> format
+                email_match = re.search(r'<(.+?)>', sender)
+                email_only = email_match.group(1).lower() if email_match else sender_lower
+                
+                logger.info(f"Checking suggestion: {sender_lower} (email: {email_only})")
                 
                 # Check against existing patterns more comprehensively
-                if sender_lower in trusted_patterns:
-                    logger.info(f"Skipping {sender_lower} - exact pattern match")
+                if email_only in trusted_patterns:
+                    logger.info(f"Skipping {email_only} - exact pattern match")
                     continue
                 
                 # For email addresses, check domain patterns
-                if '@' in sender_lower:
-                    domain = sender_lower.split('@')[1]
+                if '@' in email_only:
+                    domain = email_only.split('@')[1]
                     email_domain = '@' + domain
                     
                     # Skip if domain is already trusted in any form
@@ -431,10 +435,10 @@ class TrustedSenderManager:
                         email_domain in trusted_email_domains or
                         email_domain in trusted_patterns or 
                         domain in trusted_patterns):
-                        logger.info(f"Skipping {sender_lower} - domain/email_domain match")
+                        logger.info(f"Skipping {email_only} - domain/email_domain match ({domain} or {email_domain})")
                         continue
                     
-                    logger.info(f"Including suggestion: {sender_lower}")
+                    logger.info(f"Including suggestion: {email_only}")
                     
                     # Default zu 'exact', aber könnte auf email_domain wechseln
                     # (wenn später mehrere @domain.ch Mails sichtbar sind)
