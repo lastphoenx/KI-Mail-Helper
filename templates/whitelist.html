@@ -111,9 +111,9 @@
                     <div class="mb-3">
                         <label for="trustedSenderTypeV2" class="form-label small">Typ</label>
                         <select class="form-select bg-dark text-light border-secondary" id="trustedSenderTypeV2">
-                            <option value="exact">🔒 Exakt</option>
-                            <option value="email_domain">👥 Email-Domain (@company.de)</option>
-                            <option value="domain">🏢 Domain+Subs (company.de)</option>
+                            <option value="exact">🔒 Exakt - nur boss@company.de</option>
+                            <option value="email_domain">👥 Wildcard - alle @company.de</option>
+                            <option value="domain">🏢 Domain + Subdomains (z.B. mail.company.de)</option>
                         </select>
                     </div>
                     <div class="mb-3">
@@ -241,8 +241,8 @@ async function loadTrustedSendersListV2() {
                             <select class="form-select form-select-sm" style="width: auto;" 
                                     onchange="updateSenderTypeV2(${sender.id}, this.value)">
                                 <option value="exact" ${sender.pattern_type === 'exact' ? 'selected' : ''}>🔒 Exakt</option>
-                                <option value="email_domain" ${sender.pattern_type === 'email_domain' ? 'selected' : ''}>👥 Domain</option>
-                                <option value="domain" ${sender.pattern_type === 'domain' ? 'selected' : ''}>🏢 Domain+Subs</option>
+                                <option value="email_domain" ${sender.pattern_type === 'email_domain' ? 'selected' : ''}>👥 Wildcard</option>
+                                <option value="domain" ${sender.pattern_type === 'domain' ? 'selected' : ''}>🏢 Domain + Subdomains</option>
                             </select>
                             
                             ${sender.account_id ? 

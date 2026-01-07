@@ -16,6 +16,48 @@ logger = logging.getLogger(__name__)
 
 MAX_TRUSTED_SENDERS_PER_USER = 500
 
+
+def prepare_suggestion(sender: str, suggested_type: str) -> str:
+    """
+    Bereitet Sender-Vorschlag für Whitelist vor - intelligente Normalisierung.
+    
+    Extrahiert Email aus RFC 5322 Format: "Name" <email@domain.com>
+    Wandelt dann je nach Pattern-Type um:
+    - exact: email@domain.com (komplette Email)
+    - email_domain: @domain.com (nur Domain mit @)
+    - domain: domain.com (nur Domain ohne @)
+    
+    Args:
+        sender: Input z.B. '"Jira automation" <automation@projects-beispiel-firma.atlassian.net>'
+        suggested_type: 'exact', 'email_domain', oder 'domain'
+    
+    Returns:
+        Vorbereitete Pattern-String
+    """
+    # 1. Extrahiere Email aus RFC 5322 Format
+    match = re.search(r'<(.+?)>', sender)
+    email = match.group(1) if match else sender.strip()
+    email_lower = email.lower()
+    
+    # 2. Konvertiere je nach Type
+    if suggested_type == 'email_domain':
+        # Nur Domain mit @ Präfix
+        if '@' in email_lower:
+            domain = email_lower.split('@')[1]
+            return '@' + domain
+        return email_lower
+    
+    elif suggested_type == 'domain':
+        # Nur Domain ohne @ Präfix
+        if '@' in email_lower:
+            return email_lower.split('@')[1]
+        return email_lower
+    
+    else:  # 'exact' oder default
+        # Komplette Email
+        return email_lower
+
+
 # Validierungs-Regex (RFC 5321 + RFC 1123 compliant)
 # EMAIL_REGEX: Strikte Email-Validierung
 # - Verhindert konsekutive Punkte/Unterstriche (muss abwechseln)
@@ -333,17 +375,27 @@ class TrustedSenderManager:
                 if sender_lower in trusted_patterns:
                     continue
                 
+                # Extrahiere Email für Domain-Checks
                 if '@' in sender_lower:
                     domain = sender_lower.split('@')[1]
                     email_domain = '@' + domain
                     
                     if email_domain in trusted_patterns or domain in trusted_patterns:
                         continue
+                    
+                    # Default zu 'exact', aber könnte auf email_domain wechseln
+                    # (wenn später mehrere @domain.ch Mails sichtbar sind)
+                    suggested_type = 'exact'
+                else:
+                    suggested_type = 'exact'
+                
+                # Normalisiere Sender mittels prepare_suggestion()
+                clean_sender = prepare_suggestion(sender, suggested_type)
                 
                 suggestions.append({
-                    'sender': sender,
+                    'sender': clean_sender,
                     'email_count': count,
-                    'suggested_pattern_type': 'exact'
+                    'suggested_pattern_type': suggested_type
                 })
                 
                 if len(suggestions) >= limit:
