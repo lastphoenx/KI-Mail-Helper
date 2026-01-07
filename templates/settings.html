@@ -313,6 +313,130 @@
                 </div>
             </div>
 
+            <!-- ========================================================================
+                 Phase X: Trusted Senders + UrgencyBooster Settings
+                 ======================================================================== -->
+            <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#0f172a,#1e1b4b);color:#f8fafc;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <div>
+                            <p class="text-uppercase small mb-1 opacity-75">⚡ Performance & Sicherheit</p>
+                            <h4 class="mb-2">Trusted Senders + UrgencyBooster</h4>
+                            <p class="mb-0" style="max-width:600px;">
+                                Definiere vertrauenswürdige Absender und nutze schnelle Entity-basierte Dringlichkeitserkennung (spaCy NER) statt LLM-Aufrufe. 
+                                Spart Kosten und Zeit bei CPU-only Setups!
+                            </p>
+                        </div>
+                        <span class="badge bg-light text-dark px-3 py-2 align-self-start">Phase X ✨</span>
+                    </div>
+
+                    <!-- UrgencyBooster Global Toggle -->
+                    <div class="mt-4 pt-3 border-top">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-2">⚡ UrgencyBooster aktivieren</h6>
+                                <p class="text-muted small mb-0">
+                                    Nutze spaCy NER für schnelle Dringlichkeitserkennung bei Trusted Senders (100-300ms statt 5-10min LLM)
+                                </p>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="urgencyBoosterToggle" checked style="width: 3.5em; height: 1.5em;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Account Selector (NEW: Account-Based Whitelist) -->
+                    <div class="mt-4 pt-3 border-top">
+                        <h6 class="mb-3">🔐 Whitelist Modus</h6>
+                        <p class="text-muted small mb-2">Wähle ob global (alle Accounts) oder nur für dieses Account:</p>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <select class="form-select bg-dark text-light border-secondary" id="whitelistAccountSelector">
+                                    <option value="">🌍 Global (alle Accounts)</option>
+                                    {% for account in mail_accounts %}
+                                    <option value="{{ account.id }}">📧 {{ account.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">
+                                    <strong>Global:</strong> Whitelisted auf ALLEN Accounts<br>
+                                    <strong>Spezifisch:</strong> Nur auf diesem Account
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trusted Senders List -->
+                    <div class="mt-4 pt-3 border-top">
+                        <h6 class="mb-3">📋 Vertrauenswürdige Absender</h6>
+                        <div id="trustedSendersList" class="list-group mb-3" style="max-height: 900px; overflow-y: auto; border: 1px solid #334155; border-radius: 6px; padding: 12px;">
+                            <div class="text-muted text-center py-4">Laden...</div>
+                        </div>
+
+                        <!-- Add New Trusted Sender Form -->
+                        <div class="alert alert-info small mb-3">
+                            <strong>💡 Tipp:</strong> Muster können Email-Adressen, Domain-Namen oder Patterns sein.
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label for="trustedSenderPattern" class="form-label">Absender-Muster</label>
+                                <input type="text" class="form-control bg-dark text-light border-secondary" 
+                                       id="trustedSenderPattern" 
+                                       placeholder="z.B. boss@company.de oder company.de">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="trustedSenderType" class="form-label">Typ</label>
+                                <select class="form-select bg-dark text-light border-secondary" id="trustedSenderType">
+                                    <option value="exact">🔒 Exakt - nur boss@company.de</option>
+                                    <option value="email_domain">👥 Domain - alle @company.de</option>
+                                    <option value="domain">🏢 Domain+Subs (NICHT test-company.de!)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="trustedSenderAccountId" class="form-label">Für welches Account?</label>
+                                <select class="form-select bg-dark text-light border-secondary" id="trustedSenderAccountId">
+                                    <option value="">🌍 Global (alle Accounts)</option>
+                                    {% for account in mail_accounts %}
+                                    <option value="{{ account.id }}">📧 {{ account.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="trustedSenderLabel" class="form-label">Label (optional)</label>
+                                <input type="text" class="form-control bg-dark text-light border-secondary" 
+                                       id="trustedSenderLabel" 
+                                       placeholder="z.B. CEO">
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check form-switch mt-4">
+                                    <input class="form-check-input" type="checkbox" id="trustedSenderUseBooster" checked>
+                                    <label class="form-check-label" for="trustedSenderUseBooster">
+                                        UrgencyBooster nutzen
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <button type="button" class="btn btn-success" id="addTrustedSenderBtn">
+                                    ➕ Hinzufügen
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Suggestions Section -->
+                    <div class="mt-4 pt-3 border-top">
+                        <h6 class="mb-3">💡 Vorschläge basierend auf Email-Verlauf</h6>
+                        <button type="button" class="btn btn-outline-light btn-sm" id="loadSuggestionsBtn">
+                            🔍 Vorschläge laden
+                        </button>
+                        <div id="suggestionsList" class="mt-3" style="display: none; max-height: 900px; overflow-y: auto; border: 1px solid #334155; border-radius: 6px; padding: 12px;">
+                            <!-- Suggestions will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <h4>Mail-Accounts</h4>
             
             {% if mail_accounts %}
@@ -1778,5 +1902,357 @@ function updateFetchPreview(data) {
     previewDetails.innerHTML = detailsHtml;
     previewContainer.style.display = 'block';
 }
+
+// ============================================================================
+// Phase X: Trusted Senders + UrgencyBooster JavaScript Functions (Account-Aware)
+// ============================================================================
+
+// Load and display trusted senders list (Account-Aware)
+async function loadTrustedSendersList() {
+    try {
+        const accountSelector = document.getElementById('whitelistAccountSelector');
+        const selectedAccountId = accountSelector.value;
+        
+        // Build URL with account_id if selected
+        const url = selectedAccountId ? 
+            `/api/trusted-senders?account_id=${selectedAccountId}` : 
+            '/api/trusted-senders';
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {'Content-Type': 'application/json'}
+        });
+        const data = await response.json();
+        
+        if (!data.success) {
+            console.error('Failed to load trusted senders:', data.error);
+            return;
+        }
+        
+        const list = document.getElementById('trustedSendersList');
+        if (data.senders.length === 0) {
+            list.innerHTML = '<div class="text-muted text-center py-4">Noch keine vertrauenswürdigen Absender</div>';
+            return;
+        }
+        
+        list.innerHTML = data.senders.map(sender => `
+            <div class="list-group-item bg-dark text-light d-flex justify-content-between align-items-start gap-2 py-3">
+                <div style="flex-grow: 1;">
+                    <div class="d-flex gap-2 align-items-center mb-1">
+                        <small class="badge ${sender.pattern_type === 'exact' ? 'bg-success' : 'bg-info'}">
+                            ${sender.pattern_type === 'exact' ? '🔒 Exakt' : 
+                              sender.pattern_type === 'email_domain' ? '👥 Domain' : '🏢 Domain+Subs'}
+                        </small>
+                        ${sender.account_id ? `<small class="badge bg-warning text-dark">Account ${sender.account_id}</small>` : 
+                          `<small class="badge bg-secondary">Global</small>`}
+                    </div>
+                    <div class="font-monospace small text-light">${sender.sender_pattern}</div>
+                    ${sender.label ? `<small class="text-muted d-block">📝 ${sender.label}</small>` : ''}
+                    <small class="text-muted d-block mt-1">
+                        📧 ${sender.email_count} Mails
+                        ${sender.last_seen_at ? ` • Zuletzt: ${new Date(sender.last_seen_at).toLocaleDateString('de-DE')}` : ''}
+                    </small>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-light" 
+                            onclick="toggleUrgencyBooster(${sender.id}, ${!sender.use_urgency_booster})"
+                            title="UrgencyBooster ${sender.use_urgency_booster ? 'deaktivieren' : 'aktivieren'}">
+                        ${sender.use_urgency_booster ? '⚡' : '⭕'}
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" 
+                            onclick="deleteTrustedSender(${sender.id})">
+                        🗑️
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading trusted senders:', error);
+        document.getElementById('trustedSendersList').innerHTML = 
+            `<div class="alert alert-danger small mb-0">Fehler beim Laden: ${error.message}</div>`;
+    }
+}
+
+// Filter senders when account selector changes
+document.addEventListener('DOMContentLoaded', function() {
+    const accountSelector = document.getElementById('whitelistAccountSelector');
+    if (accountSelector) {
+        accountSelector.addEventListener('change', loadTrustedSendersList);
+        // Load initial trusted senders list
+        loadTrustedSendersList();
+    }
+});
+
+// Toggle UrgencyBooster for a sender
+async function toggleUrgencyBooster(senderId, newValue) {
+    try {
+        const accountSelector = document.getElementById('whitelistAccountSelector');
+        const accountId = accountSelector.value;
+        
+        const url = accountId ? 
+            `/api/trusted-senders/${senderId}?account_id=${accountId}` : 
+            `/api/trusted-senders/${senderId}`;
+        
+        const response = await fetch(url, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({use_urgency_booster: newValue})
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            loadTrustedSendersList();
+        } else {
+            alert('Fehler: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error toggling urgency booster:', error);
+        alert('Fehler beim Aktualisieren');
+    }
+}
+
+// Delete a trusted sender
+async function deleteTrustedSender(senderId) {
+    if (!confirm('Diesen Sender wirklich löschen?')) return;
+    
+    try {
+        const accountSelector = document.getElementById('whitelistAccountSelector');
+        const accountId = accountSelector.value;
+        
+        const url = accountId ? 
+            `/api/trusted-senders/${senderId}?account_id=${accountId}` : 
+            `/api/trusted-senders/${senderId}`;
+        
+        const response = await fetch(url, {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'}
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            loadTrustedSendersList();
+        } else {
+            alert('Fehler: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error deleting trusted sender:', error);
+        alert('Fehler beim Löschen');
+    }
+}
+
+// Add new trusted sender (Account-Aware)
+async function addTrustedSender() {
+    const pattern = document.getElementById('trustedSenderPattern').value.trim();
+    const type = document.getElementById('trustedSenderType').value;
+    const label = document.getElementById('trustedSenderLabel').value.trim() || null;
+    const useBooster = document.getElementById('trustedSenderUseBooster').checked;
+    const accountId = document.getElementById('trustedSenderAccountId').value || null;
+    
+    if (!pattern) {
+        alert('Bitte Absender-Muster eingeben');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/trusted-senders', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                sender_pattern: pattern,
+                pattern_type: type,
+                label: label,
+                use_urgency_booster: useBooster,
+                account_id: accountId ? parseInt(accountId) : null
+            })
+        });
+        const data = await response.json();
+        
+        if (!data.success) {
+            alert(`❌ Fehler: ${data.error}`);
+            return;
+        }
+        
+        // Reset form and reload list
+        document.getElementById('trustedSenderPattern').value = '';
+        document.getElementById('trustedSenderLabel').value = '';
+        document.getElementById('trustedSenderType').value = 'exact';
+        document.getElementById('trustedSenderUseBooster').checked = true;
+        document.getElementById('trustedSenderAccountId').value = '';
+        
+        alert('✅ Absender hinzugefügt');
+        loadTrustedSendersList();
+    } catch (error) {
+        alert(`❌ Fehler: ${error.message}`);
+    }
+}
+
+// Load urgency booster setting
+async function loadUrgencyBoosterStatus() {
+    try {
+        const response = await fetch('/api/settings/urgency-booster', {
+            method: 'GET',
+            headers: {'Content-Type': 'application/json'}
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('urgencyBoosterToggle').checked = data.urgency_booster_enabled;
+        }
+    } catch (error) {
+        console.error('Error loading urgency booster status:', error);
+    }
+}
+
+// Toggle urgency booster global setting
+async function toggleUrgencyBoosterGlobal(enabled) {
+    try {
+        const response = await fetch('/api/settings/urgency-booster', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ enabled: enabled })
+        });
+        const data = await response.json();
+        
+        if (!data.success) {
+            alert(`❌ Fehler: ${data.error}`);
+            document.getElementById('urgencyBoosterToggle').checked = !enabled;
+        }
+    } catch (error) {
+        alert(`❌ Fehler: ${error.message}`);
+        document.getElementById('urgencyBoosterToggle').checked = !enabled;
+    }
+}
+
+// Load suggestions
+async function loadSuggestions() {
+    const btn = document.getElementById('loadSuggestionsBtn');
+    const list = document.getElementById('suggestionsList');
+    btn.disabled = true;
+    btn.textContent = '⏳ Laden...';
+    
+    try {
+        const accountSelector = document.getElementById('whitelistAccountSelector');
+        const accountId = accountSelector ? accountSelector.value : null;
+        
+        const url = accountId ? 
+            `/api/trusted-senders/suggestions?account_id=${accountId}` : 
+            '/api/trusted-senders/suggestions';
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {'Content-Type': 'application/json'}
+        });
+        const data = await response.json();
+        
+        if (!data.success) {
+            list.innerHTML = `<div class="alert alert-danger small mb-0">${data.error}</div>`;
+            list.style.display = 'block';
+            return;
+        }
+        
+        if (data.suggestions.length === 0) {
+            list.innerHTML = '<div class="text-muted">Keine Vorschläge verfügbar</div>';
+            list.style.display = 'block';
+            return;
+        }
+        
+        list.innerHTML = data.suggestions.map((suggestion, idx) => {
+            const sender = suggestion.sender.replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+            const type = suggestion.suggested_pattern_type || 'exact';
+            const typeDisplay = type === 'exact' ? 'Exakt' : type === 'email_domain' ? 'Domain (@)' : 'Subdomain';
+            return `
+            <div class="bg-dark text-light p-3 mb-2 rounded border border-info" style="background: linear-gradient(135deg, #1a2332, #0f1419) !important;">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div style="flex-grow: 1;">
+                        <div class="font-monospace small" style="color: #4ade80; font-weight: 600;">${sender}</div>
+                        <div style="font-size: 0.75rem; color: #cbd5e1; margin-top: 4px;">
+                            <span style="background: #334155; padding: 2px 6px; border-radius: 3px; display: inline-block;">${typeDisplay}</span>
+                            <span style="color: #94a3b8; margin-left: 8px;">📧 ${suggestion.email_count} Email${suggestion.email_count > 1 ? 's' : ''}</span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-success suggestion-add-btn"
+                            data-sender="${sender}"
+                            data-type="${type}"
+                            style="white-space: nowrap;">
+                        ✅ Hinzufügen
+                    </button>
+                </div>
+            </div>
+        `;
+        }).join('');
+        
+        // Attach event listeners to all suggestion buttons
+        list.querySelectorAll('.suggestion-add-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const sender = this.getAttribute('data-sender');
+                const type = this.getAttribute('data-type');
+                addSuggestionToTrusted(sender, type);
+            });
+        });
+        
+        list.style.display = 'block';
+    } catch (error) {
+        list.innerHTML = `<div class="alert alert-danger small mb-0">Fehler: ${error.message}</div>`;
+        list.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔍 Vorschläge laden';
+    }
+}
+
+// Add suggestion to trusted senders (mit Account-Context)
+async function addSuggestionToTrusted(pattern, type) {
+    // Übernehme den aktuell ausgewählten Account
+    const accountSelector = document.getElementById('whitelistAccountSelector');
+    const currentAccountId = accountSelector ? accountSelector.value : '';
+    
+    // Fülle das Formular aus
+    document.getElementById('trustedSenderPattern').value = pattern;
+    document.getElementById('trustedSenderType').value = type;
+    document.getElementById('trustedSenderLabel').value = '';
+    
+    // Setze den Account im Formular auf den aktuell ausgewählten
+    document.getElementById('trustedSenderAccountId').value = currentAccountId;
+    
+    // Scroll to form
+    document.querySelector('input[name="since_date"]').scrollIntoView({ behavior: 'smooth' });
+}
+
+// Initialize Phase X event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Load initial data
+    loadTrustedSendersList();
+    loadUrgencyBoosterStatus();
+    
+    // Bind event listeners
+    const addBtn = document.getElementById('addTrustedSenderBtn');
+    if (addBtn) {
+        addBtn.addEventListener('click', addTrustedSender);
+    }
+    
+    const toggleBtn = document.getElementById('urgencyBoosterToggle');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('change', (e) => {
+            toggleUrgencyBoosterGlobal(e.target.checked);
+        });
+    }
+    
+    const suggestionsBtn = document.getElementById('loadSuggestionsBtn');
+    if (suggestionsBtn) {
+        suggestionsBtn.addEventListener('click', loadSuggestions);
+    }
+    
+    // Allow Enter key in pattern input
+    const patternInput = document.getElementById('trustedSenderPattern');
+    if (patternInput) {
+        patternInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addTrustedSender();
+            }
+        });
+    }
+});
 </script>
 {% endblock %}

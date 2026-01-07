@@ -1,7 +1,7 @@
 # 📧 KI-Mail-Helper – Benutzerhandbuch
 
-**Version:** 1.0  
-**Stand:** 6. Januar 2026
+**Version:** 1.1  
+**Stand:** 7. Januar 2026
 
 ---
 
@@ -49,8 +49,9 @@
    - 10.1 Mail-Accounts verwalten
    - 10.2 SMTP konfigurieren (Email-Versand)
    - 10.3 KI-Provider konfigurieren
-   - 10.4 Passwort ändern
-   - 10.5 2FA & Recovery-Codes
+   - 10.4 Trusted Senders + UrgencyBooster
+   - 10.5 Passwort ändern
+   - 10.6 2FA & Recovery-Codes
 11. [Sicherheit & Datenschutz](#11-sicherheit--datenschutz)
 12. [Fehlerbehebung](#12-fehlerbehebung)
 
@@ -1031,7 +1032,88 @@ Ein **llama3.2:1b mit Learning** liefert nach 1-2 Wochen bessere Ergebnisse als 
 
 > 📘 **Detaillierte Modell-Empfehlungen:** Siehe [KI_MODELL_EMPFEHLUNGEN.md](KI_MODELL_EMPFEHLUNGEN.md) für Performance-Benchmarks, Hardware-Richtwerte und Learning-Strategien.
 
-### 10.4 Passwort ändern
+---
+
+### 10.4 Trusted Senders + UrgencyBooster
+
+**Phase X** erlaubt dir, vertrauenswürdige Absender zu definieren, deren Emails automatisch als **"Hoch dringend"** markiert werden.
+
+**Features:**
+- ✅ **Account-basiert**: Whitelist pro Mail-Account ODER global für alle
+- ✅ **3 Pattern-Typen**: Exakt, Domain (@example.com), Domain+Subdomains
+- ✅ **Vorschläge**: System schlägt häufige Absender vor
+- ✅ **UrgencyBooster**: Automatische Urgency-Override für gewhitelistete Sender
+
+**So funktioniert's:**
+
+1. **Gehe zu Settings → Phase X: Trusted Senders + UrgencyBooster**
+
+2. **Wähle Account-Kontext:**
+   - 🌍 **Global (alle Accounts)**: Whitelist gilt für ALLE deine Mail-Accounts
+   - 📧 **Spezifischer Account**: Whitelist nur für diesen Account (z.B. nur Geschäft)
+
+3. **Absender manuell hinzufügen:**
+   - **Absender-Muster**: `chef@firma.ch` oder `@firma.ch` oder `firma.ch`
+   - **Typ**: 
+     - 🔒 **Exakt**: Nur exakte Email-Adresse
+     - 👥 **Domain**: Alle Emails von `@firma.ch`
+     - 🏢 **Domain+Subs**: Auch `test.firma.ch`, `mail.firma.ch` etc.
+   - **Für welches Account**: Global oder spezifisch
+   - **Label** (optional): `CEO`, `Wichtiger Kunde`, etc.
+   - **⚡ UrgencyBooster aktivieren**: Checkbox (empfohlen!)
+   - Klicke **"Hinzufügen"**
+
+4. **Vorschläge nutzen:**
+   - Klicke **"🔍 Vorschläge laden"**
+   - System zeigt häufigste Absender aus gewähltem Account
+   - Klicke **"✅ Hinzufügen"** bei einem Vorschlag
+   - → Formular wird vorausgefüllt, nur noch bestätigen
+
+**Beispiel-Workflows:**
+
+**Szenario 1: Chef nur auf Geschäfts-Account wichtig**
+```
+1. Wähle Account: 📧 max.mustermann@firma.ch
+2. Pattern: chef@firma.ch
+3. Typ: 🔒 Exakt
+4. Account: 📧 max.mustermann@firma.ch (spezifisch!)
+5. ⚡ aktivieren → Hinzufügen
+
+→ Emails vom Chef im Geschäfts-Account = automatisch "Hoch dringend"  
+→ Emails vom Chef im Privat-Account = normale KI-Bewertung
+```
+
+**Szenario 2: Firmen-Domain global wichtig**
+```
+1. Wähle Account: 🌍 Global (alle Accounts)
+2. Pattern: @firma.ch
+3. Typ: 👥 Domain
+4. Account: 🌍 Global
+5. ⚡ aktivieren → Hinzufügen
+
+→ ALLE Emails von @firma.ch in ALLEN Accounts = "Hoch dringend"
+```
+
+**Account-Badges verstehen:**
+- Liste zeigt alle Sender mit Badges:
+  - `🌍 Global`: Gilt für alle Accounts
+  - `📧 Account 1`: Gilt nur für Account 1
+- Beim Wechsel des Account-Selectors werden angezeigt:
+  - Account-spezifische Sender des gewählten Accounts
+  - + Alle globalen Sender
+
+**Prioritätslogik:**
+1. Account-spezifische Whitelist wird zuerst geprüft
+2. Falls nicht gefunden → Globale Whitelist
+3. Falls dort auch nicht → Normale KI-Bewertung
+
+**Limits:**
+- Max. 500 Sender pro Account
+- Unbegrenzt global
+
+---
+
+### 10.5 Passwort ändern
 
 > **📸 Screenshot:** Passwort ändern Formular (change_password.html)  
 > *Zeige: Altes Passwort, Neues Passwort (2x), Anforderungen-Liste*
@@ -1046,7 +1128,7 @@ Ein **llama3.2:1b mit Learning** liefert nach 1-2 Wochen bessere Ergebnisse als 
 
 > ⚠️ Nach der Passwort-Änderung wirst du automatisch ausgeloggt. Deine verschlüsselten Daten bleiben erhalten – nur der Verschlüsselungsschlüssel wird neu verpackt.
 
-### 10.5 2FA & Recovery-Codes
+### 10.6 2FA & Recovery-Codes
 
 > **📸 Screenshot:** 2FA-Sektion in Einstellungen  
 > *Zeige: 2FA-Status, "Recovery-Codes regenerieren" Button*

@@ -15,6 +15,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (14 Bedingungen)
 - **Customizable Reply Styles** – Anrede, Grussformel, Signatur & Instructions pro Stil + Account-spezifisch
 - **Account-Specific Signatures** – Individuelle Signaturen pro Mail-Account (Geschäft/Privat/Uni)
+- **Trusted Senders + UrgencyBooster** – Account-basierte Whitelist mit Urgency-Override (Global + Per-Account)
 - **Semantische Suche** – Embeddings für "finde ähnliche Emails"
 - **Tag-System** – Manuell + KI-Vorschläge basierend auf gelernten Mustern
 - **IMAP & Gmail OAuth** – Funktioniert mit GMX, Gmail, Outlook, etc.
@@ -27,8 +28,8 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## Status
 
-**Version:** 1.0.0  
-**Development:** Aktiv (Phase I.2 - Account Signatures abgeschlossen)  
+**Version:** 1.1.0  
+**Development:** Aktiv (Phase X - Trusted Senders abgeschlossen)  
 **Stability:** Production-ready für Single-User-Deployment  
 **Next:** Bulk Operations, Pipeline Integration
 
@@ -43,6 +44,9 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ Phase F.3: Negative Feedback für Tag-Learning
 - ✅ Phase G: AI Action Engine (Reply Generator + Auto-Rules)
 - ✅ Phase H: SMTP Mail-Versand mit Sent-Sync
+- ✅ Phase I.1: Customizable Reply Styles (4 Stile)
+- ✅ Phase I.2: Account-Specific Signatures
+- ✅ Phase X: Trusted Senders + UrgencyBooster (Account-Based)
 
 ---
 

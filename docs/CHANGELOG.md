@@ -8,6 +8,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added - Phase X: Trusted Senders + UrgencyBooster (2026-01-07)
+
+#### Phase X: Account-Based Whitelist System
+
+**Features:**
+- ✅ **Account-basierte Whitelist**: Vertrauenswürdige Absender pro Account oder global
+- ✅ **UrgencyBooster**: Automatische Urgency-Override für gewhitelistete Sender
+- ✅ **3 Pattern-Typen**: 
+  - Exakt (john@example.com)
+  - Email-Domain (@example.com)
+  - Domain mit Subdomains (example.com + test.example.com)
+- ✅ **Vorschläge-System**: KI schlägt häufige Sender vor (account-gefiltert)
+- ✅ **Prioritätslogik**: Account-spezifisch → Global Fallback
+- ✅ **Database Schema**: 
+  - `trusted_senders.account_id` (FK zu mail_accounts, nullable)
+  - Unique constraint: (user_id, sender_pattern, account_id)
+  - Cascade delete bei Account-Löschung
+- ✅ **REST API**: 7 Endpoints (GET/POST/PATCH/DELETE) mit account_id Support
+- ✅ **UI**: Account-Selector, Account-Badges, Account-aware Vorschläge
+- ✅ **Per-Account Limits**: Max 500 Sender pro Account
+
+**Use Case:**
+- Geschäft: Whitelist Chef nur für Geschäfts-Account
+- Privat: Whitelist Familie nur für Privat-Account
+- Global: Whitelist wichtige Services für alle Accounts
+
+**Workflow:**
+1. Gehe zu **Settings** → **Phase X: Trusted Senders**
+2. Wähle Account (oder "Global für alle")
+3. Klicke **"Vorschläge laden"** → System zeigt häufige Sender
+4. Klicke **"Hinzufügen"** bei Vorschlag ODER manuell eingeben
+5. Pattern wird für gewählten Account gespeichert
+6. Bei Emails von diesem Sender → Urgency automatisch auf "Hoch"
+
+**Technical Details:**
+- Migration: `ph19_trusted_senders_account_id`
+- Service: `src/services/trusted_senders.py` (account-aware filtering)
+- API: `src/01_web_app.py` (7 endpoints mit ?account_id Parameter)
+- Frontend: `templates/settings.html` (Account-Selector + JS Functions)
+- Filtering: E-Mails und Whitelists nach mail_account_id gefiltert
+
+**Documentation:**
+- Umfassende Guides: `doc/erledigt/phase_x/` (16 Dateien)
+- API Referenz: `doc/erledigt/phase_x/PHASE_X_API_ENDPOINTS_ACCOUNT_BASED.md`
+- Quick Test: `doc/erledigt/phase_x/PHASE_X_QUICK_TEST.md`
+
+---
+
 ### Added - Reply-Styles: Anpassbare Antwort-Generierung (2026-01-06)
 
 #### Phase I.2: Account-Specific Signatures

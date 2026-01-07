@@ -7264,6 +7264,313 @@ def server_error(e):
     return "500 - Server-Fehler", 500
 
 
+# ============================================================================
+# Phase X: Trusted Senders + UrgencyBooster API Endpoints
+# ============================================================================
+
+@app.route("/api/trusted-senders", methods=["GET"])
+@login_required
+def api_list_trusted_senders():
+    """List trusted senders for current user, optionally filtered by account_id"""
+    db = get_db_session()
+    try:
+        models_mod = importlib.import_module(".02_models", "src")
+        
+        # Get optional account_id parameter
+        account_id = request.args.get('account_id', type=int)
+        
+        # Build query
+        query = db.query(models_mod.TrustedSender).filter_by(user_id=current_user.id)
+        
+        if account_id:
+            # For specific account: include account-specific AND global (account_id=NULL)
+            query = query.filter(
+                (models_mod.TrustedSender.account_id == account_id) |
+                (models_mod.TrustedSender.account_id.is_(None))
+            )
+        else:
+            # No account_id: only global senders
+            query = query.filter(models_mod.TrustedSender.account_id.is_(None))
+        
+        trusted_senders = query.all()
+        
+        senders = []
+        for ts in trusted_senders:
+            senders.append({
+                "id": ts.id,
+                "sender_pattern": ts.sender_pattern,
+                "pattern_type": ts.pattern_type,
+                "label": ts.label or "",
+                "use_urgency_booster": ts.use_urgency_booster,
+                "added_at": ts.added_at.isoformat() if ts.added_at else None,
+                "last_seen_at": ts.last_seen_at.isoformat() if ts.last_seen_at else None,
+                "email_count": ts.email_count or 0,
+                "account_id": ts.account_id
+            })
+        
+        return {"success": True, "senders": senders}, 200
+    except Exception as e:
+        logger.error(f"Error listing trusted senders: {e}")
+        return {"success": False, "error": str(e)}, 500
+    finally:
+        db.close()
+
+
+@app.route("/api/trusted-senders", methods=["POST"])
+@login_required
+def api_add_trusted_sender():
+    """Add a new trusted sender"""
+    db = get_db_session()
+    try:
+        data = request.get_json()
+        if not data:
+            return {"success": False, "error": "No JSON data"}, 400
+        
+        sender_pattern = data.get("sender_pattern", "").strip()
+        pattern_type = data.get("pattern_type", "email").strip()  # email, email_domain, domain
+        label = data.get("label", "").strip() or None
+        use_urgency_booster = data.get("use_urgency_booster", True)
+        account_id = data.get("account_id", None)  # None = global, int = specific account
+        
+        if not sender_pattern:
+            return {"success": False, "error": "sender_pattern required"}, 400
+        
+        if pattern_type not in ["exact", "email_domain", "domain"]:
+            return {"success": False, "error": "Invalid pattern_type"}, 400
+        
+        # Use TrustedSenderManager to add with validation
+        trusted_senders_mod = importlib.import_module(".services.trusted_senders", "src")
+        try:
+            ts = trusted_senders_mod.TrustedSenderManager.add_trusted_sender(
+                db=db,
+                user_id=current_user.id,
+                sender_pattern=sender_pattern,
+                account_id=account_id,
+                pattern_type=pattern_type,
+                label=label,
+                use_urgency_booster=use_urgency_booster
+            )
+            if ts:
+                return {
+                    "success": True,
+                    "sender": {
+                        "id": ts.id,
+                        "sender_pattern": ts.sender_pattern,
+                        "pattern_type": ts.pattern_type,
+                        "label": ts.label,
+                        "use_urgency_booster": ts.use_urgency_booster
+                    }
+                }, 201
+            else:
+                return {"success": False, "error": "Failed to add trusted sender"}, 400
+        except ValueError as e:
+            return {"success": False, "error": str(e)}, 400
+        except Exception as e:
+            logger.error(f"Error adding trusted sender: {e}")
+            return {"success": False, "error": str(e)}, 500
+    except Exception as e:
+        logger.error(f"Error in add trusted sender: {e}")
+        return {"success": False, "error": str(e)}, 500
+    finally:
+        db.close()
+
+
+@app.route("/api/trusted-senders/<int:sender_id>", methods=["PATCH"])
+@login_required
+def api_update_trusted_sender(sender_id):
+    """Update a trusted sender (toggle use_urgency_booster flag)"""
+    db = get_db_session()
+    try:
+        models_mod = importlib.import_module(".02_models", "src")
+        account_id = request.args.get('account_id', type=int)
+        
+        # Query with account filter if provided
+        query = db.query(models_mod.TrustedSender).filter_by(
+            id=sender_id,
+            user_id=current_user.id
+        )
+        
+        if account_id:
+            # Verify sender belongs to this account or is global
+            query = query.filter(
+                (models_mod.TrustedSender.account_id == account_id) |
+                (models_mod.TrustedSender.account_id.is_(None))
+            )
+        else:
+            # Only global senders
+            query = query.filter(models_mod.TrustedSender.account_id.is_(None))
+        
+        ts = query.first()
+        
+        if not ts:
+            return {"success": False, "error": "Trusted sender not found"}, 404
+        
+        data = request.get_json()
+        if not data:
+            return {"success": False, "error": "No JSON data"}, 400
+        
+        # Update use_urgency_booster flag
+        if "use_urgency_booster" in data:
+            ts.use_urgency_booster = bool(data["use_urgency_booster"])
+        
+        if "label" in data:
+            ts.label = data.get("label", "").strip() or None
+        
+        db.commit()
+        return {
+            "success": True,
+            "sender": {
+                "id": ts.id,
+                "sender_pattern": ts.sender_pattern,
+                "pattern_type": ts.pattern_type,
+                "label": ts.label,
+                "use_urgency_booster": ts.use_urgency_booster,
+                "account_id": ts.account_id
+            }
+        }, 200
+    except Exception as e:
+        logger.error(f"Error updating trusted sender: {e}")
+        db.rollback()
+        return {"success": False, "error": str(e)}, 500
+    finally:
+        db.close()
+
+
+@app.route("/api/trusted-senders/<int:sender_id>", methods=["DELETE"])
+@login_required
+def api_delete_trusted_sender(sender_id):
+    """Delete a trusted sender"""
+    db = get_db_session()
+    try:
+        models_mod = importlib.import_module(".02_models", "src")
+        account_id = request.args.get('account_id', type=int)
+        
+        # Query with account filter if provided
+        query = db.query(models_mod.TrustedSender).filter_by(
+            id=sender_id,
+            user_id=current_user.id
+        )
+        
+        if account_id:
+            # Verify sender belongs to this account or is global
+            query = query.filter(
+                (models_mod.TrustedSender.account_id == account_id) |
+                (models_mod.TrustedSender.account_id.is_(None))
+            )
+        else:
+            # Only global senders
+            query = query.filter(models_mod.TrustedSender.account_id.is_(None))
+        
+        ts = query.first()
+        
+        if not ts:
+            return {"success": False, "error": "Trusted sender not found"}, 404
+        
+        db.delete(ts)
+        db.commit()
+        return {"success": True}, 200
+    except Exception as e:
+        logger.error(f"Error deleting trusted sender: {e}")
+        db.rollback()
+        return {"success": False, "error": str(e)}, 500
+    finally:
+        db.close()
+
+
+@app.route("/api/settings/urgency-booster", methods=["GET"])
+@login_required
+def api_get_urgency_booster():
+    """Get current urgency booster setting"""
+    db = get_db_session()
+    try:
+        models_mod = importlib.import_module(".02_models", "src")
+        user = db.query(models_mod.User).filter_by(id=current_user.id).first()
+        if not user:
+            return {"success": False, "error": "User not found"}, 404
+        
+        return {
+            "success": True,
+            "urgency_booster_enabled": user.urgency_booster_enabled
+        }, 200
+    except Exception as e:
+        logger.error(f"Error getting urgency booster setting: {e}")
+        return {"success": False, "error": str(e)}, 500
+    finally:
+        db.close()
+
+
+@app.route("/api/settings/urgency-booster", methods=["POST"])
+@login_required
+def api_set_urgency_booster():
+    """Toggle urgency booster setting"""
+    db = get_db_session()
+    try:
+        data = request.get_json()
+        if not data:
+            return {"success": False, "error": "No JSON data"}, 400
+        
+        enabled = data.get("enabled", True)
+        
+        models_mod = importlib.import_module(".02_models", "src")
+        user = db.query(models_mod.User).filter_by(id=current_user.id).first()
+        if not user:
+            return {"success": False, "error": "User not found"}, 404
+        
+        user.urgency_booster_enabled = bool(enabled)
+        db.commit()
+        
+        logger.info(f"UrgencyBooster for user {current_user.id}: {enabled}")
+        return {
+            "success": True,
+            "urgency_booster_enabled": user.urgency_booster_enabled
+        }, 200
+    except Exception as e:
+        logger.error(f"Error setting urgency booster: {e}")
+        db.rollback()
+        return {"success": False, "error": str(e)}, 500
+    finally:
+        db.close()
+
+
+@app.route("/api/trusted-senders/suggestions", methods=["GET"])
+@login_required
+def api_get_trusted_senders_suggestions():
+    """Get suggestions for new trusted senders based on email history"""
+    db = get_db_session()
+    try:
+        models_mod = importlib.import_module(".02_models", "src")
+        encryption_mod = importlib.import_module(".08_encryption", "src")
+        trusted_senders_mod = importlib.import_module(".services.trusted_senders", "src")
+        
+        # Get master key from Flask session
+        master_key = session.get("master_key")
+        if not master_key:
+            return {"success": False, "error": "Master key not available"}, 400
+        
+        # Get optional account_id parameter
+        account_id = request.args.get('account_id', type=int)
+        
+        # Get suggestions
+        suggestions = trusted_senders_mod.TrustedSenderManager.get_suggestions_from_emails(
+            db=db,
+            user_id=current_user.id,
+            master_key=master_key,
+            limit=10,
+            account_id=account_id  # Pass account context for filtering existing senders
+        )
+        
+        return {
+            "success": True,
+            "suggestions": suggestions,
+            "account_id": account_id
+        }, 200
+    except Exception as e:
+        logger.error(f"Error getting trusted sender suggestions: {e}")
+        return {"success": False, "error": str(e)}, 500
+    finally:
+        db.close()
+
+
 def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
     """Startet den Flask-Server
 

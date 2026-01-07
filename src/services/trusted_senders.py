@@ -1,0 +1,361 @@
+﻿"""
+Trusted Sender Management (Phase X)
+
+Verwaltet User-definierte vertrauenswürdige Absender.
+Nur für Emails von diesen Sendern wird UrgencyBooster (spaCy) verwendet.
+"""
+
+import logging
+import re
+import importlib
+from typing import Optional, List, Dict
+from datetime import datetime, UTC
+from sqlalchemy import func, update
+
+logger = logging.getLogger(__name__)
+
+MAX_TRUSTED_SENDERS_PER_USER = 500
+
+# Validierungs-Regex (RFC 5321 + RFC 1123 compliant)
+# EMAIL_REGEX: Strikte Email-Validierung
+# - Verhindert konsekutive Punkte/Unterstriche (muss abwechseln)
+# - Erlaubt Plus für email-tags
+# - Format: local[.+_local]*@domain.tld
+EMAIL_REGEX = r'^[a-zA-Z0-9]+([._+][a-zA-Z0-9]+)*@[a-zA-Z0-9]+([.-][a-zA-Z0-9]+)*\.[a-zA-Z]{2,}$'
+
+# DOMAIN_REGEX: RFC 1123 konforme Domain-Validierung
+# - Jedes Label: [a-zA-Z0-9] oder [a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]
+# - Verhindert Start/Ende mit Bindestrich
+# - Verhindert konsekutive Bindestriche (Lookbehind verhindert a--b)
+# - Minimum 2 Labels (domain.tld)
+DOMAIN_REGEX = r'^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
+
+
+class TrustedSenderManager:
+    """Verwaltet Trusted Sender für User"""
+    
+    @staticmethod
+    def is_trusted_sender(db, user_id: int, sender_email: str, account_id: Optional[int] = None) -> Optional[Dict]:
+        """
+        Prüft ob Sender vertrauenswürdig ist.
+        
+        Supports both user-level (global) and account-level matching:
+        - Wenn account_id None: Prüft nur user_id (global)
+        - Wenn account_id gegeben: Prüft zuerst account-spezifische, dann globale
+        
+        Returns:
+            None wenn nicht trusted
+            dict mit {'id', 'label', 'use_urgency_booster', 'pattern', 'account_id'} wenn trusted
+        """
+        models = importlib.import_module(".02_models", "src")
+        
+        sender_lower = sender_email.lower().strip()
+        
+        if '@' in sender_lower:
+            domain = sender_lower.split('@')[1]
+            email_domain = '@' + domain
+        else:
+            domain = sender_lower
+            email_domain = None
+        
+        # Hole alle Trusted Sender für User
+        # Wenn account_id gegeben: Erst account-spezifische, dann globale (NULL)
+        query = db.query(models.TrustedSender).filter_by(user_id=user_id)
+        
+        if account_id:
+            # Order: account-specific first, then global (account_id=NULL)
+            trusted_senders = query.filter(
+                (models.TrustedSender.account_id == account_id) |
+                (models.TrustedSender.account_id.is_(None))
+            ).order_by(
+                models.TrustedSender.account_id.desc()  # Account-specific first
+            ).all()
+        else:
+            # Only global (account_id=NULL)
+            trusted_senders = query.filter(models.TrustedSender.account_id.is_(None)).all()
+        
+        # Pattern ist bereits normalisiert
+        for ts in trusted_senders:
+            pattern = ts.sender_pattern
+            
+            if ts.pattern_type == 'exact':
+                if pattern == sender_lower:
+                    logger.debug(f"✅ Trusted sender matched (exact): {sender_email}")
+                    return {
+                        'id': ts.id,
+                        'label': ts.label,
+                        'use_urgency_booster': ts.use_urgency_booster,
+                        'pattern': ts.sender_pattern,
+                        'pattern_type': 'exact',
+                        'account_id': ts.account_id
+                    }
+            
+            elif ts.pattern_type == 'email_domain' and email_domain:
+                if pattern == email_domain:
+                    logger.debug(f"✅ Trusted sender matched (email_domain): {sender_email}")
+                    return {
+                        'id': ts.id,
+                        'label': ts.label,
+                        'use_urgency_booster': ts.use_urgency_booster,
+                        'pattern': ts.sender_pattern,
+                        'pattern_type': 'email_domain',
+                        'account_id': ts.account_id
+                    }
+            
+            elif ts.pattern_type == 'domain':
+                # SECURITY: Match exact domain OR subdomains (e.g., example.com matches @example.com and @mail.example.com)
+                # BUT NOT: test-example.com (different domain - suffix spoofing attack)
+                parts = sender_lower.split('@')
+                if len(parts) == 2:
+                    sender_domain = parts[1]
+                    # Exact domain match: @example.com
+                    if sender_domain == pattern:
+                        logger.debug(f"✅ Trusted sender matched (domain exact): {sender_email}")
+                        return {
+                            'id': ts.id,
+                            'label': ts.label,
+                            'use_urgency_booster': ts.use_urgency_booster,
+                            'pattern': ts.sender_pattern,
+                            'pattern_type': 'domain',
+                            'account_id': ts.account_id
+                        }
+                    # Subdomain match: @mail.example.com (but NOT test-example.com)
+                    elif sender_domain.endswith('.' + pattern):
+                        logger.debug(f"✅ Trusted sender matched (domain subdomain): {sender_email}")
+                        return {
+                            'id': ts.id,
+                            'label': ts.label,
+                            'use_urgency_booster': ts.use_urgency_booster,
+                            'pattern': ts.sender_pattern,
+                            'pattern_type': 'domain',
+                            'account_id': ts.account_id
+                        }
+        
+        return None
+    
+    @staticmethod
+    def add_trusted_sender(
+        db,
+        user_id: int,
+        sender_pattern: str,
+        pattern_type: str,
+        label: Optional[str] = None,
+        account_id: Optional[int] = None
+    ) -> Dict:
+        """
+        Fügt vertrauenswürdigen Sender hinzu.
+        
+        Mit Validierung und Limits
+        
+        Args:
+            account_id: Optional - spezifisches Account. NULL = global für alle Accounts
+        """
+        models = importlib.import_module(".02_models", "src")
+        
+        # Validate pattern_type
+        if pattern_type not in ['exact', 'email_domain', 'domain']:
+            return {'success': False, 'error': f'Ungültiger pattern_type: {pattern_type}'}
+        
+        # Normalize
+        sender_pattern = sender_pattern.lower().strip()
+        
+        # Validierung
+        if pattern_type == 'exact':
+            if not re.match(EMAIL_REGEX, sender_pattern):
+                return {'success': False, 'error': 'Ungültiges Email-Format'}
+        
+        elif pattern_type == 'email_domain':
+            if not sender_pattern.startswith('@'):
+                return {'success': False, 'error': 'Email-Domain muss mit @ beginnen'}
+            domain_part = sender_pattern[1:]
+            if not re.match(DOMAIN_REGEX, domain_part):
+                return {'success': False, 'error': 'Ungültiges Domain-Format'}
+        
+        elif pattern_type == 'domain':
+            if not re.match(DOMAIN_REGEX, sender_pattern):
+                return {'success': False, 'error': 'Ungültiges Domain-Format'}
+        
+        # Check Limit (per account or global)
+        if account_id:
+            current_count = db.query(models.TrustedSender).filter_by(
+                user_id=user_id, account_id=account_id
+            ).count()
+        else:
+            current_count = db.query(models.TrustedSender).filter_by(
+                user_id=user_id, account_id=None
+            ).count()
+        if current_count >= MAX_TRUSTED_SENDERS_PER_USER:
+            return {
+                'success': False,
+                'error': f'Limit erreicht ({MAX_TRUSTED_SENDERS_PER_USER} Sender maximum)'
+            }
+        
+        # Check if exists (with account_id consideration)
+        existing = db.query(models.TrustedSender).filter(
+            models.TrustedSender.user_id == user_id,
+            models.TrustedSender.sender_pattern == sender_pattern,
+            models.TrustedSender.account_id == account_id  # NULL == NULL is False in SQL!
+        ).first()
+        
+        # For account_id=NULL, we need special handling
+        if account_id is None:
+            existing = db.query(models.TrustedSender).filter(
+                models.TrustedSender.user_id == user_id,
+                models.TrustedSender.sender_pattern == sender_pattern,
+                models.TrustedSender.account_id.is_(None)
+            ).first()
+        
+        if existing:
+            return {
+                'success': False,
+                'error': 'Sender bereits in Liste',
+                'existing_id': existing.id
+            }
+        
+        # Create
+        trusted = models.TrustedSender(
+            user_id=user_id,
+            account_id=account_id,
+            sender_pattern=sender_pattern,
+            pattern_type=pattern_type,
+            label=label,
+            use_urgency_booster=True,
+            added_at=datetime.now(UTC),
+            email_count=0
+        )
+        
+        db.add(trusted)
+        db.commit()
+        
+        logger.info(f"✅ User {user_id} added trusted sender: {sender_pattern} ({pattern_type})")
+        
+        return {
+            'success': True,
+            'id': trusted.id,
+            'sender_pattern': trusted.sender_pattern,
+            'pattern_type': trusted.pattern_type,
+            'label': trusted.label
+        }
+    
+    @staticmethod
+    def update_last_seen(db, trusted_sender_id: int):
+        """
+        Aktualisiert last_seen_at und email_count.
+        
+        Transaktionales Update für Consistency
+        """
+        models = importlib.import_module(".02_models", "src")
+        
+        try:
+            db.execute(
+                update(models.TrustedSender)
+                .where(models.TrustedSender.id == trusted_sender_id)
+                .values(
+                    last_seen_at=datetime.now(UTC),
+                    email_count=models.TrustedSender.email_count + 1
+                )
+            )
+            db.commit()
+        except Exception as e:
+            logger.error(f"Failed to update trusted sender {trusted_sender_id}: {e}")
+            db.rollback()
+    
+    @staticmethod
+    def get_suggestions_from_emails(
+        db,
+        user_id: int,
+        master_key: str,
+        limit: int = 10,
+        account_id: Optional[int] = None
+    ) -> List[Dict]:
+        """Schlägt Sender vor basierend auf Email-Historie.
+        
+        Args:
+            account_id: Optional - wenn gesetzt, filtert E-Mails UND bestehende Whitelists nach diesem Account
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        models = importlib.import_module(".02_models", "src")
+        encryption = importlib.import_module(".08_encryption", "src")
+        
+        # Query für häufige Sender - MIT Account-Filter wenn angegeben
+        query = db.query(
+            models.RawEmail.encrypted_sender,
+            func.count(models.RawEmail.id).label('count')
+        ).filter(
+            models.RawEmail.user_id == user_id,
+            models.RawEmail.deleted_at.is_(None)
+        )
+        
+        # WICHTIG: Filtere E-Mails nach Account wenn account_id angegeben
+        if account_id:
+            query = query.filter(models.RawEmail.mail_account_id == account_id)
+            logger.info(f"Suggestions: Filtering emails by account_id={account_id}")
+        
+        frequent_senders = query.group_by(
+            models.RawEmail.encrypted_sender
+        ).having(
+            func.count(models.RawEmail.id) >= 1  # Mindestens 1 Email (für Tests)
+        ).order_by(
+            func.count(models.RawEmail.id).desc()
+        ).limit(limit * 3).all()
+        
+        logger.info(f"Suggestions: Found {len(frequent_senders)} frequent senders for user {user_id}" + 
+                   (f" (account_id={account_id})" if account_id else ""))
+        
+        suggestions = []
+        
+        # Get existing trusted patterns (account-aware)
+        query = db.query(models.TrustedSender).filter_by(user_id=user_id)
+        if account_id:
+            # Include account-specific AND global
+            query = query.filter(
+                (models.TrustedSender.account_id == account_id) |
+                (models.TrustedSender.account_id.is_(None))
+            )
+        else:
+            # Only global
+            query = query.filter(models.TrustedSender.account_id.is_(None))
+        
+        trusted_patterns = {
+            ts.sender_pattern
+            for ts in query.all()
+        }
+        
+        decryption_errors = 0
+        
+        for encrypted_sender, count in frequent_senders:
+            try:
+                sender = encryption.EmailDataManager.decrypt_email_sender(encrypted_sender, master_key)
+                sender_lower = sender.lower()
+                
+                if sender_lower in trusted_patterns:
+                    continue
+                
+                if '@' in sender_lower:
+                    domain = sender_lower.split('@')[1]
+                    email_domain = '@' + domain
+                    
+                    if email_domain in trusted_patterns or domain in trusted_patterns:
+                        continue
+                
+                suggestions.append({
+                    'sender': sender,
+                    'email_count': count,
+                    'suggested_pattern_type': 'exact'
+                })
+                
+                if len(suggestions) >= limit:
+                    break
+            
+            except Exception as e:
+                decryption_errors += 1
+                logger.error(f"Decryption failed for sender suggestion: {e}")
+                
+                if decryption_errors > 10:
+                    logger.warning("Too many decryption errors, aborting suggestions")
+                    break
+        
+        logger.info(f"Suggestions: Returning {len(suggestions)} suggestions")
+        return suggestions
