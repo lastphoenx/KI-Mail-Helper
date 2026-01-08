@@ -1327,22 +1327,26 @@ class SpacyKeywordSet(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False)
-    keyword_set_name = Column(String(50), nullable=False)  # z.B. "imperative_verbs"
+    account_id = Column(Integer, ForeignKey("mail_accounts.id", ondelete="CASCADE"), nullable=True)
+    set_type = Column(String(50), nullable=False)  # 'urgency_high', 'urgency_low', etc.
     keywords_json = Column(Text, nullable=False)  # JSON-Array mit Keywords
+    points_per_match = Column(Integer, nullable=False, default=2)
+    max_points = Column(Integer, nullable=False, default=4)
     is_active = Column(Boolean, nullable=False, default=True)
-    last_modified = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    is_custom = Column(Boolean, nullable=False, default=False)  # TRUE = User-definiert
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     user = relationship("User", back_populates="spacy_keyword_sets")
     account = relationship("MailAccount", back_populates="spacy_keyword_sets")
 
     __table_args__ = (
-        Index("idx_spacy_keywords_account", "account_id"),
-        UniqueConstraint("account_id", "keyword_set_name", name="uq_spacy_keyword_set"),
+        Index("ix_spacy_keywords_user_account", "user_id", "account_id", "set_type"),
+        UniqueConstraint("user_id", "account_id", "set_type", name="uq_keywords_user_account_type"),
     )
 
     def __repr__(self):
-        return f"<SpacyKeywordSet(account={self.account_id}, set={self.keyword_set_name})>"
+        return f"<SpacyKeywordSet(account={self.account_id}, set={self.set_type})>"
 
 
 class SpacyScoringConfig(Base):

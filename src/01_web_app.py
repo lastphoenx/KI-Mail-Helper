@@ -3295,7 +3295,7 @@ def api_get_keyword_sets():
         if not account:
             return jsonify({"error": "Account nicht gefunden"}), 404
         
-        keyword_sets = db.query(models.SpacyKeywordSet).filter_by(account_id=account_id).all()
+        keyword_sets = db.query(models.SpacyKeywordSet).filter_by(user_id=user.id, account_id=account_id).all()
         
         # Wenn keine Custom-Sets existieren, Default-Sets laden
         if not keyword_sets:
@@ -3321,7 +3321,7 @@ def api_get_keyword_sets():
             "keyword_sets": [
                 {
                     "id": ks.id,
-                    "keyword_set_name": ks.keyword_set_name,
+                    "keyword_set_name": ks.set_type,  # Frontend erwartet "keyword_set_name"
                     "keywords": json.loads(ks.keywords_json),
                     "is_active": ks.is_active,
                     "is_default": False
@@ -3347,26 +3347,32 @@ def api_save_keyword_set():
         if not account:
             return jsonify({"error": "Account nicht gefunden"}), 404
         
-        keyword_set_name = data.get("keyword_set_name")
+        set_type = data.get("keyword_set_name")  # Frontend sendet "keyword_set_name"
         keywords = data.get("keywords", [])
         
         # Prüfe ob Set bereits existiert
         existing = db.query(models.SpacyKeywordSet).filter_by(
+            user_id=user.id,
             account_id=account_id,
-            keyword_set_name=keyword_set_name
+            set_type=set_type
         ).first()
         
         import json
         if existing:
             existing.keywords_json = json.dumps(keywords)
             existing.is_active = data.get("is_active", True)
+            existing.points_per_match = data.get("points_per_match", 2)
+            existing.max_points = data.get("max_points", 4)
         else:
             new_set = models.SpacyKeywordSet(
                 user_id=user.id,
                 account_id=account_id,
-                keyword_set_name=keyword_set_name,
+                set_type=set_type,
                 keywords_json=json.dumps(keywords),
-                is_active=data.get("is_active", True)
+                is_active=data.get("is_active", True),
+                points_per_match=data.get("points_per_match", 2),
+                max_points=data.get("max_points", 4),
+                is_custom=data.get("is_custom", False)
             )
             db.add(new_set)
         
