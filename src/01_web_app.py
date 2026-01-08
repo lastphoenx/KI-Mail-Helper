@@ -407,6 +407,161 @@ def get_current_user_model(db):
     return db.query(models.User).filter_by(id=current_user.id).first()
 
 
+# ============================================================================
+# P1-003: API Input-Validation Helpers
+# ============================================================================
+
+def validate_string(value, field_name, min_len=1, max_len=1000, allow_empty=False):
+    """Validiert String-Input für API-Endpoints
+    
+    Args:
+        value: Zu validierender Wert
+        field_name: Feldname für Fehlermeldung
+        min_len: Minimale Länge (default: 1)
+        max_len: Maximale Länge (default: 1000)
+        allow_empty: Leere Strings erlauben (default: False)
+        
+    Returns:
+        Bereinigter String oder None wenn allow_empty=True
+        
+    Raises:
+        ValueError: Bei ungültigem Input
+    """
+    if value is None:
+        if allow_empty:
+            return None
+        raise ValueError(f"{field_name} ist erforderlich")
+    
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} muss ein String sein")
+    
+    value = value.strip()
+    
+    if len(value) == 0 and not allow_empty:
+        raise ValueError(f"{field_name} darf nicht leer sein")
+    
+    if len(value) < min_len:
+        raise ValueError(f"{field_name} muss mindestens {min_len} Zeichen lang sein")
+    
+    if len(value) > max_len:
+        raise ValueError(f"{field_name} darf maximal {max_len} Zeichen lang sein")
+    
+    return value
+
+
+def validate_integer(value, field_name, min_val=None, max_val=None):
+    """Validiert Integer-Input für API-Endpoints
+    
+    Args:
+        value: Zu validierender Wert
+        field_name: Feldname für Fehlermeldung
+        min_val: Minimalwert (optional)
+        max_val: Maximalwert (optional)
+        
+    Returns:
+        Integer-Wert
+        
+    Raises:
+        ValueError: Bei ungültigem Input
+    """
+    if value is None:
+        raise ValueError(f"{field_name} ist erforderlich")
+    
+    if not isinstance(value, int):
+        try:
+            value = int(value)
+        except (ValueError, TypeError):
+            raise ValueError(f"{field_name} muss eine Zahl sein")
+    
+    if min_val is not None and value < min_val:
+        raise ValueError(f"{field_name} muss mindestens {min_val} sein")
+    
+    if max_val is not None and value > max_val:
+        raise ValueError(f"{field_name} darf maximal {max_val} sein")
+    
+    return value
+
+
+def validate_email(value, field_name):
+    """Validiert E-Mail-Adresse
+    
+    Args:
+        value: Zu validierender Wert
+        field_name: Feldname für Fehlermeldung
+        
+    Returns:
+        Normalisierte E-Mail-Adresse (lowercase)
+        
+    Raises:
+        ValueError: Bei ungültiger E-Mail
+    """
+    if value is None or not isinstance(value, str):
+        raise ValueError(f"{field_name} ist erforderlich")
+    
+    value = value.strip().lower()
+    
+    if len(value) == 0:
+        raise ValueError(f"{field_name} darf nicht leer sein")
+    
+    if len(value) > 320:  # RFC 5321 Maximum
+        raise ValueError(f"{field_name} ist zu lang (max. 320 Zeichen)")
+    
+    # Simple email pattern check
+    if "@" not in value or "." not in value.split("@")[1]:
+        raise ValueError(f"{field_name} hat kein gültiges E-Mail-Format")
+    
+    return value
+
+
+# ============================================================================
+# P1-005: API Response Helpers (Standardisiertes Format)
+# ============================================================================
+
+def api_success(data=None, message=None, status_code=200):
+    """Standardisierte Erfolgs-Response
+    
+    Args:
+        data: Response-Daten (optional)
+        message: Erfolgs-Nachricht (optional)
+        status_code: HTTP-Statuscode (default: 200)
+        
+    Returns:
+        JSON-Response mit standardisiertem Format
+    """
+    response = {"success": True}
+    
+    if data is not None:
+        response["data"] = data
+    
+    if message:
+        response["message"] = message
+    
+    return jsonify(response), status_code
+
+
+def api_error(message, code=None, status_code=400, details=None):
+    """Standardisierte Fehler-Response
+    
+    Args:
+        message: Fehlermeldung (required)
+        code: Fehlercode wie "VALIDATION_ERROR", "NOT_FOUND" (optional)
+        status_code: HTTP-Statuscode (default: 400)
+        details: Zusätzliche Details (optional)
+        
+    Returns:
+        JSON-Response mit standardisiertem Fehler-Format
+    """
+    error_data = {"message": message}
+    
+    if code:
+        error_data["code"] = code
+    
+    if details:
+        error_data["details"] = details
+    
+    return jsonify({"success": False, "error": error_data}), status_code
+
+
 def ensure_master_key_in_session():
     """Stellt sicher, dass Master-Key in Session vorhanden ist"""
     if not session.get("master_key"):
@@ -2519,12 +2674,17 @@ def api_create_tag():
             return jsonify({"error": "Unauthorized"}), 401
 
         data = request.get_json()
-        name = data.get("name", "").strip()
-        color = data.get("color", "#3B82F6")
-        description = data.get("description", "").strip() or None  # None wenn leer
-
-        if not name:
-            return jsonify({"error": "Tag-Name erforderlich"}), 400
+        
+        # P1-003: Input-Validation
+        try:
+            name = validate_string(data.get("name"), "Tag-Name", min_len=1, max_len=50)
+            color = validate_string(data.get("color", "#3B82F6"), "Farbe", min_len=4, max_len=20)
+            description = validate_string(
+                data.get("description"), "Beschreibung", 
+                min_len=0, max_len=500, allow_empty=True
+            )
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
 
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
@@ -2557,9 +2717,17 @@ def api_update_tag(tag_id):
             return jsonify({"error": "Unauthorized"}), 401
 
         data = request.get_json()
-        name = data.get("name")
-        color = data.get("color")
-        description = data.get("description", "").strip() or None  # None wenn leer
+        
+        # P1-003: Input-Validation
+        try:
+            name = validate_string(data.get("name"), "Tag-Name", min_len=1, max_len=50) if data.get("name") else None
+            color = validate_string(data.get("color"), "Farbe", min_len=4, max_len=20) if data.get("color") else None
+            description = validate_string(
+                data.get("description"), "Beschreibung", 
+                min_len=0, max_len=500, allow_empty=True
+            ) if "description" in data else None
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
 
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
@@ -3203,7 +3371,16 @@ def api_create_vip_sender():
     db = get_db_session()
     try:
         data = request.get_json()
-        account_id = int(data.get("account_id"))  # Convert to int!
+        
+        # P1-003: Input-Validation
+        try:
+            account_id = validate_integer(data.get("account_id"), "Account-ID", min_val=1)
+            sender_pattern = validate_string(data.get("sender_pattern"), "Absender-Pattern", min_len=1, max_len=255).lower()
+            pattern_type = validate_string(data.get("pattern_type", "email"), "Pattern-Typ", min_len=1, max_len=20)
+            importance_boost = validate_integer(data.get("importance_boost", 2), "Importance-Boost", min_val=0, max_val=10)
+            label = validate_string(data.get("label", ""), "Label", min_len=0, max_len=100, allow_empty=True) or ""
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         
         user = get_current_user_model(db)
         account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
@@ -3213,10 +3390,10 @@ def api_create_vip_sender():
         vip = models.SpacyVIPSender(
             user_id=user.id,
             account_id=account_id,
-            sender_pattern=data.get("sender_pattern", "").lower(),
-            pattern_type=data.get("pattern_type", "email"),
-            importance_boost=data.get("importance_boost", 2),
-            label=data.get("label", ""),
+            sender_pattern=sender_pattern,
+            pattern_type=pattern_type,
+            importance_boost=importance_boost,
+            label=label,
             is_active=data.get("is_active", True)
         )
         db.add(vip)

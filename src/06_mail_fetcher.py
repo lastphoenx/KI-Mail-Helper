@@ -33,17 +33,42 @@ def decode_imap_folder_name(folder_name: str) -> str:
         UTF-8 decoded folder name
     """
     try:
-        # Python's decode mit 'imap4-utf-7' unterstützt modified UTF-7
+        # P1-006: Verbesserte UTF-7 Dekodierung
+        # Versuche erst imaputf7 library (optional dependency)
+        try:
+            import imaputf7
+            return imaputf7.decode(folder_name)
+        except ImportError:
+            pass  # Library nicht installiert, nutze Fallback
+        
+        # Fallback 1: Python's imap4-utf-7 codec
         import codecs
-        # Registriere IMAP4-UTF-7 codec falls nicht vorhanden
         try:
             codecs.lookup('imap4-utf-7')
+            return folder_name.encode('latin1').decode('imap4-utf-7')
         except LookupError:
-            # Fallback: manuelles Decoding
-            return folder_name.replace('&APw-', 'ü').replace('&APY-', 'ö').replace('&AOQ-', 'ä').replace('&ANY-', 'Ä').replace('&APY-', 'Ö').replace('&APs-', 'Ü')
+            pass  # Codec nicht verfügbar
         
-        # Decode UTF-7
-        return folder_name.encode('latin1').decode('imap4-utf-7')
+        # Fallback 2: Erweitertes manuelles Mapping (häufigste Zeichen)
+        # Format: &BASE64- wobei BASE64 modified Base64 ist
+        replacements = {
+            '&APw-': 'ü',  '&APs-': 'Ü',
+            '&APY-': 'ö',  '&ANY-': 'Ö', 
+            '&AOQ-': 'ä',  '&AOR-': 'Ä',
+            '&APA-': 'ß',
+            '&IKw-': '€',
+            '&AOk-': 'é',  '&AOg-': 'è',  '&AOo-': 'ê',
+            '&AOM-': 'à',  '&AOI-': 'â',
+            '&APo-': 'ú',  '&APk-': 'ù',  '&APt-': 'û',
+            '&APM-': 'ó',  '&API-': 'ò',  '&APQ-': 'ô',
+        }
+        
+        decoded = folder_name
+        for encoded, char in replacements.items():
+            decoded = decoded.replace(encoded, char)
+        
+        return decoded
+        
     except Exception as e:
         logger.debug(f"Konnte Ordnername nicht dekodieren: {folder_name} - {e}")
         return folder_name
@@ -240,22 +265,25 @@ class MailFetcher:
         self.port = port
         self.connection: Optional[IMAPClient] = None
 
-    def connect(self, retry_count: int = 2):
+    def connect(self, retry_count: int = 1, timeout: float = 15.0):
         """Stellt Verbindung zum IMAP-Server her (IMAPClient)
         
         Args:
-            retry_count: Anzahl Wiederholungen bei Timeout (default: 2)
+            retry_count: Anzahl Wiederholungen bei Timeout (default: 1, war vorher 2)
+            timeout: TCP-Timeout in Sekunden (default: 15, war vorher 60)
+            
+        P1-004: Reduzierte Defaults für schnelleres Failure-Feedback
         """
         last_error = None
         
         for attempt in range(retry_count + 1):
             try:
-                # Phase 1: TCP Connection (erhöhter Timeout für langsame Server)
+                # Phase 1: TCP Connection (P1-004: Konfigurierbarer Timeout)
                 self.connection = IMAPClient(
                     host=self.server,
                     port=self.port,
                     ssl=True,
-                    timeout=60.0  # Erhöht von 30s auf 60s für langsame SSL-Handshakes
+                    timeout=timeout
                 )
                 print(f"✅ TCP-Verbindung zu {self.server}:{self.port} erfolgreich")
                 

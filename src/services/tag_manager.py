@@ -972,8 +972,15 @@ class TagManager:
             True wenn erfolgreich, False wenn nicht genug Daten
         """
         try:
-            # Tag validieren
-            tag = db.query(models.EmailTag).filter_by(id=tag_id, user_id=user_id).first()
+            # P1-001 FIX: Tag mit Row-Level-Lock holen (Race Condition Prevention)
+            # Wenn mehrere Worker gleichzeitig update_learned_embedding() aufrufen,
+            # verhindert with_for_update() Lost Updates
+            tag = (
+                db.query(models.EmailTag)
+                .filter_by(id=tag_id, user_id=user_id)
+                .with_for_update()
+                .first()
+            )
             if not tag:
                 logger.warning(f"Tag {tag_id} nicht gefunden")
                 return False
