@@ -2223,10 +2223,10 @@ def whitelist():
         db.close()
 
 
-@app.route("/phase-y-config")
+@app.route("/ki-priorisierung")
 @login_required
 def phase_y_config():
-    """Phase Y: spaCy Hybrid Pipeline Configuration Page"""
+    """KI-gestützte E-Mail Priorisierung: Konfiguration für spaCy Hybrid Pipeline"""
     return render_template("phase_y_config.html", csp_nonce=g.get("csp_nonce", ""))
 
 

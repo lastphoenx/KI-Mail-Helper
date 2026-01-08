@@ -748,6 +748,15 @@ class SMTPSender:
                         if uid_list and len(uid_list) > 0:
                             uid = uid_list[0]
                 
+                # Fallback: Wenn Server kein UIDPLUS hat, uidvalidity per SELECT holen
+                if uidvalidity is None:
+                    try:
+                        folder_status = imap.folder_status(sent_folder, ['UIDVALIDITY'])
+                        uidvalidity = folder_status.get(b'UIDVALIDITY')
+                        logger.debug(f"UIDVALIDITY via folder_status: {uidvalidity}")
+                    except Exception as e:
+                        logger.warning(f"Konnte UIDVALIDITY nicht holen: {e}")
+                
                 logger.info(f"📁 Email im Sent-Ordner gespeichert: {sent_folder} (UID: {uid}, UIDVALIDITY: {uidvalidity})")
                 
                 return {
@@ -815,8 +824,14 @@ class SMTPSender:
                 
                 # Email-Metadaten
                 message_id=email.message_id,
-                in_reply_to=email.in_reply_to,
-                references=email.references,
+                encrypted_in_reply_to=EncryptionManager.encrypt_data(
+                    email.in_reply_to or "",
+                    self.master_key
+                ) if email.in_reply_to else None,
+                encrypted_references=EncryptionManager.encrypt_data(
+                    email.references or "",
+                    self.master_key
+                ) if email.references else None,
                 
                 # Empfänger (verschlüsselt speichern)
                 encrypted_to=EncryptionManager.encrypt_data(recipients, self.master_key),
@@ -825,7 +840,7 @@ class SMTPSender:
                 received_at=email.sent_at or datetime.now(UTC),
                 
                 # Flags
-                imap_has_attachments=len(email.attachments) > 0
+                imap_has_attachments=len(email.attachments) > 0 if email.attachments else False
             )
             
             db.add(raw_email)
