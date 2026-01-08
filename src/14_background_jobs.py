@@ -425,6 +425,12 @@ class BackgroundJobQueue:
                     },
                 )
         finally:
+            # 🔒 Security: Sichere Master-Key Bereinigung aus RAM
+            if 'master_key' in locals():
+                import gc
+                master_key = b'\x00' * len(master_key) if isinstance(master_key, bytes) else '\x00' * len(master_key)
+                del master_key
+                gc.collect()
             session.close()
 
     def _fetch_raw_emails(
@@ -1017,4 +1023,10 @@ class BackgroundJobQueue:
                     },
                 )
         finally:
+            # 🔒 Security: Sichere Master-Key Bereinigung aus RAM
+            if 'master_key' in locals():
+                import gc
+                master_key = b'\x00' * len(master_key) if isinstance(master_key, bytes) else '\x00' * len(master_key)
+                del master_key
+                gc.collect()
             session.close()
