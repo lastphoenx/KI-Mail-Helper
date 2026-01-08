@@ -592,7 +592,7 @@ async function loadScoringConfig() {
         const data = await response.json();
         const config = data.config;
         
-        // Set slider values and trigger updates
+        // Set slider values and trigger visual updates
         const sliders = [
             {id: 'imperativeWeight', value: config.imperative_weight, type: 'imperative'},
             {id: 'deadlineWeight', value: config.deadline_weight, type: 'deadline'},
@@ -604,6 +604,8 @@ async function loadScoringConfig() {
             const input = document.getElementById(slider.id);
             if (input) {
                 input.value = slider.value;
+                // Trigger input event to update visual slider position
+                input.dispatchEvent(new Event('input', { bubbles: true }));
                 updateWeightLabel(slider.type);
             }
         });
