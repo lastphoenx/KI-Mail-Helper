@@ -1246,7 +1246,13 @@ def list_view():
         
         # Count total for pagination
         total_count = query.count()
-        total_pages = (total_count + per_page - 1) // per_page
+        total_pages = max(1, (total_count + per_page - 1) // per_page)
+        
+        # Boundary checks
+        if page < 1:
+            page = 1
+        if page > total_pages:
+            page = total_pages
         
         # Apply pagination
         if sort_order == "asc":
