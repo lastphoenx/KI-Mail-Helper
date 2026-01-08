@@ -1291,20 +1291,26 @@ class SpacyVIPSender(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False)
+    account_id = Column(Integer, ForeignKey("mail_accounts.id", ondelete="CASCADE"), nullable=True)  # NULL = global für User
     sender_pattern = Column(String(255), nullable=False)  # email oder domain
-    pattern_type = Column(String(20), nullable=False)  # "email" oder "domain"
-    importance_boost = Column(Integer, nullable=False, default=2)  # +1 bis +5
-    description = Column(String(255))  # z.B. "Geschäftsführung"
+    pattern_type = Column(String(20), nullable=False)  # "exact", "email_domain", "domain"
+    
+    # VIP-Konfiguration
+    label = Column(String(100), nullable=True)  # "Chef", "CEO", "Wichtiger Kunde"
+    importance_boost = Column(Integer, nullable=False, default=3)  # +1 bis +5
+    urgency_boost = Column(Integer, nullable=False, default=0)  # Optional: Urgency-Boost
     is_active = Column(Boolean, nullable=False, default=True)
+    
+    # Timestamps
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     user = relationship("User", back_populates="spacy_vip_senders")
     account = relationship("MailAccount", back_populates="spacy_vip_senders")
 
     __table_args__ = (
-        Index("idx_spacy_vip_account", "account_id"),
-        UniqueConstraint("account_id", "sender_pattern", name="uq_spacy_vip_sender"),
+        Index("ix_spacy_vip_user_account", "user_id", "account_id"),
+        UniqueConstraint("user_id", "sender_pattern", "account_id", name="uq_vip_user_pattern_account"),
     )
 
     def __repr__(self):
@@ -1363,7 +1369,7 @@ class SpacyScoringConfig(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False)
+    account_id = Column(Integer, ForeignKey("mail_accounts.id", ondelete="CASCADE"), nullable=False)
     
     # Gewichte für verschiedene Detektoren
     imperative_weight = Column(Integer, nullable=False, default=3)
@@ -1387,7 +1393,7 @@ class SpacyScoringConfig(Base):
 
     __table_args__ = (
         Index("idx_spacy_config_account", "account_id"),
-        UniqueConstraint("account_id", name="uq_spacy_scoring_config"),
+        UniqueConstraint("user_id", "account_id", name="uq_scoring_user_account"),
     )
 
     def __repr__(self):

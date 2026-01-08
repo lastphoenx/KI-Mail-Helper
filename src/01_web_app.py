@@ -1525,6 +1525,7 @@ def mark_done(email_id):
         return redirect(request.referrer or url_for("list_view"))
 
     except Exception as e:
+        db.rollback()  # Rollback bei Fehler
         # Security: Log details internally, show generic message to user
         logger.error(f"Fehler bei mark_done: {type(e).__name__}")
         flash("Fehler beim Markieren der E-Mail. Bitte versuche es erneut.", "error")
@@ -1564,6 +1565,7 @@ def mark_undone(email_id):
         return redirect(request.referrer or url_for("list_view"))
 
     except Exception as e:
+        db.rollback()  # Rollback bei Fehler
         logger.error(f"Fehler bei mark_undone: {type(e).__name__}")
         return redirect(url_for("list_view"))
 
@@ -1671,6 +1673,7 @@ def reprocess_email(email_id):
             )
 
         except Exception as proc_err:
+            db.rollback()  # Rollback bei Verarbeitungsfehler
             logger.error(f"❌ Fehler bei Reprocessing von Email {email_id}: {proc_err}")
             return (
                 jsonify(
@@ -1683,6 +1686,7 @@ def reprocess_email(email_id):
             )
 
     except Exception as e:
+        db.rollback()  # Rollback bei allgemeinem Fehler
         logger.error(f"Fehler bei reprocess_email: {type(e).__name__}")
         return jsonify({"error": "Verarbeitung fehlgeschlagen"}), 500
 
@@ -1795,6 +1799,7 @@ def optimize_email(email_id):
             )
 
         except Exception as proc_err:
+            db.rollback()  # Rollback bei Optimierungsfehler
             email.optimization_status = models.OptimizationStatus.FAILED.value
             email.optimization_tried_at = datetime.now(UTC)
             db.commit()
@@ -1810,6 +1815,7 @@ def optimize_email(email_id):
             )
 
     except Exception as e:
+        db.rollback()  # Rollback bei allgemeinem Fehler
         logger.error(f"Fehler bei optimize_email: {type(e).__name__}")
         return jsonify({"error": "Optimierung fehlgeschlagen"}), 500
 
@@ -1876,6 +1882,7 @@ def correct_email(email_id: int):
         )
 
     except Exception as e:
+        db.rollback()  # Rollback bei Fehler
         logger.error(f"Fehler beim Speichern der Korrektur: {type(e).__name__}")
         return jsonify({"error": "Speichern fehlgeschlagen"}), 500
     finally:
@@ -3108,6 +3115,10 @@ def api_tag_suggestion_settings():
             "enable_auto_assignment": user.enable_auto_assignment
         })
 
+    except Exception as e:
+        db.rollback()  # Rollback bei Fehler
+        logger.error(f"Fehler bei tag_suggestion_settings: {type(e).__name__}")
+        return jsonify({"error": "Einstellungen konnten nicht gespeichert werden"}), 500
     finally:
         db.close()
 
@@ -3175,7 +3186,7 @@ def api_get_vip_senders():
                     "sender_pattern": vip.sender_pattern,
                     "pattern_type": vip.pattern_type,
                     "importance_boost": vip.importance_boost,
-                    "description": vip.description,
+                    "label": vip.label,
                     "is_active": vip.is_active
                 }
                 for vip in vips
@@ -3205,7 +3216,7 @@ def api_create_vip_sender():
             sender_pattern=data.get("sender_pattern", "").lower(),
             pattern_type=data.get("pattern_type", "email"),
             importance_boost=data.get("importance_boost", 2),
-            description=data.get("description", ""),
+            label=data.get("label", ""),
             is_active=data.get("is_active", True)
         )
         db.add(vip)
@@ -3240,7 +3251,7 @@ def api_update_vip_sender(vip_id):
         vip.sender_pattern = data.get("sender_pattern", vip.sender_pattern).lower()
         vip.pattern_type = data.get("pattern_type", vip.pattern_type)
         vip.importance_boost = data.get("importance_boost", vip.importance_boost)
-        vip.description = data.get("description", vip.description)
+        vip.label = data.get("label", vip.label)
         vip.is_active = data.get("is_active", vip.is_active)
         
         db.commit()

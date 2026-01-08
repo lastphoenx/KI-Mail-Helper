@@ -107,6 +107,7 @@ class SendResult:
     saved_to_sent: bool = False
     sent_folder: Optional[str] = None
     imap_uid: Optional[int] = None
+    imap_uidvalidity: Optional[int] = None
     
     # DB-Sync Ergebnis
     saved_to_db: bool = False
@@ -513,6 +514,7 @@ class SMTPSender:
                 result.saved_to_sent = sent_result.get("success", False)
                 result.sent_folder = sent_result.get("folder")
                 result.imap_uid = sent_result.get("uid")
+                result.imap_uidvalidity = sent_result.get("uidvalidity")
             except Exception as e:
                 logger.warning(f"Fehler beim Speichern im Sent-Ordner: {e}")
                 # Kein Fehler im Result, Email wurde trotzdem gesendet
@@ -736,19 +738,23 @@ class SMTPSender:
                 
                 # APPENDUID parsen falls verfügbar
                 uid = None
+                uidvalidity = None
+                
                 if append_result and isinstance(append_result, tuple):
                     # Format: (uidvalidity, [uid]) bei UIDPLUS
                     if len(append_result) >= 2:
-                        uid_list = append_result[1]
+                        uidvalidity = append_result[0]  # Erste Element ist UIDVALIDITY
+                        uid_list = append_result[1]     # Zweites Element ist UID-Liste
                         if uid_list and len(uid_list) > 0:
                             uid = uid_list[0]
                 
-                logger.info(f"📁 Email im Sent-Ordner gespeichert: {sent_folder} (UID: {uid})")
+                logger.info(f"📁 Email im Sent-Ordner gespeichert: {sent_folder} (UID: {uid}, UIDVALIDITY: {uidvalidity})")
                 
                 return {
                     "success": True,
                     "folder": sent_folder,
-                    "uid": uid
+                    "uid": uid,
+                    "uidvalidity": uidvalidity
                 }
                 
         except Exception as e:
@@ -804,7 +810,7 @@ class SMTPSender:
                 # IMAP-Metadaten (falls via APPEND gespeichert)
                 imap_folder=send_result.sent_folder or "Sent",
                 imap_uid=send_result.imap_uid,
-                imap_uidvalidity=None,  # TODO: Aus APPEND Result wenn verfügbar
+                imap_uidvalidity=send_result.imap_uidvalidity,  # UIDVALIDITY aus APPEND
                 imap_is_seen=True,
                 
                 # Email-Metadaten

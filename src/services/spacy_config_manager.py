@@ -75,7 +75,7 @@ class SpacyConfigManager:
                 "pattern": vip.sender_pattern.lower(),
                 "type": vip.pattern_type,
                 "boost": vip.importance_boost,
-                "description": vip.description,
+                "label": vip.label,
             }
             for vip in vips
         ]

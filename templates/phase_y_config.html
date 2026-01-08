@@ -163,9 +163,9 @@
                                 title="Lädt die System-Default Keywords (überschreibt nicht automatisch die DB)">
                             📥 Default Werte laden
                         </button>
-                        <button class="btn btn-outline-secondary" id="resetKeywordsBtn"
-                                title="Löscht alle gespeicherten Sets und setzt auf Defaults zurück">
-                            🔄 DB zurücksetzen
+                        <button class="btn btn-outline-secondary" id="loadKeywordsFromDBBtn"
+                                title="Lädt die gespeicherten Keywords aus der Datenbank (verwirft nicht gespeicherte Änderungen)">
+                            🔄 Aus DB laden
                         </button>
                     </div>
                 </div>
@@ -386,7 +386,7 @@ async function loadVIPs() {
                 <td>${vip.sender_pattern}</td>
                 <td><span class="badge bg-secondary">${vip.pattern_type}</span></td>
                 <td><span class="badge bg-primary">+${vip.importance_boost}</span></td>
-                <td>${vip.description || '-'}</td>
+                <td>${vip.label || '-'}</td>
                 <td>${vip.is_active ? '<span class="badge bg-success">Aktiv</span>' : '<span class="badge bg-secondary">Inaktiv</span>'}</td>
                 <td>
                     <button class="btn btn-sm btn-danger" data-vip-id="${vip.id}">
@@ -413,7 +413,7 @@ async function addVIP() {
     const pattern = document.getElementById('vipPattern').value.trim();
     const type = document.getElementById('vipType').value;
     const boost = parseInt(document.getElementById('vipBoost').value);
-    const description = document.getElementById('vipDescription').value.trim();
+    const label = document.getElementById('vipDescription').value.trim();
     
     if (!pattern) {
         alert('Bitte geben Sie ein Pattern ein');
@@ -432,7 +432,7 @@ async function addVIP() {
                 sender_pattern: pattern,
                 pattern_type: type,
                 importance_boost: boost,
-                description: description
+                label: label
             })
         });
         
@@ -496,6 +496,9 @@ async function loadKeywordSets() {
         
         // Update status badge
         updateKeywordStatusBadge(hasCustomSets);
+        
+        // Sort keyword sets alphabetically for consistent order
+        data.keyword_sets.sort((a, b) => a.keyword_set_name.localeCompare(b.keyword_set_name));
         
         renderKeywordAccordion(data.keyword_sets);
     } catch (error) {
@@ -610,11 +613,29 @@ async function saveAllKeywordSets() {
     }
 }
 
-async function resetToDefaults() {
-    if (!confirm('Wirklich alle gespeicherten Keywords aus der DB löschen und auf Defaults zurücksetzen?')) return;
+async function loadKeywordsFromDB() {
+    if (!currentAccountId) {
+        alert('Bitte wählen Sie zuerst einen Account aus');
+        return;
+    }
     
-    // TODO: Delete custom sets via API, then reload
-    alert('⚠️ Noch nicht implementiert: DB-Reset benötigt DELETE API-Route');
+    if (!confirm('Gespeicherte Keywords aus DB laden? Dies verwirft alle nicht gespeicherten Änderungen.')) return;
+    
+    await loadKeywordSets();
+    
+    // Visual feedback
+    const btn = document.getElementById('loadKeywordsFromDBBtn');
+    if (btn) {
+        const originalText = btn.textContent;
+        btn.textContent = '✅ Geladen!';
+        btn.classList.add('btn-success');
+        btn.classList.remove('btn-outline-secondary');
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-outline-secondary');
+        }, 2000);
+    }
 }
 
 async function loadDefaultKeywords() {
@@ -636,14 +657,16 @@ async function loadDefaultKeywords() {
         "sender_hierarchy": ["geschäftsführung", "vorstand", "direktion", "leitung"]
     };
     
-    // Convert to API format
-    const defaultKeywordSets = Object.entries(defaultSets).map(([name, keywords]) => ({
-        id: null,
-        keyword_set_name: name,
-        keywords: keywords,
-        is_active: true,
-        is_default: true
-    }));
+    // Convert to API format and sort alphabetically
+    const defaultKeywordSets = Object.entries(defaultSets)
+        .map(([name, keywords]) => ({
+            id: null,
+            keyword_set_name: name,
+            keywords: keywords,
+            is_active: true,
+            is_default: true
+        }))
+        .sort((a, b) => a.keyword_set_name.localeCompare(b.keyword_set_name));
     
     keywordSetsData = {};
     defaultKeywordSets.forEach(set => {
@@ -974,7 +997,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('addVipBtn')?.addEventListener('click', addVIP);
     document.getElementById('saveKeywordsBtn')?.addEventListener('click', saveAllKeywordSets);
     document.getElementById('loadDefaultKeywordsBtn')?.addEventListener('click', loadDefaultKeywords);
-    document.getElementById('resetKeywordsBtn')?.addEventListener('click', resetToDefaults);
+    document.getElementById('loadKeywordsFromDBBtn')?.addEventListener('click', loadKeywordsFromDB);
     document.getElementById('saveScoringBtn')?.addEventListener('click', saveScoringConfig);
     document.getElementById('loadDefaultScoringBtn')?.addEventListener('click', loadDefaultScoringConfig);
     document.getElementById('loadScoringBtn')?.addEventListener('click', loadScoringConfig);
