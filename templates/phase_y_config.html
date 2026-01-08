@@ -576,7 +576,9 @@ async function resetToDefaults() {
 function updateWeightLabel(type) {
     const input = document.getElementById(`${type}Weight`);
     const label = document.getElementById(`${type}WeightLabel`);
-    label.textContent = input.value;
+    if (input && label) {
+        label.textContent = input.value;
+    }
 }
 
 async function loadScoringConfig() {
@@ -590,32 +592,47 @@ async function loadScoringConfig() {
         const data = await response.json();
         const config = data.config;
         
-        document.getElementById('imperativeWeight').value = config.imperative_weight;
-        document.getElementById('deadlineWeight').value = config.deadline_weight;
-        document.getElementById('keywordWeight').value = config.keyword_weight;
-        document.getElementById('vipWeight').value = config.vip_weight;
-        document.getElementById('questionThreshold').value = config.question_threshold;
-        document.getElementById('negationSensitivity').value = config.negation_sensitivity;
-        document.getElementById('spacyWeightInitial').value = config.spacy_weight_initial;
-        document.getElementById('spacyWeightLearning').value = config.spacy_weight_learning;
-        document.getElementById('spacyWeightTrained').value = config.spacy_weight_trained;
+        // Set slider values and trigger updates
+        const sliders = [
+            {id: 'imperativeWeight', value: config.imperative_weight, type: 'imperative'},
+            {id: 'deadlineWeight', value: config.deadline_weight, type: 'deadline'},
+            {id: 'keywordWeight', value: config.keyword_weight, type: 'keyword'},
+            {id: 'vipWeight', value: config.vip_weight, type: 'vip'}
+        ];
         
-        updateWeightLabel('imperative');
-        updateWeightLabel('deadline');
-        updateWeightLabel('keyword');
-        updateWeightLabel('vip');
+        sliders.forEach(slider => {
+            const input = document.getElementById(slider.id);
+            if (input) {
+                input.value = slider.value;
+                updateWeightLabel(slider.type);
+            }
+        });
+        
+        // Set number inputs
+        const setIfExists = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) el.value = value;
+        };
+        
+        setIfExists('questionThreshold', config.question_threshold);
+        setIfExists('negationSensitivity', config.negation_sensitivity);
+        setIfExists('spacyWeightInitial', config.spacy_weight_initial);
+        setIfExists('spacyWeightLearning', config.spacy_weight_learning);
+        setIfExists('spacyWeightTrained', config.spacy_weight_trained);
         
         // Visual feedback
         const btn = document.getElementById('loadScoringBtn');
-        const originalText = btn.textContent;
-        btn.textContent = '✅ Zurückgesetzt!';
-        btn.classList.add('btn-success');
-        btn.classList.remove('btn-outline-secondary');
-        setTimeout(() => {
-            btn.textContent = originalText;
-            btn.classList.remove('btn-success');
-            btn.classList.add('btn-outline-secondary');
-        }, 2000);
+        if (btn) {
+            const originalText = btn.textContent;
+            btn.textContent = '✅ Zurückgesetzt!';
+            btn.classList.add('btn-success');
+            btn.classList.remove('btn-outline-secondary');
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-outline-secondary');
+            }, 2000);
+        }
     } catch (error) {
         console.error('Fehler beim Laden der Scoring-Config:', error);
         alert('Fehler beim Zurücksetzen der Konfiguration');
