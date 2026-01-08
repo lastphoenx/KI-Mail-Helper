@@ -379,6 +379,9 @@ class User(Base):
     trusted_senders = relationship(
         "TrustedSender", back_populates="user", cascade="all, delete-orphan"
     )
+    spacy_scoring_configs = relationship(
+        "SpacyScoringConfig", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def set_password(self, password: str):
         """Hasht das Passwort (mit Längen-Validierung)"""
@@ -1342,6 +1345,7 @@ class SpacyScoringConfig(Base):
     __tablename__ = "spacy_scoring_config"
 
     id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False)
     
     # Gewichte für verschiedene Detektoren
@@ -1361,6 +1365,7 @@ class SpacyScoringConfig(Base):
     
     last_modified = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
+    user = relationship("User", back_populates="spacy_scoring_configs")
     account = relationship("MailAccount", back_populates="spacy_scoring_config")
 
     __table_args__ = (

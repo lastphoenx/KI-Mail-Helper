@@ -3450,6 +3450,7 @@ def api_save_scoring_config():
         else:
             # Create
             config = models.SpacyScoringConfig(
+                user_id=user.id,
                 account_id=account_id,
                 imperative_weight=data.get("imperative_weight", 3),
                 deadline_weight=data.get("deadline_weight", 4),
