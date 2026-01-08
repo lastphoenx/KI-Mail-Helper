@@ -568,6 +568,75 @@ def ensure_master_key_in_session():
     return True
 
 
+# ============================================================================
+# P2-008: Phase Y Auto-Config Helper
+# ============================================================================
+
+def initialize_phase_y_config(db, user_id, account_id, account_email_domain=None):
+    """Erstellt automatisch Phase Y Default-Config für neuen Account
+    
+    P2-008: Learning-First Approach - Neue Accounts können sofort lernen.
+    
+    Erstellt:
+    - SpacyScoringConfig mit Default-Gewichten
+    - SpacyUserDomain basierend auf Account-Email-Domain
+    
+    Args:
+        db: SQLAlchemy Session
+        user_id: User ID
+        account_id: MailAccount ID
+        account_email_domain: Domain der Email-Adresse (optional, z.B. "company.com")
+    """
+    try:
+        # 1. SpacyScoringConfig mit Defaults
+        existing_config = db.query(models.SpacyScoringConfig).filter_by(
+            user_id=user_id, account_id=account_id
+        ).first()
+        
+        if not existing_config:
+            config = models.SpacyScoringConfig(
+                user_id=user_id,
+                account_id=account_id,
+                # Default-Gewichte aus Migration
+                imperative_weight=3,
+                deadline_weight=4,
+                keyword_weight=2,
+                vip_weight=3,
+                question_threshold=3,
+                negation_sensitivity=2,
+                # Ensemble Learning Weights (start mit 100% spaCy)
+                spacy_weight_initial=100,
+                spacy_weight_learning=30,
+                spacy_weight_trained=15
+            )
+            db.add(config)
+            logger.info(f"✅ Phase Y Scoring Config erstellt für Account {account_id}")
+        
+        # 2. SpacyUserDomain wenn Email-Domain bekannt
+        if account_email_domain:
+            existing_domain = db.query(models.SpacyUserDomain).filter_by(
+                account_id=account_id, domain=account_email_domain
+            ).first()
+            
+            if not existing_domain:
+                user_domain = models.SpacyUserDomain(
+                    user_id=user_id,
+                    account_id=account_id,
+                    domain=account_email_domain,
+                    is_active=True
+                )
+                db.add(user_domain)
+                logger.info(f"✅ Phase Y User-Domain '{account_email_domain}' für Account {account_id}")
+        
+        db.commit()
+        return True
+        
+    except Exception as e:
+        logger.error(f"Fehler beim Initialisieren von Phase Y Config: {e}")
+        db.rollback()
+        return False
+
+
 # Register Thread API Blueprint
 app.register_blueprint(thread_api)
 
@@ -6257,6 +6326,10 @@ def google_oauth_callback():
 
         db.add(mail_account)
         db.commit()
+        
+        # P2-008: Phase Y Config automatisch erstellen
+        email_domain = email.split('@')[1] if '@' in email else None
+        initialize_phase_y_config(db, user.id, mail_account.id, email_domain)
 
         session.pop("google_oauth_client_id", None)
         session.pop("google_oauth_client_secret", None)
@@ -6393,6 +6466,10 @@ def add_mail_account():
 
             db.add(mail_account)
             db.commit()
+            
+            # P2-008: Phase Y Config automatisch erstellen
+            email_domain = imap_username.split('@')[1] if '@' in imap_username else None
+            initialize_phase_y_config(db, user.id, mail_account.id, email_domain)
 
             logger.info(f"✅ Mail-Account '{name}' hinzugefügt für User {user.username}")
 
