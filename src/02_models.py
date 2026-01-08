@@ -761,8 +761,8 @@ class RawEmail(Base):
 
     received_at = Column(DateTime, nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    # P1-002: deleted_verm entfernt - nur deleted_at nutzen
     deleted_at = Column(DateTime, nullable=True)
-    deleted_verm = Column(Boolean, default=False)
 
     # ===== PHASE 14A: RFC-KONFORMER KEY (folder, uidvalidity, uid) =====
     imap_uid = Column(Integer, nullable=True, index=True)  # Phase 14a: String → Integer

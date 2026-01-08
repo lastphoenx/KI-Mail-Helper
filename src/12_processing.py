@@ -70,8 +70,7 @@ def build_thread_context(
             .filter(
                 models.RawEmail.thread_id == raw_email.thread_id,
                 models.RawEmail.received_at < raw_email.received_at,  # Time-based filter!
-                models.RawEmail.deleted_at.is_(None),
-                models.RawEmail.deleted_verm.is_(False)
+                models.RawEmail.deleted_at.is_(None)  # P1-002: deleted_verm entfernt
             )
             .order_by(models.RawEmail.received_at.asc())
             .limit(max_context_emails)
@@ -226,8 +225,7 @@ def get_sender_hint_from_patterns(
             .filter(
                 models.RawEmail.thread_id == raw_email.thread_id,
                 models.RawEmail.received_at < raw_email.received_at,  # Time-based!
-                models.RawEmail.deleted_at.is_(None),
-                models.RawEmail.deleted_verm.is_(False)
+                models.RawEmail.deleted_at.is_(None)  # P1-002: deleted_verm entfernt
             )
             .order_by(models.RawEmail.received_at.desc())
             .limit(5)
@@ -317,8 +315,7 @@ def process_pending_raw_emails(
         .filter(
             models.RawEmail.user_id == user.id,
             models.ProcessedEmail.id.is_(None),
-            models.RawEmail.deleted_at.is_(None),
-            models.RawEmail.deleted_verm.is_(False),
+            models.RawEmail.deleted_at.is_(None)  # P1-002: deleted_verm entfernt
         )
     )
 
@@ -768,7 +765,9 @@ def purge_marked_emails(session, days_to_retain: int = 90) -> dict[str, int]:
     Hard-delete emails marked for deletion after retention period.
 
     Löscht RawEmails und zugehörige ProcessedEmails, die vor mehr als
-    `days_to_retain` Tagen mit deleted_verm=True markiert wurden.
+    `days_to_retain` Tagen mit deleted_at markiert wurden.
+    
+    P1-002: Nutzt nur deleted_at (deleted_verm entfernt)
 
     Args:
         session: SQLAlchemy Session
@@ -785,7 +784,7 @@ def purge_marked_emails(session, days_to_retain: int = 90) -> dict[str, int]:
         raw_emails_to_delete = (
             session.query(models.RawEmail)
             .filter(
-                models.RawEmail.deleted_verm == True,
+                models.RawEmail.deleted_at.isnot(None),  # P1-002: deleted_verm entfernt
                 models.RawEmail.deleted_at < cutoff_date,
             )
             .all()
