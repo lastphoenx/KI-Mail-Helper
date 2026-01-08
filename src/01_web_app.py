@@ -3200,6 +3200,7 @@ def api_create_vip_sender():
             return jsonify({"error": "Account nicht gefunden"}), 404
         
         vip = models.SpacyVIPSender(
+            user_id=user.id,
             account_id=account_id,
             sender_pattern=data.get("sender_pattern", "").lower(),
             pattern_type=data.get("pattern_type", "email"),
@@ -3361,6 +3362,7 @@ def api_save_keyword_set():
             existing.is_active = data.get("is_active", True)
         else:
             new_set = models.SpacyKeywordSet(
+                user_id=user.id,
                 account_id=account_id,
                 keyword_set_name=keyword_set_name,
                 keywords_json=json.dumps(keywords),
@@ -3520,6 +3522,7 @@ def api_create_user_domain():
             return jsonify({"error": "Account nicht gefunden"}), 404
         
         domain = models.SpacyUserDomain(
+            user_id=user.id,
             account_id=account_id,
             domain=data.get("domain", "").lower(),
             is_active=data.get("is_active", True)

@@ -382,6 +382,15 @@ class User(Base):
     spacy_scoring_configs = relationship(
         "SpacyScoringConfig", back_populates="user", cascade="all, delete-orphan"
     )
+    spacy_vip_senders = relationship(
+        "SpacyVIPSender", back_populates="user", cascade="all, delete-orphan"
+    )
+    spacy_keyword_sets = relationship(
+        "SpacyKeywordSet", back_populates="user", cascade="all, delete-orphan"
+    )
+    spacy_user_domains = relationship(
+        "SpacyUserDomain", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def set_password(self, password: str):
         """Hasht das Passwort (mit Längen-Validierung)"""
@@ -1281,6 +1290,7 @@ class SpacyVIPSender(Base):
     __tablename__ = "spacy_vip_senders"
 
     id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False)
     sender_pattern = Column(String(255), nullable=False)  # email oder domain
     pattern_type = Column(String(20), nullable=False)  # "email" oder "domain"
@@ -1289,6 +1299,7 @@ class SpacyVIPSender(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
+    user = relationship("User", back_populates="spacy_vip_senders")
     account = relationship("MailAccount", back_populates="spacy_vip_senders")
 
     __table_args__ = (
@@ -1315,12 +1326,14 @@ class SpacyKeywordSet(Base):
     __tablename__ = "spacy_keyword_sets"
 
     id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False)
     keyword_set_name = Column(String(50), nullable=False)  # z.B. "imperative_verbs"
     keywords_json = Column(Text, nullable=False)  # JSON-Array mit Keywords
     is_active = Column(Boolean, nullable=False, default=True)
     last_modified = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
+    user = relationship("User", back_populates="spacy_keyword_sets")
     account = relationship("MailAccount", back_populates="spacy_keyword_sets")
 
     __table_args__ = (
@@ -1391,11 +1404,13 @@ class SpacyUserDomain(Base):
     __tablename__ = "spacy_user_domains"
 
     id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False)
     domain = Column(String(255), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
+    user = relationship("User", back_populates="spacy_user_domains")
     account = relationship("MailAccount", back_populates="spacy_user_domains")
 
     __table_args__ = (
