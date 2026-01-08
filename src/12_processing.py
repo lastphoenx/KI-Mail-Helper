@@ -129,10 +129,46 @@ def build_thread_context(
         
         context_str = "\n".join(context_lines)
         
-        # Limit context size early (before AI sanitization)
-        max_context_chars = 4500  # Leave room for current email info
+        # P2-001: Intelligentes Truncation - behalte neueste Emails
+        # Konfigurierbar und behält wichtigste (neueste) Emails statt einfach abzuschneiden
+        max_context_chars = 4500  # Konfigurierbar
+        
         if len(context_str) > max_context_chars:
-            context_str = context_str[:max_context_chars] + "\n\n[Context truncated due to size]"
+            # Strategie: Behalte die letzten N Emails, nicht erste N Chars
+            # Das ist wichtiger für Thread-Kontext (neueste Nachrichten relevanter)
+            lines = context_str.split('\n')
+            
+            # Finde Email-Blöcke (beginnen mit "[N]")
+            email_blocks = []
+            current_block = []
+            for line in lines:
+                if line.strip().startswith('[') and ']' in line:
+                    if current_block:
+                        email_blocks.append('\n'.join(current_block))
+                    current_block = [line]
+                else:
+                    current_block.append(line)
+            if current_block:
+                email_blocks.append('\n'.join(current_block))
+            
+            # Behalte Emails vom Ende bis max_context_chars erreicht
+            kept_blocks = []
+            total_len = 0
+            for block in reversed(email_blocks):
+                block_len = len(block)
+                if total_len + block_len > max_context_chars:
+                    break
+                kept_blocks.insert(0, block)
+                total_len += block_len
+            
+            if kept_blocks:
+                context_str = '\n'.join(kept_blocks)
+                removed_count = len(email_blocks) - len(kept_blocks)
+                if removed_count > 0:
+                    context_str = f"[{removed_count} older emails omitted for brevity]\n\n" + context_str
+            else:
+                # Fallback: Wenn kein Block passt, nehme einfach erste Chars
+                context_str = context_str[:max_context_chars] + "\n\n[Context truncated due to size]"
         
         logger.info(f"Built thread context for {raw_email.id}: {len(thread_emails)} emails, {len(context_str)} chars")
         return context_str

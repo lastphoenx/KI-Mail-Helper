@@ -1994,21 +1994,10 @@ def validate_provider_choice(
 
 
 if __name__ == "__main__":
+    # P2-005: Nur ein __main__ Block - Zweiter entfernt (Dead Code)
     logging.basicConfig(level=logging.INFO)
 
     client = build_client("ollama")
-    result = client.analyze_email(
-        subject="Wichtig: Rechnung begleichen",
-        body="Hallo, dies ist eine Erinnerung, dass Ihre Rechnung über 120 EUR bis zum 31.12. "
-        "fällig ist. Bitte überweisen Sie den Betrag rechtzeitig. Vielen Dank.",
-    )
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-
-    client = get_ai_client("ollama")
     result = client.analyze_email(
         subject="Wichtig: Rechnung begleichen",
         body="Hallo, dies ist eine Erinnerung, dass Ihre Rechnung über 120 EUR bis zum 31.12. "

@@ -197,9 +197,7 @@ def set_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers[
-        "Strict-Transport-Security"
-    ] = "max-age=31536000; includeSubDomains"
+    # P2-006: Nur einmal HSTS setzen (Duplikat entfernt)
     response.headers[
         "Strict-Transport-Security"
     ] = "max-age=31536000; includeSubDomains"
