@@ -81,7 +81,208 @@ Email Data ─→ AES-256-GCM Encrypt ─→ encrypted_email (stored in DB)
 
 ---
 
-## 🛡️ Production Security (Phase 9)
+## � Master-Key Lifecycle (P2-003)
+
+### Overview
+
+The **Master Key** (derived from user password) is critical for Zero-Knowledge Encryption. Understanding its lifecycle is essential for secure deployment and session management.
+
+### Lifecycle Stages
+
+#### 1️⃣ **Login - Key Derivation**
+```python
+# User enters password
+password = request.form.get('password')
+
+# Derive KEK from password
+kek = derive_kek_from_password(password, user.password_salt)
+
+# Decrypt DEK using KEK
+dek = decrypt_dek(user.encrypted_dek, kek)
+
+# Store DEK in Flask session (RAM only)
+session['master_key'] = dek
+session.permanent = True  # 30 minute timeout
+```
+
+**Security Properties:**
+- ✅ KEK never stored (only computed during login)
+- ✅ DEK only in RAM (Flask session, not DB)
+- ✅ Session timeout: 30 minutes idle → auto-logout
+- ✅ PBKDF2 with 600,000 iterations (slow key derivation)
+
+#### 2️⃣ **Active Session - Key Usage**
+```python
+# Every request that needs decryption
+master_key = session.get('master_key')
+if not master_key:
+    return redirect('/login')  # Force re-login
+
+# Decrypt email data
+subject = EmailDataManager.decrypt_email_subject(
+    encrypted_subject, master_key
+)
+```
+
+**Key Usage Locations:**
+- 📧 `/dashboard` - Email list display
+- 📧 `/list` - Extended email list
+- 📧 `/email/<id>` - Email detail view
+- 📧 `/threads` - Thread conversations
+- 📧 `/api/emails/*` - Email API endpoints
+- ⚙️ `/settings` - Account credential display
+- 🔄 Background Jobs - Via ServiceToken (see below)
+
+#### 3️⃣ **Background Jobs - ServiceToken Pattern**
+
+**Problem:** Background jobs (email fetching) run **outside** user sessions → no `session['master_key']`
+
+**Solution:** ServiceToken stores encrypted DEK for 7-day validity:
+
+```python
+# Token Creation (at login or account setup)
+service_token = ServiceToken(
+    user_id=user.id,
+    encrypted_dek=encrypt_dek_for_service(dek),  # Re-encrypted
+    expires_at=datetime.now(UTC) + timedelta(days=7)
+)
+
+# Token Usage (in background job)
+token = db.query(ServiceToken).filter_by(user_id=user_id).first()
+if token.is_expired():
+    raise TokenExpiredError()
+
+dek = decrypt_dek_from_service_token(token.encrypted_dek)
+# Now can decrypt emails in background
+```
+
+**Security Trade-offs:**
+- ✅ Pro: Background jobs work without user being logged in
+- ⚠️ Con: DEK accessible for up to 7 days (vs 30 min in session)
+- ✅ Mitigation: Tokens expire, rotated on password change
+- ✅ Mitigation: Tokens deleted on logout (optional cleanup)
+
+#### 4️⃣ **Session Expiry**
+```python
+# Automatic (30 minutes idle)
+@app.before_request
+def check_session_freshness():
+    if session.permanent and session.modified:
+        session.modified = True  # Extend session
+
+# Explicit logout
+@app.route('/logout', methods=['POST'])
+def logout():
+    session.pop('master_key', None)  # Clear DEK from RAM
+    session.clear()
+    # ServiceToken remains valid (7-day expiry)
+```
+
+**What Happens:**
+- ✅ DEK removed from RAM immediately
+- ✅ User must re-enter password to decrypt emails
+- ⚠️ Background jobs continue (ServiceToken still valid)
+- ✅ Old session cookie becomes invalid
+
+#### 5️⃣ **Password Change - Key Rotation**
+```python
+# Old password verification
+old_kek = derive_kek_from_password(old_password, old_salt)
+dek = decrypt_dek(user.encrypted_dek, old_kek)
+
+# New password encryption
+new_salt = os.urandom(32)
+new_kek = derive_kek_from_password(new_password, new_salt)
+new_encrypted_dek = encrypt_dek(dek, new_kek)
+
+# Update database
+user.password_hash = bcrypt(new_password)
+user.password_salt = new_salt
+user.encrypted_dek = new_encrypted_dek
+
+# Rotate ServiceToken
+old_token = ServiceToken.query.filter_by(user_id=user.id).first()
+old_token.delete()
+ServiceToken.create(user.id, dek, expires_in_days=7)
+```
+
+**Important:**
+- ✅ DEK unchanged (no need to re-encrypt all emails!)
+- ✅ KEK changed (password-derived key)
+- ✅ ServiceToken rotated (old tokens invalidated)
+- ⚠️ All active sessions invalidated (user must re-login)
+
+#### 6️⃣ **Account Deletion**
+```python
+# On account deletion
+user = User.query.get(user_id)
+db.delete(user)  # CASCADE deletes all data
+
+# Deleted tables (via ondelete='CASCADE'):
+# - mail_accounts (including encrypted credentials)
+# - raw_emails (including encrypted bodies)
+# - processed_emails (including encrypted scores)
+# - service_tokens (including encrypted DEK)
+```
+
+**Result:**
+- ✅ All encrypted data deleted
+- ✅ DEK deleted (encrypted_dek column)
+- ✅ No way to recover emails (Zero-Knowledge guarantee)
+
+### Session Cleanup Strategies
+
+#### Conservative (Current Default)
+```python
+# Session timeout: 30 minutes
+# ServiceToken expiry: 7 days
+# Background jobs: Continue running
+```
+**Use Case:** Home network, single user, convenience prioritized
+
+#### Aggressive
+```python
+# Session timeout: 5 minutes
+# ServiceToken expiry: 1 day
+# Logout: Delete ServiceToken immediately
+```
+**Use Case:** Shared machine, high security requirements
+
+#### Paranoid
+```python
+# Session timeout: 1 minute
+# ServiceToken expiry: 1 hour
+# Logout: Delete all sessions + ServiceTokens
+# Require re-login for every background job
+```
+**Use Case:** Public/untrusted environment (not recommended deployment)
+
+### Security Recommendations
+
+| Scenario | Session Timeout | ServiceToken Expiry | Auto-Logout |
+|----------|----------------|---------------------|-------------|
+| **Home Network (default)** | 30 min | 7 days | ❌ |
+| **Shared Household** | 15 min | 3 days | ✅ (after logout) |
+| **Work Environment** | 5 min | 1 day | ✅ (always) |
+| **Public Network** | ❌ **Don't deploy** | ❌ | ❌ |
+
+### Configuration
+
+Session timeout is configured in `src/01_web_app.py`:
+```python
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
+```
+
+ServiceToken expiry is hardcoded in `src/02_models.py`:
+```python
+expires_at = datetime.now(UTC) + timedelta(days=7)
+```
+
+To change these values, edit the source and restart the application.
+
+---
+
+## �🛡️ Production Security (Phase 9)
 
 ### Multi-Layer Defense
 ```
@@ -315,5 +516,5 @@ For responsible disclosure of vulnerabilities, see section above.
 
 ---
 
-**Last Updated**: December 28, 2025  
-**Version**: Phase 9b (Security Hardening - Code Review Fixes)
+**Last Updated**: January 8, 2026  
+**Version**: Phase 9g + P2-003 (Master-Key Lifecycle Documentation)
