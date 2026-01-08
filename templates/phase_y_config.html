@@ -156,9 +156,13 @@
                                 title="Speichert alle Keyword-Sets in der Datenbank für diesen Account">
                             💾 Alle Sets speichern
                         </button>
+                        <button class="btn btn-outline-primary" id="loadDefaultKeywordsBtn"
+                                title="Lädt die System-Default Keywords (überschreibt nicht automatisch die DB)">
+                            📥 Default Werte laden
+                        </button>
                         <button class="btn btn-outline-secondary" id="resetKeywordsBtn"
-                                title="Stellt die System-Defaults wieder her (80 strategische Keywords in 12 Kategorien)">
-                            🔄 Auf Defaults zurücksetzen
+                                title="Löscht alle gespeicherten Sets und setzt auf Defaults zurück">
+                            🔄 DB zurücksetzen
                         </button>
                     </div>
                 </div>
@@ -169,7 +173,10 @@
         <div class="tab-pane fade" id="scoring-panel" role="tabpanel">
             <div class="card border-0 shadow-sm">
                 <div class="card-body">
-                    <h4 class="card-title mb-3">⚖️ Scoring-Konfiguration</h4>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4 class="card-title mb-0">⚖️ Scoring-Konfiguration</h4>
+                        <span id="scoringStatusBadge" class="badge bg-secondary">Standard</span>
+                    </div>
                     <p class="text-muted mb-4">
                         Gewichte und Thresholds für die spaCy Hybrid Pipeline. Standardwerte funktionieren für die meisten Use-Cases.
                     </p>
@@ -242,9 +249,13 @@
                                 title="Speichert die aktuellen Gewichte in der Datenbank für diesen Account">
                             💾 Scoring-Config speichern
                         </button>
+                        <button class="btn btn-outline-primary" id="loadDefaultScoringBtn"
+                                title="Lädt die System-Default Werte (überschreibt nicht automatisch die DB)">
+                            📥 Default Werte laden
+                        </button>
                         <button class="btn btn-outline-secondary" id="loadScoringBtn"
-                                title="Lädt die gespeicherte Konfiguration neu (verwirft nicht gespeicherte Änderungen)">
-                            🔄 Zurücksetzen
+                                title="Lädt die gespeicherte Konfiguration aus der DB (verwirft nicht gespeicherte Änderungen)">
+                            🔄 Aus DB laden
                         </button>
                     </div>
                 </div>
@@ -469,13 +480,31 @@ async function loadKeywordSets() {
         const data = await response.json();
         
         keywordSetsData = {};
+        let hasCustomSets = false;
         data.keyword_sets.forEach(set => {
             keywordSetsData[set.keyword_set_name] = set.keywords;
+            if (!set.is_default) hasCustomSets = true;
         });
+        
+        // Update status badge
+        updateKeywordStatusBadge(hasCustomSets);
         
         renderKeywordAccordion(data.keyword_sets);
     } catch (error) {
         console.error('Fehler beim Laden der Keyword-Sets:', error);
+    }
+}
+
+function updateKeywordStatusBadge(hasSavedData) {
+    const badge = document.getElementById('keywordStatusBadge');
+    if (!badge) return;
+    
+    if (hasSavedData) {
+        badge.textContent = 'Gespeichert';
+        badge.className = 'badge bg-success';
+    } else {
+        badge.textContent = 'Standard';
+        badge.className = 'badge bg-secondary';
     }
 }
 
@@ -557,6 +586,7 @@ async function saveAllKeywordSets() {
         }
         
         alert('✅ Alle Keyword-Sets gespeichert!');
+        updateKeywordStatusBadge(true); // Mark as saved
         await loadKeywordSets();
     } catch (error) {
         console.error('Fehler:', error);
@@ -565,10 +595,34 @@ async function saveAllKeywordSets() {
 }
 
 async function resetToDefaults() {
-    if (!confirm('Wirklich auf Default-Keywords zurücksetzen? Eigene Änderungen gehen verloren.')) return;
+    if (!confirm('Wirklich alle gespeicherten Keywords aus der DB löschen und auf Defaults zurücksetzen?')) return;
     
-    // TODO: Delete custom sets und reload defaults
-    alert('Wird implementiert: Reset auf Defaults');
+    // TODO: Delete custom sets via API, then reload
+    alert('⚠️ Noch nicht implementiert: DB-Reset benötigt DELETE API-Route');
+}
+
+async function loadDefaultKeywords() {
+    if (!confirm('Default-Keywords laden? Dies überschreibt die aktuellen Formular-Werte (aber nicht die DB).')) return;
+    
+    // Load defaults from backend via API
+    try {
+        // Temporary account ID to trigger default response
+        const response = await fetch(`/api/phase-y/keyword-sets?account_id=999999`);
+        const data = await response.json();
+        
+        keywordSetsData = {};
+        data.keyword_sets.forEach(set => {
+            keywordSetsData[set.keyword_set_name] = set.keywords;
+        });
+        
+        renderKeywordAccordion(data.keyword_sets);
+        updateKeywordStatusBadge(false); // Mark as defaults
+        
+        alert('✅ Default-Keywords geladen! Klicken Sie auf "Alle Sets speichern" um diese zu übernehmen.');
+    } catch (error) {
+        console.error('Fehler:', error);
+        alert('Fehler beim Laden der Defaults');
+    }
 }
 
 // ===== TAB 3: Scoring =====
@@ -632,11 +686,14 @@ async function loadScoringConfig() {
         setIfExists('spacyWeightLearning', config.spacy_weight_learning);
         setIfExists('spacyWeightTrained', config.spacy_weight_trained);
         
+        // Update status badge
+        updateScoringStatusBadge(!data.is_default);
+        
         // Visual feedback
         const btn = document.getElementById('loadScoringBtn');
         if (btn) {
             const originalText = btn.textContent;
-            btn.textContent = '✅ Zurückgesetzt!';
+            btn.textContent = '✅ Geladen!';
             btn.classList.add('btn-success');
             btn.classList.remove('btn-outline-secondary');
             setTimeout(() => {
@@ -647,7 +704,20 @@ async function loadScoringConfig() {
         }
     } catch (error) {
         console.error('Fehler beim Laden der Scoring-Config:', error);
-        alert('Fehler beim Zurücksetzen der Konfiguration');
+        alert('Fehler beim Laden der Konfiguration');
+    }
+}
+
+function updateScoringStatusBadge(hasSavedData) {
+    const badge = document.getElementById('scoringStatusBadge');
+    if (!badge) return;
+    
+    if (hasSavedData) {
+        badge.textContent = 'Gespeichert';
+        badge.className = 'badge bg-success';
+    } else {
+        badge.textContent = 'Standard';
+        badge.className = 'badge bg-secondary';
     }
 }
 
@@ -698,6 +768,23 @@ function loadDefaultScoringConfig() {
     setIfExists('spacyWeightInitial', defaults.spacy_weight_initial);
     setIfExists('spacyWeightLearning', defaults.spacy_weight_learning);
     setIfExists('spacyWeightTrained', defaults.spacy_weight_trained);
+    
+    // Update status badge
+    updateScoringStatusBadge(false);
+    
+    // Visual feedback
+    const btn = document.getElementById('loadDefaultScoringBtn');
+    if (btn) {
+        const originalText = btn.textContent;
+        btn.textContent = '✅ Defaults geladen!';
+        btn.classList.add('btn-success');
+        btn.classList.remove('btn-outline-primary');
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-outline-primary');
+        }, 2000);
+    }
 }
 
 async function saveScoringConfig() {
@@ -728,6 +815,7 @@ async function saveScoringConfig() {
         });
         
         if (response.ok) {
+            updateScoringStatusBadge(true); // Mark as saved
             alert('✅ Scoring-Konfiguration gespeichert!');
         } else {
             alert('Fehler beim Speichern');
@@ -854,8 +942,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('accountSelect')?.addEventListener('change', loadPhaseYConfig);
     document.getElementById('addVipBtn')?.addEventListener('click', addVIP);
     document.getElementById('saveKeywordsBtn')?.addEventListener('click', saveAllKeywordSets);
+    document.getElementById('loadDefaultKeywordsBtn')?.addEventListener('click', loadDefaultKeywords);
     document.getElementById('resetKeywordsBtn')?.addEventListener('click', resetToDefaults);
     document.getElementById('saveScoringBtn')?.addEventListener('click', saveScoringConfig);
+    document.getElementById('loadDefaultScoringBtn')?.addEventListener('click', loadDefaultScoringConfig);
     document.getElementById('loadScoringBtn')?.addEventListener('click', loadScoringConfig);
     document.getElementById('addDomainBtn')?.addEventListener('click', addDomain);
     
