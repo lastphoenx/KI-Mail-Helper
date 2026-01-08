@@ -3192,7 +3192,7 @@ def api_create_vip_sender():
     db = get_db_session()
     try:
         data = request.get_json()
-        account_id = data.get("account_id")
+        account_id = int(data.get("account_id"))  # Convert to int!
         
         user = get_current_user_model(db)
         account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
@@ -3340,7 +3340,7 @@ def api_save_keyword_set():
     db = get_db_session()
     try:
         data = request.get_json()
-        account_id = data.get("account_id")
+        account_id = int(data.get("account_id"))  # Convert to int!
         
         user = get_current_user_model(db)
         account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
@@ -3435,7 +3435,7 @@ def api_save_scoring_config():
     db = get_db_session()
     try:
         data = request.get_json()
-        account_id = data.get("account_id")
+        account_id = int(data.get("account_id"))  # Convert to int!
         
         user = get_current_user_model(db)
         account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
@@ -3520,7 +3520,7 @@ def api_create_user_domain():
     db = get_db_session()
     try:
         data = request.get_json()
-        account_id = data.get("account_id")
+        account_id = int(data.get("account_id"))  # Convert to int!
         
         user = get_current_user_model(db)
         account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()

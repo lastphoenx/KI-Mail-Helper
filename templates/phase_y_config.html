@@ -479,12 +479,17 @@ async function loadKeywordSets() {
         const response = await fetch(`/api/phase-y/keyword-sets?account_id=${currentAccountId}`);
         const data = await response.json();
         
+        console.log('📋 Keyword-Sets API Response:', data); // DEBUG
+        
         keywordSetsData = {};
         let hasCustomSets = false;
         data.keyword_sets.forEach(set => {
             keywordSetsData[set.keyword_set_name] = set.keywords;
+            console.log(`  Set: ${set.keyword_set_name}, is_default: ${set.is_default}`); // DEBUG
             if (!set.is_default) hasCustomSets = true;
         });
+        
+        console.log(`📊 hasCustomSets: ${hasCustomSets}`); // DEBUG
         
         // Update status badge
         updateKeywordStatusBadge(hasCustomSets);
