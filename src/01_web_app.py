@@ -2212,9 +2212,16 @@ def whitelist():
             user=user,
             mail_accounts=mail_accounts
         )
-    
     finally:
         db.close()
+
+
+@app.route("/phase-y-config")
+@login_required
+def phase_y_config():
+    """Phase Y: spaCy Hybrid Pipeline Configuration Page"""
+    return render_template("phase_y_config.html", csp_nonce=g.get("csp_nonce", ""))
+
 
 @app.route("/settings/fetch-config", methods=["POST"])
 @login_required
@@ -2431,16 +2438,29 @@ def api_get_accounts():
         
         accounts = db.query(models.MailAccount).filter_by(user_id=user.id).all()
         
-        return jsonify({
-            "accounts": [
-                {
-                    "id": acc.id,
-                    "name": acc.name,
-                    "auth_type": acc.auth_type
-                }
-                for acc in accounts
-            ]
-        }), 200
+        # Zero-Knowledge: Entschlüssele Email-Adressen für Anzeige
+        master_key = session.get("master_key")
+        result_accounts = []
+        
+        for acc in accounts:
+            email = acc.name  # Fallback
+            
+            if master_key and acc.auth_type == "imap" and acc.encrypted_imap_username:
+                try:
+                    email = encryption.EmailDataManager.decrypt_email_sender(
+                        acc.encrypted_imap_username, master_key
+                    )
+                except Exception as e:
+                    logger.warning(f"Fehler beim Entschlüsseln der Account-Email: {e}")
+            
+            result_accounts.append({
+                "id": acc.id,
+                "name": acc.name,
+                "email": email,
+                "auth_type": acc.auth_type
+            })
+        
+        return jsonify({"accounts": result_accounts}), 200
     
     except Exception as e:
         logger.error(f"Fehler beim Laden der Accounts: {e}")
@@ -3126,6 +3146,420 @@ def _update_user_override_tags(db, email_id: int, user_id: int, tag_manager_mod)
     except Exception as e:
         logger.warning(f"⚠️  Fehler beim Update von user_override_tags: {e}")
         db.rollback()
+
+
+# ===== Phase Y: spaCy Hybrid Pipeline Configuration APIs =====
+
+
+@app.route("/api/phase-y/vip-senders", methods=["GET"])
+@login_required
+def api_get_vip_senders():
+    """API: Alle VIP-Absender für Account abrufen"""
+    db = get_db_session()
+    try:
+        account_id = request.args.get("account_id", type=int)
+        if not account_id:
+            return jsonify({"error": "account_id erforderlich"}), 400
+        
+        user = get_current_user_model(db)
+        account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+        if not account:
+            return jsonify({"error": "Account nicht gefunden"}), 404
+        
+        vips = db.query(models.SpacyVIPSender).filter_by(account_id=account_id).all()
+        
+        return jsonify({
+            "vips": [
+                {
+                    "id": vip.id,
+                    "sender_pattern": vip.sender_pattern,
+                    "pattern_type": vip.pattern_type,
+                    "importance_boost": vip.importance_boost,
+                    "description": vip.description,
+                    "is_active": vip.is_active
+                }
+                for vip in vips
+            ]
+        }), 200
+    finally:
+        db.close()
+
+
+@app.route("/api/phase-y/vip-senders", methods=["POST"])
+@login_required
+def api_create_vip_sender():
+    """API: VIP-Absender erstellen"""
+    db = get_db_session()
+    try:
+        data = request.get_json()
+        account_id = data.get("account_id")
+        
+        user = get_current_user_model(db)
+        account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+        if not account:
+            return jsonify({"error": "Account nicht gefunden"}), 404
+        
+        vip = models.SpacyVIPSender(
+            account_id=account_id,
+            sender_pattern=data.get("sender_pattern", "").lower(),
+            pattern_type=data.get("pattern_type", "email"),
+            importance_boost=data.get("importance_boost", 2),
+            description=data.get("description", ""),
+            is_active=data.get("is_active", True)
+        )
+        db.add(vip)
+        db.commit()
+        
+        return jsonify({"success": True, "vip_id": vip.id}), 201
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Fehler beim Erstellen von VIP: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@app.route("/api/phase-y/vip-senders/<int:vip_id>", methods=["PUT"])
+@login_required
+def api_update_vip_sender(vip_id):
+    """API: VIP-Absender aktualisieren"""
+    db = get_db_session()
+    try:
+        data = request.get_json()
+        user = get_current_user_model(db)
+        
+        vip = db.query(models.SpacyVIPSender).join(models.MailAccount).filter(
+            models.SpacyVIPSender.id == vip_id,
+            models.MailAccount.user_id == user.id
+        ).first()
+        
+        if not vip:
+            return jsonify({"error": "VIP nicht gefunden"}), 404
+        
+        vip.sender_pattern = data.get("sender_pattern", vip.sender_pattern).lower()
+        vip.pattern_type = data.get("pattern_type", vip.pattern_type)
+        vip.importance_boost = data.get("importance_boost", vip.importance_boost)
+        vip.description = data.get("description", vip.description)
+        vip.is_active = data.get("is_active", vip.is_active)
+        
+        db.commit()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Fehler beim Aktualisieren von VIP: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@app.route("/api/phase-y/vip-senders/<int:vip_id>", methods=["DELETE"])
+@login_required
+def api_delete_vip_sender(vip_id):
+    """API: VIP-Absender löschen"""
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        
+        vip = db.query(models.SpacyVIPSender).join(models.MailAccount).filter(
+            models.SpacyVIPSender.id == vip_id,
+            models.MailAccount.user_id == user.id
+        ).first()
+        
+        if not vip:
+            return jsonify({"error": "VIP nicht gefunden"}), 404
+        
+        db.delete(vip)
+        db.commit()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Fehler beim Löschen von VIP: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@app.route("/api/phase-y/keyword-sets", methods=["GET"])
+@login_required
+def api_get_keyword_sets():
+    """API: Alle Keyword-Sets für Account abrufen"""
+    db = get_db_session()
+    try:
+        account_id = request.args.get("account_id", type=int)
+        if not account_id:
+            return jsonify({"error": "account_id erforderlich"}), 400
+        
+        user = get_current_user_model(db)
+        account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+        if not account:
+            return jsonify({"error": "Account nicht gefunden"}), 404
+        
+        keyword_sets = db.query(models.SpacyKeywordSet).filter_by(account_id=account_id).all()
+        
+        # Wenn keine Custom-Sets existieren, Default-Sets laden
+        if not keyword_sets:
+            from src.services.spacy_config_manager import SpacyConfigManager
+            config_manager = SpacyConfigManager(db)
+            default_sets = config_manager._get_default_keyword_sets()
+            
+            return jsonify({
+                "keyword_sets": [
+                    {
+                        "id": None,
+                        "keyword_set_name": name,
+                        "keywords": keywords,
+                        "is_active": True,
+                        "is_default": True
+                    }
+                    for name, keywords in default_sets.items()
+                ]
+            }), 200
+        
+        import json
+        return jsonify({
+            "keyword_sets": [
+                {
+                    "id": ks.id,
+                    "keyword_set_name": ks.keyword_set_name,
+                    "keywords": json.loads(ks.keywords_json),
+                    "is_active": ks.is_active,
+                    "is_default": False
+                }
+                for ks in keyword_sets
+            ]
+        }), 200
+    finally:
+        db.close()
+
+
+@app.route("/api/phase-y/keyword-sets", methods=["POST"])
+@login_required
+def api_save_keyword_set():
+    """API: Keyword-Set speichern/aktualisieren"""
+    db = get_db_session()
+    try:
+        data = request.get_json()
+        account_id = data.get("account_id")
+        
+        user = get_current_user_model(db)
+        account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+        if not account:
+            return jsonify({"error": "Account nicht gefunden"}), 404
+        
+        keyword_set_name = data.get("keyword_set_name")
+        keywords = data.get("keywords", [])
+        
+        # Prüfe ob Set bereits existiert
+        existing = db.query(models.SpacyKeywordSet).filter_by(
+            account_id=account_id,
+            keyword_set_name=keyword_set_name
+        ).first()
+        
+        import json
+        if existing:
+            existing.keywords_json = json.dumps(keywords)
+            existing.is_active = data.get("is_active", True)
+        else:
+            new_set = models.SpacyKeywordSet(
+                account_id=account_id,
+                keyword_set_name=keyword_set_name,
+                keywords_json=json.dumps(keywords),
+                is_active=data.get("is_active", True)
+            )
+            db.add(new_set)
+        
+        db.commit()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Fehler beim Speichern von Keyword-Set: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@app.route("/api/phase-y/scoring-config", methods=["GET"])
+@login_required
+def api_get_scoring_config():
+    """API: Scoring-Konfiguration für Account abrufen"""
+    db = get_db_session()
+    try:
+        account_id = request.args.get("account_id", type=int)
+        if not account_id:
+            return jsonify({"error": "account_id erforderlich"}), 400
+        
+        user = get_current_user_model(db)
+        account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+        if not account:
+            return jsonify({"error": "Account nicht gefunden"}), 404
+        
+        config = db.query(models.SpacyScoringConfig).filter_by(account_id=account_id).first()
+        
+        if not config:
+            # Default-Werte
+            from src.services.spacy_config_manager import SpacyConfigManager
+            config_manager = SpacyConfigManager(db)
+            default_config = config_manager._get_default_scoring_config()
+            return jsonify({"config": default_config, "is_default": True}), 200
+        
+        return jsonify({
+            "config": {
+                "imperative_weight": config.imperative_weight,
+                "deadline_weight": config.deadline_weight,
+                "keyword_weight": config.keyword_weight,
+                "vip_weight": config.vip_weight,
+                "question_threshold": config.question_threshold,
+                "negation_sensitivity": config.negation_sensitivity,
+                "spacy_weight_initial": config.spacy_weight_initial,
+                "spacy_weight_learning": config.spacy_weight_learning,
+                "spacy_weight_trained": config.spacy_weight_trained
+            },
+            "is_default": False
+        }), 200
+    finally:
+        db.close()
+
+
+@app.route("/api/phase-y/scoring-config", methods=["POST"])
+@login_required
+def api_save_scoring_config():
+    """API: Scoring-Konfiguration speichern"""
+    db = get_db_session()
+    try:
+        data = request.get_json()
+        account_id = data.get("account_id")
+        
+        user = get_current_user_model(db)
+        account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+        if not account:
+            return jsonify({"error": "Account nicht gefunden"}), 404
+        
+        config = db.query(models.SpacyScoringConfig).filter_by(account_id=account_id).first()
+        
+        if config:
+            # Update
+            config.imperative_weight = data.get("imperative_weight", config.imperative_weight)
+            config.deadline_weight = data.get("deadline_weight", config.deadline_weight)
+            config.keyword_weight = data.get("keyword_weight", config.keyword_weight)
+            config.vip_weight = data.get("vip_weight", config.vip_weight)
+            config.question_threshold = data.get("question_threshold", config.question_threshold)
+            config.negation_sensitivity = data.get("negation_sensitivity", config.negation_sensitivity)
+            config.spacy_weight_initial = data.get("spacy_weight_initial", config.spacy_weight_initial)
+            config.spacy_weight_learning = data.get("spacy_weight_learning", config.spacy_weight_learning)
+            config.spacy_weight_trained = data.get("spacy_weight_trained", config.spacy_weight_trained)
+        else:
+            # Create
+            config = models.SpacyScoringConfig(
+                account_id=account_id,
+                imperative_weight=data.get("imperative_weight", 3),
+                deadline_weight=data.get("deadline_weight", 4),
+                keyword_weight=data.get("keyword_weight", 2),
+                vip_weight=data.get("vip_weight", 3),
+                question_threshold=data.get("question_threshold", 3),
+                negation_sensitivity=data.get("negation_sensitivity", 2),
+                spacy_weight_initial=data.get("spacy_weight_initial", 100),
+                spacy_weight_learning=data.get("spacy_weight_learning", 30),
+                spacy_weight_trained=data.get("spacy_weight_trained", 15)
+            )
+            db.add(config)
+        
+        db.commit()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Fehler beim Speichern von Scoring-Config: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@app.route("/api/phase-y/user-domains", methods=["GET"])
+@login_required
+def api_get_user_domains():
+    """API: User-Domains für Account abrufen"""
+    db = get_db_session()
+    try:
+        account_id = request.args.get("account_id", type=int)
+        if not account_id:
+            return jsonify({"error": "account_id erforderlich"}), 400
+        
+        user = get_current_user_model(db)
+        account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+        if not account:
+            return jsonify({"error": "Account nicht gefunden"}), 404
+        
+        domains = db.query(models.SpacyUserDomain).filter_by(account_id=account_id).all()
+        
+        return jsonify({
+            "domains": [
+                {
+                    "id": domain.id,
+                    "domain": domain.domain,
+                    "is_active": domain.is_active
+                }
+                for domain in domains
+            ]
+        }), 200
+    finally:
+        db.close()
+
+
+@app.route("/api/phase-y/user-domains", methods=["POST"])
+@login_required
+def api_create_user_domain():
+    """API: User-Domain erstellen"""
+    db = get_db_session()
+    try:
+        data = request.get_json()
+        account_id = data.get("account_id")
+        
+        user = get_current_user_model(db)
+        account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+        if not account:
+            return jsonify({"error": "Account nicht gefunden"}), 404
+        
+        domain = models.SpacyUserDomain(
+            account_id=account_id,
+            domain=data.get("domain", "").lower(),
+            is_active=data.get("is_active", True)
+        )
+        db.add(domain)
+        db.commit()
+        
+        return jsonify({"success": True, "domain_id": domain.id}), 201
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Fehler beim Erstellen von Domain: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@app.route("/api/phase-y/user-domains/<int:domain_id>", methods=["DELETE"])
+@login_required
+def api_delete_user_domain(domain_id):
+    """API: User-Domain löschen"""
+    db = get_db_session()
+    try:
+        user = get_current_user_model(db)
+        
+        domain = db.query(models.SpacyUserDomain).join(models.MailAccount).filter(
+            models.SpacyUserDomain.id == domain_id,
+            models.MailAccount.user_id == user.id
+        ).first()
+        
+        if not domain:
+            return jsonify({"error": "Domain nicht gefunden"}), 404
+        
+        db.delete(domain)
+        db.commit()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Fehler beim Löschen von Domain: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
 
 
 # ===== Phase F.1: Semantic Search API Endpoints =====

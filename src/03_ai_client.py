@@ -922,6 +922,88 @@ class LocalOllamaClient(AIClient):
             "_used_booster": True,  # Marker für Processing: Wurde mit UrgencyBooster verarbeitet
         }
 
+    def _convert_phase_y_to_llm_format(self, pipeline_result: Dict, subject: str, body: str, confidence: float) -> Dict:
+        """
+        Konvertiert Phase Y Hybrid Pipeline Format in Standard-LLM-Format.
+        
+        Phase Y gibt:
+        - wichtigkeit: 1-5 (integer)
+        - dringlichkeit: 1-5 (integer)
+        - spacy_details: Dict mit Detector-Ergebnissen
+        - ensemble_stats: Dict mit Learning-Stats
+        
+        LLM erwartet:
+        - dringlichkeit: 1-3 (integer)
+        - wichtigkeit: 1-3 (integer)
+        - kategorie_aktion: string
+        """
+        # Konvertiere 1-5 Skala zu 1-3 Skala
+        wichtigkeit_5 = pipeline_result.get('wichtigkeit', 3)
+        dringlichkeit_5 = pipeline_result.get('dringlichkeit', 3)
+        
+        # Mapping: 1-2 → 1, 3 → 2, 4-5 → 3
+        wichtigkeit = 1 if wichtigkeit_5 <= 2 else (2 if wichtigkeit_5 == 3 else 3)
+        dringlichkeit = 1 if dringlichkeit_5 <= 2 else (2 if dringlichkeit_5 == 3 else 3)
+        
+        # Kategorie basierend auf Dringlichkeit
+        if dringlichkeit >= 3:
+            kategorie = "dringend"
+        elif dringlichkeit >= 2:
+            kategorie = "aktion_erforderlich"
+        else:
+            kategorie = "nur_information"
+        
+        # Summary aus spaCy Details erstellen
+        spacy_details = pipeline_result.get('spacy_details', {})
+        summary_parts = []
+        
+        # Imperative
+        imperative = spacy_details.get('imperative', {})
+        if imperative.get('imperative_count', 0) > 0:
+            verbs = imperative.get('imperative_verbs', [])[:2]
+            summary_parts.append(f"Aktion: {', '.join(verbs)}")
+        
+        # Deadlines
+        deadline = spacy_details.get('deadline', {})
+        if deadline.get('deadline_detected'):
+            deadlines = deadline.get('deadlines', [])
+            if deadlines:
+                summary_parts.append(f"Deadline: {deadlines[0]}")
+        
+        # VIP
+        vip = spacy_details.get('vip', {})
+        if vip.get('is_vip'):
+            summary_parts.append(f"VIP (+{vip.get('importance_boost')})")
+        
+        # Intern/Extern
+        internal_external = spacy_details.get('internal_external', {})
+        if not internal_external.get('is_internal'):
+            summary_parts.append("Extern")
+        
+        # Ensemble Stats
+        ensemble_stats = pipeline_result.get('ensemble_stats', {})
+        learning_phase = ensemble_stats.get('learning_phase', 'initial')
+        num_corrections = ensemble_stats.get('num_corrections', 0)
+        
+        if summary_parts:
+            summary = f"{subject[:50]}: {' | '.join(summary_parts)} [Phase={learning_phase}, N={num_corrections}]"
+        else:
+            summary = f"{subject[:100] if subject else 'Keine Zusammenfassung'} [Phase Y]"
+        
+        return {
+            "dringlichkeit": dringlichkeit,
+            "wichtigkeit": wichtigkeit,
+            "kategorie_aktion": kategorie,
+            "tags": [],  # Leer - Tag-Manager übernimmt Embedding-basierte Zuordnung
+            "suggested_tags": [],  # Leer - Tag-Manager übernimmt Embedding-basierte Zuordnung
+            "spam_flag": False,
+            "summary_de": summary,
+            "text_de": body[:500] if body else "",
+            "_used_phase_y": True,  # Marker: Wurde mit Phase Y verarbeitet
+            "_phase_y_confidence": confidence,
+            "_phase_y_method": pipeline_result.get('final_method', 'spacy_only'),
+        }
+
     def analyze_email(
         self, subject: str, body: str, 
         sender: str = "",  # Phase X: UrgencyBooster
@@ -958,36 +1040,76 @@ class LocalOllamaClient(AIClient):
         
         Phase X: Versucht UrgencyBooster für Trusted Senders vor LLM-Analyse.
         """
-        # Phase X: UrgencyBooster pre-check for Trusted Senders
-        if sender and user_id and db and user_enabled_booster:
-            logger.info(f"🔍 UrgencyBooster check: sender={sender[:50]}, user_id={user_id}, account_id={account_id}, booster_enabled={user_enabled_booster}")
+        # Phase Y: Hybrid Pipeline (spaCy NLP + Keywords + SGD Ensemble Learning)
+        if sender and user_id and db and user_enabled_booster and account_id:
+            logger.info(f"🔍 Phase Y Hybrid Pipeline: sender={sender[:50]}, account_id={account_id}")
             try:
-                from importlib import import_module
-                trusted_senders_module = import_module(".services.trusted_senders", "src")
-                # Check with account_id for account-specific + global trusted senders
-                trusted_result = trusted_senders_module.TrustedSenderManager.is_trusted_sender(
-                    db, user_id, sender, account_id=account_id
-                )
-                logger.info(f"🔍 Trusted sender check result: {trusted_result}")
-                if trusted_result and trusted_result.get('use_urgency_booster'):
-                    # Trusted sender + booster enabled: use UrgencyBooster
-                    logger.info(f"🎯 UrgencyBooster: Trusted sender detected (pattern={trusted_result.get('pattern')}, type={trusted_result.get('pattern_type')})")
+                from src.services.urgency_booster import get_hybrid_pipeline
+                from src.train_classifier import OnlineLearner
+                
+                # Initialisiere SGD Classifier (falls vorhanden)
+                try:
+                    sgd_classifier = OnlineLearner()
+                except Exception as e:
+                    logger.warning(f"⚠️ SGD Classifier konnte nicht geladen werden: {e}")
+                    sgd_classifier = None
+                
+                # Phase Y Hybrid Pipeline
+                hybrid_pipeline = get_hybrid_pipeline(db, sgd_classifier)
+                
+                if hybrid_pipeline:
+                    logger.info(f"✅ Phase Y Hybrid Pipeline geladen")
                     try:
-                        from src.services.urgency_booster import get_urgency_booster
-                        urgency_booster = get_urgency_booster()
-                        booster_result = urgency_booster.analyze_urgency(subject, body, sender)
-                        if booster_result.get("confidence", 0) >= 0.6:  # High confidence
-                            logger.info(f"✅ UrgencyBooster: High confidence ({booster_result.get('confidence'):.2f}) for trusted sender {sender}")
-                            # Convert UrgencyBooster format to standard LLM format
-                            return self._convert_booster_to_llm_format(booster_result, subject, body)
+                        pipeline_result = hybrid_pipeline.analyze(
+                            account_id=account_id,
+                            sender_email=sender,
+                            subject=subject,
+                            body=body
+                        )
+                        
+                        # Confidence basierend auf Ensemble-Stats
+                        ensemble_stats = pipeline_result.get("ensemble_stats", {})
+                        num_corrections = ensemble_stats.get("num_corrections", 0)
+                        
+                        # Je mehr Korrekturen, desto höher Confidence (SGD trainiert)
+                        if num_corrections >= 50:
+                            confidence = 0.9  # SGD dominant, sehr zuverlässig
+                        elif num_corrections >= 20:
+                            confidence = 0.75  # Hybrid, gute Qualität
                         else:
-                            logger.info(f"⚠️ UrgencyBooster: Low confidence ({booster_result.get('confidence', 0):.2f}), falling back to LLM")
+                            confidence = 0.65  # spaCy-only, solide
+                        
+                        logger.info(f"✅ Phase Y Analysis: W={pipeline_result['wichtigkeit']}, D={pipeline_result['dringlichkeit']}, method={pipeline_result['final_method']}, confidence={confidence:.2f}")
+                        
+                        # Convert Phase Y format to standard LLM format
+                        return self._convert_phase_y_to_llm_format(pipeline_result, subject, body, confidence)
+                        
                     except Exception as e:
-                        logger.warning(f"UrgencyBooster analyze failed: {e}")
+                        logger.warning(f"⚠️ Phase Y Analysis failed: {e}", exc_info=True)
                         # Fall through to standard LLM analysis
+                else:
+                    # Fallback: Alter UrgencyBooster (nur für Trusted Senders)
+                    logger.info(f"⚠️ Phase Y nicht verfügbar, Fallback auf alten UrgencyBooster")
+                    try:
+                        from importlib import import_module
+                        trusted_senders_module = import_module(".services.trusted_senders", "src")
+                        trusted_result = trusted_senders_module.TrustedSenderManager.is_trusted_sender(
+                            db, user_id, sender, account_id=account_id
+                        )
+                        if trusted_result and trusted_result.get('use_urgency_booster'):
+                            from src.services.urgency_booster import get_urgency_booster
+                            urgency_booster = get_urgency_booster()
+                            booster_result = urgency_booster.analyze_urgency(subject, body, sender)
+                            if booster_result.get("confidence", 0) >= 0.6:
+                                logger.info(f"✅ UrgencyBooster Fallback: confidence={booster_result.get('confidence'):.2f}")
+                                return self._convert_booster_to_llm_format(booster_result, subject, body)
+                    except Exception as e:
+                        logger.warning(f"UrgencyBooster Fallback failed: {e}")
+                        
             except Exception as e:
-                logger.warning(f"Phase X checks failed: {e}", exc_info=True)
+                logger.warning(f"Phase Y checks failed: {e}", exc_info=True)
                 # Fall through to standard analysis
+
         
         messages = _build_standard_messages(
             subject=subject, body=body, language=language, context=context

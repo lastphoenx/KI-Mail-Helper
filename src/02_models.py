@@ -573,6 +573,21 @@ class MailAccount(Base):
     raw_emails = relationship(
         "RawEmail", back_populates="mail_account", cascade="all, delete-orphan"
     )
+    
+    # Phase Y: spaCy Hybrid Pipeline Relationships
+    spacy_vip_senders = relationship(
+        "SpacyVIPSender", back_populates="account", cascade="all, delete-orphan"
+    )
+    spacy_keyword_sets = relationship(
+        "SpacyKeywordSet", back_populates="account", cascade="all, delete-orphan"
+    )
+    spacy_scoring_config = relationship(
+        "SpacyScoringConfig", back_populates="account", cascade="all, delete-orphan", uselist=False
+    )
+    spacy_user_domains = relationship(
+        "SpacyUserDomain", back_populates="account", cascade="all, delete-orphan"
+    )
+
 
     def get_uidvalidity(self, folder: str) -> Optional[int]:
         """Gibt gespeicherte UIDVALIDITY für Ordner zurück
@@ -1245,6 +1260,146 @@ class TrustedSender(Base):
     
     def __repr__(self):
         return f"<TrustedSender(id={self.id}, pattern={self.sender_pattern}, type={self.pattern_type})>"
+
+
+# ========================== PHASE Y: SPACY HYBRID PIPELINE ==========================
+
+
+class SpacyVIPSender(Base):
+    """
+    VIP-Absender für Phase Y Hybrid Pipeline.
+    Bestimmte Absender erhalten automatisch einen Wichtigkeits-Boost.
+    
+    Beispiele:
+    - Chef-Email → importance_boost=+5
+    - Vorstandsassistenz → importance_boost=+4
+    - Team Lead → importance_boost=+2
+    """
+    __tablename__ = "spacy_vip_senders"
+
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False)
+    sender_pattern = Column(String(255), nullable=False)  # email oder domain
+    pattern_type = Column(String(20), nullable=False)  # "email" oder "domain"
+    importance_boost = Column(Integer, nullable=False, default=2)  # +1 bis +5
+    description = Column(String(255))  # z.B. "Geschäftsführung"
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    account = relationship("MailAccount", back_populates="spacy_vip_senders")
+
+    __table_args__ = (
+        Index("idx_spacy_vip_account", "account_id"),
+        UniqueConstraint("account_id", "sender_pattern", name="uq_spacy_vip_sender"),
+    )
+
+    def __repr__(self):
+        return f"<SpacyVIPSender(pattern={self.sender_pattern}, boost=+{self.importance_boost})>"
+
+
+class SpacyKeywordSet(Base):
+    """
+    Konfigurierbare Keyword-Sets für Phase Y.
+    Pro Account werden 12 Keyword-Sets gespeichert (als JSON).
+    
+    JSON-Format:
+    {
+        "imperative_verbs": ["prüfen", "freigeben", "bestätigen", ...],
+        "urgency_time": ["heute", "morgen", "asap", ...],
+        ...
+    }
+    """
+    __tablename__ = "spacy_keyword_sets"
+
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False)
+    keyword_set_name = Column(String(50), nullable=False)  # z.B. "imperative_verbs"
+    keywords_json = Column(Text, nullable=False)  # JSON-Array mit Keywords
+    is_active = Column(Boolean, nullable=False, default=True)
+    last_modified = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+    account = relationship("MailAccount", back_populates="spacy_keyword_sets")
+
+    __table_args__ = (
+        Index("idx_spacy_keywords_account", "account_id"),
+        UniqueConstraint("account_id", "keyword_set_name", name="uq_spacy_keyword_set"),
+    )
+
+    def __repr__(self):
+        return f"<SpacyKeywordSet(account={self.account_id}, set={self.keyword_set_name})>"
+
+
+class SpacyScoringConfig(Base):
+    """
+    Scoring-Konfiguration für Phase Y.
+    Thresholds und Gewichte sind pro Account anpassbar.
+    
+    Beispiel:
+    - imperative_weight=3 (Imperative sind wichtig)
+    - deadline_weight=4 (Deadlines sind sehr wichtig)
+    - question_threshold=0.3 (ab 30% Fragewörter → Niedriger Urgency)
+    """
+    __tablename__ = "spacy_scoring_config"
+
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False)
+    
+    # Gewichte für verschiedene Detektoren
+    imperative_weight = Column(Integer, nullable=False, default=3)
+    deadline_weight = Column(Integer, nullable=False, default=4)
+    keyword_weight = Column(Integer, nullable=False, default=2)
+    vip_weight = Column(Integer, nullable=False, default=3)
+    
+    # Thresholds
+    question_threshold = Column(Integer, nullable=False, default=3)  # Min. Anzahl Fragewörter
+    negation_sensitivity = Column(Integer, nullable=False, default=2)  # Stärke der Negation
+    
+    # Ensemble-Gewichte (dynamisch basierend auf Anzahl Korrekturen)
+    spacy_weight_initial = Column(Integer, nullable=False, default=100)  # <20 Korrekturen
+    spacy_weight_learning = Column(Integer, nullable=False, default=30)  # 20-50 Korrekturen
+    spacy_weight_trained = Column(Integer, nullable=False, default=15)   # 50+ Korrekturen
+    
+    last_modified = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+    account = relationship("MailAccount", back_populates="spacy_scoring_config")
+
+    __table_args__ = (
+        Index("idx_spacy_config_account", "account_id"),
+        UniqueConstraint("account_id", name="uq_spacy_scoring_config"),
+    )
+
+    def __repr__(self):
+        return f"<SpacyScoringConfig(account={self.account_id})>"
+
+
+class SpacyUserDomain(Base):
+    """
+    User-Domains für Phase Y.
+    Ermöglicht Erkennung von intern/extern bei Emails.
+    
+    Beispiele:
+    - "example.com" → Interne Mails
+    - "subsidiary.de" → Tochterunternehmen (auch intern)
+    
+    Externe Mails von Kunden/Partnern erhalten höhere Urgency.
+    """
+    __tablename__ = "spacy_user_domains"
+
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False)
+    domain = Column(String(255), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    account = relationship("MailAccount", back_populates="spacy_user_domains")
+
+    __table_args__ = (
+        Index("idx_spacy_domains_account", "account_id"),
+        UniqueConstraint("account_id", "domain", name="uq_spacy_user_domain"),
+    )
+
+    def __repr__(self):
+        return f"<SpacyUserDomain(domain={self.domain})>"
 
 
 if __name__ == "__main__":

@@ -1,0 +1,746 @@
+﻿{% extends "base.html" %}
+
+{% block title %}KI-Priorisierung - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container-xxl mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-0">🎯 KI-gestützte E-Mail-Priorisierung</h2>
+            <p class="text-muted mt-1 mb-0">Intelligente Analyse von Wichtigkeit & Dringlichkeit durch spaCy NLP + Machine Learning</p>
+        </div>
+        <a href="/settings" class="btn btn-outline-secondary">← Einstellungen</a>
+    </div>
+    
+    <!-- Account Selector -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <label for="accountSelect" class="form-label fw-bold">Mail-Account wählen:</label>
+            <select class="form-select" id="accountSelect">
+                <option value="">-- Bitte Account wählen --</option>
+            </select>
+            <small class="text-muted d-block mt-2">
+                <strong>💡 Wichtig:</strong> Die KI-Priorisierung ist pro Mail-Account individuell konfigurierbar. 
+                Jeder Account hat eigene VIP-Listen, Keywords, Scoring-Gewichte und Domains.
+                Änderungen müssen jeweils gespeichert werden.
+            </small>
+        </div>
+    </div>
+    
+    <!-- Info Banner -->
+    <div class="alert alert-info mb-4">
+        <h5 class="alert-heading">📊 Wie funktioniert die KI-Priorisierung?</h5>
+        <p class="mb-2">
+            Die <strong>Hybrid-Pipeline</strong> analysiert deine E-Mails mit zwei intelligenten Systemen:
+        </p>
+        <ul class="mb-0">
+            <li><strong>🧠 80% NLP-Analyse:</strong> Erkennt Imperative, Deadlines, Fragen, Verneinungen durch linguistische Strukturanalyse</li>
+            <li><strong>🔑 20% Keywords:</strong> 80 sorgfältig ausgewählte Signalwörter (Dringlichkeit, Termine, Priorität, ...)</li>
+            <li><strong>📈 Ensemble Learning:</strong> Passt sich automatisch an deine Arbeitsweise an (Machine Learning)</li>
+        </ul>
+        <hr>
+        <p class="mb-0 small">
+            <strong>Lernprozess:</strong> Startet mit linguistischen Regeln (100% NLP) → Lernt aus deinen Korrekturen (SGD) → Wird personalisiert (85% ML + 15% NLP nach 50+ Korrekturen)
+        </p>
+    </div>
+    
+    <!-- Tabs Navigation -->
+    <ul class="nav nav-tabs mb-4" id="phaseYTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="vip-tab" data-bs-toggle="tab" data-bs-target="#vip-panel" type="button" role="tab">
+                ⭐ VIP-Absender
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="keywords-tab" data-bs-toggle="tab" data-bs-target="#keywords-panel" type="button" role="tab">
+                🔤 Keywords
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="scoring-tab" data-bs-toggle="tab" data-bs-target="#scoring-panel" type="button" role="tab">
+                ⚖️ Scoring
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="domains-tab" data-bs-toggle="tab" data-bs-target="#domains-panel" type="button" role="tab">
+                🌐 Domains
+            </button>
+        </li>
+    </ul>
+    
+    <!-- Tabs Content -->
+    <div class="tab-content" id="phaseYTabsContent">
+        
+        <!-- ===== TAB 1: VIP-ABSENDER ===== -->
+        <div class="tab-pane fade show active" id="vip-panel" role="tabpanel">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <h4 class="card-title mb-3">⭐ VIP-Absender Management</h4>
+                    <p class="text-muted mb-4">
+                        Definiere VIP-Absender (Chef, Vorstand, wichtige Kunden) für automatischen Importance-Boost (+1 bis +5).
+                        <strong>Änderungen werden sofort gespeichert</strong> beim Hinzufügen/Löschen.
+                    </p>
+                    
+                    <!-- Add VIP Form -->
+                    <div class="row g-3 mb-4 p-3 bg-light rounded">
+                        <div class="col-md-4">
+                            <label class="form-label">Absender Pattern</label>
+                            <input type="text" class="form-control" id="vipPattern" placeholder="boss@example.com oder example.com">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Typ</label>
+                            <select class="form-select" id="vipType">
+                                <option value="email">Email</option>
+                                <option value="domain">Domain</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Boost</label>
+                            <select class="form-select" id="vipBoost">
+                                <option value="1">+1 (Niedrig)</option>
+                                <option value="2" selected>+2 (Mittel)</option>
+                                <option value="3">+3 (Hoch)</option>
+                                <option value="4">+4 (Sehr hoch)</option>
+                                <option value="5">+5 (Kritisch)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Beschreibung</label>
+                            <input type="text" class="form-control" id="vipDescription" placeholder="z.B. Geschäftsführung">
+                        </div>
+                        <div class="col-md-1 d-flex align-items-end">
+                            <button class="btn btn-primary w-100" id="addVipBtn">+</button>
+                        </div>
+                    </div>
+                    
+                    <!-- VIP List -->
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="vipTable">
+                            <thead>
+                                <tr>
+                                    <th>Pattern</th>
+                                    <th>Typ</th>
+                                    <th>Boost</th>
+                                    <th>Beschreibung</th>
+                                    <th>Status</th>
+                                    <th>Aktionen</th>
+                                </tr>
+                            </thead>
+                            <tbody id="vipTableBody">
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted">Keine VIP-Absender konfiguriert</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ===== TAB 2: KEYWORDS ===== -->
+        <div class="tab-pane fade" id="keywords-panel" role="tabpanel">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <h4 class="card-title mb-3">🔤 Keyword-Sets Editor</h4>
+                    <p class="text-muted mb-4">
+                        80 Keywords in 12 Sets. spaCy Lemmatizer matched automatisch Wortformen (prüfen → prüfe, prüfst, geprüft).
+                    </p>
+                    
+                    <!-- Keyword Set Accordion -->
+                    <div class="accordion" id="keywordAccordion">
+                        <!-- Wird per JavaScript gefüllt -->
+                    </div>
+                    
+                    <div class="mt-3">
+                        <button class="btn btn-success" id="saveKeywordsBtn"
+                                title="Speichert alle Keyword-Sets in der Datenbank für diesen Account">
+                            💾 Alle Sets speichern
+                        </button>
+                        <button class="btn btn-outline-secondary" id="resetKeywordsBtn"
+                                title="Stellt die System-Defaults wieder her (80 strategische Keywords in 12 Kategorien)">
+                            🔄 Auf Defaults zurücksetzen
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ===== TAB 3: SCORING ===== -->
+        <div class="tab-pane fade" id="scoring-panel" role="tabpanel">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <h4 class="card-title mb-3">⚖️ Scoring-Konfiguration</h4>
+                    <p class="text-muted mb-4">
+                        Gewichte und Thresholds für die spaCy Hybrid Pipeline. Standardwerte funktionieren für die meisten Use-Cases.
+                    </p>
+                    
+                    <!-- Detector Weights -->
+                    <h5 class="mt-4 mb-3">Detector-Gewichte</h5>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Imperative Weight (Befehle)</label>
+                            <input type="range" class="form-range" id="imperativeWeight" min="0" max="5" value="3">
+                            <small class="text-muted d-block">Aktuell: <span id="imperativeWeightLabel">3</span></small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Deadline Weight (Termine)</label>
+                            <input type="range" class="form-range" id="deadlineWeight" min="0" max="5" value="4">
+                            <small class="text-muted d-block">Aktuell: <span id="deadlineWeightLabel">4</span></small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Keyword Weight</label>
+                            <input type="range" class="form-range" id="keywordWeight" min="0" max="5" value="2">
+                            <small class="text-muted d-block">Aktuell: <span id="keywordWeightLabel">2</span></small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">VIP Weight</label>
+                            <input type="range" class="form-range" id="vipWeight" min="0" max="5" value="3">
+                            <small class="text-muted d-block">Aktuell: <span id="vipWeightLabel">3</span></small>
+                        </div>
+                    </div>
+                    
+                    <!-- Thresholds -->
+                    <h5 class="mt-4 mb-3">Thresholds</h5>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Question Threshold (Min. Anzahl Fragen)</label>
+                            <input type="number" class="form-control" id="questionThreshold" value="3" min="1" max="10">
+                            <small class="text-muted">Ab dieser Anzahl wird Urgency reduziert</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Negation Sensitivity</label>
+                            <input type="number" class="form-control" id="negationSensitivity" value="2" min="1" max="5">
+                            <small class="text-muted">Stärke der Urgency-Reduktion bei Negationen</small>
+                        </div>
+                    </div>
+                    
+                    <!-- Ensemble Weights -->
+                    <h5 class="mt-4 mb-3">Ensemble Learning Gewichte</h5>
+                    <div class="alert alert-info">
+                        <strong>Info:</strong> Diese Werte bestimmen wie stark spaCy vs. SGD gewichtet werden basierend auf Anzahl Korrekturen.
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Initial (&lt;20 Korrekturen)</label>
+                            <input type="number" class="form-control" id="spacyWeightInitial" value="100" min="0" max="100">
+                            <small class="text-muted">% spaCy (Rest = SGD)</small>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Learning (20-50 Korrekturen)</label>
+                            <input type="number" class="form-control" id="spacyWeightLearning" value="30" min="0" max="100">
+                            <small class="text-muted">% spaCy (Rest = SGD)</small>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Trained (50+ Korrekturen)</label>
+                            <input type="number" class="form-control" id="spacyWeightTrained" value="15" min="0" max="100">
+                            <small class="text-muted">% spaCy (Rest = SGD)</small>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4">
+                        <button class="btn btn-success" id="saveScoringBtn" 
+                                title="Speichert die aktuellen Gewichte in der Datenbank für diesen Account">
+                            💾 Scoring-Config speichern
+                        </button>
+                        <button class="btn btn-outline-secondary" id="loadScoringBtn"
+                                title="Lädt die gespeicherte Konfiguration neu (verwirft nicht gespeicherte Änderungen)">
+                            🔄 Zurücksetzen
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ===== TAB 4: DOMAINS ===== -->
+        <div class="tab-pane fade" id="domains-panel" role="tabpanel">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <h4 class="card-title mb-3">🌐 User-Domains (Intern/Extern Detection)</h4>
+                    <p class="text-muted mb-4">
+                        Definiere deine Firmen-Domains. Externe Emails (von Kunden/Partnern) erhalten höhere Urgency/Importance.
+                        <strong>Änderungen werden sofort gespeichert</strong> beim Hinzufügen/Löschen.
+                    </p>
+                    
+                    <!-- Add Domain Form -->
+                    <div class="row g-3 mb-4 p-3 bg-light rounded">
+                        <div class="col-md-10">
+                            <label class="form-label">Domain</label>
+                            <input type="text" class="form-control" id="domainInput" placeholder="example.com">
+                            <small class="text-muted">Ohne "www" oder "https://"</small>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button class="btn btn-primary w-100" id="addDomainBtn">+ Hinzufügen</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Domains List -->
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="domainTable">
+                            <thead>
+                                <tr>
+                                    <th>Domain</th>
+                                    <th>Status</th>
+                                    <th>Aktionen</th>
+                                </tr>
+                            </thead>
+                            <tbody id="domainTableBody">
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted">Keine Domains konfiguriert</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="alert alert-warning mt-3">
+                        <strong>⚠️ Hinweis:</strong> Emails von diesen Domains werden als "intern" klassifiziert und erhalten niedrigere Urgency. Externe Emails (Kunden/Partner) bekommen automatisch +2 Urgency / +1 Importance.
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+let currentAccountId = null;
+
+// ===== Account & Config Loading =====
+
+async function loadAccounts() {
+    try {
+        const response = await fetch('/api/accounts');
+        const data = await response.json();
+        
+        const select = document.getElementById('accountSelect');
+        select.innerHTML = '<option value="">-- Bitte Account wählen --</option>';
+        
+        data.accounts.forEach(acc => {
+            const option = document.createElement('option');
+            option.value = acc.id;
+            option.textContent = `📧 ${acc.email}`;  // E-Mail-Adresse anzeigen
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Fehler beim Laden der Accounts:', error);
+    }
+}
+
+async function loadPhaseYConfig() {
+    const select = document.getElementById('accountSelect');
+    currentAccountId = select.value;
+    
+    if (!currentAccountId) return;
+    
+    // Load all tabs
+    await Promise.all([
+        loadVIPs(),
+        loadKeywordSets(),
+        loadScoringConfig(),
+        loadDomains()
+    ]);
+}
+
+// ===== TAB 1: VIP-Absender =====
+
+async function loadVIPs() {
+    if (!currentAccountId) return;
+    
+    try {
+        const response = await fetch(`/api/phase-y/vip-senders?account_id=${currentAccountId}`);
+        const data = await response.json();
+        
+        const tbody = document.getElementById('vipTableBody');
+        tbody.innerHTML = '';
+        
+        if (data.vips.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Keine VIP-Absender konfiguriert</td></tr>';
+            return;
+        }
+        
+        data.vips.forEach(vip => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${vip.sender_pattern}</td>
+                <td><span class="badge bg-secondary">${vip.pattern_type}</span></td>
+                <td><span class="badge bg-primary">+${vip.importance_boost}</span></td>
+                <td>${vip.description || '-'}</td>
+                <td>${vip.is_active ? '<span class="badge bg-success">Aktiv</span>' : '<span class="badge bg-secondary">Inaktiv</span>'}</td>
+                <td>
+                    <button class="btn btn-sm btn-danger" data-vip-id="${vip.id}">
+                        🗑️ Löschen
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+            
+            // Event Listener für Delete Button
+            row.querySelector('button[data-vip-id]').addEventListener('click', () => deleteVIP(vip.id));
+        });
+    } catch (error) {
+        console.error('Fehler beim Laden der VIPs:', error);
+    }
+}
+
+async function addVIP() {
+    if (!currentAccountId) {
+        alert('Bitte wählen Sie zuerst einen Account aus');
+        return;
+    }
+    
+    const pattern = document.getElementById('vipPattern').value.trim();
+    const type = document.getElementById('vipType').value;
+    const boost = parseInt(document.getElementById('vipBoost').value);
+    const description = document.getElementById('vipDescription').value.trim();
+    
+    if (!pattern) {
+        alert('Bitte geben Sie ein Pattern ein');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/phase-y/vip-senders', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                account_id: currentAccountId,
+                sender_pattern: pattern,
+                pattern_type: type,
+                importance_boost: boost,
+                description: description
+            })
+        });
+        
+        if (response.ok) {
+            document.getElementById('vipPattern').value = '';
+            document.getElementById('vipDescription').value = '';
+            await loadVIPs();
+        } else {
+            alert('Fehler beim Hinzufügen');
+        }
+    } catch (error) {
+        console.error('Fehler:', error);
+        alert('Fehler beim Hinzufügen');
+    }
+}
+
+async function deleteVIP(vipId) {
+    if (!confirm('VIP-Absender wirklich löschen?')) return;
+    
+    try {
+        const response = await fetch(`/api/phase-y/vip-senders/${vipId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            await loadVIPs();
+        } else {
+            alert('Fehler beim Löschen');
+        }
+    } catch (error) {
+        console.error('Fehler:', error);
+        alert('Fehler beim Löschen');
+    }
+}
+
+// ===== TAB 2: Keywords =====
+
+let keywordSetsData = {};
+
+async function loadKeywordSets() {
+    if (!currentAccountId) return;
+    
+    try {
+        const response = await fetch(`/api/phase-y/keyword-sets?account_id=${currentAccountId}`);
+        const data = await response.json();
+        
+        keywordSetsData = {};
+        data.keyword_sets.forEach(set => {
+            keywordSetsData[set.keyword_set_name] = set.keywords;
+        });
+        
+        renderKeywordAccordion(data.keyword_sets);
+    } catch (error) {
+        console.error('Fehler beim Laden der Keyword-Sets:', error);
+    }
+}
+
+function renderKeywordAccordion(sets) {
+    const accordion = document.getElementById('keywordAccordion');
+    accordion.innerHTML = '';
+    
+    const setDescriptions = {
+        'imperative_verbs': '📝 Imperative Verben (Befehle)',
+        'urgency_time': '⏰ Dringlichkeits-Zeit',
+        'deadline_markers': '📅 Deadline-Marker',
+        'follow_up_signals': '🔔 Nachfrage-Signale',
+        'question_words': '❓ Fragewörter (senkt Urgency)',
+        'negation_terms': '🚫 Negations-Begriffe',
+        'escalation_words': '⚠️ Eskalations-Wörter',
+        'confidential_markers': '🔒 Vertraulichkeits-Marker',
+        'contract_terms': '📄 Vertrags-Begriffe',
+        'financial_words': '💰 Finanz-Wörter',
+        'meeting_terms': '📞 Meeting-Begriffe',
+        'sender_hierarchy': '👔 Absender-Hierarchie'
+    };
+    
+    sets.forEach((set, index) => {
+        const item = document.createElement('div');
+        item.className = 'accordion-item';
+        item.innerHTML = `
+            <h2 class="accordion-header">
+                <button class="accordion-button ${index === 0 ? '' : 'collapsed'}" type="button" 
+                        data-bs-toggle="collapse" data-bs-target="#collapse${index}">
+                    ${setDescriptions[set.keyword_set_name] || set.keyword_set_name}
+                    <span class="badge bg-secondary ms-2">${set.keywords.length} Keywords</span>
+                </button>
+            </h2>
+            <div id="collapse${index}" class="accordion-collapse collapse ${index === 0 ? 'show' : ''}" 
+                 data-bs-parent="#keywordAccordion">
+                <div class="accordion-body">
+                    <textarea class="form-control" rows="4" id="keywords_${set.keyword_set_name}" 
+                              placeholder="Ein Keyword pro Zeile">${set.keywords.join('\n')}</textarea>
+                    <small class="text-muted d-block mt-2">
+                        Ein Keyword pro Zeile. spaCy Lemmatizer matched automatisch Wortformen.
+                    </small>
+                </div>
+            </div>
+        `;
+        accordion.appendChild(item);
+    });
+}
+
+async function saveAllKeywordSets() {
+    if (!currentAccountId) {
+        alert('Bitte wählen Sie zuerst einen Account aus');
+        return;
+    }
+    
+    const setNames = Object.keys(keywordSetsData);
+    
+    try {
+        for (const setName of setNames) {
+            const textarea = document.getElementById(`keywords_${setName}`);
+            if (!textarea) continue;
+            
+            const keywords = textarea.value.split('\n')
+                .map(kw => kw.trim())
+                .filter(kw => kw.length > 0);
+            
+            await fetch('/api/phase-y/keyword-sets', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    account_id: currentAccountId,
+                    keyword_set_name: setName,
+                    keywords: keywords,
+                    is_active: true
+                })
+            });
+        }
+        
+        alert('✅ Alle Keyword-Sets gespeichert!');
+        await loadKeywordSets();
+    } catch (error) {
+        console.error('Fehler:', error);
+        alert('Fehler beim Speichern');
+    }
+}
+
+async function resetToDefaults() {
+    if (!confirm('Wirklich auf Default-Keywords zurücksetzen? Eigene Änderungen gehen verloren.')) return;
+    
+    // TODO: Delete custom sets und reload defaults
+    alert('Wird implementiert: Reset auf Defaults');
+}
+
+// ===== TAB 3: Scoring =====
+
+function updateWeightLabel(type) {
+    const input = document.getElementById(`${type}Weight`);
+    const label = document.getElementById(`${type}WeightLabel`);
+    label.textContent = input.value;
+}
+
+async function loadScoringConfig() {
+    if (!currentAccountId) return;
+    
+    try {
+        const response = await fetch(`/api/phase-y/scoring-config?account_id=${currentAccountId}`);
+        const data = await response.json();
+        const config = data.config;
+        
+        document.getElementById('imperativeWeight').value = config.imperative_weight;
+        document.getElementById('deadlineWeight').value = config.deadline_weight;
+        document.getElementById('keywordWeight').value = config.keyword_weight;
+        document.getElementById('vipWeight').value = config.vip_weight;
+        document.getElementById('questionThreshold').value = config.question_threshold;
+        document.getElementById('negationSensitivity').value = config.negation_sensitivity;
+        document.getElementById('spacyWeightInitial').value = config.spacy_weight_initial;
+        document.getElementById('spacyWeightLearning').value = config.spacy_weight_learning;
+        document.getElementById('spacyWeightTrained').value = config.spacy_weight_trained;
+        
+        updateWeightLabel('imperative');
+        updateWeightLabel('deadline');
+        updateWeightLabel('keyword');
+        updateWeightLabel('vip');
+    } catch (error) {
+        console.error('Fehler beim Laden der Scoring-Config:', error);
+    }
+}
+
+async function saveScoringConfig() {
+    if (!currentAccountId) {
+        alert('Bitte wählen Sie zuerst einen Account aus');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/phase-y/scoring-config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                account_id: currentAccountId,
+                imperative_weight: parseInt(document.getElementById('imperativeWeight').value),
+                deadline_weight: parseInt(document.getElementById('deadlineWeight').value),
+                keyword_weight: parseInt(document.getElementById('keywordWeight').value),
+                vip_weight: parseInt(document.getElementById('vipWeight').value),
+                question_threshold: parseInt(document.getElementById('questionThreshold').value),
+                negation_sensitivity: parseInt(document.getElementById('negationSensitivity').value),
+                spacy_weight_initial: parseInt(document.getElementById('spacyWeightInitial').value),
+                spacy_weight_learning: parseInt(document.getElementById('spacyWeightLearning').value),
+                spacy_weight_trained: parseInt(document.getElementById('spacyWeightTrained').value)
+            })
+        });
+        
+        if (response.ok) {
+            alert('✅ Scoring-Konfiguration gespeichert!');
+        } else {
+            alert('Fehler beim Speichern');
+        }
+    } catch (error) {
+        console.error('Fehler:', error);
+        alert('Fehler beim Speichern');
+    }
+}
+
+// ===== TAB 4: Domains =====
+
+async function loadDomains() {
+    if (!currentAccountId) return;
+    
+    try {
+        const response = await fetch(`/api/phase-y/user-domains?account_id=${currentAccountId}`);
+        const data = await response.json();
+        
+        const tbody = document.getElementById('domainTableBody');
+        tbody.innerHTML = '';
+        
+        if (data.domains.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Keine Domains konfiguriert</td></tr>';
+            return;
+        }
+        
+        data.domains.forEach(domain => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${domain.domain}</td>
+                <td>${domain.is_active ? '<span class="badge bg-success">Aktiv</span>' : '<span class="badge bg-secondary">Inaktiv</span>'}</td>
+                <td>
+                    <button class="btn btn-sm btn-danger" data-domain-id="${domain.id}">
+                        🗑️ Löschen
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+            
+            // Event Listener für Delete Button
+            row.querySelector('button[data-domain-id]').addEventListener('click', () => deleteDomain(domain.id));
+        });
+    } catch (error) {
+        console.error('Fehler beim Laden der Domains:', error);
+    }
+}
+
+async function addDomain() {
+    if (!currentAccountId) {
+        alert('Bitte wählen Sie zuerst einen Account aus');
+        return;
+    }
+    
+    const domain = document.getElementById('domainInput').value.trim().toLowerCase();
+    
+    if (!domain) {
+        alert('Bitte geben Sie eine Domain ein');
+        return;
+    }
+    
+    // Simple validation
+    if (!domain.includes('.')) {
+        alert('Ungültiges Domain-Format');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/phase-y/user-domains', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                account_id: currentAccountId,
+                domain: domain
+            })
+        });
+        
+        if (response.ok) {
+            document.getElementById('domainInput').value = '';
+            await loadDomains();
+        } else {
+            alert('Fehler beim Hinzufügen');
+        }
+    } catch (error) {
+        console.error('Fehler:', error);
+        alert('Fehler beim Hinzufügen');
+    }
+}
+
+async function deleteDomain(domainId) {
+    if (!confirm('Domain wirklich löschen?')) return;
+    
+    try {
+        const response = await fetch(`/api/phase-y/user-domains/${domainId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            await loadDomains();
+        } else {
+            alert('Fehler beim Löschen');
+        }
+    } catch (error) {
+        console.error('Fehler:', error);
+        alert('Fehler beim Löschen');
+    }
+}
+
+// ===== Init =====
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadAccounts();
+    
+    // Event Listeners registrieren
+    document.getElementById('accountSelect')?.addEventListener('change', loadPhaseYConfig);
+    document.getElementById('addVipBtn')?.addEventListener('click', addVIP);
+    document.getElementById('saveKeywordsBtn')?.addEventListener('click', saveAllKeywordSets);
+    document.getElementById('resetKeywordsBtn')?.addEventListener('click', resetToDefaults);
+    document.getElementById('saveScoringBtn')?.addEventListener('click', saveScoringConfig);
+    document.getElementById('loadScoringBtn')?.addEventListener('click', loadScoringConfig);
+    document.getElementById('addDomainBtn')?.addEventListener('click', addDomain);
+    
+    // Range Slider Event Listeners
+    document.getElementById('imperativeWeight')?.addEventListener('input', () => updateWeightLabel('imperative'));
+    document.getElementById('deadlineWeight')?.addEventListener('input', () => updateWeightLabel('deadline'));
+    document.getElementById('keywordWeight')?.addEventListener('input', () => updateWeightLabel('keyword'));
+    document.getElementById('vipWeight')?.addEventListener('input', () => updateWeightLabel('vip'));
+});
+</script>
+
+{% endblock %}

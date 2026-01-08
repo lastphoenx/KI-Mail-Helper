@@ -10,6 +10,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 - **Zero-Knowledge Encryption** – AES-256-GCM, DEK/KEK-Pattern, Master-Key nur im RAM
 - **3×3 Prioritäts-Matrix** – Dringlichkeit × Wichtigkeit mit Farbcodierung + Account-Filter
+- **KI-gestützte Priorisierung** – spaCy NLP (80%) + Keywords (20%) + Ensemble Learning
 - **Multi-Provider AI** – Lokale Modelle (Ollama) oder Cloud (Claude, OpenAI, Mistral)
 - **Online-Learning System** – SGD-Classifier lernt aus User-Korrekturen (4 Classifier: D/W/Spam/Kategorie)
 - **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (14 Bedingungen)
@@ -30,10 +31,10 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## Status
 
-**Version:** 1.1.1  
-**Development:** Aktiv (Phase X.2 - Whitelist UI abgeschlossen)  
+**Version:** 1.2.0  
+**Development:** Aktiv (Phase Y - KI-Priorisierung abgeschlossen)  
 **Stability:** Production-ready für Single-User-Deployment  
-**Next:** Bulk Operations, Pipeline Integration
+**Next:** Phase Y4 - Benchmarks & Performance Testing
 
 **Abgeschlossene Phasen:**
 - ✅ Phase 0-12: Core System, Zero-Knowledge, Production Hardening
@@ -51,6 +52,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ Phase X: Trusted Senders + UrgencyBooster (Account-Based)
 - ✅ Phase X.2: Dedizierte Whitelist-Seite (/whitelist)
 - ✅ Phase X.3: Account-Level AI-Fetch-Control (enable_ai_analysis_on_fetch)
+- ✅ Phase Y: KI-gestützte Priorisierung (spaCy NLP + Ensemble Learning)
 
 ---
 
@@ -65,7 +67,8 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher **vollständig von KI erzeugt**; keine Zeile wurde manuell von einem Menschen geschrieben. Die gesamte Entwicklung erfolgte in **Microsoft Visual Studio Code (VS Code)** mit GitHub Copilot als primärem Entwickler.
 
 **Aktuelle Features (Stand Januar 2026):**
-- 🎯 **Core System:** Zero-Knowledge Encryption, 3×3 Prioritäts-Matrix, Multi-Provider AI
+- 🎯 **KI-Priorisierung:** spaCy NLP (80%) + Keywords (20%) + Ensemble Learning mit SGD
+- 🤖 **Core System:** Zero-Knowledge Encryption, 3×3 Prioritäts-Matrix, Multi-Provider AI
 - 🧠 **Online-Learning:** SGD-Classifier mit inkrementellem Training aus User-Korrekturen (D/W/Spam/Kategorie)
 - 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
 - 📥 **Fetch:** IMAP/Gmail OAuth mit account-spezifischen Filtern (Ordner, Datum, UNSEEN)
@@ -86,7 +89,8 @@ Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher
 This repository was created with multiple AI systems. So far, the codebase has been generated **entirely by AI** — not a single line was written manually by a human. All development work was performed in **Microsoft Visual Studio Code (VS Code)** with GitHub Copilot as primary developer.
 
 **Current Features (January 2026):**
-- 🎯 **Core System:** Zero-Knowledge Encryption, 3×3 Priority Matrix, Multi-Provider AI
+- 🎯 **AI Prioritization:** spaCy NLP (80%) + Keywords (20%) + Ensemble Learning with SGD
+- 🤖 **Core System:** Zero-Knowledge Encryption, 3×3 Priority Matrix, Multi-Provider AI
 - 🧠 **Online-Learning:** SGD classifiers with incremental training from user corrections (D/W/Spam/Category)
 - 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
 - 📥 **Fetch:** IMAP/Gmail OAuth with account-specific filters (folders, date, UNSEEN)

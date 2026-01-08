@@ -8,6 +8,150 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.2.0] - 2026-01-08
 
+### Added - Phase Y: KI-gestützte E-Mail-Priorisierung
+
+#### spaCy Hybrid Pipeline für intelligente Wichtigkeit/Dringlichkeit-Analyse
+
+**Motivation:**
+Verbesserte E-Mail-Priorisierung durch linguistische Analyse statt reiner Keywords:
+- **80% NLP-Analyse**: spaCy de_core_news_md (44MB) für linguistische Strukturerkennung
+- **20% Keywords**: 80 strategisch ausgewählte Signalwörter (statt 200)
+- **Ensemble Learning**: Dynamische Gewichtung zwischen spaCy (Regeln) und SGD (User-Learning)
+
+**Architektur:**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Hybrid Pipeline                       │
+├─────────────────────────────────────────────────────────┤
+│  🧠 spaCy NLP (80%)        │  🔑 Keywords (20%)         │
+│  • Imperative Detection    │  • 12 Keyword-Sets          │
+│  • Deadline Recognition    │  • 80 Wörter gesamt         │
+│  • NER (Entities)          │  • Lemmatizer-Matching      │
+│  • Question Detection      │                             │
+│  • Negation Analysis       │                             │
+│  • VIP-Sender Boost        │                             │
+│  • Internal/External       │                             │
+└─────────────────────────────────────────────────────────┘
+                         ↓
+              Ensemble Combiner
+         (spaCy + SGD mit Weights)
+                         ↓
+           Final Score (1-5 Skala)
+```
+
+**Features:**
+
+**1. UI: KI-Priorisierung Konfiguration** (`/phase-y-config`)
+- ✅ **4 Konfigurations-Tabs**:
+  - **VIP-Absender**: Email/Domain-Patterns mit Importance-Boost (+1 bis +5)
+  - **Keywords**: 12 editierbare Keyword-Sets (Dringlichkeit, Deadlines, Eskalation, ...)
+  - **Scoring-Gewichte**: Feintuning der 8 Detektoren (Imperative, Deadline, Keyword, VIP, ...)
+  - **User-Domains**: Interne Firmen-Domains (Externe Mails = höhere Priorität)
+- ✅ **Account-spezifisch**: Jeder Mail-Account hat eigene Konfiguration
+- ✅ **Default-Sets**: 80 vorkonfigurierte Keywords, anpassbar
+- ✅ **Live-Updates**: Änderungen sofort wirksam
+
+**2. spaCy Detektoren** (8 NLP-Module)
+- ✅ **ImperativeDetector**: Erkennt deutsche Imperativ-Formen + "bitte + Verb" Patterns
+- ✅ **DeadlineDetector**: NER-basierte Deadline-Erkennung mit Urgency-Mapping (heute=5, morgen=4, ...)
+- ✅ **KeywordDetector**: Lemmatizer-Matching über 80 Keywords in 12 Kategorien
+- ✅ **QuestionDetector**: Reduziert Urgency bei reinen Info-Anfragen
+- ✅ **NegationDetector**: Erkennt Negationen → senkt Dringlichkeit
+- ✅ **VIPDetector**: VIP-Absender Matching (Email/Domain)
+- ✅ **InternalExternalDetector**: Interne vs. externe Emails (+2 Urgency, +1 Importance für extern)
+- ✅ **HybridPipeline**: Orchestriert alle 8 Detektoren
+
+**3. Ensemble Learning**
+- ✅ **Dynamische Gewichte** basierend auf User-Korrekturen:
+  - **< 20 Korrekturen**: 100% spaCy (Regeln)
+  - **20-50 Korrekturen**: 30% spaCy + 70% SGD (Learning Phase)
+  - **50+ Korrekturen**: 15% spaCy + 85% SGD (Trained)
+- ✅ **SGD Integration**: Bestehendes OnlineLearner-System
+- ✅ **Confidence-Tracking**: Dynamische Konfidenz basierend auf Lernphase
+
+**4. 12 Keyword-Sets** (80 Wörter, Deutsch)
+```python
+1. imperative_verbs (10): prüfen, freigeben, bestätigen, ...
+2. urgency_time (8): heute, morgen, asap, dringend, ...
+3. deadline_markers (7): deadline, frist, termin, spätestens, ...
+4. follow_up_signals (6): nachfrage, erinnerung, mahnung, ...
+5. question_words (7): warum, wieso, wie, wann, ... (senkt Urgency)
+6. negation_terms (6): nicht, kein, niemals, ... (Urgency-Reducer)
+7. escalation_words (8): beschwerde, reklamation, problem, kritisch, ...
+8. confidential_markers (6): vertraulich, geheim, intern, nda, ...
+9. contract_terms (7): vertrag, vereinbarung, kündigung, ...
+10. financial_words (6): rechnung, zahlung, budget, kosten, ...
+11. meeting_terms (5): meeting, besprechung, call, termin, ...
+12. sender_hierarchy (4): geschäftsführung, vorstand, direktion, ...
+```
+
+**5. Datenbank** (4 neue Tabellen)
+- ✅ `spacy_vip_senders`: VIP-Absender mit Boost-Werten
+- ✅ `spacy_keyword_sets`: Account-spezifische Keyword-Sets (JSON)
+- ✅ `spacy_scoring_config`: Detector-Gewichte + Ensemble-Weights
+- ✅ `spacy_user_domains`: Firmen-Domains für Intern/Extern-Detection
+
+**6. API-Endpunkte** (11 RESTful Routes)
+- `/api/phase-y/vip-senders` (GET, POST, PUT, DELETE)
+- `/api/phase-y/keyword-sets` (GET, POST)
+- `/api/phase-y/scoring-config` (GET, POST)
+- `/api/phase-y/user-domains` (GET, POST, DELETE)
+
+**7. Integration**
+- ✅ **03_ai_client.py**: Phase Y ersetzt altes UrgencyBooster-System
+- ✅ **Fallback**: Bei Phase Y unavailable → Legacy UrgencyBooster
+- ✅ **spacy_details**: Alle Detector-Ergebnisse werden in JSON gespeichert
+- ✅ **ensemble_stats**: Gewichtungen und Confidence werden geloggt
+
+**Performance:**
+- **spaCy NLP**: ~100-300ms pro Email (Lemmatizer + Parser + NER)
+- **Keywords**: ~10-50ms (Lemma-Matching)
+- **Gesamt**: <500ms pro Email (Target)
+
+**Example Output:**
+```json
+{
+  "wichtigkeit": 3,
+  "dringlichkeit": 5,
+  "spacy_details": {
+    "imperative_count": 2,
+    "deadline_detected": "morgen",
+    "keyword_matches": ["prüfen", "dringend"],
+    "vip_boost": 3,
+    "is_internal": false
+  },
+  "ensemble_stats": {
+    "spacy_weight": 0.30,
+    "sgd_weight": 0.70,
+    "correction_count": 35,
+    "confidence": 0.75
+  }
+}
+```
+
+**Technical Stack:**
+- **spaCy:** de_core_news_md (German NLP, 44MB)
+- **Models:** 4 ORM models (02_models.py)
+- **Services:** 3 neue Services (spacy_detectors.py, hybrid_pipeline.py, spacy_config_manager.py, ensemble_combiner.py)
+- **Routes:** 11 API endpoints + 1 UI route
+- **Template:** phase_y_config.html (30KB, 4 Tabs, JavaScript CRUD)
+- **Migration:** ph_y_spacy_hybrid.py (Alembic)
+
+**Installation:**
+```bash
+# spaCy + deutsches Modell installieren
+pip install spacy
+python -m spacy download de_core_news_md
+```
+
+**Next Steps:**
+- Phase Y4: Benchmarking mit 30+ realen Emails
+- Performance-Optimierung (<500ms Ziel)
+- A/B-Testing: spaCy vs. Ensemble bei unterschiedlichen Correction-Counts
+
+---
+
 ### Added - Phase X.3: Account-Level AI-Fetch-Control
 
 #### Granulare AI-Analyse-Steuerung pro Account

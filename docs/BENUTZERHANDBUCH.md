@@ -1,7 +1,7 @@
 # 📧 KI-Mail-Helper – Benutzerhandbuch
 
-**Version:** 1.1  
-**Stand:** 7. Januar 2026
+**Version:** 1.2.0  
+**Stand:** 8. Januar 2026
 
 ---
 
@@ -44,16 +44,23 @@
    - 8.2 Stil-spezifische Anpassungen
    - 8.3 Merge-Logik verstehen
    - 8.4 Preview-Funktion
-9. [IMAP-Diagnostics](#9-imap-diagnostics)
-10. [Einstellungen](#10-einstellungen)
-   - 10.1 Mail-Accounts verwalten
-   - 10.2 SMTP konfigurieren (Email-Versand)
-   - 10.3 KI-Provider konfigurieren
-   - 10.4 Absender & Abruf (Trusted Senders + AI-Control)
-   - 10.5 Passwort ändern
-   - 10.6 2FA & Recovery-Codes
-11. [Sicherheit & Datenschutz](#11-sicherheit--datenschutz)
-12. [Fehlerbehebung](#12-fehlerbehebung)
+9. [KI-Priorisierung](#9-ki-priorisierung)
+   - 9.1 Was ist Phase Y?
+   - 9.2 VIP-Absender konfigurieren
+   - 9.3 Keywords anpassen
+   - 9.4 Scoring-Gewichte
+   - 9.5 User-Domains (Intern/Extern)
+   - 9.6 Ensemble Learning
+10. [IMAP-Diagnostics](#10-imap-diagnostics)
+11. [Einstellungen](#11-einstellungen)
+   - 11.1 Mail-Accounts verwalten
+   - 11.2 SMTP konfigurieren (Email-Versand)
+   - 11.3 KI-Provider konfigurieren
+   - 11.4 Absender & Abruf (Trusted Senders + AI-Control)
+   - 11.5 Passwort ändern
+   - 11.6 2FA & Recovery-Codes
+12. [Sicherheit & Datenschutz](#12-sicherheit--datenschutz)
+13. [Fehlerbehebung](#13-fehlerbehebung)
 
 ---
 
@@ -66,6 +73,7 @@ KI-Mail-Helper ist ein selbst-gehosteter Email-Organizer, der künstliche Intell
 | Feature | Beschreibung |
 |---------|--------------|
 | **🎯 3×3 Prioritäts-Matrix** | Automatische Bewertung nach Dringlichkeit × Wichtigkeit |
+| **🧠 KI-Priorisierung** | spaCy NLP (80%) + Keywords (20%) + Ensemble Learning |
 | **🔍 Semantische Suche** | Finde Emails nach Bedeutung, nicht nur Keywords |
 | **✉️ KI-Antworten + Versand** | Generierte Antwort-Entwürfe direkt per SMTP senden |
 | **⚡ Auto-Rules Engine** | Automatische Aktionen basierend auf Regeln |
@@ -821,7 +829,206 @@ Technischer Support
 
 ---
 
-## 9. IMAP-Diagnostics
+## 9. KI-Priorisierung
+
+> **🎯 Phase Y:** Hybrid Pipeline mit spaCy NLP + Ensemble Learning
+
+Die KI-Priorisierung nutzt eine hochentwickelte **Hybrid-Pipeline**, die deutsche Emails mit **80% NLP (spaCy)** und **20% strategischen Keywords** analysiert. Das System lernt aus deinen Korrekturen durch **Ensemble Learning** und passt sich an deinen Workflow an.
+
+### 9.1 Was ist Phase Y?
+
+**Phase Y = spaCy Hybrid Pipeline** kombiniert:
+- **7 NLP-Detektoren** für linguistische Analyse
+- **12 Keyword-Sets** mit 80 strategischen Begriffen
+- **Ensemble Learning** (spaCy + SGD Regression) mit dynamischen Gewichten
+- **Account-spezifische Konfiguration** für individuelle Anpassungen
+
+**Zugriff:** Klicke auf **🎯 KI-Priorisierung** in der Navigation
+
+> **📸 Screenshot:** Phase Y Konfigurations-Interface  
+> *Zeige: 4 Tabs (VIP, Keywords, Scoring, Domains) mit Account-Selector*
+
+![KI-Priorisierung](images/screenshots/phase-y-config.png)
+
+### 9.2 VIP-Absender konfigurieren
+
+> **Tab 1: VIP-Absender**
+
+VIP-Absender bekommen automatisch einen **Boost** auf Wichtigkeit/Dringlichkeit.
+
+**Wichtigkeits-Stufen:**
+
+| Stufe | Boost | Verwendung |
+|-------|-------|------------|
+| 1️⃣ **Low** | +0.5 | Weniger wichtige Kontakte |
+| 2️⃣ **Medium** | +1.0 | Normale VIPs (z.B. Team-Leads) |
+| 3️⃣ **High** | +1.5 | Sehr wichtige Kontakte (z.B. C-Level) |
+| 4️⃣ **Critical** | +2.0 | Kritisch (z.B. CEO, Key Accounts) |
+
+**VIP hinzufügen:**
+1. Wähle Account aus Dropdown
+2. Email-Adresse eingeben (z.B. `chef@firma.de`)
+3. Wichtigkeits-Stufe wählen
+4. Optional: Notiz hinzufügen
+5. Klick auf **"➕ Hinzufügen"**
+
+**Beispiel:**
+```
+Email: ceo@firma.de
+Wichtigkeit: Critical (+2.0)
+Notiz: CEO – immer vorrangig behandeln
+```
+
+> 💡 **Tipp:** VIP-Status gilt nur für den ausgewählten Account. Für multi-account VIPs: Mehrfach hinzufügen.
+
+### 9.3 Keywords anpassen
+
+> **Tab 2: Keywords**
+
+Das System nutzt **12 vordefinierte Keyword-Sets** mit insgesamt **80 strategischen Begriffen**.
+
+**Standard Keyword-Sets:**
+
+| Set | Beispiel-Keywords | Verwendung |
+|-----|-------------------|------------|
+| **imperative_verbs** | bitte, müssen, sollen, erledigen | Handlungsaufforderungen |
+| **urgency_time** | asap, dringend, sofort, eilig | Zeitdruck-Signale |
+| **deadline_markers** | Deadline, Frist, bis, spätestens | Fristenrelevanz |
+| **follow_up_signals** | Erinnerung, Rückfrage, nachhaken | Follow-up Bedarf |
+| **question_words** | warum, wie, was, wann | Rückfragen |
+| **negation_terms** | nicht, kein, leider, ohne | Problemsignale |
+| **escalation_words** | eskalation, Chef, kritisch | Eskalationsrelevanz |
+| **confidential_markers** | vertraulich, geheim, NDA | Vertraulichkeit |
+| **contract_terms** | Vertrag, Angebot, Kündigung | Rechtl. Relevanz |
+| **financial_words** | Rechnung, Zahlung, Budget | Finanzielle Relevanz |
+| **meeting_terms** | Termin, Meeting, Call | Terminrelevanz |
+| **sender_hierarchy** | Geschäftsführer, Vorstand, Leitung | Absender-Wichtigkeit |
+
+**Keywords bearbeiten:**
+1. Klicke auf **"📝 Keywords bearbeiten"**
+2. Ändere Keywords (kommagetrennt): `dringend, asap, sofort, eilig`
+3. Klicke auf **"💾 Speichern"**
+4. Oder: **"🔄 Zurücksetzen"** für Standard-Keywords
+
+**Beispiel-Anpassung:**
+```
+Ursprünglich (urgency_time): asap, dringend, sofort, eilig
+Angepasst: asap, dringend, sofort, eilig, heute noch, morgen früh
+```
+
+> ⚠️ **Achtung:** Keywords sind **account-spezifisch**. Änderungen gelten nur für den aktuellen Account.
+
+### 9.4 Scoring-Gewichte
+
+> **Tab 3: Scoring**
+
+Hier passt du an, wie stark einzelne Detektoren die finale Bewertung beeinflussen.
+
+**Scoring-Struktur:**
+
+```
+Wichtigkeit = (Imperative × W1 + Keywords × W2 + VIP × W3 + ... ) × Base-Weight
+Dringlichkeit = (Deadline × W1 + Urgency × W2 + Question × W3 + ... ) × Base-Weight
+```
+
+**Verfügbare Gewichte:**
+
+| Gewicht | Range | Standard | Beschreibung |
+|---------|-------|----------|--------------|
+| **imperative_weight** | 0.0-5.0 | 1.0 | Handlungsaufforderungen (machen, erledigen) |
+| **deadline_weight** | 0.0-5.0 | 2.0 | NER-basierte Datums-Erkennung |
+| **keyword_urgency_weight** | 0.0-5.0 | 1.5 | urgency_time Keywords |
+| **keyword_importance_weight** | 0.0-5.0 | 1.0 | confidential/contract/financial Keywords |
+| **question_weight** | 0.0-5.0 | 0.8 | Rückfragen (W-Fragen) |
+| **negation_weight** | 0.0-5.0 | 0.6 | Verneinungen/Probleme |
+| **vip_boost_multiplier** | 0.0-3.0 | 1.5 | VIP-Absender Multiplikator |
+| **internal_reduction** | 0.0-1.0 | 0.3 | Interne Emails Dämpfung (30%) |
+
+**Gewichte anpassen:**
+1. Ziehe Slider für gewünschtes Gewicht
+2. Klicke auf **"💾 Scoring speichern"**
+3. Oder: **"📥 Standard laden"** für Default-Werte
+
+**Beispiel-Anpassung:**
+```
+Szenario: Deadlines sind für dich extrem wichtig
+
+Standard: deadline_weight = 2.0
+Angepasst: deadline_weight = 4.0
+→ Emails mit Deadlines bekommen doppelten Boost!
+```
+
+> 💡 **Tipp:** Starte mit Standard-Werten und passe nach einigen Wochen an, wenn du Muster erkennst.
+
+### 9.5 User-Domains (Intern/Extern)
+
+> **Tab 4: Domains**
+
+Definiere, welche Email-Domains als **intern** gelten. Interne Emails bekommen **30% Dämpfung** (konfigurierbar via `internal_reduction`).
+
+**Domain hinzufügen:**
+1. Wähle Account
+2. Domain eingeben (z.B. `firma.de`)
+3. Klicke auf **"➕ Hinzufügen"**
+
+**Beispiel:**
+```
+Domains: firma.de, team.firma.de, internal.firma.de
+→ Alle Emails von diesen Domains = Intern
+→ Wichtigkeit/Dringlichkeit × 0.7 (wenn internal_reduction = 0.3)
+```
+
+**Warum Dämpfung?**
+- Interne Emails sind oft weniger zeitkritisch
+- Externe Kunden/Partner haben Priorität
+- Anpassbar über `internal_reduction` Slider (Tab 3)
+
+> ⚠️ **Subdomain-Matching:** `firma.de` matched auch `mail.firma.de`, `team.firma.de` usw.
+
+### 9.6 Ensemble Learning
+
+**Was ist Ensemble Learning?**
+
+Das System kombiniert **zwei KI-Modelle**:
+1. **spaCy Hybrid Pipeline** (NLP + Keywords)
+2. **SGD Regression** (lernt aus deinen Korrekturen)
+
+**Dynamische Gewichte:**
+
+| Korrektur-Anzahl | spaCy Gewicht | SGD Gewicht | Phase |
+|------------------|---------------|-------------|-------|
+| **< 20** | 100% | 0% | 🆕 Kaltstart (nur spaCy) |
+| **20-50** | 30% | 70% | 📈 Übergangsphase |
+| **> 50** | 15% | 85% | 🧠 Voll trainiert |
+
+**Wie funktioniert's?**
+1. Du korrigierst eine Email-Bewertung (z.B. Wichtigkeit 3 → 5)
+2. SGD lernt: "Bei dieser Art Email: höher bewerten!"
+3. Nächste ähnliche Email: SGD schlägt besseren Wert vor
+4. System kombiniert spaCy + SGD = **genauere Vorhersage**
+
+**Monitoring:**
+- Jede Bewertung speichert `spacy_details` (JSON mit Detector-Scores)
+- Jede Bewertung speichert `ensemble_stats` (Gewichte, Modell-Beiträge)
+- In Email-Detail: Siehst du spaCy vs. SGD Beiträge
+
+**Beispiel:**
+```json
+{
+  "wichtigkeit": 4,
+  "dringlichkeit": 5,
+  "spacy_contribution": {"wichtigkeit": 0.6, "dringlichkeit": 1.0},
+  "sgd_contribution": {"wichtigkeit": 3.4, "dringlichkeit": 4.0},
+  "weights": {"spacy_weight": 0.15, "sgd_weight": 0.85},
+  "correction_count": 73
+}
+```
+
+> 🎯 **Performance-Ziel:** < 500ms Analyse-Zeit (inkl. spaCy NLP + Embedding)
+
+---
+
+## 10. IMAP-Diagnostics
 
 > **📸 Screenshot:** IMAP-Diagnostics Dashboard (/imap-diagnostics)  
 > *Zeige: Account-Auswahl, Test-Buttons, Ergebnis-Bereich*
@@ -830,7 +1037,7 @@ Technischer Support
 
 Unter **🔧 IMAP-Test** findest du Diagnose-Tools für deine Mail-Accounts.
 
-### 8.1 Verfügbare Tests
+### 10.1 Verfügbare Tests
 
 | Test | Beschreibung |
 |------|--------------|
@@ -839,7 +1046,7 @@ Unter **🔧 IMAP-Test** findest du Diagnose-Tools für deine Mail-Accounts.
 | **🔄 DB-Sync-Check** | Vergleicht lokale DB mit IMAP-Server |
 | **📊 Mail-Count** | Zählt Emails pro Ordner (Remote vs. Lokal) |
 
-### 8.2 DB-Sync-Check verstehen
+### 10.2 DB-Sync-Check verstehen
 
 > **📸 Screenshot:** Sync-Check Ergebnis mit Ordner-Details  
 > *Zeige: Ordner-Liste, IMAP vs DB Vergleich, Delta-Anzeige*
@@ -860,7 +1067,7 @@ Der Sync-Check zeigt für jeden Ordner:
 - 🟡 **Gelb:** Delta vorhanden (Emails fehlen lokal)
 - 🔴 **Rot:** UIDVALIDITY-Mismatch (Ordner wurde auf Server neu erstellt)
 
-### 8.3 Multi-Folder Ansicht
+### 10.3 Multi-Folder Ansicht
 
 > **📸 Screenshot:** Multi-Folder Übersicht mit aufgeklapptem Detail  
 > *Zeige: Ordner-Tree mit Details zu UIDs und Flags*
@@ -876,14 +1083,14 @@ Klicke auf einen Ordner, um Details zu sehen:
 
 ---
 
-## 10. Einstellungen
+## 11. Einstellungen
 
 > **📸 Screenshot:** Einstellungen-Seite komplett (settings.html)  
 > *Zeige: Alle Sektionen (Mail-Accounts, KI, SMTP, Sicherheit)*
 
 ![Einstellungen](images/screenshots/settings.png)
 
-### 10.1 Mail-Accounts verwalten
+### 11.1 Mail-Accounts verwalten
 
 > **📸 Screenshot:** Mail-Account Liste in Einstellungen  
 > *Zeige: Account-Karten mit Status, Bearbeiten/Löschen Buttons*
@@ -945,7 +1152,7 @@ Klicke auf einen Ordner, um Details zu sehen:
 
 > 💡 **Multi-Account Setup**: Bei mehreren Accounts mit vielen Ordnern (>100) verhindert die App automatisch Timeouts durch intelligentes Caching und selektives Laden.
 
-### 10.2 SMTP konfigurieren (Email-Versand)
+### 11.2 SMTP konfigurieren (Email-Versand)
 
 > **📸 Screenshot:** SMTP-Einstellungen im Account-Formular  
 > *Zeige: SMTP-Server, Port, Verschlüsselung, optionale separate Credentials*
@@ -971,7 +1178,7 @@ Um Emails direkt aus der App zu senden, muss SMTP konfiguriert sein:
 2. Klicke auf **"🔌 SMTP testen"**
 3. Bei Erfolg: "✅ SMTP-Verbindung erfolgreich"
 
-### 10.3 KI-Provider konfigurieren
+### 11.3 KI-Provider konfigurieren
 
 > **📸 Screenshot:** KI-Einstellungen Sektion  
 > *Zeige: Provider-Dropdown, 3 Modell-Auswahlen*
@@ -1034,7 +1241,7 @@ Ein **llama3.2:1b mit Learning** liefert nach 1-2 Wochen bessere Ergebnisse als 
 
 ---
 
-### 10.4 Absender & Abruf (Trusted Senders + AI-Control)
+### 11.4 Absender & Abruf (Trusted Senders + AI-Control)
 
 **Phase X + X.3** erlaubt dir, pro Mail-Account zu steuern, welche AI-Features beim Abrufen neuer Mails verwendet werden.
 
@@ -1182,7 +1389,7 @@ thomas  | mail.beispiel-firma   | Aktiv | ⭕ AI ✅ Booster | [→ Ändern]
 
 ---
 
-### 10.5 Passwort ändern
+### 11.5 Passwort ändern
 
 > **📸 Screenshot:** Passwort ändern Formular (change_password.html)  
 > *Zeige: Altes Passwort, Neues Passwort (2x), Anforderungen-Liste*
@@ -1197,7 +1404,7 @@ thomas  | mail.beispiel-firma   | Aktiv | ⭕ AI ✅ Booster | [→ Ändern]
 
 > ⚠️ Nach der Passwort-Änderung wirst du automatisch ausgeloggt. Deine verschlüsselten Daten bleiben erhalten – nur der Verschlüsselungsschlüssel wird neu verpackt.
 
-### 10.6 2FA & Recovery-Codes
+### 11.6 2FA & Recovery-Codes
 
 > **📸 Screenshot:** 2FA-Sektion in Einstellungen  
 > *Zeige: 2FA-Status, "Recovery-Codes regenerieren" Button*
@@ -1211,7 +1418,7 @@ thomas  | mail.beispiel-firma   | Aktiv | ⭕ AI ✅ Booster | [→ Ändern]
 
 ---
 
-## 11. Sicherheit & Datenschutz
+## 12. Sicherheit & Datenschutz
 
 ### Zero-Knowledge-Architektur
 
@@ -1256,7 +1463,7 @@ Die App verwendet eine Zero-Knowledge-Architektur. Das bedeutet:
 
 ---
 
-## 12. Fehlerbehebung
+## 13. Fehlerbehebung
 
 ### "Emails werden nicht abgerufen"
 

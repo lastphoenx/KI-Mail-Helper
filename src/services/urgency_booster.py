@@ -425,10 +425,41 @@ class UrgencyBooster:
 
 # Singleton
 _urgency_booster_instance = None
+_hybrid_pipeline_instance = None
 
 def get_urgency_booster(language: str = "de") -> UrgencyBooster:
-    """Factory: Gibt Singleton-Instanz zurück"""
+    """
+    Factory: Gibt Singleton-Instanz zurück.
+    
+    DEPRECATED: Wird durch get_hybrid_pipeline() ersetzt (Phase Y).
+    Behalten für Rückwärtskompatibilität.
+    """
     global _urgency_booster_instance
     if _urgency_booster_instance is None:
         _urgency_booster_instance = UrgencyBooster(language=language)
     return _urgency_booster_instance
+
+
+def get_hybrid_pipeline(db_session, sgd_classifier=None):
+    """
+    Factory: Gibt Phase Y Hybrid Pipeline zurück (Singleton).
+    
+    Phase Y: spaCy NLP + Keywords + SGD Ensemble Learning
+    
+    Args:
+        db_session: SQLAlchemy Session für Config-Zugriff
+        sgd_classifier: Optional OnlineLearner für SGD Predictions
+        
+    Returns:
+        HybridPipeline Instanz
+    """
+    global _hybrid_pipeline_instance
+    
+    # Neues Pipeline-Objekt pro Session (wegen DB-Binding)
+    try:
+        from src.services.hybrid_pipeline import HybridPipeline
+        return HybridPipeline(db_session, sgd_classifier)
+    except ImportError as e:
+        logger.warning(f"⚠️ Phase Y Hybrid Pipeline nicht verfügbar: {e}")
+        logger.warning(f"   Fallback auf alten UrgencyBooster")
+        return None
