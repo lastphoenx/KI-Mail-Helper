@@ -141,7 +141,10 @@
         <div class="tab-pane fade" id="keywords-panel" role="tabpanel">
             <div class="card border-0 shadow-sm">
                 <div class="card-body">
-                    <h4 class="card-title mb-3">🔤 Keyword-Sets Editor</h4>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4 class="card-title mb-0">🔤 Keyword-Sets Editor</h4>
+                        <span id="keywordStatusBadge" class="badge bg-secondary">Standard</span>
+                    </div>
                     <p class="text-muted mb-4">
                         80 Keywords in 12 Sets. spaCy Lemmatizer matched automatisch Wortformen (prüfen → prüfe, prüfst, geprüft).
                     </p>
@@ -501,16 +504,24 @@ async function loadKeywordSets() {
 }
 
 function updateKeywordStatusBadge(hasSavedData) {
+    console.log(`🏷️ updateKeywordStatusBadge(${hasSavedData})`); // DEBUG
     const badge = document.getElementById('keywordStatusBadge');
-    if (!badge) return;
+    console.log('  Badge element:', badge); // DEBUG
+    if (!badge) {
+        console.error('  ❌ Badge element not found!'); // DEBUG
+        return;
+    }
     
     if (hasSavedData) {
+        console.log('  ✅ Setting badge to GESPEICHERT (green)'); // DEBUG
         badge.textContent = 'Gespeichert';
         badge.className = 'badge bg-success';
     } else {
+        console.log('  ℹ️ Setting badge to STANDARD (grey)'); // DEBUG
         badge.textContent = 'Standard';
         badge.className = 'badge bg-secondary';
     }
+    console.log('  Final badge state:', badge.textContent, badge.className); // DEBUG
 }
 
 function renderKeywordAccordion(sets) {
