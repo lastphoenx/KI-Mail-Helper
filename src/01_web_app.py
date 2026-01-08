@@ -5041,6 +5041,98 @@ def api_create_rule_from_template(template_name):
         db_session.close()
 
 
+@app.route("/rules/execution-log")
+@login_required
+def rules_execution_log():
+    """
+    Issue 3: RuleExecutionLog-UI
+    Zeigt Verlauf aller Regel-Ausführungen für Debugging und Monitoring
+    """
+    db_session = get_db_session()
+    
+    try:
+        user = get_current_user_model(db_session)
+        if not user:
+            return redirect(url_for("login"))
+        
+        # Query parameters für Filterung
+        limit = int(request.args.get('limit', 100))
+        rule_id = request.args.get('rule_id')
+        success_filter = request.args.get('success')  # 'true', 'false', or None (all)
+        
+        # Base query
+        query = db_session.query(
+            models.RuleExecutionLog,
+            models.AutoRule,
+            models.ProcessedEmail,
+            models.RawEmail
+        ).join(
+            models.AutoRule,
+            models.RuleExecutionLog.rule_id == models.AutoRule.id
+        ).join(
+            models.ProcessedEmail,
+            models.RuleExecutionLog.processed_email_id == models.ProcessedEmail.id
+        ).join(
+            models.RawEmail,
+            models.ProcessedEmail.raw_email_id == models.RawEmail.id
+        ).filter(
+            models.RuleExecutionLog.user_id == user.id
+        )
+        
+        # Apply filters
+        if rule_id:
+            query = query.filter(models.RuleExecutionLog.rule_id == int(rule_id))
+        
+        if success_filter == 'true':
+            query = query.filter(models.RuleExecutionLog.success == True)
+        elif success_filter == 'false':
+            query = query.filter(models.RuleExecutionLog.success == False)
+        
+        # Order by most recent first
+        logs = query.order_by(
+            models.RuleExecutionLog.executed_at.desc()
+        ).limit(limit).all()
+        
+        # Get all rules for filter dropdown
+        all_rules = db_session.query(models.AutoRule).filter_by(
+            user_id=user.id
+        ).order_by(models.AutoRule.name.asc()).all()
+        
+        # Decrypt email subjects for display
+        master_key = session.get("master_key")
+        decrypted_logs = []
+        
+        if master_key:
+            for log, rule, processed, raw in logs:
+                try:
+                    subject = encryption.EmailDataManager.decrypt_email_subject(
+                        raw.encrypted_subject or "", master_key
+                    )
+                except:
+                    subject = "(Entschlüsselung fehlgeschlagen)"
+                
+                decrypted_logs.append({
+                    'log': log,
+                    'rule': rule,
+                    'subject': subject,
+                    'email_id': processed.id
+                })
+        
+        return render_template(
+            "rules_execution_log.html",
+            user=user,
+            logs=decrypted_logs,
+            all_rules=all_rules,
+            limit=limit,
+            rule_id=rule_id,
+            success_filter=success_filter,
+            csp_nonce=g.csp_nonce
+        )
+    
+    finally:
+        db_session.close()
+
+
 # ===== End Phase G.2 =====
 
 
