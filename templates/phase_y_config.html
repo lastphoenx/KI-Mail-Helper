@@ -620,25 +620,40 @@ async function resetToDefaults() {
 async function loadDefaultKeywords() {
     if (!confirm('Default-Keywords laden? Dies überschreibt die aktuellen Formular-Werte (aber nicht die DB).')) return;
     
-    // Load defaults from backend via API
-    try {
-        // Temporary account ID to trigger default response
-        const response = await fetch(`/api/phase-y/keyword-sets?account_id=999999`);
-        const data = await response.json();
-        
-        keywordSetsData = {};
-        data.keyword_sets.forEach(set => {
-            keywordSetsData[set.keyword_set_name] = set.keywords;
-        });
-        
-        renderKeywordAccordion(data.keyword_sets);
-        updateKeywordStatusBadge(false); // Mark as defaults
-        
-        alert('✅ Default-Keywords geladen! Klicken Sie auf "Alle Sets speichern" um diese zu übernehmen.');
-    } catch (error) {
-        console.error('Fehler:', error);
-        alert('Fehler beim Laden der Defaults');
-    }
+    // Hardcoded defaults from spacy_config_manager.py
+    const defaultSets = {
+        "imperative_verbs": ["prüfen", "freigeben", "bestätigen", "unterschreiben", "genehmigen", "autorisieren", "entscheiden", "antworten", "ergänzen", "korrigieren"],
+        "urgency_time": ["heute", "morgen", "asap", "dringend", "sofort", "umgehend", "schnellstmöglich", "eilt"],
+        "deadline_markers": ["deadline", "frist", "termin", "spätestens", "stichtag", "zeitlimit", "ablauf"],
+        "follow_up_signals": ["nachfrage", "erinnerung", "mahnung", "rückmeldung", "status", "update"],
+        "question_words": ["warum", "wieso", "weshalb", "wie", "wann", "wo", "wer"],
+        "negation_terms": ["nicht", "kein", "keine", "niemals", "nie", "nichts"],
+        "escalation_words": ["beschwerde", "reklamation", "problem", "fehler", "dringlichkeit", "eskalation", "kritisch", "notfall"],
+        "confidential_markers": ["vertraulich", "geheim", "intern", "confidential", "nda", "vertraulichkeit"],
+        "contract_terms": ["vertrag", "vereinbarung", "vertragsänderung", "kündigung", "verlängerung", "konditionen", "klausel"],
+        "financial_words": ["rechnung", "zahlung", "budget", "kosten", "bezahlung", "faktura"],
+        "meeting_terms": ["meeting", "besprechung", "call", "termin", "telefonat"],
+        "sender_hierarchy": ["geschäftsführung", "vorstand", "direktion", "leitung"]
+    };
+    
+    // Convert to API format
+    const defaultKeywordSets = Object.entries(defaultSets).map(([name, keywords]) => ({
+        id: null,
+        keyword_set_name: name,
+        keywords: keywords,
+        is_active: true,
+        is_default: true
+    }));
+    
+    keywordSetsData = {};
+    defaultKeywordSets.forEach(set => {
+        keywordSetsData[set.keyword_set_name] = set.keywords;
+    });
+    
+    renderKeywordAccordion(defaultKeywordSets);
+    updateKeywordStatusBadge(false); // Mark as defaults
+    
+    alert('✅ Default-Keywords geladen! Klicken Sie auf "Alle Sets speichern" um diese zu übernehmen.');
 }
 
 // ===== TAB 3: Scoring =====
