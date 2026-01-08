@@ -582,8 +582,9 @@ function updateWeightLabel(type) {
 }
 
 async function loadScoringConfig() {
+    // If no account selected, load defaults
     if (!currentAccountId) {
-        alert('Bitte wählen Sie zuerst einen Account aus');
+        loadDefaultScoringConfig();
         return;
     }
     
@@ -648,6 +649,55 @@ async function loadScoringConfig() {
         console.error('Fehler beim Laden der Scoring-Config:', error);
         alert('Fehler beim Zurücksetzen der Konfiguration');
     }
+}
+
+function loadDefaultScoringConfig() {
+    // Default values from spacy_config_manager.py
+    const defaults = {
+        imperative_weight: 3,
+        deadline_weight: 4,
+        keyword_weight: 2,
+        vip_weight: 3,
+        question_threshold: 3,
+        negation_sensitivity: 2,
+        spacy_weight_initial: 100,
+        spacy_weight_learning: 30,
+        spacy_weight_trained: 15
+    };
+    
+    // Set slider values
+    const sliders = [
+        {id: 'imperativeWeight', value: defaults.imperative_weight, type: 'imperative'},
+        {id: 'deadlineWeight', value: defaults.deadline_weight, type: 'deadline'},
+        {id: 'keywordWeight', value: defaults.keyword_weight, type: 'keyword'},
+        {id: 'vipWeight', value: defaults.vip_weight, type: 'vip'}
+    ];
+    
+    sliders.forEach(slider => {
+        const input = document.getElementById(slider.id);
+        if (input) {
+            input.setAttribute('value', slider.value);
+            input.value = slider.value;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            updateWeightLabel(slider.type);
+        }
+    });
+    
+    // Set number inputs
+    const setIfExists = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.value = value;
+            el.setAttribute('value', value);
+        }
+    };
+    
+    setIfExists('questionThreshold', defaults.question_threshold);
+    setIfExists('negationSensitivity', defaults.negation_sensitivity);
+    setIfExists('spacyWeightInitial', defaults.spacy_weight_initial);
+    setIfExists('spacyWeightLearning', defaults.spacy_weight_learning);
+    setIfExists('spacyWeightTrained', defaults.spacy_weight_trained);
 }
 
 async function saveScoringConfig() {
@@ -797,6 +847,9 @@ async function deleteDomain(domainId) {
 document.addEventListener('DOMContentLoaded', () => {
     loadAccounts();
     
+    // Load defaults initially (before account selection)
+    loadDefaultScoringConfig();
+    
     // Event Listeners registrieren
     document.getElementById('accountSelect')?.addEventListener('change', loadPhaseYConfig);
     document.getElementById('addVipBtn')?.addEventListener('click', addVIP);
@@ -811,6 +864,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('deadlineWeight')?.addEventListener('input', () => updateWeightLabel('deadline'));
     document.getElementById('keywordWeight')?.addEventListener('input', () => updateWeightLabel('keyword'));
     document.getElementById('vipWeight')?.addEventListener('input', () => updateWeightLabel('vip'));
+    
+    // Tab-Switch Listener: Reload Scoring-Config when Scoring-Tab is shown
+    const scoringTab = document.getElementById('scoring-tab');
+    if (scoringTab) {
+        scoringTab.addEventListener('shown.bs.tab', () => {
+            loadScoringConfig();
+        });
+    }
 });
 </script>
 
