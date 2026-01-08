@@ -641,6 +641,28 @@ class AutoRulesEngine:
             rule.times_triggered += 1
             rule.last_triggered_at = datetime.now(UTC)
             
+            # P2-004: Log successful execution
+            processed_email = self.db.query(ProcessedEmail).filter_by(
+                raw_email_id=raw_email.id
+            ).first()
+            
+            if processed_email:
+                # Extrahiere action_type für Log (erste Action oder "multiple")
+                action_type = executed[0].split(':')[0] if executed else 'unknown'
+                if len(executed) > 1:
+                    action_type = 'multiple'
+                
+                log_entry = models.RuleExecutionLog(
+                    user_id=self.user_id,
+                    mail_account_id=raw_email.mail_account_id,
+                    rule_id=rule.id,
+                    processed_email_id=processed_email.id,
+                    success=True,
+                    error_message=None,
+                    action_type=action_type
+                )
+                self.db.add(log_entry)
+            
             self.db.commit()
             
             logger.info(
@@ -660,6 +682,31 @@ class AutoRulesEngine:
             self.db.rollback()
             error = str(e)
             logger.error(f"❌ Regel '{rule.name}' fehlgeschlagen: {e}")
+            
+            # P2-004: Log failed execution
+            try:
+                processed_email = self.db.query(ProcessedEmail).filter_by(
+                    raw_email_id=raw_email.id
+                ).first()
+                
+                if processed_email:
+                    # Extrahiere action_type auch bei Fehler
+                    action_type = executed[0].split(':')[0] if executed else 'unknown'
+                    
+                    log_entry = models.RuleExecutionLog(
+                        user_id=self.user_id,
+                        mail_account_id=raw_email.mail_account_id,
+                        rule_id=rule.id,
+                        processed_email_id=processed_email.id,
+                        success=False,
+                        error_message=error[:500],  # Limit error message length
+                        action_type=action_type
+                    )
+                    self.db.add(log_entry)
+                    self.db.commit()
+            except Exception as log_err:
+                logger.error(f"Failed to log rule execution error: {log_err}")
+                # Don't fail the whole operation if logging fails
             
             return RuleExecutionResult(
                 rule_id=rule.id,

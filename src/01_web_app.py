@@ -1240,10 +1240,19 @@ def list_view():
         else:  # "score" (default)
             sort_col = models.ProcessedEmail.score
 
+        # P2-007: Server-Pagination
+        page = int(request.args.get('page', 1))
+        per_page = 50
+        
+        # Count total for pagination
+        total_count = query.count()
+        total_pages = (total_count + per_page - 1) // per_page
+        
+        # Apply pagination
         if sort_order == "asc":
-            mails = query.order_by(sort_col.asc()).all()
+            mails = query.order_by(sort_col.asc()).limit(per_page).offset((page - 1) * per_page).all()
         else:
-            mails = query.order_by(sort_col.desc()).all()
+            mails = query.order_by(sort_col.desc()).limit(per_page).offset((page - 1) * per_page).all()
 
         # Lade alle User-Accounts für Filter-Dropdown
         user_accounts = (
@@ -1433,6 +1442,11 @@ def list_view():
             filter_date_to=filter_date_to,
             sort_by=sort_by,
             sort_order=sort_order,
+            # P2-007: Pagination
+            page=page,
+            total_pages=total_pages,
+            total_count=total_count,
+            per_page=per_page,
         )
 
     finally:

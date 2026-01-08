@@ -1432,6 +1432,43 @@ class SpacyUserDomain(Base):
         return f"<SpacyUserDomain(domain={self.domain})>"
 
 
+class RuleExecutionLog(Base):
+    """
+    P2-004: Logging für Auto-Rule Executions.
+    Trackt Erfolg/Fehler beim Ausführen von Auto-Rules für Debugging und Monitoring.
+    
+    Beispiele:
+    - success=True, action_type='move' → Rule erfolgreich ausgeführt
+    - success=False, error_message='Folder not found' → Debugging-Info
+    """
+    __tablename__ = "rule_execution_logs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    mail_account_id = Column(Integer, ForeignKey("mail_accounts.id", ondelete="CASCADE"), nullable=False)
+    rule_id = Column(Integer, ForeignKey("auto_rules.id", ondelete="CASCADE"), nullable=False)
+    processed_email_id = Column(Integer, ForeignKey("processed_emails.id", ondelete="CASCADE"), nullable=False)
+    executed_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    success = Column(Boolean, nullable=False)
+    error_message = Column(Text, nullable=True)
+    action_type = Column(String(50), nullable=False)  # 'move', 'mark_read', 'forward', etc.
+
+    user = relationship("User")
+    account = relationship("MailAccount")
+    rule = relationship("AutoRule")
+    email = relationship("ProcessedEmail")
+
+    __table_args__ = (
+        Index("idx_rule_exec_account_time", "mail_account_id", "executed_at"),
+        Index("idx_rule_exec_rule", "rule_id"),
+        Index("idx_rule_exec_email", "processed_email_id"),
+    )
+
+    def __repr__(self):
+        status = "✅" if self.success else "❌"
+        return f"<RuleExecutionLog({status} rule_id={self.rule_id} action={self.action_type})>"
+
+
 if __name__ == "__main__":
     print("📊 Initialisiere Datenbank...")
     engine, Session = init_db()
