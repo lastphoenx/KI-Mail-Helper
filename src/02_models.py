@@ -891,7 +891,7 @@ class ProcessedEmail(Base):
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
     deleted_at = Column(DateTime, nullable=True)
-    deleted_verm = Column(Boolean, default=False)
+    # P1-002: deleted_verm entfernt - nur deleted_at nutzen
 
     # Optimization (zweiter Pass für bessere Kategorisierung)
     optimization_status = Column(String(20), default=OptimizationStatus.PENDING.value)
