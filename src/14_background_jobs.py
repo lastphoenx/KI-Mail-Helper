@@ -37,6 +37,10 @@ class FetchJob:
     max_mails: int = 50
     sanitize_level: int = 2
     meta: Dict[str, Any] = field(default_factory=dict)
+    # P2-002: Retry-Logik
+    retry_count: int = 0
+    max_retries: int = 2
+    retry_delays: list[int] = field(default_factory=lambda: [60, 300])  # 1min, 5min
 
 
 @dataclass
@@ -48,6 +52,10 @@ class BatchReprocessJob:
     provider: str
     model: str
     meta: Dict[str, Any] = field(default_factory=dict)
+    # P2-002: Retry-Logik
+    retry_count: int = 0
+    max_retries: int = 2
+    retry_delays: list[int] = field(default_factory=lambda: [60, 300])  # 1min, 5min
 
 
 class BackgroundJobQueue:
@@ -216,6 +224,51 @@ class BackgroundJobQueue:
             finally:
                 self.queue.task_done()
 
+    def _is_transient_error(self, exc: Exception) -> bool:
+        """P2-002: Erkennt ob Fehler transient ist (retry lohnt sich)
+        
+        Transient Errors:
+        - Netzwerk-Timeouts
+        - IMAP-Server temporär nicht erreichbar
+        - Datenbank-Locks
+        - API-Rate-Limits
+        
+        Permanent Errors:
+        - Falsche Credentials
+        - ValueError (falsche Parameter)
+        - Permission Denied
+        """
+        error_str = str(exc).lower()
+        error_type = type(exc).__name__
+        
+        # Transient: Netzwerk-Probleme
+        transient_keywords = [
+            'timeout', 'timed out', 'connection', 'network',
+            'temporary', 'unavailable', 'try again',
+            'rate limit', 'too many requests', 'socket',
+            'ssl', 'certificate', 'refused'
+        ]
+        
+        if any(keyword in error_str for keyword in transient_keywords):
+            return True
+        
+        # Permanent: Auth/Permission
+        permanent_keywords = [
+            'authentication', 'credentials', 'password',
+            'permission denied', 'unauthorized', 'forbidden',
+            'invalid token', 'access denied'
+        ]
+        
+        if any(keyword in error_str for keyword in permanent_keywords):
+            return False
+        
+        # Permanent: Programming Errors
+        if error_type in ['ValueError', 'TypeError', 'AttributeError', 'KeyError']:
+            return False
+        
+        # Default: Bei Unsicherheit retry versuchen
+        return True
+
     def _execute_fetch_job(self, job: FetchJob) -> None:
         """Execute Mail Fetch Job"""
         session = self._SessionFactory()
@@ -329,13 +382,48 @@ class BackgroundJobQueue:
         except Exception as exc:
             session.rollback()
             logger.error("❌ Job %s fehlgeschlagen: %s", job.job_id, exc, exc_info=True)
-            self._update_status(
-                job.job_id,
-                {
-                    "state": "error",
-                    "message": "Verarbeitung fehlgeschlagen (siehe Server-Logs)",
-                },
+            
+            # P2-002: Retry-Logik mit Exponential Backoff
+            should_retry = (
+                job.retry_count < job.max_retries and
+                self._is_transient_error(exc)
             )
+            
+            if should_retry:
+                job.retry_count += 1
+                retry_delay = job.retry_delays[min(job.retry_count - 1, len(job.retry_delays) - 1)]
+                
+                logger.warning(
+                    f"⏰ Job {job.job_id} wird in {retry_delay}s erneut versucht "
+                    f"(Versuch {job.retry_count}/{job.max_retries})"
+                )
+                
+                self._update_status(
+                    job.job_id,
+                    {
+                        "state": "retrying",
+                        "message": f"Fehler - Retry in {retry_delay}s (Versuch {job.retry_count}/{job.max_retries})",
+                        "retry_count": job.retry_count,
+                        "next_retry": datetime.now(UTC).timestamp() + retry_delay,
+                    },
+                )
+                
+                # Schedule retry nach delay
+                threading.Timer(retry_delay, lambda: self.queue.put(job)).start()
+            else:
+                # Kein Retry mehr - Job final fehlgeschlagen
+                error_msg = "Verarbeitung fehlgeschlagen (siehe Server-Logs)"
+                if job.retry_count >= job.max_retries:
+                    error_msg += f" - {job.max_retries} Versuche fehlgeschlagen"
+                
+                self._update_status(
+                    job.job_id,
+                    {
+                        "state": "error",
+                        "message": error_msg,
+                        "retry_count": job.retry_count,
+                    },
+                )
         finally:
             session.close()
 
@@ -886,12 +974,47 @@ class BackgroundJobQueue:
         except Exception as exc:
             session.rollback()
             logger.error("❌ Batch-Reprocess Job %s fehlgeschlagen: %s", job.job_id, exc, exc_info=True)
-            self._update_status(
-                job.job_id,
-                {
-                    "state": "error",
-                    "message": f"Batch-Reprocess fehlgeschlagen: {str(exc)}",
-                },
+            
+            # P2-002: Retry-Logik auch für Batch-Jobs
+            should_retry = (
+                job.retry_count < job.max_retries and
+                self._is_transient_error(exc)
             )
+            
+            if should_retry:
+                job.retry_count += 1
+                retry_delay = job.retry_delays[min(job.retry_count - 1, len(job.retry_delays) - 1)]
+                
+                logger.warning(
+                    f"⏰ Batch-Job {job.job_id} wird in {retry_delay}s erneut versucht "
+                    f"(Versuch {job.retry_count}/{job.max_retries})"
+                )
+                
+                self._update_status(
+                    job.job_id,
+                    {
+                        "state": "retrying",
+                        "message": f"Fehler - Retry in {retry_delay}s (Versuch {job.retry_count}/{job.max_retries})",
+                        "retry_count": job.retry_count,
+                        "next_retry": datetime.now(UTC).timestamp() + retry_delay,
+                    },
+                )
+                
+                # Schedule retry
+                threading.Timer(retry_delay, lambda: self.queue.put(job)).start()
+            else:
+                # Kein Retry mehr
+                error_msg = f"Batch-Reprocess fehlgeschlagen: {str(exc)}"
+                if job.retry_count >= job.max_retries:
+                    error_msg += f" - {job.max_retries} Versuche fehlgeschlagen"
+                
+                self._update_status(
+                    job.job_id,
+                    {
+                        "state": "error",
+                        "message": error_msg,
+                        "retry_count": job.retry_count,
+                    },
+                )
         finally:
             session.close()
