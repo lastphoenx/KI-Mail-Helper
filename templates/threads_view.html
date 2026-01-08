@@ -8,6 +8,22 @@
     <div class="col-md-4 border-end" style="overflow-y: auto; max-height: calc(100vh - 200px);">
         <div class="sticky-top bg-white p-3 border-bottom">
             <h5>💬 Conversations</h5>
+            
+            <!-- Account Filter (wie bei /list) -->
+            {% if user_accounts and user_accounts|length > 1 %}
+            <div class="mb-2">
+                <label class="form-label small mb-1">📧 Account</label>
+                <select class="form-select form-select-sm" id="accountFilter" onchange="filterByAccount()">
+                    <option value="">Alle Accounts</option>
+                    {% for account in user_accounts %}
+                    <option value="{{ account.id }}" {% if account.id|string == filter_account_id %}selected{% endif %}>
+                        {{ account.decrypted_imap_username or account.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            
             <div class="input-group mb-2">
                 <input 
                     type="text" 
@@ -100,6 +116,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /**
+ * Filter threads by account (reload with filter)
+ */
+function filterByAccount() {
+    currentPage = 0;  // Reset to first page
+    loadThreads(0);
+}
+
+/**
  * Load threads from API with pagination
  * @param {number} [page=0] - Page number to load
  * @returns {Promise<void>}
@@ -107,7 +131,13 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadThreads(page = 0) {
     try {
         const offset = page * itemsPerPage;
-        const url = `/api/threads?limit=${itemsPerPage}&offset=${offset}`;
+        
+        // Account-Filter aus Dropdown
+        const accountFilter = document.getElementById('accountFilter');
+        const accountId = accountFilter ? accountFilter.value : '';
+        const accountParam = accountId ? `&mail_account=${accountId}` : '';
+        
+        const url = `/api/threads?limit=${itemsPerPage}&offset=${offset}${accountParam}`;
         
         const response = await fetch(url);
         if (!response.ok) {

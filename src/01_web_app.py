@@ -1470,7 +1470,38 @@ def threads_view():
         if not user:
             return redirect(url_for("login"))
 
-        return render_template("threads_view.html", user=user, csp_nonce=g.csp_nonce)
+        # Lade User-Accounts für Filter-Dropdown (wie bei /list)
+        user_accounts = (
+            db.query(models.MailAccount)
+            .filter(models.MailAccount.user_id == user.id)
+            .all()
+        )
+        
+        # Dekryptiere Account-Email-Adressen für Dropdown
+        master_key = session.get("master_key")
+        if master_key and user_accounts:
+            for account in user_accounts:
+                if account.auth_type == "imap" and account.encrypted_imap_username:
+                    try:
+                        account.decrypted_imap_username = (
+                            encryption.EmailDataManager.decrypt_email_sender(
+                                account.encrypted_imap_username, master_key
+                            )
+                        )
+                    except Exception as e:
+                        logger.warning(f"Fehler beim Entschlüsseln der Account-Email: {e}")
+                        account.decrypted_imap_username = None
+
+        # Account-Filter aus Query-Parameter
+        filter_account_id = request.args.get("mail_account")
+
+        return render_template(
+            "threads_view.html", 
+            user=user, 
+            user_accounts=user_accounts,
+            filter_account_id=filter_account_id,
+            csp_nonce=g.csp_nonce
+        )
 
     finally:
         db.close()

@@ -85,6 +85,7 @@ def get_threads_endpoint():
     Query Params:
       limit: Max Threads (default: 50)
       offset: Pagination (default: 0)
+      mail_account: Filter by account ID (optional)
       
     Returns:
       {
@@ -117,15 +118,28 @@ def get_threads_endpoint():
         limit = min(max(request.args.get("limit", 50, type=int), 1), 100)
         offset = max(request.args.get("offset", 0, type=int), 0)
         
-        total_count = (
+        # Account-Filter (wie bei /list)
+        filter_account_id = None
+        account_id_str = request.args.get("mail_account")
+        if account_id_str:
+            try:
+                filter_account_id = int(account_id_str)
+            except (ValueError, TypeError):
+                filter_account_id = None
+        
+        # Count mit Account-Filter
+        count_query = (
             db.query(func.count(func.distinct(models.RawEmail.thread_id)))
             .filter_by(user_id=user.id)
             .filter(models.RawEmail.thread_id.isnot(None))
-            .scalar() or 0
         )
+        if filter_account_id:
+            count_query = count_query.filter(models.RawEmail.mail_account_id == filter_account_id)
+        
+        total_count = count_query.scalar() or 0
         
         summaries = thread_service.ThreadService.get_threads_summary(
-            db, user.id, limit=limit, offset=offset
+            db, user.id, limit=limit, offset=offset, account_id=filter_account_id
         )
         
         result = []
