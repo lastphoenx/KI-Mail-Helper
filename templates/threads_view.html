@@ -13,7 +13,7 @@
             {% if user_accounts and user_accounts|length > 1 %}
             <div class="mb-2">
                 <label class="form-label small mb-1">📧 Account</label>
-                <select class="form-select form-select-sm" id="accountFilter" onchange="filterByAccount()">
+                <select class="form-select form-select-sm" id="accountFilter">
                     <option value="">Alle Accounts</option>
                     {% for account in user_accounts %}
                     <option value="{{ account.id }}" {% if account.id|string == filter_account_id %}selected{% endif %}>
@@ -113,6 +113,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('nextBtn').addEventListener('click', () => {
         loadThreads(currentPage + 1);
     });
+    
+    // Account-Filter Event-Listener (CSP-konform)
+    const accountFilter = document.getElementById('accountFilter');
+    if (accountFilter) {
+        accountFilter.addEventListener('change', filterByAccount);
+    }
 });
 
 /**
