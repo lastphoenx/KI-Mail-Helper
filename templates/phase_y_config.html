@@ -592,7 +592,7 @@ async function loadScoringConfig() {
         const data = await response.json();
         const config = data.config;
         
-        // Set slider values and trigger visual updates
+        // Set slider values with forced visual update
         const sliders = [
             {id: 'imperativeWeight', value: config.imperative_weight, type: 'imperative'},
             {id: 'deadlineWeight', value: config.deadline_weight, type: 'deadline'},
@@ -603,9 +603,15 @@ async function loadScoringConfig() {
         sliders.forEach(slider => {
             const input = document.getElementById(slider.id);
             if (input) {
+                // Force visual update by setting value AND attribute
+                input.setAttribute('value', slider.value);
                 input.value = slider.value;
-                // Trigger input event to update visual slider position
+                
+                // Trigger both input and change events
                 input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                
+                // Update label
                 updateWeightLabel(slider.type);
             }
         });
@@ -613,7 +619,10 @@ async function loadScoringConfig() {
         // Set number inputs
         const setIfExists = (id, value) => {
             const el = document.getElementById(id);
-            if (el) el.value = value;
+            if (el) {
+                el.value = value;
+                el.setAttribute('value', value);
+            }
         };
         
         setIfExists('questionThreshold', config.question_threshold);
