@@ -7,10 +7,12 @@ import json
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 import importlib.util
+from pathlib import Path
 
-# Dynamischer Import von 02_models.py
+# Dynamischer Import von 02_models.py (relative path)
+src_dir = Path(__file__).parent.parent
 spec = importlib.util.spec_from_file_location(
-    "models", "/home/thomas/projects/KI-Mail-Helper/src/02_models.py"
+    "models", src_dir / "02_models.py"
 )
 models = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(models)
