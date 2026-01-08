@@ -316,9 +316,11 @@ document.addEventListener('DOMContentLoaded', function() {
             folderSelect.innerHTML = '<option value="">Alle Ordner</option>';
             folders.forEach(folder => {
                 const option = document.createElement('option');
-                option.value = folder;
-                option.textContent = folder;
-                if (folder === currentValue) option.selected = true;
+                // API gibt {name: "INBOX"} zur\u00fcck, nicht nur String
+                const folderName = typeof folder === 'string' ? folder : folder.name;
+                option.value = folderName;
+                option.textContent = folderName;
+                if (folderName === currentValue) option.selected = true;
                 folderSelect.appendChild(option);
             });
         } catch (error) {

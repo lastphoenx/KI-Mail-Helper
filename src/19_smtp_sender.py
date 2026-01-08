@@ -752,8 +752,13 @@ class SMTPSender:
                 if uidvalidity is None:
                     try:
                         folder_status = imap.folder_status(sent_folder, ['UIDVALIDITY'])
-                        uidvalidity = folder_status.get(b'UIDVALIDITY')
-                        logger.debug(f"UIDVALIDITY via folder_status: {uidvalidity}")
+                        raw_val = folder_status.get(b'UIDVALIDITY')
+                        # IMAPClient gibt manchmal [value] zurück
+                        if isinstance(raw_val, (list, tuple)) and len(raw_val) > 0:
+                            uidvalidity = raw_val[0]
+                        elif raw_val is not None:
+                            uidvalidity = raw_val
+                        logger.debug(f"UIDVALIDITY via folder_status: {uidvalidity} (raw: {raw_val})")
                     except Exception as e:
                         logger.warning(f"Konnte UIDVALIDITY nicht holen: {e}")
                 
