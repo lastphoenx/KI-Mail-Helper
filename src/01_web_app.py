@@ -4805,37 +4805,41 @@ def api_smtp_status(account_id):
             "error": "Nicht authentifiziert"
         }), 401
     
-    account = models.MailAccount.query.get(account_id)
-    if not account or account.user_id != current_user.id:
-        return jsonify({
-            "success": False,
-            "error": "Account nicht gefunden"
-        }), 404
-    
-    # Prüfen ob SMTP konfiguriert
-    has_smtp = bool(
-        account.encrypted_smtp_server and 
-        (account.encrypted_smtp_password or account.encrypted_imap_password)
-    )
-    
-    if has_smtp:
-        sender = smtp_sender.SMTPSender(account, master_key)
-        is_valid, error = sender.validate_configuration()
+    db = get_db_session()
+    try:
+        account = db.query(models.MailAccount).get(account_id)
+        if not account or account.user_id != current_user.id:
+            return jsonify({
+                "success": False,
+                "error": "Account nicht gefunden"
+            }), 404
         
-        return jsonify({
-            "success": True,
-            "configured": is_valid,
-            "server": sender.credentials.get("smtp_server") if is_valid else None,
-            "port": account.smtp_port,
-            "encryption": account.smtp_encryption,
-            "error": error if not is_valid else None
-        })
-    else:
-        return jsonify({
-            "success": True,
-            "configured": False,
-            "error": "SMTP nicht konfiguriert"
-        })
+        # Prüfen ob SMTP konfiguriert
+        has_smtp = bool(
+            account.encrypted_smtp_server and 
+            (account.encrypted_smtp_password or account.encrypted_imap_password)
+        )
+        
+        if has_smtp:
+            sender = smtp_sender.SMTPSender(account, master_key)
+            is_valid, error = sender.validate_configuration()
+            
+            return jsonify({
+                "success": True,
+                "configured": is_valid,
+                "server": sender.credentials.get("smtp_server") if is_valid else None,
+                "port": account.smtp_port,
+                "encryption": account.smtp_encryption,
+                "error": error if not is_valid else None
+            })
+        else:
+            return jsonify({
+                "success": True,
+                "configured": False,
+                "error": "SMTP nicht konfiguriert"
+            })
+    finally:
+        db.close()
 
 
 @app.route('/api/account/<int:account_id>/test-smtp', methods=['POST'])
@@ -4857,16 +4861,17 @@ def api_test_smtp(account_id):
             "error": "Nicht authentifiziert"
         }), 401
     
-    # Account laden und Berechtigung prüfen
-    account = models.MailAccount.query.get(account_id)
-    if not account or account.user_id != current_user.id:
-        return jsonify({
-            "success": False,
-            "error": "Account nicht gefunden"
-        }), 404
-    
-    # SMTP testen
+    db = get_db_session()
     try:
+        # Account laden und Berechtigung prüfen
+        account = db.query(models.MailAccount).get(account_id)
+        if not account or account.user_id != current_user.id:
+            return jsonify({
+                "success": False,
+                "error": "Account nicht gefunden"
+            }), 404
+        
+        # SMTP testen
         sender = smtp_sender.SMTPSender(account, master_key)
         success, message = sender.test_connection()
         
@@ -4879,6 +4884,8 @@ def api_test_smtp(account_id):
             "success": False,
             "error": str(e)
         }), 500
+    finally:
+        db.close()
 
 
 @app.route('/api/emails/<int:email_id>/send-reply', methods=['POST'])
@@ -4921,60 +4928,61 @@ def api_send_reply(email_id):
             "error": "Nicht authentifiziert"
         }), 401
     
-    # Email laden
-    raw_email = models.RawEmail.query.get(email_id)
-    if not raw_email or raw_email.user_id != current_user.id:
-        return jsonify({
-            "success": False,
-            "error": "Email nicht gefunden"
-        }), 404
-    
-    # Mail-Account prüfen
-    account = models.MailAccount.query.get(raw_email.mail_account_id)
-    if not account:
-        return jsonify({
-            "success": False,
-            "error": "Mail-Account nicht gefunden"
-        }), 404
-    
-    # Request-Body parsen
-    data = request.get_json() or {}
-    
-    reply_text = data.get('reply_text')
-    if not reply_text:
-        return jsonify({
-            "success": False,
-            "error": "reply_text ist erforderlich"
-        }), 400
-    
-    reply_html = data.get('reply_html')
-    include_quote = data.get('include_quote', True)
-    
-    # CC-Empfänger parsen
-    cc_recipients = None
-    if data.get('cc'):
-        cc_recipients = [smtp_sender.EmailRecipient.from_string(addr) for addr in data['cc']]
-    
-    # Anhänge parsen (Base64 → Bytes)
-    attachments = None
-    if data.get('attachments'):
-        attachments = []
-        for att in data['attachments']:
-            try:
-                content = base64.b64decode(att['content_base64'])
-                attachments.append(smtp_sender.EmailAttachment(
-                    filename=att['filename'],
-                    content=content,
-                    mime_type=att.get('mime_type', 'application/octet-stream')
-                ))
-            except Exception as e:
-                return jsonify({
-                    "success": False,
-                    "error": f"Ungültiger Anhang: {e}"
-                }), 400
-    
-    # SMTP Sender erstellen und Antwort senden
+    db = get_db_session()
     try:
+        # Email laden
+        raw_email = db.query(models.RawEmail).get(email_id)
+        if not raw_email or raw_email.user_id != current_user.id:
+            return jsonify({
+                "success": False,
+                "error": "Email nicht gefunden"
+            }), 404
+        
+        # Mail-Account prüfen
+        account = db.query(models.MailAccount).get(raw_email.mail_account_id)
+        if not account:
+            return jsonify({
+                "success": False,
+                "error": "Mail-Account nicht gefunden"
+            }), 404
+        
+        # Request-Body parsen
+        data = request.get_json() or {}
+        
+        reply_text = data.get('reply_text')
+        if not reply_text:
+            return jsonify({
+                "success": False,
+                "error": "reply_text ist erforderlich"
+            }), 400
+        
+        reply_html = data.get('reply_html')
+        include_quote = data.get('include_quote', True)
+        
+        # CC-Empfänger parsen
+        cc_recipients = None
+        if data.get('cc'):
+            cc_recipients = [smtp_sender.EmailRecipient.from_string(addr) for addr in data['cc']]
+        
+        # Anhänge parsen (Base64 → Bytes)
+        attachments = None
+        if data.get('attachments'):
+            attachments = []
+            for att in data['attachments']:
+                try:
+                    content = base64.b64decode(att['content_base64'])
+                    attachments.append(smtp_sender.EmailAttachment(
+                        filename=att['filename'],
+                        content=content,
+                        mime_type=att.get('mime_type', 'application/octet-stream')
+                    ))
+                except Exception as e:
+                    return jsonify({
+                        "success": False,
+                        "error": f"Ungültiger Anhang: {e}"
+                    }), 400
+        
+        # SMTP Sender erstellen und Antwort senden
         sender = smtp_sender.SMTPSender(account, master_key)
         result = sender.send_reply(
             original_email=raw_email,
@@ -5007,6 +5015,8 @@ def api_send_reply(email_id):
             "success": False,
             "error": str(e)
         }), 500
+    finally:
+        db.close()
 
 
 @app.route('/api/account/<int:account_id>/send', methods=['POST'])
@@ -5042,71 +5052,72 @@ def api_send_email(account_id):
             "error": "Nicht authentifiziert"
         }), 401
     
-    # Account laden
-    account = models.MailAccount.query.get(account_id)
-    if not account or account.user_id != current_user.id:
-        return jsonify({
-            "success": False,
-            "error": "Account nicht gefunden"
-        }), 404
-    
-    # Request-Body parsen
-    data = request.get_json() or {}
-    
-    # Pflichtfelder validieren
-    if not data.get('to'):
-        return jsonify({
-            "success": False,
-            "error": "Mindestens ein Empfänger (to) erforderlich"
-        }), 400
-    
-    if not data.get('subject'):
-        return jsonify({
-            "success": False,
-            "error": "Betreff (subject) erforderlich"
-        }), 400
-    
-    if not data.get('body_text'):
-        return jsonify({
-            "success": False,
-            "error": "Nachrichtentext (body_text) erforderlich"
-        }), 400
-    
-    # Empfänger parsen
-    to_recipients = [smtp_sender.EmailRecipient.from_string(addr) for addr in data['to']]
-    cc_recipients = [smtp_sender.EmailRecipient.from_string(addr) for addr in data.get('cc', [])]
-    bcc_recipients = [smtp_sender.EmailRecipient.from_string(addr) for addr in data.get('bcc', [])]
-    
-    # Anhänge parsen
-    attachments = []
-    if data.get('attachments'):
-        for att in data['attachments']:
-            try:
-                content = base64.b64decode(att['content_base64'])
-                attachments.append(smtp_sender.EmailAttachment(
-                    filename=att['filename'],
-                    content=content,
-                    mime_type=att.get('mime_type', 'application/octet-stream')
-                ))
-            except Exception as e:
-                return jsonify({
-                    "success": False,
-                    "error": f"Ungültiger Anhang: {e}"
-                }), 400
-    
-    # OutgoingEmail erstellen
-    email = smtp_sender.OutgoingEmail(
-        to=to_recipients,
-        cc=cc_recipients,
-        bcc=bcc_recipients,
-        subject=data['subject'],
-        body_text=data['body_text'],
-        body_html=data.get('body_html'),
-        attachments=attachments
-    )
-    
-    # Senden
+    db = get_db_session()
     try:
+        # Account laden
+        account = db.query(models.MailAccount).get(account_id)
+        if not account or account.user_id != current_user.id:
+            return jsonify({
+                "success": False,
+                "error": "Account nicht gefunden"
+            }), 404
+        
+        # Request-Body parsen
+        data = request.get_json() or {}
+        
+        # Pflichtfelder validieren
+        if not data.get('to'):
+            return jsonify({
+                "success": False,
+                "error": "Mindestens ein Empfänger (to) erforderlich"
+            }), 400
+        
+        if not data.get('subject'):
+            return jsonify({
+                "success": False,
+                "error": "Betreff (subject) erforderlich"
+            }), 400
+        
+        if not data.get('body_text'):
+            return jsonify({
+                "success": False,
+                "error": "Nachrichtentext (body_text) erforderlich"
+            }), 400
+        
+        # Empfänger parsen
+        to_recipients = [smtp_sender.EmailRecipient.from_string(addr) for addr in data['to']]
+        cc_recipients = [smtp_sender.EmailRecipient.from_string(addr) for addr in data.get('cc', [])]
+        bcc_recipients = [smtp_sender.EmailRecipient.from_string(addr) for addr in data.get('bcc', [])]
+        
+        # Anhänge parsen
+        attachments = []
+        if data.get('attachments'):
+            for att in data['attachments']:
+                try:
+                    content = base64.b64decode(att['content_base64'])
+                    attachments.append(smtp_sender.EmailAttachment(
+                        filename=att['filename'],
+                        content=content,
+                        mime_type=att.get('mime_type', 'application/octet-stream')
+                    ))
+                except Exception as e:
+                    return jsonify({
+                        "success": False,
+                        "error": f"Ungültiger Anhang: {e}"
+                    }), 400
+        
+        # OutgoingEmail erstellen
+        email = smtp_sender.OutgoingEmail(
+            to=to_recipients,
+            cc=cc_recipients,
+            bcc=bcc_recipients,
+            subject=data['subject'],
+            body_text=data['body_text'],
+            body_html=data.get('body_html'),
+            attachments=attachments
+        )
+        
+        # Senden
         sender = smtp_sender.SMTPSender(account, master_key)
         result = sender.send_email(email)
         
@@ -5132,6 +5143,8 @@ def api_send_email(account_id):
             "success": False,
             "error": str(e)
         }), 500
+    finally:
+        db.close()
 
 
 @app.route('/api/emails/<int:email_id>/generate-and-send', methods=['POST'])
@@ -5166,67 +5179,77 @@ def api_generate_and_send_reply(email_id):
             "error": "Nicht authentifiziert"
         }), 401
     
-    # Email laden
-    raw_email = models.RawEmail.query.get(email_id)
-    if not raw_email or raw_email.user_id != current_user.id:
-        return jsonify({
-            "success": False,
-            "error": "Email nicht gefunden"
-        }), 404
-    
-    data = request.get_json() or {}
-    tone = data.get('tone', 'formal')
-    custom_instructions = data.get('custom_instructions')
-    include_quote = data.get('include_quote', True)
-    send_immediately = data.get('send_immediately', False)
-    
-    # 1. Draft generieren
-    draft = generate_reply_draft(
-        email_id=email_id,
-        master_key=master_key,
-        tone=tone,
-        custom_instructions=custom_instructions
-    )
-    
-    if not draft:
-        return jsonify({
-            "success": False,
-            "error": "Draft-Generierung fehlgeschlagen"
-        }), 500
-    
-    response = {
-        "success": True,
-        "draft_text": draft['draft_text'],
-        "subject": draft['subject'],
-        "recipient": draft['recipient'],
-        "tone": draft['tone'],
-        "generation_time_ms": draft['generation_time_ms'],
-        "sent": False
-    }
-    
-    # 2. Optional: Direkt senden
-    if send_immediately:
-        account = models.MailAccount.query.get(raw_email.mail_account_id)
-        if not account:
-            response["send_error"] = "Mail-Account nicht gefunden"
-            return jsonify(response)
+    db = get_db_session()
+    try:
+        # Email laden
+        raw_email = db.query(models.RawEmail).get(email_id)
+        if not raw_email or raw_email.user_id != current_user.id:
+            return jsonify({
+                "success": False,
+                "error": "Email nicht gefunden"
+            }), 404
         
-        sender = smtp_sender.SMTPSender(account, master_key)
-        result = sender.send_reply(
-            original_email=raw_email,
-            reply_text=draft['draft_text'],
-            include_quote=include_quote
+        data = request.get_json() or {}
+        tone = data.get('tone', 'formal')
+        custom_instructions = data.get('custom_instructions')
+        include_quote = data.get('include_quote', True)
+        send_immediately = data.get('send_immediately', False)
+        
+        # 1. Draft generieren
+        draft = generate_reply_draft(
+            email_id=email_id,
+            master_key=master_key,
+            tone=tone,
+            custom_instructions=custom_instructions
         )
         
-        if result.success:
-            response["sent"] = True
-            response["message_id"] = result.message_id
-            response["saved_to_sent"] = result.saved_to_sent
-            response["saved_to_db"] = result.saved_to_db
-        else:
-            response["send_error"] = result.error
-    
-    return jsonify(response)
+        if not draft:
+            return jsonify({
+                "success": False,
+                "error": "Draft-Generierung fehlgeschlagen"
+            }), 500
+        
+        response = {
+            "success": True,
+            "draft_text": draft['draft_text'],
+            "subject": draft['subject'],
+            "recipient": draft['recipient'],
+            "tone": draft['tone'],
+            "generation_time_ms": draft['generation_time_ms'],
+            "sent": False
+        }
+        
+        # 2. Optional: Direkt senden
+        if send_immediately:
+            account = db.query(models.MailAccount).get(raw_email.mail_account_id)
+            if not account:
+                response["send_error"] = "Mail-Account nicht gefunden"
+                return jsonify(response)
+            
+            sender = smtp_sender.SMTPSender(account, master_key)
+            result = sender.send_reply(
+                original_email=raw_email,
+                reply_text=draft['draft_text'],
+                include_quote=include_quote
+            )
+            
+            if result.success:
+                response["sent"] = True
+                response["message_id"] = result.message_id
+                response["saved_to_sent"] = result.saved_to_sent
+                response["saved_to_db"] = result.saved_to_db
+            else:
+                response["send_error"] = result.error
+        
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"Generate-and-send Fehler: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+    finally:
+        db.close()
 
 
 # ===== End Phase H =====
