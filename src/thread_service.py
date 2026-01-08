@@ -95,7 +95,8 @@ class ThreadService:
     @staticmethod
     def get_threads_summary(
         session: Session, user_id: int, limit: int = 50, offset: int = 0,
-        thread_ids: Optional[List[str]] = None, account_id: Optional[int] = None
+        thread_ids: Optional[List[str]] = None, account_id: Optional[int] = None,
+        min_count: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Get thread summaries with count, latest and oldest email
         
@@ -106,6 +107,7 @@ class ThreadService:
             offset: Pagination offset
             thread_ids: Optional - only load these threads (for search optimization)
             account_id: Optional - filter by mail_account_id
+            min_count: Optional - minimum emails in thread (e.g. 2 = only conversations)
             
         Returns:
             List of {
@@ -138,9 +140,14 @@ class ThreadService:
         if account_id:
             subquery = subquery.filter(models.RawEmail.mail_account_id == account_id)
         
+        subquery = subquery.group_by(models.RawEmail.thread_id)
+        
+        # HAVING für min_count (nach GROUP BY!)
+        if min_count and min_count > 0:
+            subquery = subquery.having(func.count(models.RawEmail.id) >= min_count)
+        
         subquery = (
             subquery
-            .group_by(models.RawEmail.thread_id)
             .order_by(func.max(models.RawEmail.received_at).desc())
             .limit(limit)
             .offset(offset)

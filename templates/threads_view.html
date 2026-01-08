@@ -24,6 +24,18 @@
             </div>
             {% endif %}
             
+            <!-- Count Filter -->
+            <div class="mb-2">
+                <label class="form-label small mb-1">💬 Thread-Größe</label>
+                <select class="form-select form-select-sm" id="countFilter">
+                    <option value="">Alle</option>
+                    <option value="2">Nur Conversations (≥2)</option>
+                    <option value="3">Mindestens 3 E-Mails</option>
+                    <option value="5">Längere Diskussionen (≥5)</option>
+                    <option value="10">Sehr lange Threads (≥10)</option>
+                </select>
+            </div>
+            
             <div class="input-group mb-2">
                 <input 
                     type="text" 
@@ -119,6 +131,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (accountFilter) {
         accountFilter.addEventListener('change', filterByAccount);
     }
+    
+    // Count-Filter Event-Listener
+    const countFilter = document.getElementById('countFilter');
+    if (countFilter) {
+        countFilter.addEventListener('change', filterByAccount);  // Reuse same function
+    }
 });
 
 /**
@@ -143,7 +161,12 @@ async function loadThreads(page = 0) {
         const accountId = accountFilter ? accountFilter.value : '';
         const accountParam = accountId ? `&mail_account=${accountId}` : '';
         
-        const url = `/api/threads?limit=${itemsPerPage}&offset=${offset}${accountParam}`;
+        // Count-Filter aus Dropdown
+        const countFilter = document.getElementById('countFilter');
+        const minCount = countFilter ? countFilter.value : '';
+        const countParam = minCount ? `&min_count=${minCount}` : '';
+        
+        const url = `/api/threads?limit=${itemsPerPage}&offset=${offset}${accountParam}${countParam}`;
         
         const response = await fetch(url);
         if (!response.ok) {

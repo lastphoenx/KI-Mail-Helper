@@ -86,6 +86,7 @@ def get_threads_endpoint():
       limit: Max Threads (default: 50)
       offset: Pagination (default: 0)
       mail_account: Filter by account ID (optional)
+      min_count: Minimum email count in thread (optional, e.g. 2 = only conversations)
       
     Returns:
       {
@@ -127,7 +128,16 @@ def get_threads_endpoint():
             except (ValueError, TypeError):
                 filter_account_id = None
         
-        # Count mit Account-Filter
+        # Count-Filter (neu)
+        min_count = None
+        min_count_str = request.args.get("min_count")
+        if min_count_str:
+            try:
+                min_count = int(min_count_str)
+            except (ValueError, TypeError):
+                min_count = None
+        
+        # Count mit Filtern
         count_query = (
             db.query(func.count(func.distinct(models.RawEmail.thread_id)))
             .filter_by(user_id=user.id)
@@ -136,10 +146,13 @@ def get_threads_endpoint():
         if filter_account_id:
             count_query = count_query.filter(models.RawEmail.mail_account_id == filter_account_id)
         
+        # Note: min_count affects result count, but we can't easily pre-count it
+        # We'll just return total thread count for now
         total_count = count_query.scalar() or 0
         
         summaries = thread_service.ThreadService.get_threads_summary(
-            db, user.id, limit=limit, offset=offset, account_id=filter_account_id
+            db, user.id, limit=limit, offset=offset, 
+            account_id=filter_account_id, min_count=min_count
         )
         
         result = []
