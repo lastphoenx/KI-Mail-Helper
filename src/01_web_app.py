@@ -2223,9 +2223,9 @@ def whitelist():
         db.close()
 
 
-@app.route("/ki-priorisierung")
+@app.route("/ki-prio")
 @login_required
-def phase_y_config():
+def ki_prio():
     """KI-gestützte E-Mail Priorisierung: Konfiguration für spaCy Hybrid Pipeline"""
     return render_template("phase_y_config.html", csp_nonce=g.get("csp_nonce", ""))
 
