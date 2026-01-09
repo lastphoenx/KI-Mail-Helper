@@ -28,6 +28,21 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 
+# 🆕 Optimierte Prompts importieren (mit Fallback für Backward-Compatibility)
+try:
+    from src.optimized_reply_prompts import (
+        REPLY_GENERATION_SYSTEM_PROMPT_OPTIMIZED,
+        TONE_PROMPTS_OPTIMIZED,
+        build_optimized_user_prompt
+    )
+    OPTIMIZED_PROMPTS_AVAILABLE = True
+    logger = logging.getLogger(__name__)
+    logger.info("✅ Optimierte Reply-Prompts geladen")
+except ImportError as e:
+    OPTIMIZED_PROMPTS_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning(f"⚠️ Optimierte Prompts nicht verfügbar (Fallback auf Standard): {e}")
+
 logger = logging.getLogger(__name__)
 
 # Tone-Definitions mit spezifischen Prompts
@@ -171,17 +186,48 @@ class ReplyGenerator:
         
         tone_config = TONE_PROMPTS[tone]
         
-        # Baue User-Prompt
-        user_prompt = self._build_user_prompt(
-            original_subject=original_subject,
-            original_body=original_body,
-            original_sender=original_sender,
-            tone_instructions=tone_config["instructions"],
-            thread_context=thread_context,
-            language=language,
-            has_attachments=has_attachments,
-            attachment_names=attachment_names
-        )
+        # 🆕 Nutze optimierte Prompts falls verfügbar
+        if OPTIMIZED_PROMPTS_AVAILABLE:
+            try:
+                user_prompt = build_optimized_user_prompt(
+                    original_subject=original_subject,
+                    original_body=original_body,
+                    original_sender=original_sender,
+                    tone=tone,
+                    thread_context=thread_context,
+                    has_attachments=has_attachments,
+                    attachment_names=attachment_names,
+                    language=language
+                )
+                system_prompt = REPLY_GENERATION_SYSTEM_PROMPT_OPTIMIZED
+                logger.debug(f"🎯 Using optimized prompts (Type detection enabled)")
+            except Exception as e:
+                # Fallback auf alte Methode
+                logger.warning(f"Optimized prompt failed, using fallback: {e}")
+                user_prompt = self._build_user_prompt(
+                    original_subject=original_subject,
+                    original_body=original_body,
+                    original_sender=original_sender,
+                    tone_instructions=tone_config["instructions"],
+                    thread_context=thread_context,
+                    language=language,
+                    has_attachments=has_attachments,
+                    attachment_names=attachment_names
+                )
+                system_prompt = REPLY_GENERATION_SYSTEM_PROMPT
+        else:
+            # Fallback: Alte Methode
+            user_prompt = self._build_user_prompt(
+                original_subject=original_subject,
+                original_body=original_body,
+                original_sender=original_sender,
+                tone_instructions=tone_config["instructions"],
+                thread_context=thread_context,
+                language=language,
+                has_attachments=has_attachments,
+                attachment_names=attachment_names
+            )
+            system_prompt = REPLY_GENERATION_SYSTEM_PROMPT
         
         # Rufe AI auf
         try:
@@ -190,7 +236,7 @@ class ReplyGenerator:
             # Nutze generate_text() - in Phase G.2 zu allen AI Clients hinzugefügt
             if hasattr(self.ai_client, 'generate_text'):
                 reply_text = self.ai_client.generate_text(
-                    system_prompt=REPLY_GENERATION_SYSTEM_PROMPT,
+                    system_prompt=system_prompt,  # 🆕 Dynamisch: optimiert oder standard
                     user_prompt=user_prompt,
                     max_tokens=1000
                 )
@@ -399,17 +445,57 @@ Beziehe dich auf den Inhalt der Original-E-Mail und halte den vorgegebenen Ton e
         else:
             enhanced_instructions = base_instructions
         
-        # User-Prompt bauen (wie bisher, aber mit enhanced_instructions)
-        user_prompt = self._build_user_prompt(
-            original_subject=original_subject,
-            original_body=original_body,
-            original_sender=original_sender,
-            tone_instructions=enhanced_instructions,  # 🆕 Enhanced!
-            thread_context=thread_context,
-            language=language,
-            has_attachments=has_attachments,
-            attachment_names=attachment_names,
-        )
+        # 🆕 User-Prompt bauen - mit optimierten Prompts falls verfügbar
+        if OPTIMIZED_PROMPTS_AVAILABLE:
+            try:
+                # Bei User-Style: Erst optimierten Basis-Prompt bauen
+                user_prompt = build_optimized_user_prompt(
+                    original_subject=original_subject,
+                    original_body=original_body,
+                    original_sender=original_sender,
+                    tone=tone,
+                    thread_context=thread_context,
+                    has_attachments=has_attachments,
+                    attachment_names=attachment_names,
+                    language=language
+                )
+                
+                # Dann Style-Instructions einfügen (wenn vorhanden)
+                if effective_settings:
+                    # Ersetze die Ton-Instructions durch enhanced_instructions
+                    # (enthält User-Styles wie Anrede, Gruss, Signatur)
+                    base_tone_instructions = TONE_PROMPTS_OPTIMIZED.get(tone, TONE_PROMPTS_OPTIMIZED["formal"])["instructions"]
+                    user_prompt = user_prompt.replace(base_tone_instructions, enhanced_instructions)
+                    logger.debug(f"✍️ Style-Instructions in optimized prompt injected")
+                
+                system_prompt = REPLY_GENERATION_SYSTEM_PROMPT_OPTIMIZED
+                logger.debug(f"🎯 Using optimized prompts with user-style (Type detection enabled)")
+            except Exception as e:
+                logger.warning(f"Optimized prompt with user-style failed, using fallback: {e}")
+                user_prompt = self._build_user_prompt(
+                    original_subject=original_subject,
+                    original_body=original_body,
+                    original_sender=original_sender,
+                    tone_instructions=enhanced_instructions,
+                    thread_context=thread_context,
+                    language=language,
+                    has_attachments=has_attachments,
+                    attachment_names=attachment_names,
+                )
+                system_prompt = REPLY_GENERATION_SYSTEM_PROMPT
+        else:
+            # Fallback: Alte Methode mit enhanced_instructions
+            user_prompt = self._build_user_prompt(
+                original_subject=original_subject,
+                original_body=original_body,
+                original_sender=original_sender,
+                tone_instructions=enhanced_instructions,
+                thread_context=thread_context,
+                language=language,
+                has_attachments=has_attachments,
+                attachment_names=attachment_names,
+            )
+            system_prompt = REPLY_GENERATION_SYSTEM_PROMPT
         
         # KI-Aufruf (wie bisher)
         try:
@@ -418,7 +504,7 @@ Beziehe dich auf den Inhalt der Original-E-Mail und halte den vorgegebenen Ton e
             # Nutze generate_text() - in Phase G.2 zu allen AI Clients hinzugefügt
             if hasattr(self.ai_client, 'generate_text'):
                 reply_text = self.ai_client.generate_text(
-                    system_prompt=REPLY_GENERATION_SYSTEM_PROMPT,
+                    system_prompt=system_prompt,  # 🆕 Dynamisch: optimiert oder standard
                     user_prompt=user_prompt,
                     max_tokens=1000
                 )

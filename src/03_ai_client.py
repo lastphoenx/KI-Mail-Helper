@@ -922,11 +922,11 @@ class LocalOllamaClient(AIClient):
             "_used_booster": True,  # Marker für Processing: Wurde mit UrgencyBooster verarbeitet
         }
 
-    def _convert_phase_y_to_llm_format(self, pipeline_result: Dict, subject: str, body: str, confidence: float) -> Dict:
+    def _convert_hybrid_to_llm_format(self, pipeline_result: Dict, subject: str, body: str, confidence: float) -> Dict:
         """
-        Konvertiert Phase Y Hybrid Pipeline Format in Standard-LLM-Format.
+        Konvertiert Hybrid Pipeline Format in Standard-LLM-Format.
         
-        Phase Y gibt:
+        Hybrid Pipeline gibt:
         - wichtigkeit: 1-5 (integer)
         - dringlichkeit: 1-5 (integer)
         - spacy_details: Dict mit Detector-Ergebnissen
@@ -1040,25 +1040,25 @@ class LocalOllamaClient(AIClient):
         
         Phase X: Versucht UrgencyBooster für Trusted Senders vor LLM-Analyse.
         """
-        # Phase Y: Hybrid Pipeline (spaCy NLP + Keywords + SGD Ensemble Learning)
+        # Urgency Booster: Hybrid Pipeline (spaCy NLP + Keywords + SGD Ensemble Learning)
         if sender and user_id and db and user_enabled_booster and account_id:
-            logger.info(f"🔍 Phase Y Hybrid Pipeline: sender={sender[:50]}, account_id={account_id}")
+            logger.info(f"🔍 Urgency Booster Hybrid: sender={sender[:50]}, account_id={account_id}")
             try:
                 from src.services.urgency_booster import get_hybrid_pipeline
-                from src.train_classifier import OnlineLearner
                 
-                # Initialisiere SGD Classifier (falls vorhanden)
+                # Lazy import um circular dependency zu vermeiden
                 try:
+                    from src.train_classifier import OnlineLearner
                     sgd_classifier = OnlineLearner()
                 except Exception as e:
-                    logger.warning(f"⚠️ SGD Classifier konnte nicht geladen werden: {e}")
+                    logger.debug(f"SGD Classifier nicht verfügbar: {e}")
                     sgd_classifier = None
                 
-                # Phase Y Hybrid Pipeline
+                # Hybrid Pipeline mit optionalem SGD Classifier
                 hybrid_pipeline = get_hybrid_pipeline(db, sgd_classifier)
                 
                 if hybrid_pipeline:
-                    logger.info(f"✅ Phase Y Hybrid Pipeline geladen")
+                    logger.info(f"✅ Hybrid Pipeline aktiviert (spaCy + SGD Ensemble)")
                     try:
                         pipeline_result = hybrid_pipeline.analyze(
                             account_id=account_id,
@@ -1079,17 +1079,19 @@ class LocalOllamaClient(AIClient):
                         else:
                             confidence = 0.65  # spaCy-only, solide
                         
-                        logger.info(f"✅ Phase Y Analysis: W={pipeline_result['wichtigkeit']}, D={pipeline_result['dringlichkeit']}, method={pipeline_result['final_method']}, confidence={confidence:.2f}")
+                        logger.info(f"✅ Booster Analyse: W={pipeline_result['wichtigkeit']}, D={pipeline_result['dringlichkeit']}, method={pipeline_result['final_method']}, confidence={confidence:.2f}")
                         
-                        # Convert Phase Y format to standard LLM format
-                        return self._convert_phase_y_to_llm_format(pipeline_result, subject, body, confidence)
+                        # Convert Hybrid format to standard LLM format
+                        result = self._convert_hybrid_to_llm_format(pipeline_result, subject, body, confidence)
+                        result['_used_hybrid_booster'] = True
+                        return result
                         
                     except Exception as e:
-                        logger.warning(f"⚠️ Phase Y Analysis failed: {e}", exc_info=True)
+                        logger.warning(f"⚠️ Hybrid Booster fehlgeschlagen: {e}", exc_info=True)
                         # Fall through to standard LLM analysis
                 else:
                     # Fallback: Alter UrgencyBooster (nur für Trusted Senders)
-                    logger.info(f"⚠️ Phase Y nicht verfügbar, Fallback auf alten UrgencyBooster")
+                    logger.info(f"⚠️ Hybrid Pipeline nicht verfügbar, Fallback auf Legacy Booster")
                     try:
                         from importlib import import_module
                         trusted_senders_module = import_module(".services.trusted_senders", "src")
@@ -1242,6 +1244,21 @@ class OpenAIClient(AIClient):
         self.timeout = int(os.getenv("OPENAI_TIMEOUT", "300"))
         self.max_retries = 3
         self.retry_delay = 2  # Sekunden
+    
+    def _check_temperature_support(self) -> bool:
+        """Prüft dynamisch ob Modell temperature unterstützt via Model Discovery."""
+        try:
+            from src import model_discovery as md04
+            models = md04.get_openai_models()
+            for m in models:
+                if m.get("id") == self.model:
+                    return m.get("supports_temperature", True)  # Default: True
+            # Fallback: Reasoning-Modelle (o1/o3/gpt-5) = False, Rest = True
+            return not self.model.startswith(("o1-", "o3-", "gpt-5"))
+        except Exception as e:
+            logger.warning(f"Temperature-Check fehlgeschlagen: {e}, nutze Fallback")
+            # Fallback: Reasoning-Modelle (o1/o3/gpt-5) = False, Rest = True
+            return not self.model.startswith(("o1-", "o3-", "gpt-5"))
 
     def analyze_email(
         self, subject: str, body: str, language: str = "de", context: Optional[str] = None,
@@ -1379,7 +1396,10 @@ class OpenAIClient(AIClient):
         max_tokens: int = 1000
     ) -> str:
         """Generiert Text mit OpenAI Chat Completions API."""
-        # GPT-5+ verwendet max_completion_tokens statt max_tokens
+        # ✅ DYNAMISCH: Check ob Modell temperature unterstützt via Model Discovery
+        supports_temp = self._check_temperature_support()
+        
+        # GPT-5+ und O1/O3 verwenden max_completion_tokens statt max_tokens
         is_new_model = self.model.startswith(("gpt-5", "o1", "o3"))
         token_param = "max_completion_tokens" if is_new_model else "max_tokens"
         
@@ -1389,9 +1409,12 @@ class OpenAIClient(AIClient):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            token_param: max_tokens,
-            "temperature": 0.7
+            token_param: max_tokens
         }
+        
+        # ✅ Temperature nur wenn Modell das unterstützt
+        if supports_temp:
+            payload["temperature"] = 0.7
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",

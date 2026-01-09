@@ -235,10 +235,16 @@
                         Aktion: {{ email.optimize_kategorie_aktion|replace('_',' ') if email.optimize_kategorie_aktion else email.kategorie_aktion|replace('_',' ') }}
                         {% set final_spam = email.optimize_spam_flag if email.optimize_spam_flag is not none else email.spam_flag %}
                         {% if final_spam %}<span class="badge bg-danger ms-2">🚫 SPAM</span>{% endif %}
+                        {% if email.optimize_confidence and email.optimize_confidence < 0.7 %}
+                        <span class="badge bg-warning text-dark ms-2" title="Niedrige Optimize-Confidence ({{ '%.0f'|format(email.optimize_confidence * 100) }}%) - Optimierung unsicher">⚠️ Opt. unsicher</span>
+                        {% endif %}
                         {% else %}
                         Dringlichkeit: {{ email.dringlichkeit }} | Wichtigkeit: {{ email.wichtigkeit }} |
                         Aktion: {{ email.kategorie_aktion|replace('_',' ') }}
                         {% if email.spam_flag %}<span class="badge bg-danger ms-2">🚫 SPAM</span>{% endif %}
+                        {% if email.ai_confidence and email.ai_confidence < 0.7 %}
+                        <span class="badge bg-warning text-dark ms-2" title="Niedrige AI-Confidence ({{ '%.0f'|format(email.ai_confidence * 100) }}%) - bitte prüfen">⚠️ Unsicher</span>
+                        {% endif %}
                         {% endif %}
                     </div>
                     {% if email.email_tags %}

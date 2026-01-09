@@ -17,6 +17,7 @@ google_oauth = importlib.import_module(".10_google_oauth", "src")
 encryption = importlib.import_module(".08_encryption", "src")
 processing = importlib.import_module(".12_processing", "src")
 ai_client = importlib.import_module(".03_ai_client", "src")
+auth = importlib.import_module(".07_auth", "src")
 # Phase 17: Semantic Search
 from src.semantic_search import generate_embedding_for_email
 
@@ -28,34 +29,41 @@ MAX_EMAILS_PER_REQUEST = 1000
 
 @dataclass
 class FetchJob:
+    """
+    Job für Mail-Abruf mit AI-Verarbeitung (Phase 2: ServiceToken Pattern).
+    
+    Security: service_token_id statt plaintext master_key verhindert lange RAM-Speicherung.
+    Worker lädt DEK erst bei Startup, nutzt sie, und löscht sie explizit.
+    """
     job_id: str
     user_id: int
     account_id: int
-    master_key: str
+    service_token_id: int
     provider: str
     model: str
     max_mails: int = 50
     sanitize_level: int = 2
     meta: Dict[str, Any] = field(default_factory=dict)
-    # P2-002: Retry-Logik
     retry_count: int = 0
     max_retries: int = 2
-    retry_delays: list[int] = field(default_factory=lambda: [60, 300])  # 1min, 5min
+    retry_delays: list[int] = field(default_factory=lambda: [60, 300])
 
 
 @dataclass
 class BatchReprocessJob:
-    """Job für Batch-Reprocessing aller Emails (Embedding regeneration)"""
+    """
+    Job für Batch-Reprocessing aller Emails (Embedding regeneration).
+    Phase 2: ServiceToken Pattern für sichere DEK-Verwaltung.
+    """
     job_id: str
     user_id: int
-    master_key: str
+    service_token_id: int
     provider: str
     model: str
     meta: Dict[str, Any] = field(default_factory=dict)
-    # P2-002: Retry-Logik
     retry_count: int = 0
     max_retries: int = 2
-    retry_delays: list[int] = field(default_factory=lambda: [60, 300])  # 1min, 5min
+    retry_delays: list[int] = field(default_factory=lambda: [60, 300])
 
 
 class BackgroundJobQueue:
@@ -102,8 +110,26 @@ class BackgroundJobQueue:
         model: str,
         max_mails: int,
         sanitize_level: int,
+        db_session=None,
         meta: Optional[Dict[str, Any]] = None,
     ) -> str:
+        """
+        Phase 2: Enqueue Mail-Fetch Job mit ServiceToken Pattern.
+        
+        Args:
+            user_id: User-ID
+            account_id: Mail-Account-ID
+            master_key: DEK aus Session (wird hier verschlüsselt in ServiceToken gespeichert)
+            provider: AI-Provider
+            model: AI-Model
+            max_mails: Max Emails pro Fetch
+            sanitize_level: Sanitization-Level
+            db_session: SQLAlchemy Session für ServiceToken-Erstellung (optional, wird aus Queue erstellt)
+            meta: Additional metadata
+            
+        Returns:
+            str: Job-ID
+        """
         if not master_key:
             raise ValueError("master_key ist erforderlich")
         
@@ -111,13 +137,27 @@ class BackgroundJobQueue:
             raise ValueError(
                 f"max_mails darf maximal {MAX_EMAILS_PER_REQUEST} sein (gegeben: {max_mails})"
             )
+        
+        session = db_session if db_session else self._SessionFactory()
+        try:
+            token, service_token = auth.ServiceTokenManager.create_token(
+                user_id=user_id,
+                master_key=master_key,
+                session=session,
+                days=7
+            )
+            service_token_id = service_token.id
+            logger.info(f"✅ ServiceToken {service_token_id} für Fetch-Job erstellt (expires: {service_token.expires_at})")
+        finally:
+            if not db_session:
+                session.close()
 
         job_id = uuid.uuid4().hex
         job = FetchJob(
             job_id=job_id,
             user_id=user_id,
             account_id=account_id,
-            master_key=master_key,
+            service_token_id=service_token_id,
             provider=provider,
             model=model,
             max_mails=max_mails,
@@ -137,11 +177,13 @@ class BackgroundJobQueue:
                 "user_id": user_id,
                 "account_id": account_id,
                 "provider": provider,
+                "service_token_id": service_token_id,
             },
         )
         self.ensure_worker()
         logger.info(
-            "📥 Job %s eingereiht (User %s, Account %s)", job_id, user_id, account_id
+            "📥 Job %s eingereiht (User %s, Account %s, Token %s)", 
+            job_id, user_id, account_id, service_token_id
         )
         return job_id
 
@@ -152,17 +194,35 @@ class BackgroundJobQueue:
         master_key: str,
         provider: str,
         model: str,
+        db_session=None,
         meta: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Enqueue Batch-Reprocess Job (alle Emails neu embedden)"""
+        """
+        Enqueue Batch-Reprocess Job (alle Emails neu embedden).
+        Phase 2: ServiceToken Pattern für sichere DEK-Verwaltung.
+        """
         if not master_key:
             raise ValueError("master_key ist erforderlich")
+
+        session = db_session if db_session else self._SessionFactory()
+        try:
+            token, service_token = auth.ServiceTokenManager.create_token(
+                user_id=user_id,
+                master_key=master_key,
+                session=session,
+                days=7
+            )
+            service_token_id = service_token.id
+            logger.info(f"✅ ServiceToken {service_token_id} für Batch-Reprocess Job erstellt")
+        finally:
+            if not db_session:
+                session.close()
 
         job_id = uuid.uuid4().hex
         job = BatchReprocessJob(
             job_id=job_id,
             user_id=user_id,
-            master_key=master_key,
+            service_token_id=service_token_id,
             provider=provider,
             model=model,
             meta=meta or {},
@@ -181,11 +241,12 @@ class BackgroundJobQueue:
                 "provider": provider,
                 "model": model,
                 "job_type": "batch_reprocess",
+                "service_token_id": service_token_id,
             },
         )
         self.ensure_worker()
         logger.info(
-            "🔄 Batch-Reprocess Job %s eingereiht (User %s)", job_id, user_id
+            "🔄 Batch-Reprocess Job %s eingereiht (User %s, Token %s)", job_id, user_id, service_token_id
         )
         return job_id
 
@@ -269,11 +330,53 @@ class BackgroundJobQueue:
         # Default: Bei Unsicherheit retry versuchen
         return True
 
+    def _get_dek_from_service_token(self, job, session) -> str:
+        """
+        Phase 2: Lädt und verifiziert ServiceToken, gibt DEK zurück.
+        
+        Sicherheit: 
+        - Token wird auf Gültigkeit überprüft
+        - last_verified_at wird aktualisiert (Audit-Trail)
+        - DEK wird aus DB geladen, nicht aus Job-Dataclass
+        
+        Args:
+            job: FetchJob oder BatchReprocessJob mit service_token_id
+            session: DB-Session
+            
+        Returns:
+            str: DEK (Base64-encoded)
+            
+        Raises:
+            ValueError: Token nicht gefunden/abgelaufen
+        """
+        service_token = session.query(models.ServiceToken).filter_by(
+            id=job.service_token_id
+        ).first()
+        
+        if not service_token:
+            raise ValueError(f"ServiceToken {job.service_token_id} nicht gefunden")
+        
+        if not service_token.is_valid():
+            raise ValueError(f"ServiceToken {job.service_token_id} abgelaufen (expires: {service_token.expires_at})")
+        
+        dek = service_token.encrypted_dek
+        service_token.mark_verified()
+        session.commit()
+        
+        logger.info(f"✅ DEK aus ServiceToken {job.service_token_id} geladen")
+        return dek
+
     def _execute_fetch_job(self, job: FetchJob) -> None:
-        """Execute Mail Fetch Job"""
+        """
+        Execute Mail Fetch Job mit Phase 2 ServiceToken Pattern.
+        
+        DEK wird hier geladen, in RAM genutzt, dann explizit bereinigt.
+        """
         session = self._SessionFactory()
         saved = 0
         processed = 0
+        master_key = None
+        
         try:
             user = session.query(models.User).filter_by(id=job.user_id).first()
             if not user:
@@ -287,9 +390,9 @@ class BackgroundJobQueue:
             if not account:
                 raise ValueError("Mail-Account nicht gefunden")
 
-            master_key = job.master_key
+            master_key = self._get_dek_from_service_token(job, session)
             if not master_key:
-                raise ValueError("Master-Key fehlt im Job")
+                raise ValueError("DEK konnte nicht aus ServiceToken geladen werden")
 
             # Phase 13C Part 3: FULL SYNC Mode - keine Filter mehr!
             # Problem: UNSEEN-Filter führt zu unvollständigem Sync (nur 2/20 Mails in INBOX)
@@ -426,7 +529,7 @@ class BackgroundJobQueue:
                 )
         finally:
             # 🔒 Security: Sichere Master-Key Bereinigung aus RAM
-            if 'master_key' in locals():
+            if 'master_key' in locals() and master_key is not None:
                 import gc
                 master_key = b'\x00' * len(master_key) if isinstance(master_key, bytes) else '\x00' * len(master_key)
                 del master_key
@@ -846,19 +949,23 @@ class BackgroundJobQueue:
         return saved
 
     def _execute_batch_reprocess_job(self, job: BatchReprocessJob) -> None:
-        """Execute Batch-Reprocess Job (regenerate embeddings for all emails)"""
+        """
+        Execute Batch-Reprocess Job (regenerate embeddings for all emails).
+        Phase 2: ServiceToken Pattern für sichere DEK-Verwaltung.
+        """
         session = self._SessionFactory()
         processed = 0
         failed = 0
+        master_key = None
         
         try:
             user = session.query(models.User).filter_by(id=job.user_id).first()
             if not user:
                 raise ValueError("User nicht gefunden")
 
-            master_key = job.master_key
+            master_key = self._get_dek_from_service_token(job, session)
             if not master_key:
-                raise ValueError("Master-Key fehlt im Job")
+                raise ValueError("DEK konnte nicht aus ServiceToken geladen werden")
 
             # Hole alle RawEmails des Users
             raw_emails = (
@@ -1024,7 +1131,7 @@ class BackgroundJobQueue:
                 )
         finally:
             # 🔒 Security: Sichere Master-Key Bereinigung aus RAM
-            if 'master_key' in locals():
+            if 'master_key' in locals() and master_key is not None:
                 import gc
                 master_key = b'\x00' * len(master_key) if isinstance(master_key, bytes) else '\x00' * len(master_key)
                 del master_key

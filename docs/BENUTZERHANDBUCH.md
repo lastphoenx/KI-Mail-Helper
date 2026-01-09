@@ -1,7 +1,7 @@
 # 📧 KI-Mail-Helper – Benutzerhandbuch
 
-**Version:** 1.2.0  
-**Stand:** 8. Januar 2026
+**Version:** 1.3.0  
+**Stand:** 20. Januar 2026
 
 ---
 
@@ -26,7 +26,8 @@
    - 5.4 Email optimieren / neu verarbeiten
    - 5.5 IMAP-Aktionen
    - 5.6 Antwort generieren und senden
-   - 5.7 Ähnliche Emails finden
+   - 5.7 Anonymisierte Version ansehen
+   - 5.8 Ähnliche Emails finden
 6. [Tag-Verwaltung](#6-tag-verwaltung)
    - 6.1 Tags erstellen
    - 6.2 Tags bearbeiten und löschen
@@ -45,12 +46,13 @@
    - 8.3 Merge-Logik verstehen
    - 8.4 Preview-Funktion
 9. [KI-Priorisierung](#9-ki-priorisierung)
-   - 9.1 Was ist Phase Y?
-   - 9.2 VIP-Absender konfigurieren
-   - 9.3 Keywords anpassen
-   - 9.4 Scoring-Gewichte
-   - 9.5 User-Domains (Intern/Extern)
-   - 9.6 Ensemble Learning
+   - 9.1 Was ist KI-Priorisierung?
+   - 9.2 Email-Anonymisierung (DSGVO-konform)
+   - 9.3 VIP-Absender konfigurieren
+   - 9.4 Keywords anpassen
+   - 9.5 Scoring-Gewichte
+   - 9.6 User-Domains (Intern/Extern)
+   - 9.7 Ensemble Learning
 10. [IMAP-Diagnostics](#10-imap-diagnostics)
 11. [Einstellungen](#11-einstellungen)
    - 11.1 Mail-Accounts verwalten
@@ -74,7 +76,9 @@ KI-Mail-Helper ist ein selbst-gehosteter Email-Organizer, der künstliche Intell
 |---------|--------------|
 | **🎯 3×3 Prioritäts-Matrix** | Automatische Bewertung nach Dringlichkeit × Wichtigkeit |
 | **🧠 KI-Priorisierung** | spaCy NLP (80%) + Keywords (20%) + Ensemble Learning |
-| **🔍 Semantische Suche** | Finde Emails nach Bedeutung, nicht nur Keywords |
+| **�️ Email-Anonymisierung** | spaCy PII-Entfernung vor Cloud-AI (DSGVO-konform) |
+| **📊 Confidence Tracking** | Transparenz über AI-Analyse-Qualität |
+| **�🔍 Semantische Suche** | Finde Emails nach Bedeutung, nicht nur Keywords |
 | **✉️ KI-Antworten + Versand** | Generierte Antwort-Entwürfe direkt per SMTP senden |
 | **⚡ Auto-Rules Engine** | Automatische Aktionen basierend auf Regeln |
 | **🏷️ Intelligente Tags** | KI schlägt Tags vor, lernt aus deinem Verhalten |
@@ -441,7 +445,50 @@ Du kannst Emails direkt auf dem IMAP-Server bearbeiten:
 
 > 💡 **SMTP-Versand:** Wenn SMTP konfiguriert ist (siehe Einstellungen), kannst du Antworten **direkt aus der App senden**. Die Email landet korrekt im Thread (In-Reply-To Header) und wird auch im Sent-Ordner gespeichert.
 
-### 5.7 Ähnliche Emails finden
+### 5.7 Anonymisierte Version ansehen
+
+> **🆕 Feature seit Version 1.3.0**
+
+Wenn du **Email-Anonymisierung** aktiviert hast (siehe [Abschnitt 9.2](#92-email-anonymisierung-dsgvo-konform)), findest du in der Email-Detail-Ansicht einen neuen Tab:
+
+**Tab-Leiste:**
+- 🖼️ **Gerendert** (HTML-Ansicht)
+- 📄 **Rohtext** (Plain Text)
+- 🛡️ **Anonymisiert** (33 Entities erkannt, Level 3)
+
+**Anonymisierte Ansicht:**
+
+Der Tab zeigt die **bereinigte Version**, die an die Cloud-AI übertragen wurde. Alle personenbezogenen Daten wurden durch Platzhalter ersetzt:
+
+**Beispiel:**
+```
+Original:
+"Hallo Hans Müller, vielen Dank für Ihre Nachricht. 
+Bitte rufen Sie uns unter 044 123 45 67 an oder 
+schreiben Sie an kontakt@firma.ch."
+
+Anonymisiert (Level 3 Full):
+"Hallo [PERSON_1], vielen Dank für Ihre Nachricht.
+Bitte rufen Sie uns unter [PHONE_1] an oder
+schreiben Sie an [EMAIL_1]."
+```
+
+**Anzeige-Informationen:**
+
+| Element | Beschreibung |
+|---------|--------------|
+| **Entity-Count** | Anzahl erkannter Entities (z.B. "33 Entities") |
+| **Level** | Sanitization-Level (1-3: Regex, Light, Full) |
+| **Iframe** | Sichere HTML-Darstellung (kein Script-Ausführung) |
+
+**Nutzen:**
+- **Transparenz:** Sehe, welche Daten an Cloud-AI gehen
+- **Kontrolle:** Prüfe, ob sensible Infos entfernt wurden
+- **DSGVO:** Dokumentiere PII-Entfernung für Compliance
+
+> 💡 **Tipp:** Bei unerwarteten Ergebnissen (zu viel/wenig Anonymisierung) kannst du das Level in `/whitelist` anpassen.
+
+### 5.8 Ähnliche Emails finden
 
 > **📸 Screenshot:** "Ähnliche Emails" Card in der Detailansicht  
 > *Zeige: Liste mit 3-5 ähnlichen Emails, Similarity-Score*
@@ -831,13 +878,13 @@ Technischer Support
 
 ## 9. KI-Priorisierung
 
-> **🎯 Phase Y:** Hybrid Pipeline mit spaCy NLP + Ensemble Learning
+> **🎯 Hybrid Pipeline mit spaCy NLP + Ensemble Learning**
 
 Die KI-Priorisierung nutzt eine hochentwickelte **Hybrid-Pipeline**, die deutsche Emails mit **80% NLP (spaCy)** und **20% strategischen Keywords** analysiert. Das System lernt aus deinen Korrekturen durch **Ensemble Learning** und passt sich an deinen Workflow an.
 
-### 9.1 Was ist Phase Y?
+### 9.1 Was ist KI-Priorisierung?
 
-**Phase Y = spaCy Hybrid Pipeline** kombiniert:
+**KI-Priorisierung = spaCy Hybrid Pipeline** kombiniert:
 - **7 NLP-Detektoren** für linguistische Analyse
 - **12 Keyword-Sets** mit 80 strategischen Begriffen
 - **Ensemble Learning** (spaCy + SGD Regression) mit dynamischen Gewichten
@@ -845,12 +892,75 @@ Die KI-Priorisierung nutzt eine hochentwickelte **Hybrid-Pipeline**, die deutsch
 
 **Zugriff:** Klicke auf **🎯 KI-Priorisierung** in der Navigation
 
-> **📸 Screenshot:** Phase Y Konfigurations-Interface  
+> **📸 Screenshot:** KI-Priorisierung Konfigurations-Interface  
 > *Zeige: 4 Tabs (VIP, Keywords, Scoring, Domains) mit Account-Selector*
 
 ![KI-Priorisierung](images/screenshots/phase-y-config.png)
 
-### 9.2 VIP-Absender konfigurieren
+### 9.2 Email-Anonymisierung (DSGVO-konform)
+
+> **Neue Feature seit Version 1.3.0**
+
+Wenn du Cloud-AI-Provider (OpenAI, Anthropic, Mistral) nutzt, werden personenbezogene Daten (PII) übertragen. Mit der **Email-Anonymisierung** kannst du diese Daten vor der Übertragung automatisch entfernen.
+
+**Wie funktioniert es?**
+
+Das System nutzt **spaCy Named Entity Recognition (NER)** mit dem deutschen Modell `de_core_news_sm`, um personenbezogene Informationen zu erkennen und zu ersetzen:
+
+- **Personen** (PER): `Hans Müller` → `[PERSON_1]`
+- **Organisationen** (ORG): `Microsoft GmbH` → `[ORG_1]`
+- **Orte** (LOC): `Berlin` → `[LOC_1]`
+- **Emails/Telefon** (Regex): `hans@test.de` → `[EMAIL_1]`
+
+**Sanitization-Levels:**
+
+| Level | Beschreibung | Entfernt |
+|-------|--------------|----------|
+| 🔹 **Regex** | Schnell (ohne spaCy) | Emails, Telefonnummern, URLs |
+| 🔸 **Light** | spaCy NER Basis | Regex + PER (Personen) |
+| 🔺 **Full** | spaCy NER Komplett | Regex + PER + ORG + LOC |
+
+**Aktivierung:**
+
+1. Gehe zu **📬 Absender & Abruf** (`/whitelist`)
+2. Wähle deinen Account
+3. Aktiviere **"🛡️ Mit Spacy anonymisieren"**
+4. Wähle Sanitization-Level (empfohlen: **Full**)
+5. Speichern
+
+**Hierarchische Analyse-Modi:**
+
+Das System wählt automatisch den passenden Modus basierend auf deinen Einstellungen:
+
+| Modus | Beschreibung | Badge |
+|-------|--------------|-------|
+| **spacy_booster** | UrgencyBooster auf Original-Daten (lokal, kein LLM) | ⚡ Spacy Booster |
+| **llm_anon** | LLM-Analyse auf anonymisierten Daten (Privacy) | 🤖 AI-Anon (Provider) |
+| **llm_original** | LLM-Analyse auf Original-Daten (beste Qualität) | 🤖 AI-Orig (Provider) |
+| **none** | Nur Embeddings, keine Bewertung | ❌ Keine AI |
+
+**Beispiel-Kombination:**
+- ✅ AI-Analyse AN + 🛡️ Anonymisierung AN = **llm_anon** (Cloud-AI mit Privacy)
+- ✅ AI-Analyse AN + 🛡️ Anonymisierung AUS + ⚡ Booster AN = **spacy_booster** (lokal, schnell)
+
+**Anonymisierte Version ansehen:**
+
+Nach der Anonymisierung findest du in der Email-Detail-Ansicht einen neuen Tab:
+
+- **🛡️ Anonymisiert** (33 Entities erkannt, Level 3)
+
+Hier siehst du, wie die Email an die Cloud-AI übertragen wurde.
+
+> 💡 **Tipp:** Anonymisierung + Cloud-AI ist ideal für sensible Business-Emails. UrgencyBooster (lokal) ist besser für Newsletter/Marketing.
+
+**Performance:**
+- Erste Analyse: ~1200ms (Modell-Loading)
+- Folgende Emails: ~10-15ms pro Email
+- Modell wird nur bei Bedarf geladen (kein Startup-Overhead)
+
+> ⚠️ **Wichtig:** Anonymisierung ist unabhängig vom UrgencyBooster. Du kannst beide gleichzeitig aktivieren – das System wählt den passenden Modus automatisch.
+
+### 9.3 VIP-Absender konfigurieren
 
 > **Tab 1: VIP-Absender**
 
@@ -881,7 +991,7 @@ Notiz: CEO – immer vorrangig behandeln
 
 > 💡 **Tipp:** VIP-Status gilt nur für den ausgewählten Account. Für multi-account VIPs: Mehrfach hinzufügen.
 
-### 9.3 Keywords anpassen
+### 9.4 Keywords anpassen
 
 > **Tab 2: Keywords**
 
@@ -918,7 +1028,7 @@ Angepasst: asap, dringend, sofort, eilig, heute noch, morgen früh
 
 > ⚠️ **Achtung:** Keywords sind **account-spezifisch**. Änderungen gelten nur für den aktuellen Account.
 
-### 9.4 Scoring-Gewichte
+### 9.5 Scoring-Gewichte
 
 > **Tab 3: Scoring**
 
@@ -1106,7 +1216,35 @@ Klicke auf einen Ordner, um Details zu sehen:
 | **Server** | IMAP-Server-Adresse |
 | **Port** | IMAP-Port (Standard: 993) |
 | **Benutzer** | Email-Adresse des Accounts |
-| **Status** | Aktiv (grün) oder Inaktiv (grau) |
+| **Status** | Aktiv (grün) oder Inaktiv (grau) + **Status-Badges** |
+
+**Neue Status-Badges (Version 1.3.0):**
+
+Die Einstellungen zeigen jetzt für jeden Account **Status-Badges**, die die aktuellen Analyse-Einstellungen anzeigen:
+
+| Badge | Bedeutung | Konfiguration |
+|-------|-----------|---------------|
+| 🛡️ **Anon** | Anonymisierung aktiv (PII-Entfernung vor Cloud-AI) | `/whitelist` → "Mit Spacy anonymisieren" |
+| ⚡ **Booster** | UrgencyBooster aktiv (spaCy NLP auf Original) | `/whitelist` → "UrgencyBooster aktivieren" |
+| 🤖 **AI-Anon (Provider)** | LLM-Analyse auf anonymisierten Daten | Automatisch wenn Anon + AI AN |
+| 🤖 **AI-Orig (Provider)** | LLM-Analyse auf Original-Daten | Automatisch wenn AI AN, Anon AUS |
+| ❌ **Keine AI** | Nur Embeddings, keine Bewertung | AI-Analyse AUS |
+
+**Beispiel-Kombinationen:**
+
+| Einstellungen | Effekt | Badge |
+|---------------|--------|-------|
+| ✅ AI AN + 🛡️ Anon AN + ⚡ Booster AUS | LLM auf anonymisierten Daten (Privacy) | 🛡️ Anon, 🤖 AI-Anon (claude-3-5-sonnet) |
+| ✅ AI AN + 🛡️ Anon AUS + ⚡ Booster AN | spaCy Booster auf Original (lokal, schnell) | ⚡ Booster |
+| ✅ AI AN + 🛡️ Anon AUS + ⚡ Booster AUS | LLM auf Original (beste Qualität) | 🤖 AI-Orig (claude-3-5-sonnet) |
+| ❌ AI AUS | Nur Embeddings (manuelles Tagging) | ❌ Keine AI |
+
+> 💡 **Tipp:** Klicke auf die Badges, um direkt zur `/whitelist`-Konfiguration zu gelangen!
+
+> 💡 **Anwendungsfall:**
+> - **Business (sensibel):** 🛡️ Anon + 🤖 AI-Anon → Keine PII an Cloud
+> - **Newsletter:** ❌ Keine AI → Manuelles Tagging für besseres ML-Learning
+> - **VIP-Accounts:** ⚡ Booster → Schnelle Analyse für Trusted Senders
 
 > 💡 **Tipp:** Die **Account-ID** brauchst du für:
 > - CLI-Befehle (`scripts/list_accounts.py`)

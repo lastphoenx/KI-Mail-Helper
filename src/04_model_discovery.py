@@ -88,6 +88,7 @@ def get_ollama_models() -> List[Dict[str, Any]]:
                 "size_bytes": m.get("size", 0),
                 "parameter_size": param_size,
                 "modified_at": m.get("modified_at", ""),
+                "supports_temperature": True,  # ✅ Ollama unterstützt immer temperature
             })
         
         # Sortieren: Embedding zuerst, dann nach Größe
@@ -230,6 +231,7 @@ def get_anthropic_models() -> List[Dict[str, Any]]:
                 "type": "chat",  # Alle Anthropic-Modelle sind Chat
                 "tier": tier,  # "haiku", "sonnet", "opus"
                 "created_at": m.get("created_at", ""),
+                "supports_temperature": True,  # ✅ Anthropic unterstützt immer temperature
             })
         
         # Sortieren: Haiku → Sonnet → Opus (günstig → teuer)
@@ -261,9 +263,9 @@ def _anthropic_fallback() -> List[Dict[str, Any]]:
     """Minimaler Fallback falls API nicht erreichbar."""
     return [
         {"id": "claude-haiku-4-5-20251001", "name": "claude-haiku-4-5-20251001", 
-         "display_name": "Claude Haiku 4.5", "type": "chat", "tier": "haiku"},
+         "display_name": "Claude Haiku 4.5", "type": "chat", "tier": "haiku", "supports_temperature": True},
         {"id": "claude-sonnet-4-5-20250929", "name": "claude-sonnet-4-5-20250929",
-         "display_name": "Claude Sonnet 4.5", "type": "chat", "tier": "sonnet"},
+         "display_name": "Claude Sonnet 4.5", "type": "chat", "tier": "sonnet", "supports_temperature": True},
     ]
 
 
@@ -310,6 +312,9 @@ def get_openai_models() -> List[Dict[str, Any]]:
             if model_type not in ("chat", "embedding"):
                 continue
             
+            # ✅ Reasoning-Modelle (o1/o3/gpt-5) unterstützen KEINE custom temperature
+            supports_temperature = not model_id.startswith(("o1-", "o3-", "gpt-5"))
+            
             models.append({
                 "id": model_id,
                 "name": model_id,
@@ -317,6 +322,7 @@ def get_openai_models() -> List[Dict[str, Any]]:
                 "type": model_type,
                 "owned_by": m.get("owned_by", ""),
                 "created": m.get("created", 0),
+                "supports_temperature": supports_temperature,
             })
         
         # Sortieren: Neueste zuerst, innerhalb nach Typ
@@ -378,9 +384,11 @@ def _openai_fallback() -> List[Dict[str, Any]]:
     """Minimaler Fallback falls API nicht erreichbar."""
     return [
         {"id": "gpt-4o-mini", "name": "gpt-4o-mini", 
-         "display_name": "GPT-4o Mini", "type": "chat"},
+         "display_name": "GPT-4o Mini", "type": "chat", "supports_temperature": True},
         {"id": "gpt-4o", "name": "gpt-4o",
-         "display_name": "GPT-4o", "type": "chat"},
+         "display_name": "GPT-4o", "type": "chat", "supports_temperature": True},
+        {"id": "o1-mini", "name": "o1-mini",
+         "display_name": "O1 Mini", "type": "chat", "supports_temperature": False},
     ]
 
 

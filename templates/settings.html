@@ -55,6 +55,16 @@
                         <div class="col-12">
                             <h6 class="border-bottom pb-2 mt-3">⚡ Base-Model (Schnelle Klassifikation)</h6>
                             <p class="small text-muted mb-3">Erste Analyse mit schnellem Chat-Modell</p>
+                            
+                            <!-- Phase Y1: Warnung Base-Model -->
+                            <div class="alert alert-info mb-3">
+                                ℹ️ <strong>Wichtig:</strong> Das Base-Modell wird verwendet für:
+                                <ul class="mb-0 mt-2 small">
+                                    <li>✅ Manuelle "Pass neu" Analysen (Email-Details)</li>
+                                    <li>✅ Fetch-Analysen (wenn Urgency Booster AUS)</li>
+                                    <li>❌ <strong>NICHT</strong> bei aktivem Urgency Booster (nutzt Spacy statt LLM)</li>
+                                </ul>
+                            </div>
                         </div>
                         <div class="col-md-6">
                             <label for="aiProviderSelectBase" class="form-label">Provider</label>
@@ -316,16 +326,34 @@
                 </div>
             </div>
 
-            <!-- Whitelist Link Card -->
-            <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#064e3b,#022c22);color:#f8fafc;">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <p class="text-uppercase small mb-1 opacity-75">⚡ Performance & Sicherheit</p>
-                            <h4 class="mb-2">🛡️ Whitelist & UrgencyBooster</h4>
-                            <p class="mb-0">Vertrauenswürdige Absender verwalten für schnellere Analyse</p>
+            <!-- AI & Trusted Senders Cards -->
+            <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <div class="card border-0 shadow-sm h-100" style="background:linear-gradient(135deg,#1e293b,#0f172a);color:#f8fafc;">
+                        <div class="card-body">
+                            <div class="d-flex flex-column h-100">
+                                <div class="flex-grow-1">
+                                    <p class="text-uppercase small mb-1 opacity-75">🤖 AI-Steuerung</p>
+                                    <h5 class="mb-2">AI beim Mail-Abruf</h5>
+                                    <p class="mb-0 small">Analyse-Modi, Anonymisierung & Booster konfigurieren</p>
+                                </div>
+                                <a href="/mail-fetch-config" class="btn btn-light mt-3">Konfigurieren →</a>
+                            </div>
                         </div>
-                        <a href="/whitelist" class="btn btn-light btn-lg">Whitelist öffnen →</a>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card border-0 shadow-sm h-100" style="background:linear-gradient(135deg,#064e3b,#022c22);color:#f8fafc;">
+                        <div class="card-body">
+                            <div class="d-flex flex-column h-100">
+                                <div class="flex-grow-1">
+                                    <p class="text-uppercase small mb-1 opacity-75">📬 VIP-Management</p>
+                                    <h5 class="mb-2">Trusted Senders</h5>
+                                    <p class="mb-0 small">Vertrauenswürdige Absender für automatische VIP-Behandlung</p>
+                                </div>
+                                <a href="/whitelist" class="btn btn-light mt-3">Verwalten →</a>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -371,16 +399,36 @@
                             </td>
                             <td>
                                 <div class="d-flex flex-column gap-1">
-                                    <div class="d-flex align-items-center gap-1">
-                                        <span class="badge {% if account.enable_ai_analysis_on_fetch %}bg-success{% else %}bg-secondary{% endif %}" style="font-size: 0.75rem;">
-                                            {% if account.enable_ai_analysis_on_fetch %}✅{% else %}⭕{% endif %} AI
+                                    <div class="d-flex align-items-center gap-1 flex-wrap">
+                                        <!-- Phase 22: Anonymisierung Badge -->
+                                        {% if account.anonymize_with_spacy %}
+                                        <span class="badge bg-info" style="font-size: 0.75rem;" title="Emails werden anonymisiert (PII-Schutz)">
+                                            🛡️ Anon
                                         </span>
-                                        <span class="badge {% if account.urgency_booster_enabled %}bg-success{% else %}bg-secondary{% endif %}" style="font-size: 0.75rem;">
-                                            {% if account.urgency_booster_enabled %}✅{% else %}⭕{% endif %} Booster
+                                        {% endif %}
+                                        
+                                        <!-- Effective AI Mode Badge -->
+                                        {% set mode = account.effective_ai_mode %}
+                                        {% if mode == "spacy_booster" %}
+                                        <span class="badge bg-warning text-dark" style="font-size: 0.75rem;" title="Urgency Booster (Spacy NER auf Original)">
+                                            ⚡ Booster
                                         </span>
+                                        {% elif mode == "llm_anon" %}
+                                        <span class="badge bg-primary" style="font-size: 0.75rem;" title="LLM auf anonymisierten Daten">
+                                            🤖 AI-Anon
+                                        </span>
+                                        {% elif mode == "llm_original" %}
+                                        <span class="badge bg-success" style="font-size: 0.75rem;" title="LLM auf Original-Daten">
+                                            🤖 AI-Orig
+                                        </span>
+                                        {% elif mode == "none" %}
+                                        <span class="badge bg-secondary" style="font-size: 0.75rem;" title="Keine AI-Analyse">
+                                            ❌ Keine AI
+                                        </span>
+                                        {% endif %}
                                     </div>
                                     <small class="text-muted" style="font-size: 0.7rem;">
-                                        <a href="/whitelist" class="text-decoration-none">→ Ändern</a>
+                                        <a href="/mail-fetch-config" class="text-decoration-none">→ Ändern</a>
                                     </small>
                                 </div>
                             </td>

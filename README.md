@@ -12,6 +12,8 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **3×3 Prioritäts-Matrix** – Dringlichkeit × Wichtigkeit mit Farbcodierung + Account-Filter
 - **KI-gestützte Priorisierung** – spaCy NLP (80%) + Keywords (20%) + Ensemble Learning
 - **Multi-Provider AI** – Lokale Modelle (Ollama) oder Cloud (Claude, OpenAI, Mistral)
+- **Email-Anonymisierung** – spaCy PII-Entfernung (DSGVO-konform) vor Cloud-AI-Übertragung
+- **Confidence Tracking** – Transparenz über AI-Analyse-Qualität (0.65-0.9 für Hybrid Booster)
 - **Online-Learning System** – SGD-Classifier lernt aus User-Korrekturen (4 Classifier: D/W/Spam/Kategorie)
 - **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (14 Bedingungen)
 - **Customizable Reply Styles** – Anrede, Grussformel, Signatur & Instructions pro Stil + Account-spezifisch
@@ -31,10 +33,10 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## Status
 
-**Version:** 1.2.0  
-**Development:** Aktiv (Phase Y - KI-Priorisierung abgeschlossen)  
+**Version:** 1.3.0  
+**Development:** Aktiv (Email-Anonymisierung & Confidence Tracking abgeschlossen)  
 **Stability:** Production-ready für Single-User-Deployment  
-**Next:** Phase Y4 - Benchmarks & Performance Testing
+**Next:** Benchmarks & Performance Testing
 
 **Abgeschlossene Phasen:**
 - ✅ Phase 0-12: Core System, Zero-Knowledge, Production Hardening
@@ -53,6 +55,8 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ Phase X.2: Dedizierte Whitelist-Seite (/whitelist)
 - ✅ Phase X.3: Account-Level AI-Fetch-Control (enable_ai_analysis_on_fetch)
 - ✅ Phase Y: KI-gestützte Priorisierung (spaCy NLP + Ensemble Learning)
+- ✅ Phase 22: Email-Anonymisierung mit spaCy (DSGVO-konform)
+- ✅ Confidence Tracking: ai_confidence & optimize_confidence
 
 ---
 
@@ -68,6 +72,8 @@ Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher
 
 **Aktuelle Features (Stand Januar 2026):**
 - 🎯 **KI-Priorisierung:** spaCy NLP (80%) + Keywords (20%) + Ensemble Learning mit SGD
+- 🛡️ **Email-Anonymisierung:** spaCy PII-Entfernung (3 Levels: Regex, Light, Full) vor Cloud-AI-Übertragung
+- 📊 **Confidence Tracking:** Transparenz über AI-Analyse-Qualität mit ai_confidence/optimize_confidence
 - 🤖 **Core System:** Zero-Knowledge Encryption, 3×3 Prioritäts-Matrix, Multi-Provider AI
 - 🧠 **Online-Learning:** SGD-Classifier mit inkrementellem Training aus User-Korrekturen (D/W/Spam/Kategorie)
 - 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
@@ -90,6 +96,8 @@ This repository was created with multiple AI systems. So far, the codebase has b
 
 **Current Features (January 2026):**
 - 🎯 **AI Prioritization:** spaCy NLP (80%) + Keywords (20%) + Ensemble Learning with SGD
+- 🛡️ **Email Anonymization:** spaCy PII removal (3 levels: Regex, Light, Full) before Cloud-AI transmission
+- 📊 **Confidence Tracking:** Transparency in AI analysis quality with ai_confidence/optimize_confidence
 - 🤖 **Core System:** Zero-Knowledge Encryption, 3×3 Priority Matrix, Multi-Provider AI
 - 🧠 **Online-Learning:** SGD classifiers with incremental training from user corrections (D/W/Spam/Category)
 - 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
@@ -198,9 +206,26 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
     - KI-Integration: `ai_suggested_tag` mit Confidence-Threshold
     - 4 Templates: Newsletter-Archiv, Spam-Filter, Important-Sender, Attachment-Archive
 - **📬 Account-Level AI-Fetch-Control (Phase X.3)** – Granulare Steuerung der AI-Analyse pro Account
-  - **2 unabhängige Toggles pro Account:**
+  - **3 unabhängige Toggles pro Account:**
     - ✅ **AI-Analyse beim Abruf**: LLM-Analyse (Dringlichkeit/Wichtigkeit/Kategorie/Summary/Tags)
     - ✅ **UrgencyBooster (spaCy)**: Schnelle Entity-basierte Analyse für Trusted Senders (100-300ms)
+    - 🛡️ **Mit Spacy anonymisieren**: PII-Entfernung mit spaCy NER vor Cloud-AI-Übertragung (DSGVO-konform)
+  - **Hierarchische Analyse-Modi**:
+    - **spacy_booster**: UrgencyBooster auf Original-Daten (lokal, schnell, keine LLM-Kosten)
+    - **llm_anon**: LLM-Analyse auf anonymisierten Daten (Privacy für Cloud-AI)
+    - **llm_original**: LLM-Analyse auf Original-Daten (beste Qualität)
+    - **none**: Nur Embeddings, keine Bewertung (für manuelles Tagging + ML-Learning)
+  - **Email-Anonymisierung (Phase 22)**:
+    - **3 Sanitization-Levels**: Regex (schnell), Light (häufige Entities), Full (alles inkl. ORG/LOC)
+    - **ContentSanitizer**: spaCy de_core_news_sm (German 14.6 MB) mit Named Entity Recognition
+    - **Dual-Storage**: Originale verschlüsselt + anonymisierte Versionen verschlüsselt
+    - **Performance**: ~1200ms erste Analyse (Modell-Loading), ~10-15ms folgende Emails
+    - **Lazy-Loading**: spaCy-Modell nur bei Bedarf geladen (kein Startup-Overhead)
+    - **UI**: Neuer Tab "🛡️ Anonymisiert" in Email-Detail mit Entity-Count + Level-Anzeige
+  - **Confidence Tracking** (transparent für User):
+    - **ai_confidence**: Initiale Analyse-Qualität (0.65-0.9 für Hybrid Booster basierend auf SGD-Korrekturen)
+    - **optimize_confidence**: Zweite-Pass-Qualität mit besserem Modell
+    - **NULL-Policy**: Keine Fake-Defaults für LLMs ohne native Confidence
   - **Flexible Strategien**:
     - **Beide aktiviert**: Trusted Senders → spaCy Booster, alle anderen → LLM
     - **Nur LLM**: Universelle AI-Analyse für alle Mails (langsamer, aber präziser)
@@ -209,8 +234,9 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
     - Newsletter-Accounts (GMX): AI-Analyse AUS → Manuelles Tagging → Besseres ML-Learning
     - Business-Accounts (Beispiel-Firma): AI-Analyse AN + Booster AN → Automatische Priorisierung
     - Hybrid: AI-Analyse AN + Booster AUS → Nur LLM ohne spaCy-Overhead
+    - DSGVO: Anonymisierung AN + Cloud-AI → Keine PII-Übertragung an externe Provider
   - **UI**: Dedizierte Seite "📬 Absender & Abruf" (`/whitelist`) mit ausführlichen Erklärungen
-  - **Settings-Integration**: Status-Badges (✅ AI ✅ Booster) in Account-Tabelle mit Link zu Konfiguration
+  - **Settings-Integration**: Status-Badges (🛡️ Anon, ⚡ Booster, 🤖 AI-Anon, 🤖 AI-Orig, ❌ Keine AI) in Account-Tabelle
   - **Performance**: Keine AI-Calls bei deaktivierter Analyse → Drastisch schnelleres Fetching
   - **Begründung**: Rule-basierte Systeme (spaCy) funktionieren nur bei expliziten Signalen (Rechnungen, Deadlines). 
     Für Newsletter/Marketing-Mails mit subtilen Mustern ist ML-Learning aus User-Korrekturen überlegen.

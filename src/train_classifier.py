@@ -33,13 +33,20 @@ spec_models = importlib.util.spec_from_file_location("models", src_dir / "02_mod
 models = importlib.util.module_from_spec(spec_models)
 spec_models.loader.exec_module(models)
 
-spec_ai = importlib.util.spec_from_file_location(
-    "ai_client", src_dir / "03_ai_client.py"
-)
-ai_client = importlib.util.module_from_spec(spec_ai)
-spec_ai.loader.exec_module(ai_client)
+# Lazy import von ai_client um circular dependency zu vermeiden
+LocalOllamaClient = None
 
-LocalOllamaClient = ai_client.LocalOllamaClient
+def _get_ollama_client():
+    """Lazy-load LocalOllamaClient um circular imports zu vermeiden"""
+    global LocalOllamaClient
+    if LocalOllamaClient is None:
+        spec_ai = importlib.util.spec_from_file_location(
+            "ai_client", src_dir / "03_ai_client.py"
+        )
+        ai_client = importlib.util.module_from_spec(spec_ai)
+        spec_ai.loader.exec_module(ai_client)
+        LocalOllamaClient = ai_client.LocalOllamaClient
+    return LocalOllamaClient
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +66,10 @@ class OnlineLearner:
         
         self.classifier_dir = Path(__file__).resolve().parent / "classifiers"
         self.classifier_dir.mkdir(exist_ok=True)
-        self.ollama_client = LocalOllamaClient(
+        
+        # Lazy-load Ollama Client
+        OllamaClient = _get_ollama_client()
+        self.ollama_client = OllamaClient(
             model="all-minilm:22m", base_url=ollama_base_url
         )
         
@@ -233,7 +243,10 @@ class MLTrainer:
         self.db = db_session
         self.classifier_dir = Path(__file__).resolve().parent / "classifiers"
         self.classifier_dir.mkdir(exist_ok=True)
-        self.ollama_client = LocalOllamaClient(
+        
+        # Lazy-load Ollama Client
+        OllamaClient = _get_ollama_client()
+        self.ollama_client = OllamaClient(
             model="all-minilm:22m", base_url=ollama_base_url
         )
         self.log_file = self.classifier_dir / "training_log.txt"

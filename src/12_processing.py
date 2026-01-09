@@ -430,37 +430,151 @@ def process_pending_raw_emails(
                     f"Sender-Hint: {len(sender_hint) if sender_hint else 0} chars"
                 )
 
-            # Phase X: Get account-level settings for AI analysis
-            enable_ai_analysis = True  # default
-            account_booster_enabled = True  # default
+            # ===== ANALYSE-MODUS ERKENNUNG =====
+            # Account-Settings laden
+            enable_ai_analysis = True  # default (legacy)
+            account_booster_enabled = True  # default (legacy)
+            effective_mode = "llm_original"  # default
+            should_anonymize = False  # Anonymisierung ist unabhängig vom Analyse-Modus
+            
             try:
                 models_mod = importlib.import_module(".02_models", "src")
                 account = session.query(models_mod.MailAccount).filter_by(id=raw_email.mail_account_id).first()
                 if account:
+                    # Legacy-Support
                     enable_ai_analysis = account.enable_ai_analysis_on_fetch
                     account_booster_enabled = account.urgency_booster_enabled
-                    logger.debug(f"📧 Account '{account.name}': enable_ai={enable_ai_analysis}, booster={account_booster_enabled}")
+                    
+                    # Effektiven Modus berechnen
+                    effective_mode = account.effective_ai_mode
+                    
+                    # Anonymisierung ist unabhängig (läuft parallel)
+                    should_anonymize = account.anonymize_with_spacy
+                    
+                    logger.info(f"📧 Account '{account.name}': mode={effective_mode}, anonymize={should_anonymize}")
             except Exception as e:
                 logger.debug(f"Failed to fetch account settings: {e}")
             
-            # Skip AI analysis if disabled - only create embedding
-            if not enable_ai_analysis:
-                logger.info("⏭️  AI-Analyse deaktiviert für Account (enable_ai_analysis_on_fetch=False)")
+            # ===== ANONYMISIERUNG (UNABHÄNGIG) =====
+            # Anonymisierung läuft parallel zur Analyse (erzeugt Tab-Content)
+            sanitized_subject = None
+            sanitized_body = None
+            
+            if should_anonymize:
+                try:
+                    from src.services.content_sanitizer import get_sanitizer
+                    sanitizer = get_sanitizer()
+                    
+                    logger.info("🛡️ Anonymisiere Inhalte (unabhängig vom Analyse-Modus)...")
+                    sanitization_result = sanitizer.sanitize(
+                        subject=decrypted_subject or "",
+                        body=clean_body,
+                        level=3  # Full spaCy (PER + ORG + GPE + LOC)
+                    )
+                    
+                    # Speichere anonymisierte Version (für Tab + AI-Anon)
+                    sanitized_subject = sanitization_result.subject
+                    sanitized_body = sanitization_result.body
+                    
+                    try:
+                        encryption_mod = importlib.import_module(".08_encryption", "src")
+                        raw_email.encrypted_subject_sanitized = \
+                            encryption_mod.EmailDataManager.encrypt_email_subject(
+                                sanitized_subject, master_key
+                            )
+                        raw_email.encrypted_body_sanitized = \
+                            encryption_mod.EmailDataManager.encrypt_email_body(
+                                sanitized_body, master_key
+                            )
+                        raw_email.sanitization_level = sanitization_result.level
+                        raw_email.sanitization_time_ms = sanitization_result.processing_time_ms
+                        raw_email.sanitization_entities_count = sanitization_result.entities_found
+                        
+                        logger.info(
+                            f"✅ Anonymisierung: {sanitization_result.entities_found} entities "
+                            f"in {sanitization_result.processing_time_ms:.1f}ms"
+                        )
+                    except Exception as e:
+                        logger.error(f"❌ Fehler beim Speichern der Anonymisierung: {e}")
+                        sanitized_subject = None
+                        sanitized_body = None
+                        
+                except ImportError as e:
+                    logger.error(f"❌ ContentSanitizer nicht verfügbar: {e}")
+                    sanitized_subject = None
+                    sanitized_body = None
+            
+            # ===== ANALYSE-MODUS AUSFÜHREN =====
+            if effective_mode == "none":
+                logger.info("⏭️  Keine Analyse (alle Toggles aus)")
                 ai_result = None
-            else:
-                logger.info("🤖 Analysiere gespeicherte Mail: %s...", subject_preview)
                 
+            elif effective_mode == "spacy_booster":
+                # Booster nutzt IMMER Original-Daten (lokal = sicher, beste Ergebnisse)
+                logger.info("⚡ Urgency Booster auf Original-Daten")
                 ai_result = active_ai.analyze_email(
                     subject=decrypted_subject or "",
                     body=clean_body,
-                    sender=decrypted_sender or "",  # Phase X: Trusted Senders + UrgencyBooster
-                    language="de",  # Phase X: UrgencyBooster needs language hint
-                    context=context_str if context_str else None,  # Phase E: Pass context to AI
-                    user_id=raw_email.user_id,  # Phase X: For trusted sender lookup
-                    account_id=raw_email.mail_account_id,  # Phase X: Account-specific trusted senders
-                    db=session,  # Phase X: Database access for trusted sender check
-                    user_enabled_booster=account_booster_enabled  # Phase X: Account preference
+                    sender=decrypted_sender or "",
+                    language="de",
+                    context=context_str if context_str else None,
+                    user_id=raw_email.user_id,
+                    account_id=raw_email.mail_account_id,
+                    db=session,
+                    user_enabled_booster=True
                 )
+                
+            elif effective_mode == "llm_original":
+                # AI nutzt Original-Daten (keine Anonymisierung)
+                logger.info("🤖 LLM auf Original-Daten")
+                ai_result = active_ai.analyze_email(
+                    subject=decrypted_subject or "",
+                    body=clean_body,
+                    sender=decrypted_sender or "",
+                    language="de",
+                    context=context_str if context_str else None,
+                    user_id=raw_email.user_id,
+                    account_id=raw_email.mail_account_id,
+                    db=session,
+                    user_enabled_booster=False
+                )
+                
+            elif effective_mode == "llm_anon":
+                # AI nutzt anonymisierte Daten (Datenschutz für Cloud-LLMs)
+                if sanitized_subject and sanitized_body:
+                    logger.info("🛡️ LLM auf anonymisierte Daten")
+                    ai_result = active_ai.analyze_email(
+                        subject=sanitized_subject,
+                        body=sanitized_body,
+                        sender="[SENDER]",  # Auch Sender pseudonymisieren
+                        language="de",
+                        context=context_str if context_str else None,
+                        user_id=raw_email.user_id,
+                        account_id=raw_email.mail_account_id,
+                        db=session,
+                        user_enabled_booster=False
+                    )
+                    
+                    if ai_result:
+                        ai_result["_used_anonymized"] = True
+                else:
+                    # Fallback: Anonymisierung fehlgeschlagen oder nicht aktiviert
+                    logger.warning("⚠️ AI-Anon gewählt, aber keine anonymisierten Daten → Fallback auf Original")
+                    ai_result = active_ai.analyze_email(
+                        subject=decrypted_subject or "",
+                        body=clean_body,
+                        sender=decrypted_sender or "",
+                        language="de",
+                        context=context_str if context_str else None,
+                        user_id=raw_email.user_id,
+                        account_id=raw_email.mail_account_id,
+                        db=session,
+                        user_enabled_booster=False
+                    )
+            
+            else:
+                logger.warning(f"⚠️ Unbekannter effective_mode: {effective_mode}, Fallback auf keine Analyse")
+                ai_result = None
             
             # Phase 11d: Sender-Pattern-Hinweis anwenden (wenn vorhanden) - nur wenn AI-Analyse durchgeführt wurde
             if ai_result:
@@ -486,18 +600,68 @@ def process_pending_raw_emails(
                     # Sender-Patterns sind optional
                     logger.debug(f"Sender-Pattern Lookup übersprungen: {e}")
             
+            # ===== PHASE 22: OPTIONAL SANITIZATION (unabhängig von AI-Modus) =====
+            # Wenn anonymize_with_spacy aktiv ist, speichere IMMER auch sanitized version
+            # (auch wenn AI auf Original läuft - für späteren Export/Archiv)
+            if account and account.anonymize_with_spacy and effective_mode != "llm_anon":
+                try:
+                    from src.services.content_sanitizer import get_sanitizer
+                    sanitizer = get_sanitizer()
+                    
+                    sanitization_result = sanitizer.sanitize(
+                        subject=decrypted_subject or "",
+                        body=clean_body,
+                        level=3
+                    )
+                    
+                    encryption_mod = importlib.import_module(".08_encryption", "src")
+                    raw_email.encrypted_subject_sanitized = \
+                        encryption_mod.EmailDataManager.encrypt_email_subject(
+                            sanitization_result.subject, master_key
+                        )
+                    raw_email.encrypted_body_sanitized = \
+                        encryption_mod.EmailDataManager.encrypt_email_body(
+                            sanitization_result.body, master_key
+                        )
+                    raw_email.sanitization_level = sanitization_result.level
+                    raw_email.sanitization_time_ms = sanitization_result.processing_time_ms
+                    raw_email.sanitization_entities_count = sanitization_result.entities_found
+                    
+                    logger.debug(
+                        f"🔐 Background-Sanitization: {sanitization_result.entities_found} entities"
+                    )
+                except Exception as e:
+                    logger.debug(f"Background-Sanitization übersprungen: {e}")
+            
             # Provider/Model Tracking: Prüfe ob UrgencyBooster oder LLM verwendet wurde
             actual_provider = None
             actual_model = None
+            analysis_method = None
+            
             if ai_result:
                 if ai_result.get("_used_booster"):
                     # UrgencyBooster (spaCy) hat die Email verarbeitet
                     actual_provider = "urgency_booster"
                     actual_model = "spacy:de_core_news_sm"
+                    
+                    # Unterscheide zwischen Hybrid und Legacy Booster
+                    if ai_result.get("_used_hybrid_booster"):
+                        analysis_method = "hybrid_booster"
+                    else:
+                        analysis_method = "spacy_booster"
+                
+                elif ai_result.get("_used_anonymized"):
+                    actual_provider = ai_provider
+                    actual_model = ai_model
+                    analysis_method = f"llm_anon:{ai_provider}"
+                
                 else:
                     # Normales LLM hat die Email verarbeitet
                     actual_provider = ai_provider
                     actual_model = ai_model
+                    analysis_method = f"llm:{ai_provider}"
+            else:
+                analysis_method = "none"
             
             # Sender-Pattern auch für AI-Klassifizierung aktualisieren (niedriges Gewicht) - nur wenn AI-Analyse durchgeführt wurde
             if ai_result:
@@ -561,6 +725,9 @@ def process_pending_raw_emails(
             was_answered = raw_email.imap_is_answered if raw_email.imap_is_answered is not None else (
                 imap_flags_parser.is_answered(raw_email.imap_flags or "")
             )
+            
+            # Extract confidence from AI result if available
+            ai_confidence = ai_result.get("_phase_y_confidence") if ai_result else None
 
             processed_email = models.ProcessedEmail(
                 raw_email_id=raw_email.id,
@@ -578,6 +745,8 @@ def process_pending_raw_emails(
                 done=False,
                 base_provider=actual_provider,
                 base_model=actual_model,
+                analysis_method=analysis_method,
+                ai_confidence=ai_confidence,
                 imap_flags_at_processing=raw_email.imap_flags,  # Audit-Trail
                 was_seen_at_processing=was_seen,  # Optimiert!
                 was_answered_at_processing=was_answered,  # Optimiert!

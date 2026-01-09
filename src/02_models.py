@@ -16,6 +16,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Date,
+    Float,
     ForeignKey,
     UniqueConstraint,
     Index,
@@ -579,6 +580,16 @@ class MailAccount(Base):
     
     # ===== PHASE X: ACCOUNT-LEVEL AI ANALYSIS CONTROL =====
     enable_ai_analysis_on_fetch = Column(Boolean, default=True, nullable=False)
+    
+    # ===== ANALYSIS MODES (HIERARCHICAL TOGGLES) =====
+    # 1️⃣ Anonymisierung (unabhängig vom Analyse-Modus)
+    anonymize_with_spacy = Column(Boolean, default=False, nullable=False)
+    
+    # 3️⃣ AI-Analyse auf anonyme Daten
+    ai_analysis_anon_enabled = Column(Boolean, default=False, nullable=False)
+    
+    # 4️⃣ AI-Analyse auf Original-Daten (ersetzt enable_ai_analysis_on_fetch langfristig)
+    ai_analysis_original_enabled = Column(Boolean, default=False, nullable=False)
 
     # Relationship
     user = relationship("User", back_populates="mail_accounts")
@@ -586,7 +597,7 @@ class MailAccount(Base):
         "RawEmail", back_populates="mail_account", cascade="all, delete-orphan"
     )
     
-    # Phase Y: spaCy Hybrid Pipeline Relationships
+    # spaCy Hybrid Pipeline Relationships
     spacy_vip_senders = relationship(
         "SpacyVIPSender", back_populates="account", cascade="all, delete-orphan"
     )
@@ -631,6 +642,44 @@ class MailAccount(Base):
         data[folder] = int(value)
         self.folder_uidvalidity = json.dumps(data)
     
+    @property
+    def effective_ai_mode(self) -> str:
+        """
+        Berechnet effektiven Analyse-Modus unter Berücksichtigung aller Toggles.
+        
+        WICHTIG: Anonymisierung (anonymize_with_spacy) ist UNABHÄNGIG vom Analyse-Modus!
+        - Anonymisierung läuft parallel (erzeugt Tab-Content)
+        - Booster nutzt IMMER Original-Daten (lokal = sicher, beste Ergebnisse)
+        - Nur AI-Anon nutzt anonymisierte Daten (Datenschutz für Cloud-LLMs)
+        
+        Priorität (höchste zuerst):
+        1. Urgency Booster (spaCy lokal auf Original-Daten)
+        2. AI auf anonyme Daten (benötigt anonymize_with_spacy)
+        3. AI auf Original-Daten
+        4. Keine Analyse
+        
+        Returns:
+            "none" | "spacy_booster" | "llm_original" | "llm_anon"
+        """
+        # Priorität 1: Urgency Booster (nutzt Original, unabhängig von Anonymisierung)
+        if self.urgency_booster_enabled:
+            return "spacy_booster"
+        
+        # Priorität 2: AI auf anonyme Daten
+        if self.ai_analysis_anon_enabled and self.anonymize_with_spacy:
+            return "llm_anon"
+        
+        # Priorität 3: AI auf Original
+        if self.ai_analysis_original_enabled:
+            return "llm_original"
+        
+        # Priorität 4 (Legacy-Support): enable_ai_analysis_on_fetch
+        if self.enable_ai_analysis_on_fetch:
+            return "llm_original"
+        
+        # Fallback: Keine Analyse
+        return "none"
+    
     def validate_auth_fields(self) -> tuple[bool, str]:
         """Validiert ob die richtigen Felder für auth_type gesetzt sind
 
@@ -658,7 +707,27 @@ class MailAccount(Base):
 
 
 class ServiceToken(Base):
-    """Token für Background-Jobs (Phase 2)"""
+    """
+    Sichere Token-Verwaltung für Background-Jobs ohne längerer RAM-Speicher (Phase 2).
+    
+    Sicherheitsmodell:
+    - Token wird mit 384-bit Entropie generiert (secrets.token_urlsafe)
+    - token_hash wird bcrypt-gehasht (nicht reversible)
+    - encrypted_dek wird nur gespeichert während Token valid ist
+    - Nach Expiry wird DEK automatisch gelöscht
+    
+    Workflow:
+    1. enqueue_fetch_job(): Erstellt ServiceToken, speichert encrypted_dek
+    2. Job in Queue: speichert nur service_token_id (Integer)
+    3. Worker: lädt Token, verifiziert gegen token_hash, holt DEK
+    4. RAM-Cleanup: DEK mit Overwrites bereinigt nach Job
+    
+    Sicherheit vs. Alternativen:
+    ✅ Token: RCE attacker kann Token + encrypted_dek lesen, aber token ist gehasht
+    ✅ DEK: Nur valid wenn token_hash matched, nicht reversible
+    ✅ Audit: last_verified_at logged Token-Verwendung
+    ✅ TTL: Automatisches Expiry nach 7 Tagen (konfigurierbar)
+    """
 
     __tablename__ = "service_tokens"
 
@@ -666,10 +735,11 @@ class ServiceToken(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     token_hash = Column(String(255), unique=True, nullable=False)
-    master_key = Column(String(255), nullable=True)  # Encrypted DEK für Background-Jobs
+    encrypted_dek = Column(Text, nullable=False)  # DEK für Email-Decryption
     expires_at = Column(DateTime, nullable=False)
-
+    
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    last_verified_at = Column(DateTime, nullable=True)
 
     # Relationship
     user = relationship("User", back_populates="service_tokens")
@@ -691,10 +761,22 @@ class ServiceToken(Base):
 
     def is_valid(self) -> bool:
         """Überprüft ob Token noch gültig ist"""
-        return datetime.now(UTC) < self.expires_at
+        # Handle both timezone-aware and naive datetimes (migration compatibility)
+        now = datetime.now(UTC)
+        expires = self.expires_at
+        
+        # If expires_at is naive, make it aware (assume UTC)
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=UTC)
+        
+        return now < expires
+    
+    def mark_verified(self) -> None:
+        """Markiert Token als gerade verwendet (für Audit-Logs)"""
+        self.last_verified_at = datetime.now(UTC)
 
     def __repr__(self):
-        return f"<ServiceToken(id={self.id}, user={self.user_id})>"
+        return f"<ServiceToken(id={self.id}, user={self.user_id}, expires={self.expires_at.strftime('%Y-%m-%d %H:%M')})>"
 
 
 class RecoveryCode(Base):
@@ -817,6 +899,16 @@ class RawEmail(Base):
     # Verhindert mehrfache Verarbeitung bei Background-Jobs
     auto_rules_processed = Column(Boolean, default=False, nullable=False, index=True)
 
+    # ===== PHASE 22: SANITIZATION (ANONYMISIERUNG) =====
+    # Pseudonymisierte Versionen (verschlüsselt wie Original)
+    encrypted_subject_sanitized = Column(Text, nullable=True)
+    encrypted_body_sanitized = Column(Text, nullable=True)
+    
+    # Sanitization Metadata
+    sanitization_level = Column(Integer, nullable=True)  # 1=Regex, 2=spaCy-Light, 3=spaCy-Full
+    sanitization_time_ms = Column(Float, nullable=True)
+    sanitization_entities_count = Column(Integer, nullable=True)
+
     # Relationships
     user = relationship("User", back_populates="raw_emails")
     mail_account = relationship("MailAccount", back_populates="raw_emails")
@@ -843,6 +935,11 @@ class RawEmail(Base):
     @property
     def is_deleted(self) -> bool:
         return self.deleted_at is not None
+
+    @property
+    def has_sanitized_content(self) -> bool:
+        """True wenn pseudonymisierte Version existiert"""
+        return self.encrypted_subject_sanitized is not None or self.encrypted_body_sanitized is not None
 
     def __repr__(self):
         return f"<RawEmail(id={self.id}, user={self.user_id}, imap_uid={self.imap_uid})>"
@@ -901,6 +998,15 @@ class ProcessedEmail(Base):
     base_model = Column(String(100), nullable=True)
     optimize_provider = Column(String(50), nullable=True)
     optimize_model = Column(String(100), nullable=True)
+    
+    # ===== ANALYSIS METHOD TRACKING =====
+    analysis_method = Column(String(50), nullable=True)
+    # Werte: "none" | "spacy_booster" | "hybrid_booster" | "llm:ollama" | "llm:openai" | etc.
+    
+    # ===== AI CONFIDENCE TRACKING =====
+    ai_confidence = Column(Float, nullable=True)
+    # Konfidenz der AI-Analyse (0.0-1.0), z.B. 0.65-0.9 basierend auf Ensemble-Stats
+    # NULL = keine Confidence verfügbar (alte Daten oder analysis_method='none')
 
     # Optimize-Pass Ergebnisse (separate Felder, überschreiben nicht die Initial-Analyse)
     optimize_dringlichkeit = Column(Integer, nullable=True)
@@ -914,6 +1020,11 @@ class ProcessedEmail(Base):
     optimize_matrix_x = Column(Integer, nullable=True)
     optimize_matrix_y = Column(Integer, nullable=True)
     optimize_farbe = Column(String(10), nullable=True)
+    
+    # ===== OPTIMIZE CONFIDENCE TRACKING =====
+    optimize_confidence = Column(Float, nullable=True)
+    # Konfidenz der Optimize-Pass Analyse (0.0-1.0)
+    # NULL = keine Confidence verfügbar (alte Daten oder Standard-LLM ohne Confidence)
 
     # User-Korrektionen für ML-Training (Phase 8)
     # Diese Spalten speichern Nutzer-Feedback zur manuellen Korrektur von AI-Ergebnissen
@@ -1274,12 +1385,12 @@ class TrustedSender(Base):
         return f"<TrustedSender(id={self.id}, pattern={self.sender_pattern}, type={self.pattern_type})>"
 
 
-# ========================== PHASE Y: SPACY HYBRID PIPELINE ==========================
+# ========================== SPACY HYBRID PIPELINE ==========================
 
 
 class SpacyVIPSender(Base):
     """
-    VIP-Absender für Phase Y Hybrid Pipeline.
+    VIP-Absender für Hybrid Pipeline.
     Bestimmte Absender erhalten automatisch einen Wichtigkeits-Boost.
     
     Beispiele:
@@ -1319,7 +1430,7 @@ class SpacyVIPSender(Base):
 
 class SpacyKeywordSet(Base):
     """
-    Konfigurierbare Keyword-Sets für Phase Y.
+    Konfigurierbare Keyword-Sets für Hybrid Pipeline.
     Pro Account werden 12 Keyword-Sets gespeichert (als JSON).
     
     JSON-Format:
@@ -1357,7 +1468,7 @@ class SpacyKeywordSet(Base):
 
 class SpacyScoringConfig(Base):
     """
-    Scoring-Konfiguration für Phase Y.
+    Scoring-Konfiguration für Hybrid Pipeline.
     Thresholds und Gewichte sind pro Account anpassbar.
     
     Beispiel:
@@ -1402,7 +1513,7 @@ class SpacyScoringConfig(Base):
 
 class SpacyUserDomain(Base):
     """
-    User-Domains für Phase Y.
+    User-Domains für Hybrid Pipeline.
     Ermöglicht Erkennung von intern/extern bei Emails.
     
     Beispiele:

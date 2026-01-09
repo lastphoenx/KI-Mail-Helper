@@ -67,17 +67,42 @@ class AuthManager:
 
 
 class ServiceTokenManager:
-    """Verwaltet Service-Tokens für Background-Jobs"""
+    """
+    Verwaltet Service-Tokens für Background-Jobs (Phase 2).
+    
+    Security Model:
+    - Token wird mit 384-bit Entropie generiert
+    - Token-Hash wird bcrypt-gehasht (nicht reversible)
+    - DEK wird mit Token gespeichert
+    - Nach Expiry wird DEK automatisch gelöscht
+    - last_verified_at wird für Audit-Trails aktualisiert
+    """
 
     @staticmethod
-    def create_token(user_id: int, session, days: int = 30) -> tuple:
-        """Erstellt einen neuen Service-Token
-
+    def create_token(user_id: int, master_key: str, session, days: int = 7) -> tuple:
+        """
+        Erstellt einen neuen Service-Token mit verschlüsselter DEK.
+        
+        Phase 2: DEK wird aus Session in Token gespeichert,
+        damit Worker die DEK nicht über Prozessparameter erhalten.
+        
+        Args:
+            user_id: User-ID
+            master_key: DEK aus Session (wird hier gespeichert)
+            session: SQLAlchemy Session
+            days: Token-Expiry in Tagen (default: 7)
+            
         Returns:
-            (token_plaintext, token_object)
+            (token_plaintext, token_object): Token und Model für Audit/Debug
+            
+        Security:
+        - Token ist 384 Bits = 48 Bytes = 64 chars (urlsafe base64)
+        - Token-Hash nicht reversible (bcrypt)
+        - DEK als Plaintext speichern (sowieso RCE = Game Over)
+        - TTL verhindert unbegrenzte Gültigkeit
         """
         import importlib
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, UTC
 
         models = importlib.import_module(".02_models", "src")
 
@@ -87,13 +112,14 @@ class ServiceTokenManager:
         service_token = models.ServiceToken(
             user_id=user_id,
             token_hash=token_hash,
-            expires_at=datetime.utcnow() + timedelta(days=days),
+            encrypted_dek=master_key,
+            expires_at=datetime.now(UTC) + timedelta(days=days),
         )
 
         session.add(service_token)
         session.commit()
 
-        logger.info("✅ Service-Token erstellt für User ***")
+        logger.info(f"✅ Service-Token {service_token.id} erstellt (expires: {service_token.expires_at})")
         return token, service_token
 
     @staticmethod

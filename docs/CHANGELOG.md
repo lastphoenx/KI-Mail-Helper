@@ -6,6 +6,222 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.3.0] - 2026-01-09
+
+### Added - Email-Anonymisierung & Confidence Tracking
+
+#### Anonymisierung mit spaCy (Content Sanitization)
+
+**Motivation:**
+DSGVO-konforme Email-Analyse durch Pseudonymisierung personenbezogener Daten vor Cloud-AI-Übertragung.
+
+**Features:**
+
+**1. ContentSanitizer Service** (`src/services/content_sanitizer.py`)
+- ✅ **3 Anonymisierungs-Level**:
+  - **Level 1 (Regex)**: EMAIL, PHONE, IBAN, URL (~2ms)
+  - **Level 2 (spaCy Light)**: PER, ORG (~10-15ms)
+  - **Level 3 (spaCy Full)**: PER, ORG, GPE, LOC (~10-15ms)
+- ✅ **Lazy-Loading**: spaCy Modell (de_core_news_sm) nur bei Bedarf laden
+- ✅ **Batch-Processing**: Mehrere Emails parallel anonymisieren (30% schneller)
+- ✅ **Singleton-Pattern**: Ein spaCy-Model pro Prozess (RAM-Optimierung)
+- ✅ **Statistiken**: Entities-Count, Processing-Time, Entities-by-Type
+
+**2. Dual-Storage Architecture**
+- ✅ **RawEmail-Erweiterung**: 5 neue Spalten
+  - `encrypted_subject_sanitized` (Text)
+  - `encrypted_body_sanitized` (Text)
+  - `sanitization_level` (Integer: 1-3)
+  - `sanitization_time_ms` (Float)
+  - `sanitization_entities_count` (Integer)
+- ✅ **Zero-Knowledge bleibt**: Beide Versionen (Original + Anonymisiert) verschlüsselt
+- ✅ **Property**: `has_sanitized_content` für UI-Kondition
+
+**3. Hierarchical Analysis Modes (Account-Level)**
+- ✅ **Neue Analyse-Modi**:
+  - `spacy_booster`: Urgency Booster auf **Original-Daten** (lokal = sicher, beste Ergebnisse)
+  - `llm_anon`: LLM auf **anonymisierten Daten** (Datenschutz für Cloud-LLMs)
+  - `llm_original`: LLM auf **Original-Daten** (beste Qualität)
+  - `none`: Keine Analyse (nur Embeddings)
+- ✅ **Unabhängige Anonymisierung**: Checkbox "🛡️ Mit Spacy anonymisieren" läuft parallel
+  - Booster analysiert Original → speichert zusätzlich anonymisierte Version
+  - Nützlich für Export, Archivierung, Schulungen
+- ✅ **UI-Integration**:
+  - `/whitelist`: Account-Settings mit Anonymisierungs-Toggle
+  - Neuer Tab "🛡️ Anonymisiert" in Email-Detail (nur wenn Content vorhanden)
+  - Badge mit Entity-Count, Level-Anzeige, Processing-Zeit
+
+**4. Migration** (`ph22_sanitization_storage.py`)
+- ✅ Alembic Migration mit `down_revision` Merge (2 Heads → 1)
+- ✅ 5 neue Spalten in `raw_emails` Tabelle
+- ✅ Indexes für Performance (encrypted_body_sanitized)
+
+**Performance:**
+- Erste Email: ~1200ms (spaCy-Model-Loading)
+- Danach: ~10-15ms pro Email
+- Batch-Processing: 30% schneller als einzeln
+
+#### Confidence Tracking (AI & Optimize)
+
+**Motivation:**
+Transparenz über AI-Analyse-Qualität. Nutzer sollen sehen, wie "sicher" sich die AI ist.
+
+**Features:**
+
+**1. Dual Confidence Tracking**
+- ✅ **ai_confidence** (Float, nullable): Initial-Analyse-Confidence
+  - Hybrid Booster: 0.65-0.9 basierend auf SGD-Ensemble-Stats
+  - LLMs: NULL (keine Confidence ohne OpenAI logprobs)
+- ✅ **optimize_confidence** (Float, nullable): Optimize-Pass-Confidence
+  - Separate Spalte für 2. Pass mit besserem Modell
+  - Verhindert semantische Vermischung
+
+**2. ProcessedEmail Model** (`src/02_models.py`)
+- ✅ 2 neue Spalten: `ai_confidence`, `optimize_confidence`
+- ✅ Comments: 0.0-1.0 Scale, NULL = keine Daten
+- ✅ Tracking: `_phase_y_confidence` Key in AI-Result-Dict
+
+**3. Confidence Calculation** (Hybrid Booster)
+```python
+# Basierend auf Ensemble-Stats (num_corrections):
+if num_corrections >= 50:
+    confidence = 0.9  # SGD dominant, sehr zuverlässig
+elif num_corrections >= 20:
+    confidence = 0.75  # Hybrid, gute Qualität
+else:
+    confidence = 0.65  # spaCy-only, solide
+```
+
+**4. UI-Integration**
+- ✅ **Email-Detail**: Confidence-Badges bei Initial & Optimize
+  - Format: `65%` Badge (nur wenn != NULL)
+  - Tooltip mit Erklärung
+- ✅ **List-View**: Intelligente Warnungen
+  - Optimierte Emails: Zeigt `optimize_confidence` Warning (< 70%)
+  - Nicht-optimierte: Zeigt `ai_confidence` Warning (< 70%)
+  - Badge: "⚠️ Opt. unsicher" vs "⚠️ Unsicher"
+
+**5. Migrations**
+- ✅ `add_ai_confidence.py`: Initial-Confidence-Spalte
+- ✅ `add_optimize_confidence.py`: Optimize-Pass-Confidence-Spalte
+- ✅ Direct SQLite (nicht ORM wegen numeric filename import issues)
+
+**Policy:**
+- LLMs ohne native Confidence → NULL (keine Fake-Defaults)
+- Future-proof: OpenAI logprobs können später integriert werden
+
+### Changed
+
+#### Terminology Cleanup
+
+**Motivation:**
+"Phase Y" Terminologie war verwirrend und nicht benutzerfreundlich. Umstellung auf klare, beschreibende Namen.
+
+**Changes:**
+
+**1. Logs & Kommentare**
+- ❌ `Phase Y Hybrid Pipeline` → ✅ `Urgency Booster Hybrid`
+- ❌ `Phase Y Analysis` → ✅ `Booster Analyse`
+- ❌ `Phase Y2: ...` → ✅ Einfache Kommentare (z.B. "ANALYSIS MODE DETECTION")
+
+**2. Code-Methoden** (`src/03_ai_client.py`)
+- ❌ `_convert_phase_y_to_llm_format()` → ✅ `_convert_hybrid_to_llm_format()`
+- ❌ `_used_phase_y` Flag → ✅ `_used_hybrid_booster` Flag
+
+**3. Database Values** (`analysis_method`)
+- ❌ `phase_y_hybrid` → ✅ `hybrid_booster`
+- Alte Werte bleiben kompatibel (UI-Check mit `or`)
+
+**4. Model-Kommentare** (`src/02_models.py`)
+- ❌ `PHASE Y2: ANALYSIS MODES` → ✅ `ANALYSIS MODES`
+- ❌ `Phase Y: spaCy Hybrid Pipeline` → ✅ `spaCy Hybrid Pipeline`
+- SpacyVIPSender, SpacyKeywordSet, etc. Docstrings vereinfacht
+
+**5. Processing Logs** (`src/12_processing.py`)
+- ❌ `📧 Account 'X': effective_mode=spacy_booster` (ohne anonymize Info)
+- ✅ `📧 Account 'X': mode=spacy_booster, anonymize=True` (mehr Context)
+
+**6. UI-Templates** (`templates/email_detail.html`)
+- ✅ Support für `hybrid_booster` in Analysis-Method-Display
+- ✅ Support für `llm_anon:provider` Format
+- ✅ Badge-Text: "Regel-basiert, lokal, keine LLM-Kosten"
+
+#### Settings-Seite Status-Badges
+
+**Motivation:**
+Benutzer sehen auf einen Blick, welche Analyse-Modi pro Account aktiv sind.
+
+**Changes:**
+
+**1. Badge-Erweiterung** (`templates/settings.html`)
+- ✅ **Neue Badges**:
+  - `🛡️ Anon` (Info): Anonymisierung aktiv (PII-Schutz)
+  - `⚡ Booster` (Warning): Urgency Booster (Spacy auf Original)
+  - `🤖 AI-Anon` (Primary): LLM auf anonymisierten Daten
+  - `🤖 AI-Orig` (Success): LLM auf Original-Daten
+  - `❌ Keine AI` (Secondary): Nur Embeddings, keine Analyse
+
+**2. Logik** (basierend auf `effective_ai_mode` + `anonymize_with_spacy`)
+```html
+{% if account.anonymize_with_spacy %}🛡️ Anon{% endif %}
+{% if account.effective_ai_mode == 'spacy_booster' %}⚡ Booster{% endif %}
+{% if account.effective_ai_mode == 'llm_anon' %}🤖 AI-Anon{% endif %}
+{% if account.effective_ai_mode == 'llm_original' %}🤖 AI-Orig{% endif %}
+{% if account.effective_ai_mode == 'none' %}❌ Keine AI{% endif %}
+```
+
+**Beispiel-Kombinationen:**
+- Martina: `🛡️ Anon` + `⚡ Booster` (Booster auf Original + parallel Anonymisierung speichern)
+- Thomas-Beispiel-Firma: `❌ Keine AI` (nur Embeddings)
+- Possible: `🛡️ Anon` + `🤖 AI-Anon` (LLM auf anonymisierten Daten)
+
+### Fixed
+
+#### Circular Import in train_classifier.py
+
+**Problem:**
+```python
+ImportError: attempted relative import with no known parent package
+```
+`train_classifier.py` lud `ai_client.py` zu früh (Top-Level), aber `ai_client.py` hat relative Imports.
+
+**Solution:**
+- ✅ Lazy-Load von `LocalOllamaClient` via `_get_ollama_client()` Funktion
+- ✅ Import nur wenn `OnlineLearner()` instanziiert wird (nicht bei Modul-Load)
+
+#### SpacyKeywordSet Attribute-Error
+
+**Problem:**
+```python
+AttributeError: 'SpacyKeywordSet' object has no attribute 'keyword_set_name'
+```
+Model hat `set_type`, Code suchte nach `keyword_set_name`.
+
+**Solution:**
+- ✅ `src/services/spacy_config_manager.py`: `ks.keyword_set_name` → `ks.set_type`
+
+#### Anonymisierter Tab HTML-Rendering
+
+**Problem:**
+HTML-Code wurde als Text angezeigt (`<div>...</div>` sichtbar statt gerendert).
+
+**Solution:**
+- ✅ Iframe-Rendering für `decrypted_body_sanitized` in Email-Detail
+- ✅ `sandbox="allow-same-origin"` für Sicherheit (keine Scripts)
+- ✅ Alternative zu `|safe` Filter (weniger gefährlich)
+
+#### Analysis-Method Display (Initial Analyse)
+
+**Problem:**
+"Initial Analyse" zeigte falsch `OLLAMA (llama3.2:1b)` statt `⚡ Spacy Booster`, weil `hybrid_booster` nicht erkannt wurde.
+
+**Solution:**
+- ✅ Template-Check: `if email.analysis_method == 'spacy_booster' or email.analysis_method == 'hybrid_booster'`
+- ✅ Support für `llm_anon:provider` Format
+- ✅ Badge-Text angepasst: "Regel-basiert, lokal, keine LLM-Kosten"
+
+---
+
 ## [1.2.0] - 2026-01-08
 
 ### Added - Phase Y: KI-gestützte E-Mail-Priorisierung

@@ -162,6 +162,17 @@
                         <> Raw HTML
                     </button>
                 </li>
+                <!-- Phase 22: Anonymisiert-Tab (nur wenn Content vorhanden) -->
+                {% if raw_email and raw_email.has_sanitized_content %}
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="anonTab" data-bs-toggle="tab" data-bs-target="#anonContent" type="button" role="tab" aria-controls="anonContent" aria-selected="false">
+                        🛡️ Anonymisiert
+                        {% if raw_email.sanitization_entities_count %}
+                        <span class="badge bg-info">{{ raw_email.sanitization_entities_count }}</span>
+                        {% endif %}
+                    </button>
+                </li>
+                {% endif %}
             </ul>
             
             <div class="tab-content" id="emailTabContent">
@@ -192,6 +203,56 @@
                         <pre><code id="rawHtmlCode" class="language-html">{{ decrypted_body|default('Kein Original verfügbar') }}</code></pre>
                     </div>
                 </div>
+                
+                <!-- Phase 22: Anonymisiert-Tab Content -->
+                {% if raw_email and raw_email.has_sanitized_content %}
+                <div class="tab-pane fade" id="anonContent" role="tabpanel" aria-labelledby="anonTab">
+                    <div class="card bg-dark border-secondary mt-3">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span>🛡️ Pseudonymisierte Version</span>
+                            <div>
+                                {% if raw_email.sanitization_level %}
+                                <span class="badge bg-secondary me-2">
+                                    Level {{ raw_email.sanitization_level }}
+                                    {% if raw_email.sanitization_level == 1 %}(Regex)
+                                    {% elif raw_email.sanitization_level == 2 %}(spaCy Light)
+                                    {% else %}(spaCy Full){% endif %}
+                                </span>
+                                {% endif %}
+                                {% if raw_email.sanitization_time_ms %}
+                                <span class="badge bg-secondary">{{ "%.1f"|format(raw_email.sanitization_time_ms) }}ms</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info">
+                                <small>
+                                    ℹ️ Diese Version wurde pseudonymisiert. Personenbezogene Daten (Namen, Orte, Firmen, E-Mails, Telefon, IBAN) 
+                                    wurden durch Platzhalter ersetzt.
+                                    {% if raw_email.sanitization_entities_count %}
+                                    <br><strong>{{ raw_email.sanitization_entities_count }}</strong> Entities erkannt und ersetzt.
+                                    {% endif %}
+                                </small>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label"><strong>Betreff:</strong></label>
+                                <div class="bg-light p-2 rounded text-dark">{{ decrypted_subject_sanitized|default('Nicht verfügbar') }}</div>
+                            </div>
+                            <div>
+                                <label class="form-label"><strong>Inhalt:</strong></label>
+                                <div class="border bg-white">
+                                    <iframe 
+                                        srcdoc="{{ decrypted_body_sanitized|default('Nicht verfügbar')|e }}"
+                                        style="width: 100%; min-height: 400px; border: none;" 
+                                        sandbox="allow-same-origin"
+                                        title="Anonymisierter Inhalt">
+                                    </iframe>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
         
@@ -286,9 +347,38 @@
                     <tr>
                         <td><strong>🤖 Initial Analyse:</strong></td>
                         <td>
-                            {% if email.base_provider and email.base_model %}
+                            {% if email.analysis_method == 'none' %}
+                            <span class="badge bg-secondary">Keine Analyse</span>
+                            <small class="text-muted">(AI-Analyse beim Abruf deaktiviert)</small>
+                            
+                            {% elif email.analysis_method == 'spacy_booster' or email.analysis_method == 'hybrid_booster' %}
+                            <span class="badge bg-info">⚡ Spacy Booster</span>
+                            <small class="text-muted">(Regel-basiert, lokal, keine LLM-Kosten)</small>
+                            {% if email.ai_confidence %}
+                            <span class="badge bg-light text-dark ms-1" title="AI Confidence Score">{{ "%.0f"|format(email.ai_confidence * 100) }}%</span>
+                            {% endif %}
+                            
+                            {% elif email.analysis_method and email.analysis_method.startswith('llm_anon:') %}
+                            <span class="badge bg-warning text-dark">🛡️ LLM auf Anonymen Daten</span>
+                            <small class="text-muted">({{ email.analysis_method.replace('llm_anon:', '').upper() }} - {{ email.base_model or 'unbekannt' }})</small>
+                            {% if email.ai_confidence %}
+                            <span class="badge bg-light text-dark ms-1" title="AI Confidence Score">{{ "%.0f"|format(email.ai_confidence * 100) }}%</span>
+                            {% endif %}
+                            
+                            {% elif email.analysis_method and email.analysis_method.startswith('llm:') %}
+                            <span class="badge bg-primary">🤖 {{ email.analysis_method.replace('llm:', '').upper() }}</span>
+                            <small class="text-muted">({{ email.base_model or 'unbekannt' }})</small>
+                            {% if email.ai_confidence %}
+                            <span class="badge bg-light text-dark ms-1" title="AI Confidence Score">{{ "%.0f"|format(email.ai_confidence * 100) }}%</span>
+                            {% endif %}
+                            
+                            {% elif email.base_provider and email.base_model %}
                             <span class="badge bg-info">{{ email.base_provider|upper }}</span>
                             <code>{{ email.base_model }}</code>
+                            {% if email.ai_confidence %}
+                            <span class="badge bg-light text-dark ms-1" title="AI Confidence Score">{{ "%.0f"|format(email.ai_confidence * 100) }}%</span>
+                            {% endif %}
+                            
                             {% else %}
                             <span class="text-muted">N/A</span>
                             {% endif %}
@@ -348,6 +438,9 @@
                             {% if email.optimize_provider and email.optimize_model %}
                             <span class="badge bg-success">{{ email.optimize_provider|upper }}</span>
                             <code>{{ email.optimize_model }}</code>
+                            {% if email.optimize_confidence %}
+                            <span class="badge bg-light text-dark ms-1" title="Optimize Pass Confidence Score">{{ "%.0f"|format(email.optimize_confidence * 100) }}%</span>
+                            {% endif %}
                             {% else %}
                             <span class="text-muted">Nicht durchgeführt</span>
                             {% endif %}
@@ -1479,6 +1572,63 @@ document.addEventListener('DOMContentLoaded', function() {
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <!-- 🆕 Provider/Model Selection -->
+                <div class="mb-4 border-bottom pb-3">
+                    <h6 class="mb-3">
+                        🤖 KI-Modell 
+                        <small class="text-muted">(Optional)</small>
+                    </h6>
+                    
+                    <div class="row g-2">
+                        <!-- Provider Dropdown -->
+                        <div class="col-md-6">
+                            <label for="replyProvider" class="form-label small text-muted">
+                                Provider
+                            </label>
+                            <select class="form-select form-select-sm" id="replyProvider">
+                                <option value="">🔧 Standard (aus Settings)</option>
+                                <!-- Wird dynamisch gefüllt via JavaScript -->
+                            </select>
+                        </div>
+                        
+                        <!-- Model Dropdown -->
+                        <div class="col-md-6">
+                            <label for="replyModel" class="form-label small text-muted">
+                                Modell
+                            </label>
+                            <select class="form-select form-select-sm" id="replyModel">
+                                <option value="">Standard</option>
+                                <!-- Wird dynamisch gefüllt via JavaScript -->
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- 🆕 Anonymisierungs-Toggle -->
+                    <div class="mt-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="useAnonymization">
+                            <label class="form-check-label" for="useAnonymization">
+                                🔒 <strong>Anonymisierung</strong> 
+                                <small class="text-muted">(Empfohlen für Cloud-Provider)</small>
+                            </label>
+                        </div>
+                        <div id="cloudWarning" class="alert alert-sm mt-2 mb-0" style="display: none; padding: 0.5rem; font-size: 0.875rem;"></div>
+                    </div>
+                    
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            💡 Leer lassen = Deine Standard-Einstellungen verwenden
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- 🆕 NEU: Generieren-Button -->
+                <div class="mb-3 text-center">
+                    <button type="button" class="btn btn-primary btn-lg" id="generateReplyBtn">
+                        ✨ Antwort-Entwurf generieren
+                    </button>
+                </div>
+                
                 <!-- Ton-Auswahl -->
                 <div class="mb-3">
                     <label class="form-label fw-bold">Ton der Antwort:</label>
@@ -1519,6 +1669,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <small class="text-muted">
                             <span id="replyCharCount">0</span> Zeichen • 
                             Ton: <strong id="replyToneName">-</strong>
+                            <span id="replyProviderInfo" style="display: none;"></span>
                         </small>
                     </div>
                 </div>
@@ -1560,21 +1711,45 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    // 🆕 NEU: Generieren-Button Handler
+    document.getElementById('generateReplyBtn').addEventListener('click', async function() {
+        // Prüfe ob ein Ton ausgewählt wurde
+        const activeToneBtn = document.querySelector('.tone-btn.active');
+        if (!activeToneBtn) {
+            // Wähle "formal" als Default
+            const formalBtn = document.querySelector('.tone-btn[data-tone="formal"]');
+            if (formalBtn) {
+                formalBtn.classList.add('active');
+                currentTone = 'formal';
+            }
+        }
+        
+        // Starte Generierung
+        await generateReply(currentTone || 'formal');
+    });
+    
     // Tone button handlers
     document.querySelectorAll('.tone-btn').forEach(btn => {
-        btn.addEventListener('click', async function() {
+        btn.addEventListener('click', function() {
             // Update active state
             document.querySelectorAll('.tone-btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
             
             currentTone = this.dataset.tone;
             
-            // Generate reply with selected tone
-            await generateReply(currentTone);
+            // ❌ Entfernt: Auto-generate - nur Ton merken
+            // User muss jetzt auf "Generieren" klicken
         });
     });
     
-    // Copy to clipboard button
+    // Modal shown: Load providers (aber KEINE Auto-Generierung mehr!)
+    document.getElementById('replyDraftModal').addEventListener('shown.bs.modal', function() {
+        // 🆕 Load available providers
+        loadAvailableProviders();
+        
+        // ❌ ENTFERNT: Auto-generate
+        // User muss jetzt auf "Generieren"-Button klicken
+    });
     document.getElementById('copyReplyBtn').addEventListener('click', function() {
         const replyText = document.getElementById('replyText').value;
         
@@ -1598,10 +1773,165 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Auto-generate with "formal" tone when modal opens
     document.getElementById('replyDraftModal').addEventListener('shown.bs.modal', function() {
+        // 🆕 Load available providers
+        loadAvailableProviders();
+        
         // Select first tone button
         const firstToneBtn = document.querySelector('.tone-btn[data-tone="formal"]');
         if (firstToneBtn) {
             firstToneBtn.click();
+        }
+    });
+    
+    // 🆕 Load available AI providers (use existing API!)
+    // GLOBAL: Speichere defaults für Zugriff in Event Handlers
+    let defaultProvider = "{{ user.preferred_ai_provider or 'ollama' }}";
+    let defaultModel = "{{ user.preferred_ai_model or 'llama3.2' }}";
+    
+    async function loadAvailableProviders() {
+        const providerSelect = document.getElementById('replyProvider');
+        
+        // Zeige Standard-Werte während des Ladens
+        providerSelect.innerHTML = '<option value="">🔧 Standard wird geladen...</option>';
+        
+        try {
+            // Nutze BESTEHENDE Settings-API
+            const response = await fetch('/api/available-providers', {
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                throw new Error('Provider-API nicht erreichbar');
+            }
+            
+            const data = await response.json();
+            
+            // Build dropdown mit Standard-Info (nutze GLOBALE defaults)
+            providerSelect.innerHTML = `<option value="">🔧 Standard (${defaultProvider})</option>`;
+            
+            if (data.providers && data.providers.length > 0) {
+                data.providers.forEach(p => {
+                    const option = document.createElement('option');
+                    option.value = p.id;  // ✅ API liefert "id" nicht "value"!
+                    option.textContent = p.name;  // ✅ Name enthält schon Icon + Text
+                    // ✅ is_cloud bestimmen: alles außer ollama ist cloud
+                    option.dataset.cloud = (p.id !== 'ollama');
+                    providerSelect.appendChild(option);
+                });
+            } else {
+                // Fallback wenn API keine Provider liefert
+                console.warn('Keine Provider von API erhalten, nutze Fallback');
+                providerSelect.innerHTML += `
+                    <option value="ollama" data-cloud="false">🦙 Ollama (Lokal)</option>
+                    <option value="openai" data-cloud="true">🤖 OpenAI (Cloud)</option>
+                    <option value="anthropic" data-cloud="true">🧠 Anthropic (Cloud)</option>
+                `;
+            }
+            
+            // Zeige Standard-Modell in Model-Dropdown
+            const modelSelect = document.getElementById('replyModel');
+            modelSelect.innerHTML = `<option value="">Standard (${defaultModel})</option>`;
+            
+        } catch (err) {
+            console.error('Failed to load providers:', err);
+            // Fallback
+            providerSelect.innerHTML = `
+                <option value="">🔧 Standard (aus Settings)</option>
+                <option value="ollama" data-cloud="false">🦙 Ollama (Lokal)</option>
+                <option value="openai" data-cloud="true">🤖 OpenAI (Cloud)</option>
+                <option value="anthropic" data-cloud="true">🧠 Anthropic (Cloud)</option>
+            `;
+        }
+    }
+    
+    // 🆕 Provider change → Load models + Auto-toggle anonymization
+    document.getElementById('replyProvider').addEventListener('change', async function() {
+        const provider = this.value;
+        const modelSelect = document.getElementById('replyModel');
+        const anonToggle = document.getElementById('useAnonymization');
+        const warningBox = document.getElementById('cloudWarning');
+        
+        // ⚠️ WICHTIG: Wenn kein Provider gewählt → SOFORT returnen (wie Settings!)
+        if (!provider || provider === '') {
+            // ✅ Zeige Standard-Modell (wie beim initialen Load)
+            modelSelect.innerHTML = `<option value="">Standard (${defaultModel})</option>`;
+            warningBox.style.display = 'none';
+            anonToggle.checked = false;
+            return; // ❌ KEINE API-Calls mit leerem Provider!
+        }
+        
+        const selectedOption = this.options[this.selectedIndex];
+        const isCloud = selectedOption.dataset.cloud === 'true';
+        
+        // Reset model dropdown
+        modelSelect.innerHTML = '<option value="">Lade Modelle...</option>';
+        
+        // 🔒 Auto-Anonymisierung für Cloud-Provider
+        if (isCloud) {
+            anonToggle.checked = true;
+            warningBox.className = 'alert alert-info';
+            warningBox.innerHTML = '🔒 Cloud-Provider: Anonymisierung automatisch aktiviert (empfohlen)';
+            warningBox.style.display = 'block';
+        } else {
+            anonToggle.checked = false;
+            warningBox.style.display = 'none';
+        }
+        
+        // Load models for selected provider
+        modelSelect.innerHTML = '<option value="">Lade Modelle...</option>';
+        
+        try {
+            // ✅ Nutze GLEICHE API wie Settings: /api/models/${provider}
+            const response = await fetch(`/api/models/${provider}`, {
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                throw new Error('Models-API nicht erreichbar');
+            }
+            
+            const data = await response.json();
+            let models = data.models || [];
+            
+            // Filter: Nur Chat-Modelle (keine Embedding-Modelle für Reply-Gen)
+            models = models.filter(m => m.type === 'chat' || !m.type);
+            
+            modelSelect.innerHTML = '<option value="">Bitte wählen...</option>';
+            
+            if (models.length === 0) {
+                modelSelect.innerHTML = '<option value="">Keine Chat-Modelle verfügbar</option>';
+            } else {
+                models.forEach(m => {
+                    const option = document.createElement('option');
+                    option.value = m.id;
+                    option.textContent = m.name || m.id;
+                    modelSelect.appendChild(option);
+                });
+            }
+            
+        } catch (err) {
+            console.error('Failed to load models:', err);
+            modelSelect.innerHTML = '<option value="">Fehler beim Laden</option>';
+        }
+    });
+    
+    // 🆕 Warnung wenn User Anonymisierung deaktiviert bei Cloud
+    document.getElementById('useAnonymization').addEventListener('change', function() {
+        const provider = document.getElementById('replyProvider').value;
+        const selectedOption = document.getElementById('replyProvider').options[document.getElementById('replyProvider').selectedIndex];
+        const isCloud = selectedOption.dataset.cloud === 'true';
+        const warningBox = document.getElementById('cloudWarning');
+        
+        if (!this.checked && isCloud) {
+            warningBox.className = 'alert alert-danger';
+            warningBox.innerHTML = '⚠️ <strong>WARNUNG:</strong> Original-Daten werden an Cloud-Provider gesendet!';
+            warningBox.style.display = 'block';
+        } else if (this.checked && isCloud) {
+            warningBox.className = 'alert alert-info';
+            warningBox.innerHTML = '🔒 Cloud-Provider: Anonymisierung aktiv';
+            warningBox.style.display = 'block';
+        } else {
+            warningBox.style.display = 'none';
         }
     });
     
@@ -1614,6 +1944,13 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('replyText').value = '';
         document.querySelectorAll('.tone-btn').forEach(b => b.classList.remove('active'));
         generatedReply = '';
+        
+        // 🆕 Reset Provider/Model Selection
+        document.getElementById('replyProvider').value = '';
+        document.getElementById('replyModel').innerHTML = '<option value="">Standard</option>';
+        document.getElementById('useAnonymization').checked = false;
+        document.getElementById('cloudWarning').style.display = 'none';
+        document.getElementById('replyProviderInfo').style.display = 'none';
     }
     
     async function generateReply(tone) {
@@ -1624,6 +1961,35 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('copyReplyBtn').style.display = 'none';
         
         try {
+            // 🆕 Lese Provider/Model/Anonymization aus UI
+            const selectedProvider = document.getElementById('replyProvider').value;
+            const selectedModel = document.getElementById('replyModel').value;
+            const useAnonymization = document.getElementById('useAnonymization').checked;
+            
+            // Build request body
+            const requestBody = { tone: tone };
+            
+            // Füge provider/model nur hinzu wenn BEIDE ausgewählt
+            if (selectedProvider && selectedModel) {
+                requestBody.provider = selectedProvider;
+                requestBody.model = selectedModel;
+                console.log(`🎯 Using selected: ${selectedProvider}/${selectedModel}`);
+            } else {
+                console.log('🔧 Using default from settings');
+            }
+            
+            // Anonymisierung: Sende nur wenn explizit gesetzt (nicht bei default-false)
+            const selectedOption = document.getElementById('replyProvider').options[document.getElementById('replyProvider').selectedIndex];
+            const isCloud = selectedOption.dataset.cloud === 'true';
+            
+            // Sende use_anonymization:
+            // - Bei Cloud ohne explizite Auswahl → Backend entscheidet (auto-true)
+            // - Bei expliziter User-Wahl → Sende diese
+            if (selectedProvider) {
+                requestBody.use_anonymization = useAnonymization;
+            }
+            // Sonst: Backend nutzt Auto-Logic basierend auf Settings
+            
             const response = await fetch(`/api/emails/${emailId}/generate-reply`, {
                 method: 'POST',
                 headers: {
@@ -1631,16 +1997,36 @@ document.addEventListener('DOMContentLoaded', function() {
                     'X-CSRFToken': getCsrfToken()
                 },
                 credentials: 'include',
-                body: JSON.stringify({ tone: tone })
+                body: JSON.stringify(requestBody)  // 🆕 Mit provider/model/anonymization
             });
             
             const data = await response.json();
             
             if (data.success && data.reply_text) {
+                // 🆕 De-Anonymisierung falls nötig
+                let displayText = data.reply_text;
+                
+                if (data.was_anonymized && data.entity_map) {
+                    // De-anonymisiere für Anzeige
+                    displayText = deAnonymizeText(data.reply_text, data.entity_map);
+                    console.log('🔓 Text de-anonymisiert für Anzeige');
+                }
+                
                 // Show reply
-                generatedReply = data.reply_text;
+                generatedReply = displayText;
                 document.getElementById('replyText').value = generatedReply;
                 document.getElementById('replyToneName').textContent = data.tone_name || tone;
+                
+                // 🆕 Provider-Info anzeigen
+                const providerInfo = document.getElementById('replyProviderInfo');
+                if (data.provider_used) {
+                    providerInfo.innerHTML = ` • Provider: <strong>${data.provider_used}/${data.model_used}</strong>`;
+                    if (data.was_anonymized) {
+                        providerInfo.innerHTML += ' 🔒';
+                    }
+                    providerInfo.style.display = 'inline';
+                }
+                
                 updateCharCount();
                 
                 document.getElementById('replyLoading').style.display = 'none';
@@ -1656,6 +2042,24 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Reply generation error:', error);
             showReplyError('Netzwerk-Fehler: ' + error.message);
         }
+    }
+    
+    // 🆕 De-Anonymisierungs-Funktion
+    function deAnonymizeText(text, entityMap) {
+        if (!entityMap || Object.keys(entityMap).length === 0) {
+            return text;
+        }
+        
+        let result = text;
+        
+        // Ersetze Platzhalter durch Original-Werte
+        for (const [placeholder, original] of Object.entries(entityMap)) {
+            // Ersetze alle Vorkommen (case-sensitive)
+            const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+            result = result.replace(regex, original);
+        }
+        
+        return result;
     }
     
     function showReplyError(message) {

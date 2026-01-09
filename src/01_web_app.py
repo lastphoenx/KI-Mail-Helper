@@ -1547,6 +1547,8 @@ def email_detail(email_id):
         decrypted_summary_de = ""
         decrypted_text_de = ""
         decrypted_tags = ""
+        decrypted_subject_sanitized = ""  # Phase 22
+        decrypted_body_sanitized = ""     # Phase 22
 
         if master_key:
             # RawEmail entschlüsseln (mit individuellen try-except pro Feld!)
@@ -1629,6 +1631,23 @@ def email_detail(email_id):
                 )
             except Exception as e:
                 logger.warning(f"Tags decryption failed for email {processed.id}: {e}")
+            
+            # Phase 22: Anonymisierte Version entschlüsseln (wenn vorhanden)
+            try:
+                if raw.encrypted_subject_sanitized:
+                    decrypted_subject_sanitized = encryption.EmailDataManager.decrypt_email_subject(
+                        raw.encrypted_subject_sanitized, master_key
+                    )
+            except Exception as e:
+                logger.warning(f"Sanitized subject decryption failed for email {raw.id}: {e}")
+            
+            try:
+                if raw.encrypted_body_sanitized:
+                    decrypted_body_sanitized = encryption.EmailDataManager.decrypt_email_body(
+                        raw.encrypted_body_sanitized, master_key
+                    )
+            except Exception as e:
+                logger.warning(f"Sanitized body decryption failed for email {raw.id}: {e}")
 
         # Phase 10: Lade Email-Tags
         email_tags = []
@@ -1647,6 +1666,7 @@ def email_detail(email_id):
             user=user,
             email=processed,
             raw=raw,
+            raw_email=raw,  # Phase 22: Alias für Template-Kompatibilität
             decrypted_subject=decrypted_subject,
             decrypted_sender=decrypted_sender,
             decrypted_to=decrypted_to,
@@ -1656,6 +1676,8 @@ def email_detail(email_id):
             decrypted_summary_de=decrypted_summary_de,
             decrypted_text_de=decrypted_text_de,
             decrypted_tags=decrypted_tags,
+            decrypted_subject_sanitized=decrypted_subject_sanitized,  # Phase 22
+            decrypted_body_sanitized=decrypted_body_sanitized,        # Phase 22
             priority_label=priority_label,
             email_tags=email_tags,
             all_user_tags=all_user_tags,
@@ -2050,6 +2072,8 @@ def optimize_email(email_id):
             email.optimize_matrix_x = priority["matrix_x"]
             email.optimize_matrix_y = priority["matrix_y"]
             email.optimize_farbe = priority["farbe"]
+            # Phase Y2: Extract optimize confidence if available
+            email.optimize_confidence = result.get("_phase_y_confidence") if result else None
             email.optimize_model = resolved_model
             email.optimize_provider = provider_optimize
             email.optimization_status = models.OptimizationStatus.DONE.value
@@ -2454,6 +2478,44 @@ def settings():
             now=datetime.now,
         )
 
+    finally:
+        db.close()
+
+
+@app.route("/mail-fetch-config")
+@login_required
+def mail_fetch_config():
+    """Mail Fetch Configuration: AI Analysis & Anonymization Settings"""
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect(url_for("login"))
+        
+        # Get mail accounts for configuration
+        mail_accounts = db.query(models.MailAccount).filter_by(user_id=user.id).all()
+        
+        # Zero-Knowledge: Entschlüssele Email-Adressen für Anzeige
+        master_key = session.get("master_key")
+        if master_key and mail_accounts:
+            for account in mail_accounts:
+                if account.auth_type == "imap" and account.encrypted_imap_username:
+                    try:
+                        account.decrypted_imap_username = (
+                            encryption.EmailDataManager.decrypt_email_sender(
+                                account.encrypted_imap_username, master_key
+                            )
+                        )
+                    except Exception as e:
+                        logger.warning(f"Fehler beim Entschlüsseln der Account-Email: {e}")
+                        account.decrypted_imap_username = None
+        
+        return render_template(
+            "mail_fetch_config.html",
+            user=user,
+            mail_accounts=mail_accounts
+        )
     finally:
         db.close()
 
@@ -4155,11 +4217,14 @@ def api_embedding_stats():
 @login_required
 def api_generate_reply(email_id):
     """
-    API: Generiert Antwort-Entwurf auf eine Email (Phase G.1)
+    API: Generiert Antwort-Entwurf auf eine Email (Phase G.1 + Provider/Anonymization)
     
     Request Body:
     {
-        "tone": "formal|friendly|brief|decline"  // Optional, default: "formal"
+        "tone": "formal|friendly|brief|decline",     // Optional, default: "formal"
+        "provider": "ollama|openai|anthropic",       // Optional, default: User-Settings
+        "model": "llama3.2|gpt-4o|claude-sonnet",   // Optional, default: User-Settings
+        "use_anonymization": true|false              // Optional, auto: Cloud=true, Local=false
     }
     
     Returns:
@@ -4169,7 +4234,11 @@ def api_generate_reply(email_id):
         "tone_used": "formal",
         "tone_name": "Formell",
         "tone_icon": "📜",
-        "timestamp": "2026-01-02T10:30:00"
+        "timestamp": "2026-01-02T10:30:00",
+        "was_anonymized": true,                      // Neu: Ob anonymisiert wurde
+        "entity_map": {...},                         // Neu: Für De-Anonymisierung
+        "provider_used": "anthropic",                // Neu: Welcher Provider genutzt
+        "model_used": "claude-3.5-sonnet"           // Neu: Welches Modell genutzt
     }
     """
     db = get_db_session()
@@ -4182,6 +4251,11 @@ def api_generate_reply(email_id):
         # Parse request body
         data = request.get_json() or {}
         tone = data.get("tone", "formal")
+        
+        # 🆕 Neue Parameter: Provider/Model Selection
+        requested_provider = data.get("provider")  # Optional: User-Wahl
+        requested_model = data.get("model")        # Optional: User-Wahl
+        use_anonymization = data.get("use_anonymization")  # Optional: Auto oder User-Wahl
         
         # Validiere Email-Zugriff
         processed = (
@@ -4247,12 +4321,66 @@ def api_generate_reply(email_id):
         try:
             reply_generator_mod = importlib.import_module("src.reply_generator")
             
-            # Get AI Client - use OPTIMIZE model for text generation (not base embedding model)
-            provider = (user.preferred_ai_provider_optimize or user.preferred_ai_provider or "ollama").lower()
-            optimize_model = user.preferred_ai_model_optimize or user.preferred_ai_model
-            resolved_model = ai_client.resolve_model(provider, optimize_model, kind="optimize")
-            logger.info(f"🤖 Reply-Generator: {provider}/{resolved_model}")
+            # 🆕 Provider/Model Selection mit intelligenten Defaults
+            if requested_provider and requested_model:
+                # User hat explizit gewählt
+                provider = requested_provider.lower()
+                resolved_model = ai_client.resolve_model(provider, requested_model, kind="optimize")
+                logger.info(f"🎯 User-selected Reply-Generator: {provider}/{resolved_model}")
+            else:
+                # Fallback auf User-Settings
+                provider = (user.preferred_ai_provider_optimize or user.preferred_ai_provider or "ollama").lower()
+                optimize_model = user.preferred_ai_model_optimize or user.preferred_ai_model
+                resolved_model = ai_client.resolve_model(provider, optimize_model, kind="optimize")
+                logger.info(f"🤖 Default Reply-Generator: {provider}/{resolved_model}")
+            
             client = ai_client.build_client(provider, model=resolved_model)
+            
+            # 🆕 Anonymisierungs-Logik mit pragmatischem Fallback
+            cloud_providers = ["openai", "anthropic", "google"]
+            is_cloud_provider = provider in cloud_providers
+            
+            # Auto-Anonymisierung: Cloud = default true, Lokal = default false
+            if use_anonymization is None:
+                use_anonymization = is_cloud_provider
+                if is_cloud_provider:
+                    logger.info(f"🔒 Auto-enabling anonymization for cloud provider: {provider}")
+            
+            # Bestimme welchen Content wir nutzen
+            content_for_ai_subject = decrypted_subject
+            content_for_ai_body = decrypted_body
+            entity_map = None
+            was_anonymized = False
+            
+            if use_anonymization:
+                # Nutze sanitized Content (Phase 22: encrypted_*_sanitized)
+                if raw_email.encrypted_subject_sanitized and raw_email.encrypted_body_sanitized:
+                    # ✅ Ideal: Bereits anonymisiert (Phase 22)
+                    try:
+                        content_for_ai_subject = encryption.EmailDataManager.decrypt_email_subject(
+                            raw_email.encrypted_subject_sanitized, master_key
+                        )
+                        content_for_ai_body = encryption.EmailDataManager.decrypt_email_body(
+                            raw_email.encrypted_body_sanitized, master_key
+                        )
+                        was_anonymized = True
+                        logger.info(f"🔒 Using pre-sanitized content from Phase 22")
+                    except Exception as decrypt_err:
+                        logger.warning(f"⚠️ Sanitized content decryption failed: {decrypt_err}")
+                        # Fallback auf Original
+                        content_for_ai_body = decrypted_body
+                else:
+                    # ⚠️ Kein sanitized Content verfügbar
+                    logger.warning(
+                        f"⚠️ Email {email_id} has no sanitized content. "
+                        f"Using ORIGINAL data with cloud provider {provider}! "
+                        f"Enable 'anonymize_with_spacy' in account settings."
+                    )
+                    content_for_ai_body = decrypted_body
+            else:
+                # Original-Content gewünscht (z.B. lokale Modelle)
+                if is_cloud_provider:
+                    logger.warning(f"⚠️ Using original content with cloud provider {provider} - User explicitly disabled anonymization")
             
             generator = reply_generator_mod.ReplyGenerator(ai_client=client)
             
@@ -4261,20 +4389,27 @@ def api_generate_reply(email_id):
             result = generator.generate_reply_with_user_style(
                 db=db,
                 user_id=user.id,
-                original_subject=decrypted_subject,
-                original_body=decrypted_body,
+                original_subject=content_for_ai_subject,   # 🆕 Ggf. anonymisiert
+                original_body=content_for_ai_body,         # 🆕 Ggf. anonymisiert
                 original_sender=decrypted_sender,
                 tone=tone,
                 thread_context=thread_context if thread_context else None,
                 has_attachments=raw_email.has_attachments or False,
                 master_key=master_key,
-                account_id=raw_email.account_id
+                account_id=raw_email.mail_account_id
             )
             
+            # 🆕 Erweitere Response um neue Felder
             if result["success"]:
+                result["was_anonymized"] = was_anonymized
+                result["entity_map"] = entity_map  # Für Frontend De-Anonymisierung
+                result["provider_used"] = provider
+                result["model_used"] = resolved_model
+                
                 logger.info(
                     f"✅ Reply-Entwurf generiert für Email {email_id} "
-                    f"(Ton: {result['tone_used']}, {len(result['reply_text'])} chars)"
+                    f"(Ton: {result['tone_used']}, Provider: {provider}/{resolved_model}, "
+                    f"Anonymisiert: {was_anonymized}, {len(result['reply_text'])} chars)"
                 )
             
             return jsonify(result), 200 if result["success"] else 500
@@ -8505,7 +8640,12 @@ def api_get_accounts_urgency_booster_settings():
                 'name': account.name,
                 'decrypted_imap_username': decrypted_email,
                 'urgency_booster_enabled': getattr(account, 'urgency_booster_enabled', True),
-                'enable_ai_analysis_on_fetch': getattr(account, 'enable_ai_analysis_on_fetch', True)
+                'enable_ai_analysis_on_fetch': getattr(account, 'enable_ai_analysis_on_fetch', True),
+                # Phase Y2: Neue Felder
+                'anonymize_with_spacy': getattr(account, 'anonymize_with_spacy', False),
+                'ai_analysis_anon_enabled': getattr(account, 'ai_analysis_anon_enabled', False),
+                'ai_analysis_original_enabled': getattr(account, 'ai_analysis_original_enabled', False),
+                'effective_ai_mode': account.effective_ai_mode if hasattr(account, 'effective_ai_mode') else 'llm_original'
             })
         
         return {
@@ -8522,15 +8662,12 @@ def api_get_accounts_urgency_booster_settings():
 @app.route("/api/accounts/<int:account_id>/urgency-booster", methods=["POST"])
 @login_required
 def api_set_account_urgency_booster(account_id):
-    """Set UrgencyBooster for a specific account"""
+    """Set UrgencyBooster and Analysis Modes for a specific account (Phase Y2)"""
     db = get_db_session()
     try:
         data = request.get_json()
         if not data:
             return {"success": False, "error": "No JSON data"}, 400
-        
-        urgency_booster_enabled = data.get("urgency_booster_enabled", True)
-        enable_ai_analysis = data.get("enable_ai_analysis_on_fetch", True)
         
         models_mod = importlib.import_module(".02_models", "src")
         account = db.query(models_mod.MailAccount).filter_by(
@@ -8541,18 +8678,56 @@ def api_set_account_urgency_booster(account_id):
         if not account:
             return {"success": False, "error": "Account nicht gefunden"}, 404
         
-        account.urgency_booster_enabled = bool(urgency_booster_enabled)
-        account.enable_ai_analysis_on_fetch = bool(enable_ai_analysis)
+        # ===== PHASE Y2: ANALYSIS MODES =====
+        # Legacy-Support (alte Toggles)
+        if "urgency_booster_enabled" in data:
+            account.urgency_booster_enabled = bool(data["urgency_booster_enabled"])
+        if "enable_ai_analysis_on_fetch" in data:
+            account.enable_ai_analysis_on_fetch = bool(data["enable_ai_analysis_on_fetch"])
+        
+        # Phase Y2: Neue Toggle-Struktur
+        if "anonymize_with_spacy" in data:
+            account.anonymize_with_spacy = bool(data["anonymize_with_spacy"])
+        
+        if "analysis_mode" in data:
+            # Radio-Button Modus: Setze alle Toggles zurück, aktiviere nur gewählten
+            mode = data["analysis_mode"]
+            
+            account.urgency_booster_enabled = False
+            account.ai_analysis_anon_enabled = False
+            account.ai_analysis_original_enabled = False
+            
+            if mode == "spacy_booster":
+                account.urgency_booster_enabled = True
+            elif mode == "llm_anon":
+                if not account.anonymize_with_spacy:
+                    logger.warning("llm_anon gewählt aber anonymize_with_spacy=False, Fallback auf none")
+                    # Lasse alle False
+                else:
+                    account.ai_analysis_anon_enabled = True
+            elif mode == "llm_original":
+                account.ai_analysis_original_enabled = True
+            # else: "none" → alle bleiben False
+            
+            # Legacy-Support: Synchronisiere enable_ai_analysis_on_fetch
+            account.enable_ai_analysis_on_fetch = (
+                account.ai_analysis_original_enabled or account.ai_analysis_anon_enabled
+            )
+        
         db.commit()
         
-        logger.info(f"Account {account_id} settings: urgency_booster={urgency_booster_enabled}, enable_ai={enable_ai_analysis}")
+        logger.info(f"Account {account_id} settings: effective_mode={account.effective_ai_mode}")
         return {
             "success": True,
+            "effective_mode": account.effective_ai_mode,
             "urgency_booster_enabled": account.urgency_booster_enabled,
-            "enable_ai_analysis_on_fetch": account.enable_ai_analysis_on_fetch
+            "enable_ai_analysis_on_fetch": account.enable_ai_analysis_on_fetch,
+            "anonymize_with_spacy": account.anonymize_with_spacy,
+            "ai_analysis_anon_enabled": account.ai_analysis_anon_enabled,
+            "ai_analysis_original_enabled": account.ai_analysis_original_enabled
         }, 200
     except Exception as e:
-        logger.error(f"Error setting account urgency booster: {e}")
+        logger.error(f"Error setting account settings: {e}")
         db.rollback()
         return {"success": False, "error": str(e)}, 500
     finally:

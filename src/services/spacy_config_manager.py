@@ -107,9 +107,9 @@ class SpacyConfigManager:
         for ks in keyword_sets:
             try:
                 keywords = json.loads(ks.keywords_json)
-                result[ks.keyword_set_name] = [kw.lower() for kw in keywords]
+                result[ks.set_type] = [kw.lower() for kw in keywords]
             except json.JSONDecodeError:
-                result[ks.keyword_set_name] = []
+                result[ks.set_type] = []
 
         # Fallback auf Default-Sets wenn leer
         if not result:
