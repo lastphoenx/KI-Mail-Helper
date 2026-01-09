@@ -13,6 +13,11 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **KI-gestützte Priorisierung** – spaCy NLP (80%) + Keywords (20%) + Ensemble Learning
 - **Multi-Provider AI** – Lokale Modelle (Ollama) oder Cloud (Claude, OpenAI, Mistral)
 - **Email-Anonymisierung** – spaCy PII-Entfernung (DSGVO-konform) vor Cloud-AI-Übertragung
+  - 3 Levels: Regex (EMAIL, PHONE, IBAN, URL), Light (+ PER), Full (+ ORG, GPE, LOC)
+  - On-the-fly Anonymisierung: Automatisch beim Reply-Generieren wenn keine anonymisierte Version existiert
+- **Optimized Reply Prompts** – Speziell für Small Local LLMs (<8B Parameter) optimiert
+- **Provider/Model Selection** – Dynamische Auswahl in Reply Modal (Ollama, OpenAI, Anthropic, Mistral)
+- **Dynamic Temperature Support** – Automatische Erkennung für o1/o3/gpt-5 Modelle
 - **Confidence Tracking** – Transparenz über AI-Analyse-Qualität (0.65-0.9 für Hybrid Booster)
 - **Online-Learning System** – SGD-Classifier lernt aus User-Korrekturen (4 Classifier: D/W/Spam/Kategorie)
 - **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (14 Bedingungen)
@@ -33,10 +38,10 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## Status
 
-**Version:** 1.3.0  
-**Development:** Aktiv (Email-Anonymisierung & Confidence Tracking abgeschlossen)  
+**Version:** 1.4.0  
+**Development:** Aktiv (Reply Optimization für Small Local LLMs abgeschlossen)  
 **Stability:** Production-ready für Single-User-Deployment  
-**Next:** Benchmarks & Performance Testing
+**Next:** Performance Testing & Benchmarks
 
 **Abgeschlossene Phasen:**
 - ✅ Phase 0-12: Core System, Zero-Knowledge, Production Hardening
@@ -56,7 +61,9 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ Phase X.3: Account-Level AI-Fetch-Control (enable_ai_analysis_on_fetch)
 - ✅ Phase Y: KI-gestützte Priorisierung (spaCy NLP + Ensemble Learning)
 - ✅ Phase 22: Email-Anonymisierung mit spaCy (DSGVO-konform)
+- ✅ Phase 22.1: On-the-fly Anonymisierung bei Reply-Generierung
 - ✅ Confidence Tracking: ai_confidence & optimize_confidence
+- ✅ Reply Optimization: Provider/Model Selection, Optimized Prompts für Small LLMs
 
 ---
 

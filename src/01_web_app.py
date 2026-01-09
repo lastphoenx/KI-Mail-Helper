@@ -1507,10 +1507,10 @@ def threads_view():
         db.close()
 
 
-@app.route("/email/<int:email_id>")
+@app.route("/email/<int:raw_email_id>")
 @login_required
-def email_detail(email_id):
-    """Detailansicht einer einzelnen Mail"""
+def email_detail(raw_email_id):
+    """Detailansicht einer einzelnen Mail (via raw_email_id)"""
     db = get_db_session()
 
     try:
@@ -1522,7 +1522,7 @@ def email_detail(email_id):
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.RawEmail.deleted_at == None,
                 models.ProcessedEmail.deleted_at == None,
@@ -1655,7 +1655,7 @@ def email_detail(email_id):
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             email_tags = tag_manager_mod.TagManager.get_email_tags(
-                db, email_id, user.id
+                db, processed.id, user.id  # processed.id für Tag-Zuordnung
             )
             all_user_tags = tag_manager_mod.TagManager.get_user_tags(db, user.id)
         except ImportError:
@@ -1687,9 +1687,9 @@ def email_detail(email_id):
         db.close()
 
 
-@app.route("/email/<int:email_id>/render-html")
+@app.route("/email/<int:raw_email_id>/render-html")
 @login_required
-def render_email_html(email_id: int):
+def render_email_html(raw_email_id: int):
     """Rendert E-Mail-HTML mit lockerer CSP (Fonts/Bilder erlaubt, Scripts blockiert)
 
     Dieser Endpoint wird von <iframe> in email_detail.html verwendet.
@@ -1703,14 +1703,14 @@ def render_email_html(email_id: int):
     try:
         user = get_current_user_model(db)
         if not user:
-            logger.error(f"render_email_html: User not found (email_id={email_id})")
+            logger.error(f"render_email_html: User not found (raw_email_id={raw_email_id})")
             return "Unauthorized", 403
 
         processed = (
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.RawEmail.deleted_at == None,
                 models.ProcessedEmail.deleted_at == None,
@@ -1720,7 +1720,7 @@ def render_email_html(email_id: int):
 
         if not processed:
             logger.error(
-                f"render_email_html: Email {email_id} not found for user {user.id}"
+                f"render_email_html: Email {raw_email_id} not found for user {user.id}"
             )
             return "Email not found", 404
 
@@ -1736,7 +1736,7 @@ def render_email_html(email_id: int):
             )
         except Exception as e:
             logger.error(
-                f"render_email_html: Entschlüsselung fehlgeschlagen für Email {email_id}: {type(e).__name__}: {e}"
+                f"render_email_html: Entschlüsselung fehlgeschlagen für Email {raw_email_id}: {type(e).__name__}: {e}"
             )
             return "Decryption failed", 500
 
@@ -1790,9 +1790,9 @@ def render_email_html(email_id: int):
         db.close()
 
 
-@app.route("/email/<int:email_id>/done", methods=["POST"])
+@app.route("/email/<int:raw_email_id>/done", methods=["POST"])
 @login_required
-def mark_done(email_id):
+def mark_done(raw_email_id):
     """Markiert eine Mail als erledigt"""
     db = get_db_session()
 
@@ -1803,7 +1803,7 @@ def mark_done(email_id):
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.RawEmail.deleted_at == None,
                 models.ProcessedEmail.deleted_at == None,
@@ -1815,7 +1815,7 @@ def mark_done(email_id):
             email.done = True
             email.done_at = datetime.now(UTC)
             db.commit()
-            logger.info(f"✅ Mail {email_id} als erledigt markiert")
+            logger.info(f"✅ Mail {raw_email_id} als erledigt markiert")
 
         return redirect(request.referrer or url_for("list_view"))
 
@@ -1830,9 +1830,9 @@ def mark_done(email_id):
         db.close()
 
 
-@app.route("/email/<int:email_id>/undo", methods=["POST"])
+@app.route("/email/<int:raw_email_id>/undo", methods=["POST"])
 @login_required
-def mark_undone(email_id):
+def mark_undone(raw_email_id):
     """Macht 'erledigt'-Markierung rückgängig"""
     db = get_db_session()
 
@@ -1843,7 +1843,7 @@ def mark_undone(email_id):
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.RawEmail.deleted_at == None,
                 models.ProcessedEmail.deleted_at == None,
@@ -1855,7 +1855,7 @@ def mark_undone(email_id):
             email.done = False
             email.done_at = None
             db.commit()
-            logger.info(f"↩️  Mail {email_id} zurückgesetzt")
+            logger.info(f"↩️  Mail {raw_email_id} zurückgesetzt")
 
         return redirect(request.referrer or url_for("list_view"))
 
@@ -1868,9 +1868,9 @@ def mark_undone(email_id):
         db.close()
 
 
-@app.route("/email/<int:email_id>/reprocess", methods=["POST"])
+@app.route("/email/<int:raw_email_id>/reprocess", methods=["POST"])
 @login_required
-def reprocess_email(email_id):
+def reprocess_email(raw_email_id):
     """Reprocessed eine fehlgeschlagene Email"""
     db = get_db_session()
 
@@ -1883,7 +1883,7 @@ def reprocess_email(email_id):
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.ProcessedEmail.deleted_at == None,
             )
@@ -1956,7 +1956,7 @@ def reprocess_email(email_id):
             email.optimization_status = models.OptimizationStatus.PENDING.value
 
             db.commit()
-            logger.info(f"✅ Mail {email_id} erneut verarbeitet: Score={email.score}")
+            logger.info(f"✅ Mail {raw_email_id} erneut verarbeitet: Score={email.score}")
 
             return jsonify(
                 {
@@ -1969,7 +1969,7 @@ def reprocess_email(email_id):
 
         except Exception as proc_err:
             db.rollback()  # Rollback bei Verarbeitungsfehler
-            logger.error(f"❌ Fehler bei Reprocessing von Email {email_id}: {proc_err}")
+            logger.error(f"❌ Fehler bei Reprocessing von Email {raw_email_id}: {proc_err}")
             return (
                 jsonify(
                     {
@@ -1989,9 +1989,9 @@ def reprocess_email(email_id):
         db.close()
 
 
-@app.route("/email/<int:email_id>/optimize", methods=["POST"])
+@app.route("/email/<int:raw_email_id>/optimize", methods=["POST"])
 @login_required
-def optimize_email(email_id):
+def optimize_email(raw_email_id):
     """Triggert Optimize-Pass für Email (bessere Kategorisierung mit optimize-Provider)"""
     db = get_db_session()
 
@@ -2004,7 +2004,7 @@ def optimize_email(email_id):
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.ProcessedEmail.deleted_at == None,
             )
@@ -2081,7 +2081,7 @@ def optimize_email(email_id):
             email.updated_at = datetime.now(UTC)
 
             db.commit()
-            logger.info(f"✅ Mail {email_id} optimiert: Score={email.optimize_score}")
+            logger.info(f"✅ Mail {raw_email_id} optimiert: Score={email.optimize_score}")
 
             return jsonify(
                 {
@@ -2120,8 +2120,8 @@ def optimize_email(email_id):
         db.close()
 
 
-@app.route("/email/<int:email_id>/correct", methods=["POST"])
-def correct_email(email_id: int):
+@app.route("/email/<int:raw_email_id>/correct", methods=["POST"])
+def correct_email(raw_email_id: int):
     """Speichert User-Korrektionen für eine Email (für Training)."""
     if not current_user:
         return jsonify({"error": "Nicht authentifiziert"}), 401
@@ -2136,7 +2136,7 @@ def correct_email(email_id: int):
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.ProcessedEmail.deleted_at == None,
             )
@@ -2163,7 +2163,7 @@ def correct_email(email_id: int):
 
         db.commit()
 
-        logger.info(f"✅ Mail {email_id} korrigiert durch User {user.id}")
+        logger.info(f"✅ Mail {raw_email_id} korrigiert durch User {user.id}")
 
         # Phase 11b: Online-Learning - Inkrementelles Lernen aus Korrektur
         _trigger_online_learning(email, data)
@@ -2186,9 +2186,9 @@ def correct_email(email_id: int):
         db.close()
 
 
-@app.route("/api/email/<int:email_id>/flags", methods=["GET"])
+@app.route("/api/email/<int:raw_email_id>/flags", methods=["GET"])
 @login_required
-def get_email_flags(email_id):
+def get_email_flags(raw_email_id):
     """Holt aktuelle IMAP-Flags einer Email vom Server"""
     if not current_user:
         return jsonify({"error": "Nicht authentifiziert"}), 401
@@ -2205,7 +2205,7 @@ def get_email_flags(email_id):
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.RawEmail.deleted_at == None,
                 models.ProcessedEmail.deleted_at == None,
@@ -5281,7 +5281,7 @@ def rules_execution_log():
                     'log': log,
                     'rule': rule,
                     'subject': subject,
-                    'email_id': processed.id
+                    'email_id': raw.id  # raw_email_id für konsistente URLs
                 })
         
         return render_template(
@@ -7352,9 +7352,9 @@ def job_status(job_id: str):
     return jsonify(status)
 
 
-@app.route("/email/<int:email_id>/delete", methods=["POST"])
+@app.route("/email/<int:raw_email_id>/delete", methods=["POST"])
 @login_required
-def delete_email(email_id):
+def delete_email(raw_email_id):
     """Löscht eine Email auf dem Server"""
     db = get_db_session()
 
@@ -7367,7 +7367,7 @@ def delete_email(email_id):
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.RawEmail.deleted_at == None,
                 models.ProcessedEmail.deleted_at == None,
@@ -7446,9 +7446,9 @@ def delete_email(email_id):
         db.close()
 
 
-@app.route("/email/<int:email_id>/move-trash", methods=["POST"])
+@app.route("/email/<int:raw_email_id>/move-trash", methods=["POST"])
 @login_required
-def move_email_to_trash(email_id):
+def move_email_to_trash(raw_email_id):
     """Verschiebt eine Email in den Papierkorb auf dem Server"""
     db = get_db_session()
 
@@ -7461,7 +7461,7 @@ def move_email_to_trash(email_id):
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.RawEmail.deleted_at == None,
                 models.ProcessedEmail.deleted_at == None,
@@ -7856,9 +7856,9 @@ def get_account_folders(account_id):
         db.close()
 
 
-@app.route("/email/<int:email_id>/move-to-folder", methods=["POST"])
+@app.route("/email/<int:raw_email_id>/move-to-folder", methods=["POST"])
 @login_required
-def move_email_to_folder(email_id):
+def move_email_to_folder(raw_email_id):
     """Verschiebt eine Email in einen bestimmten Ordner"""
     db = get_db_session()
 
@@ -7871,7 +7871,7 @@ def move_email_to_folder(email_id):
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.RawEmail.deleted_at == None,
                 models.ProcessedEmail.deleted_at == None,
@@ -8006,9 +8006,9 @@ def move_email_to_folder(email_id):
         db.close()
 
 
-@app.route("/email/<int:email_id>/mark-read", methods=["POST"])
+@app.route("/email/<int:raw_email_id>/mark-read", methods=["POST"])
 @login_required
-def mark_email_read(email_id):
+def mark_email_read(raw_email_id):
     """Markiert eine Email als gelesen auf dem Server"""
     db = get_db_session()
 
@@ -8021,7 +8021,7 @@ def mark_email_read(email_id):
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.RawEmail.deleted_at == None,
                 models.ProcessedEmail.deleted_at == None,
@@ -8099,9 +8099,9 @@ def mark_email_read(email_id):
         db.close()
 
 
-@app.route("/email/<int:email_id>/toggle-read", methods=["POST"])
+@app.route("/email/<int:raw_email_id>/toggle-read", methods=["POST"])
 @login_required
-def toggle_email_read(email_id):
+def toggle_email_read(raw_email_id):
     """Togglet Gelesen/Ungelesen Status einer Email auf dem Server"""
     db = get_db_session()
 
@@ -8114,7 +8114,7 @@ def toggle_email_read(email_id):
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.RawEmail.deleted_at == None,
                 models.ProcessedEmail.deleted_at == None,
@@ -8206,9 +8206,9 @@ def toggle_email_read(email_id):
         db.close()
 
 
-@app.route("/email/<int:email_id>/mark-flag", methods=["POST"])
+@app.route("/email/<int:raw_email_id>/mark-flag", methods=["POST"])
 @login_required
-def toggle_email_flag(email_id):
+def toggle_email_flag(raw_email_id):
     """Togglet Wichtig-Flag einer Email auf dem Server"""
     db = get_db_session()
 
@@ -8221,7 +8221,7 @@ def toggle_email_flag(email_id):
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.RawEmail.deleted_at == None,
                 models.ProcessedEmail.deleted_at == None,

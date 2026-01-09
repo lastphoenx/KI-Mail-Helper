@@ -107,3 +107,4 @@ change_password_route.txt
 # Backup files
 *.backup*
 *.bak
+emails.db.fresh_clone_EMPTY

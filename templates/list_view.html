@@ -212,7 +212,7 @@
                 </div>
                 <div class="col-md-8">
                     <h6 class="mb-1">
-                        <a href="/email/{{ email.id }}" class="text-decoration-none">
+                        <a href="/email/{{ email.raw_email_id }}" class="text-decoration-none">
                             {{ email._decrypted_subject|default("(ohne Betreff)") }}
                         </a>
                     </h6>
@@ -264,14 +264,14 @@
                 </div>
                 <div class="col-md-3 text-end">
                     {% if not email.done %}
-                    <form method="post" action="/email/{{ email.id }}/done" class="d-inline action-form">
+                    <form method="post" action="/email/{{ email.raw_email_id }}/done" class="d-inline action-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                         <button type="submit" class="btn btn-sm btn-success action-btn" data-action="done">✓ Erledigt</button>
                     </form>
                     {% else %}
                     <span class="badge bg-success">✓ Erledigt</span>
                     {% endif %}
-                    <a href="/email/{{ email.id }}" class="btn btn-sm btn-outline-primary action-btn" data-action="details">Details</a>
+                    <a href="/email/{{ email.raw_email_id }}" class="btn btn-sm btn-outline-primary action-btn" data-action="details">Details</a>
                 </div>
             </div>
         </li>

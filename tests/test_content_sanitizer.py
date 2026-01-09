@@ -88,8 +88,8 @@ class TestSpacyOnlyLevel2:
     
     def test_person_recognition(self, sanitizer):
         result = sanitizer.sanitize(
-            subject="Meeting mit Max Müller",
-            body="Hallo Max Müller, wie geht es Ihnen? Grüße von Anna Schmidt.",
+            subject="Meeting mit Max BEISPIEL",
+            body="Hallo Max BEISPIEL, wie geht es Ihnen? Grüße von Anna EMPFÄNGER.",
             level=2
         )
         
@@ -103,7 +103,7 @@ class TestSpacyOnlyLevel2:
         """CRITICAL: Test für Original Bug - Regex → spaCy auf ORIGINAL Text"""
         result = sanitizer.sanitize(
             subject="Contact Max",
-            body="Max Müller, Email: max@example.com, Tel: +49 30 12345",
+            body="Max BEISPIEL, Email: max@example.com, Tel: +49 30 12345",
             level=2
         )
         
@@ -136,7 +136,7 @@ class TestFullSpacyLevel3:
     def test_all_entity_types(self, sanitizer):
         result = sanitizer.sanitize(
             subject="Meeting in Berlin",
-            body="Max Müller von Siemens AG trifft sich in Berlin.\nEmail: max@siemens.de",
+            body="Max BEISPIEL von Siemens AG trifft sich in Berlin.\nEmail: max@siemens.de",
             level=3
         )
         
@@ -152,8 +152,8 @@ class TestFullSpacyLevel3:
     def test_no_double_replacement_full(self, sanitizer):
         """REGRESSION: Der Original-Bug - verhindere [[PERSON]1]]"""
         result = sanitizer.sanitize(
-            subject="Meeting mit Dr. Schmidt",
-            body="Dr. Max Schmidt von Deutsche Bank AG, Email: max@db.com, Tel: +49 69 12345",
+            subject="Meeting mit Dr. EMPFÄNGER",
+            body="Dr. Max EMPFÄNGER von Deutsche Bank AG, Email: max@db.com, Tel: +49 69 12345",
             level=3
         )
         
@@ -190,7 +190,7 @@ class TestOverlappingEntities:
         """Person-Name + Email nebeneinander"""
         result = sanitizer.sanitize(
             subject="",
-            body="Max Müller (max.mueller@firma.de) ist der Ansprechpartner.",
+            body="Max BEISPIEL (max.mueller@firma.de) ist der Ansprechpartner.",
             level=3
         )
         
@@ -202,7 +202,7 @@ class TestOverlappingEntities:
         """Multiple Entities direkt hintereinander"""
         result = sanitizer.sanitize(
             subject="",
-            body="max@test.com +49301234 https://test.com Max Müller Siemens AG Berlin",
+            body="max@test.com +49301234 https://test.com Max BEISPIEL Siemens AG Berlin",
             level=3
         )
         
@@ -218,13 +218,13 @@ class TestRealisticEmails:
     def test_business_email(self, sanitizer):
         result = sanitizer.sanitize(
             subject="Angebot für Projekt XY",
-            body="""Sehr geehrter Herr Dr. Müller,
+            body="""Sehr geehrter Herr Dr. BEISPIEL,
 
 vielen Dank für Ihre Anfrage vom 15.01.2026.
 
 Für das Projekt können wir Ihnen folgendes Angebot unterbreiten:
 
-Ansprechpartner: Anna Schmidt (anna.schmidt@firma.de)
+Ansprechpartner: Anna EMPFÄNGER (anna.schmidt@firma.de)
 Telefon: +49 30 12345678
 Unternehmen: Deutsche Solutions GmbH
 Standort: Berlin, Deutschland
@@ -242,8 +242,8 @@ Projektleiter""",
         )
         
         # Check all PII removed
-        assert "Müller" not in result.body or "[PERSON]" in result.body
-        assert "Schmidt" not in result.body or "[PERSON]" in result.body
+        assert "BEISPIEL" not in result.body or "[PERSON]" in result.body
+        assert "EMPFÄNGER" not in result.body or "[PERSON]" in result.body
         assert "@firma.de" not in result.body
         assert "+49 30" not in result.body
         assert "DE893704" not in result.body
@@ -410,7 +410,7 @@ class TestPerformance:
         assert content_sanitizer._nlp is None
         
         # Level 2 → Load
-        fresh.sanitize("", "Max Müller", level=2)
+        fresh.sanitize("", "Max BEISPIEL", level=2)
         # Nach Level 2 sollte global _nlp geladen sein
         assert content_sanitizer._nlp is not None
         assert content_sanitizer._nlp is not False
@@ -425,12 +425,12 @@ class TestPerformance:
         
         # First call (with loading)
         start = time.perf_counter()
-        sanitizer.sanitize("", "Max Müller von Siemens AG", level=3)
+        sanitizer.sanitize("", "Max BEISPIEL von Siemens AG", level=3)
         first_time = time.perf_counter() - start
         
         # Second call (no loading, model cached)
         start = time.perf_counter()
-        sanitizer.sanitize("", "Anna Schmidt von Microsoft", level=3)
+        sanitizer.sanitize("", "Anna EMPFÄNGER von Microsoft", level=3)
         second_time = time.perf_counter() - start
         
         # Second should be faster (no model load overhead)
