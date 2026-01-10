@@ -1,0 +1,2380 @@
+{% extends "base.html" %}
+
+{% block title %}E-Mail Details - Mail Helper{% endblock %}
+
+{% block content %}
+<style>
+    #rawHtmlCode {
+        background-color: #f8f8f8;
+        border-radius: 4px;
+        padding: 15px;
+        overflow-x: auto;
+        font-size: 13px;
+        line-height: 1.5;
+        max-height: 600px;
+        overflow-y: auto;
+    }
+    
+    .nav-tabs {
+        border-bottom: 2px solid #dee2e6;
+        margin-bottom: 0;
+    }
+    
+    .nav-tabs .nav-link {
+        border: none;
+        border-bottom: 3px solid transparent;
+        color: #666;
+        padding: 10px 15px;
+        transition: all 0.2s;
+    }
+    
+    .nav-tabs .nav-link:hover {
+        border-bottom-color: #0d6efd;
+        color: #0d6efd;
+    }
+    
+    .nav-tabs .nav-link.active {
+        background: none;
+        color: #0d6efd;
+        border-bottom-color: #0d6efd;
+    }
+</style>
+<div class="mb-3">
+    <a href="/list" class="btn btn-outline-secondary">← Zurück zur Liste</a>
+</div>
+
+<div class="card">
+    <div class="card-header bg-light">
+        <input type="hidden" name="account_id" value="{{ email.raw_email.mail_account_id }}">
+        <div class="row align-items-center">
+            <div class="col">
+                <h4 class="mb-0">{{ decrypted_subject|default('Kein Betreff') }}</h4>
+            </div>
+            <div class="col-auto">
+                <small class="text-muted">
+                    📅 {{ raw.received_at.strftime('%d.%m.%Y %H:%M') if raw.received_at else 'Kein Datum' }}
+                </small>
+            </div>
+        </div>
+        <div class="row mt-2">
+            <div class="col-md-12">
+                <div><strong>📧 Von:</strong> {{ decrypted_sender|default('Unbekannt') }}</div>
+                {% if decrypted_to %}<div class="mt-1"><strong>📬 An:</strong> {{ decrypted_to }}</div>{% endif %}
+                {% if decrypted_cc %}<div class="mt-1"><strong>📋 Cc:</strong> {{ decrypted_cc }}</div>{% endif %}
+                {% if decrypted_bcc %}<div class="mt-1"><strong>🔒 Bcc:</strong> {{ decrypted_bcc }}</div>{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card-body">
+        <!-- Tag Management -->
+        <div class="mb-4">
+            <h5>🏷️ Tags</h5>
+            <div id="emailTags" class="mb-2">
+                {% if email_tags %}
+                    {% for tag in email_tags %}
+                    <span class="badge d-inline-flex align-items-center gap-2 me-1" style="background-color: {{ tag.color }};">
+                        {{ tag.name }}
+                        <button type="button" class="btn btn-sm btn-transparent remove-tag-btn p-0" 
+                                data-email-id="{{ email.raw_email_id }}"
+                                data-tag-id="{{ tag.id }}"
+                                data-tag-name="{{ tag.name }}"
+                                aria-label="Entfernen" style="font-size: 16px; line-height: 1; color: white; opacity: 0.8;">×</button>
+                    </span>
+                    {% endfor %}
+                {% else %}
+                    <span class="text-muted">Keine Tags zugewiesen</span>
+                {% endif %}
+            </div>
+            
+            <!-- Phase F.2: Smart Tag Suggestions -->
+            <div id="tagSuggestionsBox" class="mt-2 mb-2" style="display: none;">
+                <div class="alert alert-info py-2 px-3" style="background-color: #e7f3ff; border-color: #b8daff;">
+                    <small class="fw-bold">💡 Vorgeschlagene Tags (AI):</small>
+                    <div id="tagSuggestionsList" class="mt-1"></div>
+                </div>
+            </div>
+            
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="addTagBtn">+ Tag hinzufügen</button>
+            <button type="button" class="btn btn-sm btn-outline-info" id="reprocessEmailBtn" 
+                    data-email-id="{{ email.raw_email_id }}" 
+                    title="Embedding & KI-Score neu generieren (nutzt aktuelles Base Model aus Settings)">
+                🔄 Email neu verarbeiten
+            </button>
+
+            <!-- Current Flags Display -->
+            <div id="flagsCurrent" class="mt-2" style="display: none;"></div>
+            
+            <!-- Tag List (Hidden duplicate - remove or keep synced) -->
+            <div id="currentTagsList" class="mt-2" style="display: none;">
+                {% if email_tags %}
+                    {% for tag in email_tags %}
+                    <span class="badge d-inline-flex align-items-center gap-2 me-1" style="background-color: {{ tag.color }};">
+                        {{ tag.name }}
+                        <button type="button" class="btn btn-close btn-close-white ms-2 remove-tag-btn" style="font-size: 10px;" 
+                                data-email-id="{{ email.id }}"
+                                data-tag-id="{{ tag.id }}"
+                                data-tag-name="{{ tag.name }}"
+                                aria-label="Entfernen"></button>
+                    </span>
+                    {% endfor %}
+                {% else %}
+                    <span class="text-muted">Keine Tags zugewiesen</span>
+                {% endif %}
+            </div>
+            
+            <!-- Alte Tags (DEPRECATED, nur zur Anzeige) -->
+            {% if decrypted_tags %}
+            <div class="mt-2">
+                <small class="text-muted">Legacy-Tags:</small>
+                {% for tag in decrypted_tags.split(',') %}
+                    {% if tag.strip() %}
+                    <span class="badge bg-secondary">{{ tag.strip() }}</span>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- Zusammenfassung -->
+        <div class="alert alert-info">
+            <h5>📝 Zusammenfassung</h5>
+            <p>{{ decrypted_summary_de|default('Keine Zusammenfassung verfügbar') }}</p>
+        </div>
+        
+        <!-- Deutsche Übersetzung -->
+        <div class="mb-4">
+            <h5>📄 Übersetzter Text (DE)</h5>
+            <div class="border p-3 bg-light" style="white-space: pre-wrap;">{{ decrypted_text_de|default('Keine Übersetzung verfügbar') }}</div>
+        </div>
+        
+        <!-- Email-Inhalt Tabs -->
+        <div class="mb-4">
+            <h5>📧 E-Mail Inhalt</h5>
+            <ul class="nav nav-tabs" id="emailTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="renderedTab" data-bs-toggle="tab" data-bs-target="#renderedContent" type="button" role="tab" aria-controls="renderedContent" aria-selected="true">
+                        🔍 Gerendert
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="rawHtmlTab" data-bs-toggle="tab" data-bs-target="#rawHtmlContent" type="button" role="tab" aria-controls="rawHtmlContent" aria-selected="false">
+                        <> Raw HTML
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="rawContentTab" data-bs-toggle="tab" data-bs-target="#rawContentContent" type="button" role="tab" aria-controls="rawContentContent" aria-selected="false">
+                        📄 Raw Content
+                    </button>
+                </li>
+                <!-- Phase 22: Anonymisiert-Tab (nur wenn Content vorhanden) -->
+                {% if raw_email and raw_email.has_sanitized_content %}
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="anonTab" data-bs-toggle="tab" data-bs-target="#anonContent" type="button" role="tab" aria-controls="anonContent" aria-selected="false">
+                        🛡️ Anonymisiert
+                        {% if raw_email.sanitization_entities_count %}
+                        <span class="badge bg-info">{{ raw_email.sanitization_entities_count }}</span>
+                        {% endif %}
+                    </button>
+                </li>
+                {% endif %}
+            </ul>
+            
+            <div class="tab-content" id="emailTabContent">
+                <!-- Rendered Tab -->
+                <div class="tab-pane fade show active" id="renderedContent" role="tabpanel" aria-labelledby="renderedTab">
+                    <div class="alert alert-info alert-sm mt-3">
+                        <small>ℹ️ Diese E-Mail lädt externe Bilder und Schriftarten (z.B. Tracking-Pixel). Scripts sind blockiert.</small>
+                    </div>
+                    <div class="border bg-white">
+                        <iframe 
+                            src="/email/{{ email.raw_email_id }}/render-html" 
+                            style="width: 100%; height: 600px; border: none;" 
+                            sandbox="allow-same-origin"
+                            title="E-Mail Vorschau">
+                        </iframe>
+                    </div>
+                </div>
+                
+                <!-- Raw HTML Tab -->
+                <div class="tab-pane fade" id="rawHtmlContent" role="tabpanel" aria-labelledby="rawHtmlTab">
+                    <div class="mt-3">
+                        <div class="d-flex justify-content-between mb-2">
+                            <small class="text-muted">HTML-Quelltext</small>
+                            <button class="btn btn-sm btn-outline-secondary" id="copyRawHtmlBtn" title="Kopieren">
+                                📋 Kopieren
+                            </button>
+                        </div>
+                        <pre><code id="rawHtmlCode" class="language-html">{{ decrypted_body|default('Kein Original verfügbar') }}</code></pre>
+                    </div>
+                </div>
+                
+                <!-- Raw Content Tab -->
+                <div class="tab-pane fade" id="rawContentContent" role="tabpanel" aria-labelledby="rawContentTab">
+                    <div class="mt-3">
+                        <div class="alert alert-warning">
+                            <small>
+                                ⚠️ <strong>RAW CONTENT</strong> - Exakt das, was ContentSanitizer als Input bekommt (1:1 aus DB, entschlüsselt).
+                                <br>📊 Länge: {{ decrypted_body|length if decrypted_body else 0 }} Zeichen
+                            </small>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <small class="text-muted">Unverarbeiter DB-Content (decrypted_body)</small>
+                            <button class="btn btn-sm btn-outline-primary" id="copyRawContentBtn" title="Kopieren">
+                                📋 Kopieren
+                            </button>
+                        </div>
+                        <pre><code id="rawContentCode" style="max-height: 600px; overflow-y: auto; background: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; white-space: pre-wrap;">{{ decrypted_body|default('Kein Content verfügbar') }}</code></pre>
+                    </div>
+                </div>
+                
+                <!-- Phase 22: Anonymisiert-Tab Content -->
+                {% if raw_email and raw_email.has_sanitized_content %}
+                <div class="tab-pane fade" id="anonContent" role="tabpanel" aria-labelledby="anonTab">
+                    <div class="card bg-dark border-secondary mt-3">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span>🛡️ Pseudonymisierte Version</span>
+                            <div>
+                                {% if raw_email.sanitization_level %}
+                                <span class="badge bg-secondary me-2">
+                                    Level {{ raw_email.sanitization_level }}
+                                    {% if raw_email.sanitization_level == 1 %}(Regex)
+                                    {% elif raw_email.sanitization_level == 2 %}(spaCy Light)
+                                    {% else %}(spaCy Full){% endif %}
+                                </span>
+                                {% endif %}
+                                {% if raw_email.sanitization_time_ms %}
+                                <span class="badge bg-secondary">{{ "%.1f"|format(raw_email.sanitization_time_ms) }}ms</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info">
+                                <small>
+                                    ℹ️ Diese Version wurde pseudonymisiert. Personenbezogene Daten (Namen, Orte, Firmen, E-Mails, Telefon, IBAN) 
+                                    wurden durch Platzhalter ersetzt.
+                                    {% if raw_email.sanitization_entities_count %}
+                                    <br><strong>{{ raw_email.sanitization_entities_count }}</strong> Entities erkannt und ersetzt.
+                                    {% endif %}
+                                </small>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label"><strong>Betreff:</strong></label>
+                                <div class="bg-light p-2 rounded text-dark">{{ decrypted_subject_sanitized|default('Nicht verfügbar') }}</div>
+                            </div>
+                            <div>
+                                <label class="form-label"><strong>Inhalt:</strong></label>
+                                <div class="border bg-white p-3" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                                    <pre style="
+                                        white-space: pre-wrap; 
+                                        font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace; 
+                                        margin: 0; 
+                                        font-size: 13px; 
+                                        line-height: 1.6;
+                                        color: #2d3748;
+                                        background: none;
+                                    ">{{ decrypted_body_sanitized|default('Nicht verfügbar') }}</pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- IMAP-Flags Status -->
+        <div class="mb-4">
+            <h5>🚩 IMAP-Flags</h5>
+            <div class="row">
+                <div class="col-md-6">
+                    <h6 class="text-muted">Beim Processing:</h6>
+                    <div id="flagsAtProcessing" class="mb-3">
+                        {% if email.was_seen_at_processing %}
+                        <span class="badge bg-info">👁️ Gelesen</span>
+                        {% else %}
+                        <span class="badge bg-secondary">🔘 Ungelesen</span>
+                        {% endif %}
+                        {% if email.was_answered_at_processing %}
+                        <span class="badge bg-success">✉️ Beantwortet</span>
+                        {% endif %}
+                        {% if email.imap_flags_at_processing %}
+                        <div class="small text-muted mt-2"><code>{{ email.imap_flags_at_processing }}</code></div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h6 class="text-muted">Aktuell vom Server:</h6>
+                    <div id="flagsCurrent" class="mb-3">
+                        {% if raw and raw.imap_is_seen %}
+                        <span class="badge bg-info">👁️ Gelesen</span>
+                        {% else %}
+                        <span class="badge bg-secondary">🔘 Ungelesen</span>
+                        {% endif %}
+                        {% if raw and raw.imap_is_flagged %}
+                        <span class="badge bg-danger">🚩 Markiert</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div id="flagsChangedAlert" class="alert alert-warning mt-3" style="display: none;">
+                <strong>⚠️ Status hat sich geändert!</strong>
+                <div id="flagChangesDetail"></div>
+            </div>
+        </div>
+        
+        <!-- Technische Informationen -->
+        <div class="mb-4">
+            <h5>🔧 Technische Informationen</h5>
+            <table class="table table-sm table-borderless">
+                <tbody>
+                    <tr>
+                        <td><strong>IMAP UID:</strong></td>
+                        <td>
+                            {% if email.raw_email.imap_uid %}
+                            <code>{{ email.raw_email.imap_uid }}</code>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>IMAP Folder:</strong></td>
+                        <td>
+                            {% if email.raw_email.imap_folder %}
+                            <code>{{ email.raw_email.imap_folder }}</code>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Thread ID:</strong></td>
+                        <td>
+                            {% if email.raw_email.thread_id %}
+                            <code>{{ email.raw_email.thread_id }}</code>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Größe:</strong></td>
+                        <td>
+                            {% if email.raw_email.message_size %}
+                            {{ (email.raw_email.message_size / 1024)|round(2) }} KB
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="2"><hr class="my-2"></td>
+                    </tr>
+                    <tr>
+                        <td><strong>🤖 Initial Analyse:</strong></td>
+                        <td>
+                            {% if email.analysis_method == 'none' %}
+                            <span class="badge bg-secondary">Keine Analyse</span>
+                            <small class="text-muted">(AI-Analyse beim Abruf deaktiviert)</small>
+                            
+                            {% elif email.analysis_method == 'spacy_booster' or email.analysis_method == 'hybrid_booster' %}
+                            <span class="badge bg-info">⚡ Spacy Booster</span>
+                            <small class="text-muted">(Regel-basiert, lokal, keine LLM-Kosten)</small>
+                            {% if email.ai_confidence %}
+                            <span class="badge bg-light text-dark ms-1" title="AI Confidence Score">{{ "%.0f"|format(email.ai_confidence * 100) }}%</span>
+                            {% endif %}
+                            
+                            {% elif email.analysis_method and email.analysis_method.startswith('llm_anon:') %}
+                            <span class="badge bg-warning text-dark">🛡️ LLM auf Anonymen Daten</span>
+                            <small class="text-muted">({{ email.analysis_method.replace('llm_anon:', '').upper() }} - {{ email.base_model or 'unbekannt' }})</small>
+                            {% if email.ai_confidence %}
+                            <span class="badge bg-light text-dark ms-1" title="AI Confidence Score">{{ "%.0f"|format(email.ai_confidence * 100) }}%</span>
+                            {% endif %}
+                            
+                            {% elif email.analysis_method and email.analysis_method.startswith('llm:') %}
+                            <span class="badge bg-primary">🤖 {{ email.analysis_method.replace('llm:', '').upper() }}</span>
+                            <small class="text-muted">({{ email.base_model or 'unbekannt' }})</small>
+                            {% if email.ai_confidence %}
+                            <span class="badge bg-light text-dark ms-1" title="AI Confidence Score">{{ "%.0f"|format(email.ai_confidence * 100) }}%</span>
+                            {% endif %}
+                            
+                            {% elif email.base_provider and email.base_model %}
+                            <span class="badge bg-info">{{ email.base_provider|upper }}</span>
+                            <code>{{ email.base_model }}</code>
+                            {% if email.ai_confidence %}
+                            <span class="badge bg-light text-dark ms-1" title="AI Confidence Score">{{ "%.0f"|format(email.ai_confidence * 100) }}%</span>
+                            {% endif %}
+                            
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% if email.processed_at %}
+                    <tr>
+                        <td><strong>📅 Analysiert am:</strong></td>
+                        <td>
+                            {% set utc_time = email.processed_at %}
+                            {% set hour = utc_time.hour + 1 %}
+                            {% if hour >= 24 %}{% set hour = hour - 24 %}{% endif %}
+                            {{ '%02d'|format(utc_time.day) }}.{{ '%02d'|format(utc_time.month) }}.{{ utc_time.year }} {{ '%02d'|format(hour) }}:{{ '%02d'|format(utc_time.minute) }}:{{ '%02d'|format(utc_time.second) }}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <td><strong>📊 Initial Einstufung:</strong></td>
+                        <td>
+                            <span class="badge bg-secondary">D: {{ email.dringlichkeit if email.dringlichkeit is not none else '?' }}</span>
+                            <span class="badge bg-secondary">W: {{ email.wichtigkeit if email.wichtigkeit is not none else '?' }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>🎯 Score:</strong></td>
+                        <td>
+                            {% if email.score is not none %}
+                            <span class="badge priority-{{ email.farbe }} fs-4">{{ email.score }}</span>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>🎯 Kategorie:</strong></td>
+                        <td>
+                            <code>{{ email.kategorie_aktion if email.kategorie_aktion else 'N/A' }}</code>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>🚫 Spam:</strong></td>
+                        <td>
+                            {% if email.spam_flag %}
+                            <span class="badge bg-danger">⚠️ JA</span>
+                            {% else %}
+                            <span class="badge bg-success">✓ Nein</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% if email.optimization_status and email.optimization_status != 'pending' %}
+                    <tr>
+                        <td colspan="2"><hr class="my-2"></td>
+                    </tr>
+                    <tr>
+                        <td><strong>⚙️ Optimize Pass:</strong></td>
+                        <td>
+                            {% if email.optimize_provider and email.optimize_model %}
+                            <span class="badge bg-success">{{ email.optimize_provider|upper }}</span>
+                            <code>{{ email.optimize_model }}</code>
+                            {% if email.optimize_confidence %}
+                            <span class="badge bg-light text-dark ms-1" title="Optimize Pass Confidence Score">{{ "%.0f"|format(email.optimize_confidence * 100) }}%</span>
+                            {% endif %}
+                            {% else %}
+                            <span class="text-muted">Nicht durchgeführt</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% if email.optimization_completed_at %}
+                    <tr>
+                        <td><strong>📅 Optimiert am:</strong></td>
+                        <td>
+                            {% set utc_time = email.optimization_completed_at %}
+                            {% set hour = utc_time.hour + 1 %}
+                            {% if hour >= 24 %}{% set hour = hour - 24 %}{% endif %}
+                            {{ '%02d'|format(utc_time.day) }}.{{ '%02d'|format(utc_time.month) }}.{{ utc_time.year }} {{ '%02d'|format(hour) }}:{{ '%02d'|format(utc_time.minute) }}:{{ '%02d'|format(utc_time.second) }}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <td><strong>📊 Neue Einstufung:</strong></td>
+                        <td>
+                            <span class="badge bg-secondary">D: {{ email.optimize_dringlichkeit if email.optimize_dringlichkeit is not none else '?' }}</span>
+                            <span class="badge bg-secondary">W: {{ email.optimize_wichtigkeit if email.optimize_wichtigkeit is not none else '?' }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>🎯 Neuer Score:</strong></td>
+                        <td>
+                            {% if email.optimize_score is not none %}
+                            <span class="badge priority-{{ email.optimize_farbe }} fs-4">{{ email.optimize_score }}</span>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>🎯 Neue Kategorie:</strong></td>
+                        <td>
+                            <code>{{ email.optimize_kategorie_aktion if email.optimize_kategorie_aktion else 'N/A' }}</code>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>🚫 Neuer Spam:</strong></td>
+                        <td>
+                            {% if email.optimize_spam_flag is not none %}
+                                {% if email.optimize_spam_flag %}
+                                <span class="badge bg-danger">⚠️ JA</span>
+                                {% else %}
+                                <span class="badge bg-success">✓ Nein</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    
+                    {% if email.correction_timestamp %}
+                    <tr>
+                        <td colspan="2"><hr class="my-2"></td>
+                    </tr>
+                    <tr>
+                        <td><strong>✏️ User-Korrektur:</strong></td>
+                        <td>
+                            <span class="badge bg-warning text-dark">✓ Gespeichert</span>
+                            {% if email.correction_timestamp %}
+                            <small class="text-muted">({{ email.correction_timestamp.strftime('%d.%m.%Y %H:%M') }})</small>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% if email.user_override_dringlichkeit is not none or email.user_override_wichtigkeit is not none %}
+                    <tr>
+                        <td><strong>📊 Korrigierte Einstufung:</strong></td>
+                        <td>
+                            {% if email.user_override_dringlichkeit is not none %}
+                            <span class="badge bg-secondary">D: {{ email.user_override_dringlichkeit }}</span>
+                            {% endif %}
+                            {% if email.user_override_wichtigkeit is not none %}
+                            <span class="badge bg-secondary">W: {{ email.user_override_wichtigkeit }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if email.user_override_kategorie %}
+                    <tr>
+                        <td><strong>🎯 Korrigierte Kategorie:</strong></td>
+                        <td>
+                            <code>{{ email.user_override_kategorie }}</code>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if email.user_override_spam_flag is not none %}
+                    <tr>
+                        <td><strong>🚫 Korrigierter Spam:</strong></td>
+                        <td>
+                            {% if email.user_override_spam_flag %}
+                            <span class="badge bg-danger">⚠️ JA</span>
+                            {% else %}
+                            <span class="badge bg-success">✓ Nein</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Phase F.1: Similar Emails -->
+        <div class="card bg-light p-3 mt-3">
+            <h6 class="mb-2">🧠 Ähnliche E-Mails</h6>
+            <div id="similarEmailsContainer">
+                <div class="text-center text-muted small">
+                    <div class="spinner-border spinner-border-sm" role="status"></div>
+                    Lade ähnliche E-Mails...
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons Section -->
+        <div class="card bg-light p-3">
+            <div class="action-buttons">
+                <button class="btn btn-warning w-100" id="correctBtn" data-bs-toggle="modal" data-bs-target="#correctionModal">
+                    ✏️ Bewertung korrigieren
+                </button>
+                <button class="btn btn-primary w-100 mt-2" id="reprocessBtn">
+                    🔄 Base-Pass neu
+                </button>
+                <button class="btn btn-outline-secondary w-100 mt-2" id="optimizeBtn">
+                    🔧 Optimize-Pass
+                </button>
+                <button class="btn btn-outline-primary todo-btn w-100 mt-2" data-action="reply">
+                    ✍️ Antwort-Entwurf generieren
+                </button>
+                <button class="btn btn-primary w-100 mt-2" id="sendReplyBtn">
+                    📤 Antwort senden
+                </button>
+                <button class="btn btn-outline-info todo-btn w-100 mt-2" data-action="calendar">
+                    📅 Kalendereintrag anlegen
+                </button>
+                <button class="btn btn-outline-secondary todo-btn w-100 mt-2" data-action="todo">
+                    📋 Auf ToDo-Liste setzen
+                </button>
+
+                <!-- Phase 13: Server-Aktionen (IMAP-Sync) -->
+                <div class="btn-group w-100 mt-3" role="group">
+                    <button type="button" class="btn btn-outline-secondary sync-action-btn" id="toggleReadBtn" 
+                            data-action="toggle-read" title="Gelesen/Ungelesen wechseln">
+                        {% if raw and raw.imap_is_seen %}👁️ Ungelesen{% else %}🔘 Gelesen{% endif %}
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary sync-action-btn" id="markFlagBtn" 
+                            data-action="mark-flag" title="Wichtig-Flag toggle">
+                        {% if raw and raw.imap_is_flagged %}🚩 Unflag{% else %}🚩️ Flag{% endif %}
+                    </button>
+                </div>
+                <div class="btn-group w-100 mt-2" role="group">
+                    <button type="button" class="btn btn-outline-info sync-action-btn" id="moveFolderBtn" 
+                            data-action="move-folder" title="In einen anderen Ordner verschieben">
+                        📁 In Ordner verschieben
+                    </button>
+                    <button type="button" class="btn btn-outline-warning sync-action-btn" id="moveTrashBtn" 
+                            data-action="move-trash" title="In Papierkorb verschieben">
+                        🗑️ In Papierkorb
+                    </button>
+                    <button type="button" class="btn btn-outline-danger sync-action-btn" id="deleteBtn" 
+                            data-action="delete" title="Permanent löschen">
+                        🗑️ Permanent löschen
+                    </button>
+                </div>
+
+                {% if not email.done %}
+                <form method="post" action="/email/{{ email.raw_email_id }}/done" id="markDoneForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <button type="submit" id="markDoneBtn" class="btn btn-success w-100 mt-3">
+                        ✓ Als erledigt markieren
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+const emailId = {{ email.raw_email_id }};
+
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+}
+
+function getAnalysisModal() {
+    if (typeof analysisModal === 'undefined' || !analysisModal) {
+        analysisModal = new bootstrap.Modal(document.getElementById('progressModal'), {backdrop: 'static', keyboard: false});
+    }
+    return analysisModal;
+}
+
+function reprocessEmail(emailId) {
+    const btn = document.getElementById('reprocessBtn');
+    const markDoneBtn = document.getElementById('markDoneBtn');
+    const optimizeBtn = document.getElementById('optimizeBtn');
+    
+    btn.disabled = true;
+    if (markDoneBtn) markDoneBtn.disabled = true;
+    if (optimizeBtn) optimizeBtn.disabled = true;
+    
+    const modal = getAnalysisModal();
+    modal.show();
+    
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressBar').classList.remove('bg-danger');
+    document.getElementById('progressPercent').textContent = '0%';
+    document.getElementById('progressText').textContent = 'Reprocessing: Email wird neu verarbeitet...';
+    document.getElementById('statusMessage').style.display = 'none';
+    document.getElementById('closeAnalysisBtn').style.display = 'none';
+    
+    // Timer für elapsed time
+    const startTime = Date.now();
+    const timerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('elapsedTime').textContent = elapsed + 's';
+    }, 1000);
+    
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+        progress = Math.min(90, progress + Math.random() * 30);
+        document.getElementById('progressBar').style.width = progress + '%';
+        document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+    }, 200);
+    
+    fetch(`/email/${emailId}/reprocess`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        clearInterval(progressInterval);
+        clearInterval(timerInterval);
+        document.getElementById('progressBar').style.width = '100%';
+        if (data.status === 'success') {
+            document.getElementById('progressPercent').textContent = '100%';
+            document.getElementById('progressText').textContent = 'Erfolg! Email wurde neu verarbeitet.';
+            document.getElementById('statusMessage').style.display = 'block';
+            document.getElementById('statusMessage').className = 'alert alert-success';
+            document.getElementById('statusMessage').textContent = 'Email wurde erfolgreich neu verarbeitet!';
+            const closeBtn = document.getElementById('closeAnalysisBtn');
+            closeBtn.style.display = 'block';
+            closeBtn.onclick = () => {
+                modal.hide();
+                location.reload();  // Seite neu laden um aktualisierte Daten zu zeigen
+            };
+        } else {
+            document.getElementById('progressBar').classList.add('bg-danger');
+            document.getElementById('progressText').textContent = 'Fehler beim Reprocessing';
+            document.getElementById('statusMessage').style.display = 'block';
+            document.getElementById('statusMessage').className = 'alert alert-danger';
+            document.getElementById('statusMessage').textContent = data.error || 'Fehler beim Reprocessing';
+            const closeBtn = document.getElementById('closeAnalysisBtn');
+            closeBtn.style.display = 'block';
+            closeBtn.onclick = () => { modal.hide(); };
+        }
+    })
+    .catch(error => {
+        clearInterval(progressInterval);
+        clearInterval(timerInterval);
+        document.getElementById('progressBar').classList.add('bg-danger');
+        document.getElementById('progressText').textContent = 'Fehler';
+        document.getElementById('statusMessage').style.display = 'block';
+        document.getElementById('statusMessage').className = 'alert alert-danger';
+        document.getElementById('statusMessage').textContent = error.message;
+        const closeBtn = document.getElementById('closeAnalysisBtn');
+        closeBtn.style.display = 'block';
+        closeBtn.onclick = () => { modal.hide(); };
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const emailId = {{ email.id }};
+    
+    // Copy raw HTML button
+    document.getElementById('copyRawHtmlBtn').addEventListener('click', function() {
+        const code = document.getElementById('rawHtmlCode').textContent;
+        navigator.clipboard.writeText(code).then(() => {
+            this.textContent = '✅ Kopiert!';
+            setTimeout(() => { this.textContent = '📋 Kopieren'; }, 2000);
+        });
+    });
+    
+    // Copy raw content button
+    document.getElementById('copyRawContentBtn').addEventListener('click', function() {
+        const code = document.getElementById('rawContentCode').textContent;
+        navigator.clipboard.writeText(code).then(() => {
+            this.textContent = '✅ Kopiert!';
+            setTimeout(() => { this.textContent = '📋 Kopieren'; }, 2000);
+        });
+    });
+    
+    // Reprocess button
+    document.getElementById('reprocessBtn').addEventListener('click', function(e) {
+        e.preventDefault();
+        reprocessEmail(emailId);
+    });
+    
+    // Optimize button
+    document.getElementById('optimizeBtn').addEventListener('click', function(e) {
+        e.preventDefault();
+        const btn = this;
+        
+        btn.disabled = true;
+        btn.textContent = '⏳ Optimiere...';
+        
+        const modal = getAnalysisModal();
+        modal.show();
+        
+        document.getElementById('progressBar').style.width = '0%';
+        document.getElementById('progressPercent').textContent = '0%';
+        document.getElementById('progressText').textContent = 'Optimize-Pass läuft...';
+        
+        // Timer für elapsed time
+        const startTime = Date.now();
+        const timerInterval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            document.getElementById('elapsedTime').textContent = elapsed + 's';
+        }, 1000);
+        
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress = Math.min(90, progress + Math.random() * 25);
+            document.getElementById('progressBar').style.width = progress + '%';
+            document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+        }, 300);
+        
+        fetch(`/email/${emailId}/optimize`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            clearInterval(progressInterval);
+            clearInterval(timerInterval);
+            document.getElementById('progressBar').style.width = '100%';
+            document.getElementById('progressPercent').textContent = '100%';
+            
+            if (data.status === 'success') {
+                document.getElementById('progressText').textContent = 'Optimize-Pass abgeschlossen!';
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusMessage').className = 'alert alert-success';
+                document.getElementById('statusMessage').innerHTML = `✓ Neue Kategorie: <strong>${data.kategorie_aktion || 'undefined'}</strong>`;
+                const closeBtn = document.getElementById('closeAnalysisBtn');
+                closeBtn.style.display = 'block';
+                closeBtn.onclick = () => {
+                    modal.hide();
+                    // Bleibe auf Detail-Seite und lade neu für aktualisierte Daten
+                    location.reload();
+                };
+                btn.disabled = false;
+                btn.textContent = '🔧 Optimize-Pass (bessere Kategorisierung)';
+            } else {
+                document.getElementById('progressBar').classList.add('bg-danger');
+                document.getElementById('progressText').textContent = 'Fehler';
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusMessage').className = 'alert alert-danger';
+                document.getElementById('statusMessage').textContent = data.error || 'Fehler beim Optimize';
+                const closeBtn = document.getElementById('closeAnalysisBtn');
+                closeBtn.style.display = 'block';
+                closeBtn.onclick = () => { modal.hide(); };
+                btn.disabled = false;
+                btn.textContent = '🔧 Optimize-Pass (bessere Kategorisierung)';
+            }
+        })
+        .catch(error => {
+            clearInterval(progressInterval);
+            clearInterval(timerInterval);
+            document.getElementById('progressBar').classList.add('bg-danger');
+            document.getElementById('progressText').textContent = 'Fehler';
+            document.getElementById('statusMessage').style.display = 'block';
+            document.getElementById('statusMessage').className = 'alert alert-danger';
+            document.getElementById('statusMessage').textContent = error.message;
+            const closeBtn = document.getElementById('closeAnalysisBtn');
+            closeBtn.style.display = 'block';
+            closeBtn.onclick = () => { modal.hide(); };
+            btn.disabled = false;
+            btn.textContent = '🔧 Optimize-Pass (bessere Kategorisierung)';
+        });
+    });
+    
+    // Add tag button
+    document.getElementById('addTagBtn').addEventListener('click', function() {
+        const modal = new bootstrap.Modal(document.getElementById('addTagModal'));
+        modal.show();
+    });
+    
+    // Reprocess email button (regenerate embedding + AI score with current base model)
+    const reprocessBtn = document.getElementById('reprocessEmailBtn');
+    if (reprocessBtn) {
+        reprocessBtn.addEventListener('click', async function() {
+            const originalText = reprocessBtn.innerHTML;
+            
+            try {
+                // 1. PRE-CHECK: Embedding-Kompatibilität prüfen
+                reprocessBtn.disabled = true;
+                reprocessBtn.innerHTML = '🔍 Prüfe Kompatibilität...';
+                
+                const checkResponse = await fetch(`/api/emails/${emailId}/check-embedding-compatibility`, {
+                    method: 'GET',
+                    headers: { 'X-CSRFToken': getCsrfToken() },
+                    credentials: 'include'
+                });
+                
+                const checkData = await checkResponse.json();
+                
+                // Falls NICHT kompatibel → Warnung und STOP
+                if (!checkData.compatible) {
+                    reprocessBtn.disabled = false;
+                    reprocessBtn.innerHTML = originalText;
+                    
+                    alert('⚠️ Embedding-Model-Konflikt!\n\n' +
+                          `Diese Email: ${checkData.current_dim} Dimensionen\n` +
+                          `Andere Emails: ${checkData.expected_dim} Dimensionen\n\n` +
+                          'Die Verarbeitung wurde NICHT gestartet.\n\n' +
+                          'Lösung: Gehe zu Settings → "Alle Emails neu embedden"\n' +
+                          'um alle Emails mit dem gleichen Model zu verarbeiten.');
+                    return;
+                }
+                
+                // 2. KOMPATIBEL → Bestätigung anzeigen
+                reprocessBtn.disabled = false;
+                reprocessBtn.innerHTML = originalText;
+                
+                if (!confirm('Email neu verarbeiten?\n\n' +
+                            'Dies regeneriert:\n' +
+                            '• Embedding (mit aktuellem EMBEDDING Model)\n' +
+                            '• KI-Score & Kategorie (mit BASE Model)\n' +
+                            '• Tag-Vorschläge werden aktualisiert')) {
+                    return;
+                }
+                
+                // 3. STARTEN → Progress-Anzeige
+                reprocessBtn.disabled = true;
+                reprocessBtn.innerHTML = '⏳ Verarbeite...';
+                
+                // Progress Modal
+                const progressHtml = `
+                    <div class="modal fade" id="reprocessProgressModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+                        <div class="modal-dialog modal-dialog-centered">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">⏳ Email wird verarbeitet</h5>
+                                </div>
+                                <div class="modal-body">
+                                    <p>Embedding + Score werden regeneriert...</p>
+                                    <div class="progress mb-3" style="height: 25px;">
+                                        <div id="reprocessProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                             role="progressbar" style="width: 0%">0%</div>
+                                    </div>
+                                    <small class="text-muted">
+                                        <span id="reprocessElapsed">0s</span> / max. 10 Minuten
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                if (!document.getElementById('reprocessProgressModal')) {
+                    document.body.insertAdjacentHTML('beforeend', progressHtml);
+                }
+                
+                const progressModal = new bootstrap.Modal(document.getElementById('reprocessProgressModal'));
+                progressModal.show();
+                
+                const startTime = Date.now();
+                const maxDuration = 600; // 10 Minuten
+                
+                // Progress Timer
+                const progressInterval = setInterval(() => {
+                    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                    const progress = Math.min(95, (elapsed / maxDuration) * 100);
+                    
+                    document.getElementById('reprocessProgressBar').style.width = progress + '%';
+                    document.getElementById('reprocessProgressBar').textContent = Math.floor(progress) + '%';
+                    document.getElementById('reprocessElapsed').textContent = elapsed + 's';
+                    
+                    if (elapsed >= maxDuration) {
+                        clearInterval(progressInterval);
+                    }
+                }, 1000);
+                
+                // 4. API-Call
+                const response = await fetch(`/api/emails/${emailId}/reprocess`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    credentials: 'include'
+                });
+                
+                clearInterval(progressInterval);
+                
+                const data = await response.json();
+                
+                // Progress auf 100%
+                document.getElementById('reprocessProgressBar').style.width = '100%';
+                document.getElementById('reprocessProgressBar').textContent = '100%';
+                document.getElementById('reprocessProgressBar').classList.remove('progress-bar-animated');
+                
+                setTimeout(() => {
+                    progressModal.hide();
+                    
+                    if (response.ok) {
+                        alert('✅ Email erfolgreich neu verarbeitet!\n\n' +
+                              `Embedding Model: ${data.embedding_model || 'unbekannt'}\n` +
+                              `KI-Score: ${data.ai_score !== undefined ? data.ai_score.toFixed(3) : 'n/a'}`);
+                        location.reload();
+                    } else {
+                        alert('❌ Fehler: ' + (data.error || 'Verarbeitung fehlgeschlagen'));
+                        reprocessBtn.disabled = false;
+                        reprocessBtn.innerHTML = originalText;
+                    }
+                }, 500);
+                
+            } catch (error) {
+                alert('❌ Netzwerkfehler: ' + error.message);
+                reprocessBtn.disabled = false;
+                reprocessBtn.innerHTML = originalText;
+                
+                // Close modal on error
+                const modal = bootstrap.Modal.getInstance(document.getElementById('reprocessProgressModal'));
+                if (modal) modal.hide();
+            }
+        });
+    }
+    
+    // Phase F.2: Load and display smart tag suggestions
+    async function loadTagSuggestions() {
+        try {
+            const response = await fetch(`/api/emails/${emailId}/tag-suggestions`, {
+                method: 'GET',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                console.warn('Tag suggestions fetch failed:', response.status);
+                return;
+            }
+            
+            const data = await response.json();
+            
+            if (data.suggestions && data.suggestions.length > 0) {
+                const suggestionsBox = document.getElementById('tagSuggestionsBox');
+                const suggestionsList = document.getElementById('tagSuggestionsList');
+                
+                // Clear previous suggestions
+                suggestionsList.innerHTML = '';
+                
+                // Add each suggestion as a clickable badge
+                data.suggestions.forEach(suggestion => {
+                    const container = document.createElement('span');
+                    container.className = 'd-inline-flex align-items-center me-1 mb-1';
+                    container.style.position = 'relative';
+                    
+                    const badge = document.createElement('span');
+                    badge.className = 'badge';
+                    badge.style.cursor = 'pointer';
+                    badge.style.backgroundColor = suggestion.color || '#3B82F6';
+                    badge.style.paddingRight = '24px'; // Space for X button
+                    
+                    // Similarity color coding
+                    const similarity = suggestion.similarity || 0;
+                    if (similarity >= 0.85) {
+                        badge.style.borderLeft = '3px solid #22c55e'; // Green = high match
+                    } else if (similarity >= 0.75) {
+                        badge.style.borderLeft = '3px solid #f59e0b'; // Orange = good match
+                    } else {
+                        badge.style.borderLeft = '3px solid #6b7280'; // Gray = ok match
+                    }
+                    
+                    const similarityPercent = Math.round(similarity * 100);
+                    badge.innerHTML = `${suggestion.name} <small>(${similarityPercent}%)</small>`;
+                    badge.title = `Click to assign tag. Similarity: ${similarityPercent}%`;
+                    
+                    // Click handler to assign tag
+                    badge.addEventListener('click', async () => {
+                        try {
+                            const assignResponse = await fetch(`/api/emails/${emailId}/tags`, {
+                                method: 'POST',
+                                headers: { 
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': getCsrfToken()
+                                },
+                                body: JSON.stringify({ tag_id: suggestion.id })
+                            });
+                            
+                            if (assignResponse.ok) {
+                                location.reload();
+                            } else {
+                                const errorData = await assignResponse.json();
+                                alert('Fehler: ' + (errorData.error || 'Tag konnte nicht zugewiesen werden'));
+                            }
+                        } catch (error) {
+                            alert('Fehler beim Zuweisen: ' + error.message);
+                        }
+                    });
+                    
+                    // 🚫 Phase F.3: Reject button
+                    const rejectBtn = document.createElement('span');
+                    rejectBtn.innerHTML = '×';
+                    rejectBtn.className = 'position-absolute';
+                    rejectBtn.style.cssText = 'right: 4px; top: 50%; transform: translateY(-50%); cursor: pointer; font-size: 18px; font-weight: bold; color: rgba(255,255,255,0.7); line-height: 1;';
+                    rejectBtn.title = 'Tag ablehnen (wird als negatives Beispiel gespeichert)';
+                    
+                    rejectBtn.addEventListener('click', async (e) => {
+                        e.stopPropagation(); // Don't trigger badge click
+                        
+                        if (!confirm(`Tag "${suggestion.name}" ablehnen?\n\nDieser Tag wird als negatives Beispiel für diese Art von Emails gespeichert.`)) {
+                            return;
+                        }
+                        
+                        try {
+                            const rejectResponse = await fetch(`/api/emails/${emailId}/tags/${suggestion.id}/reject`, {
+                                method: 'POST',
+                                headers: { 
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': getCsrfToken()
+                                },
+                                credentials: 'include'
+                            });
+                            
+                            if (rejectResponse.ok) {
+                                // Remove suggestion from UI
+                                container.remove();
+                                
+                                // If no more suggestions, hide box
+                                if (suggestionsList.children.length === 0) {
+                                    suggestionsBox.style.display = 'none';
+                                }
+                                
+                                console.log(`🚫 Tag "${suggestion.name}" als negatives Beispiel gespeichert`);
+                            } else {
+                                const errorData = await rejectResponse.json();
+                                alert('Fehler: ' + (errorData.error || 'Tag konnte nicht abgelehnt werden'));
+                            }
+                        } catch (error) {
+                            alert('Fehler beim Ablehnen: ' + error.message);
+                        }
+                    });
+                    
+                    // Hover effects
+                    rejectBtn.addEventListener('mouseenter', () => {
+                        rejectBtn.style.color = 'rgba(255,255,255,1)';
+                        rejectBtn.style.transform = 'translateY(-50%) scale(1.2)';
+                    });
+                    rejectBtn.addEventListener('mouseleave', () => {
+                        rejectBtn.style.color = 'rgba(255,255,255,0.7)';
+                        rejectBtn.style.transform = 'translateY(-50%) scale(1)';
+                    });
+                    
+                    container.appendChild(badge);
+                    container.appendChild(rejectBtn);
+                    suggestionsList.appendChild(container);
+                });
+                
+                // Show the suggestions box
+                suggestionsBox.style.display = 'block';
+                
+                // Log method used
+                if (data.method === 'embedding') {
+                    console.log('✅ Phase F.2: Tag suggestions via Email-Embeddings');
+                } else if (data.method === 'text-fallback') {
+                    console.log('⚠️  Tag suggestions via text fallback (no embedding)');
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to load tag suggestions:', error);
+        }
+    }
+    
+    // Load suggestions on page load
+    loadTagSuggestions();
+    
+    // Remove tag buttons
+    document.querySelectorAll('.remove-tag-btn').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            const tagId = this.dataset.tagId;
+            const tagName = this.dataset.tagName;
+            
+            if (!confirm(`Tag "${tagName}" entfernen?`)) return;
+            
+            try {
+                const response = await fetch(`/api/emails/${emailId}/tags/${tagId}`, {
+                    method: 'DELETE',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    }
+                });
+                
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    const data = await response.json();
+                    alert('Fehler: ' + (data.error || 'Tag konnte nicht entfernt werden'));
+                }
+            } catch (error) {
+                alert('Fehler beim Entfernen: ' + error.message);
+            }
+        });
+    });
+    
+    // Assign tag buttons in modal
+    document.querySelectorAll('.assign-tag-btn').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            const tagId = this.dataset.tagId;
+            
+            try {
+                const response = await fetch(`/api/emails/${emailId}/tags`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({ tag_id: tagId })
+                });
+                
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    const data = await response.json();
+                    alert('Fehler: ' + (data.error || 'Tag konnte nicht zugewiesen werden'));
+                }
+            } catch (error) {
+                alert('Fehler beim Zuweisen: ' + error.message);
+            }
+        });
+    });
+
+    // Phase C Part 1: Load available folders for move action
+    async function loadFolders() {
+        try {
+            const accountId = document.querySelector('input[name="account_id"]').value;
+            const response = await fetch(`/account/${accountId}/folders`, {
+                method: 'GET',
+                headers: { 'X-CSRFToken': getCsrfToken() },
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Folder-Listing fehlgeschlagen: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            return data.folders || [];
+        } catch (error) {
+            console.error('Fehler beim Laden von Ordnern:', error);
+            return [];
+        }
+    }
+
+    async function showMoveDialog() {
+        const folders = await loadFolders();
+        
+        if (folders.length === 0) {
+            alert('❌ Keine Ordner gefunden oder Fehler beim Abrufen der Ordner');
+            return null;
+        }
+        
+        return new Promise((resolve) => {
+            let folderOptions = folders.map(f => `<option value="${f}">${f}</option>`).join('');
+            
+            let modal = document.getElementById('moveFolderModal');
+            if (!modal) {
+                const modalHtml = `
+                    <div class="modal fade" id="moveFolderModal" tabindex="-1">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">📁 Email verschieben</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <label for="moveFolderSelect" class="form-label">Ziel-Ordner wählen:</label>
+                                    <select id="moveFolderSelect" class="form-select">
+                                        <option value="">-- Ordner wählen --</option>
+                                    </select>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                                    <button type="button" class="btn btn-primary" id="confirmMoveBtn">Verschieben</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+                modal = document.getElementById('moveFolderModal');
+            }
+            
+            const select = modal.querySelector('#moveFolderSelect');
+            select.innerHTML = '<option value="">-- Ordner wählen --</option>' + folderOptions;
+            
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+            
+            const confirmBtn = modal.querySelector('#confirmMoveBtn');
+            const handleConfirm = () => {
+                const selectedFolder = select.value;
+                if (selectedFolder) {
+                    bsModal.hide();
+                    resolve(selectedFolder);
+                } else {
+                    alert('⚠️ Bitte wählen Sie einen Ordner aus');
+                }
+            };
+            
+            const newConfirmBtn = confirmBtn.cloneNode(true);
+            confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+            newConfirmBtn.addEventListener('click', handleConfirm);
+            
+            modal.addEventListener('hidden.bs.modal', () => {
+                resolve(null);
+            }, { once: true });
+        });
+    }
+
+    // Phase 13: Server-Sync Action Buttons
+    document.querySelectorAll('.sync-action-btn').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            const action = this.dataset.action;
+            
+            let confirmMsg = '';
+            if (action === 'delete') {
+                confirmMsg = '🗑️ Email wirklich PERMANENT LÖSCHEN? Diese Aktion kann nicht rückgängig gemacht werden.';
+            } else if (action === 'move-trash') {
+                confirmMsg = '🗑️ Email in Papierkorb verschieben?';
+            } else if (action === 'move-folder') {
+                const targetFolder = await showMoveDialog();
+                if (!targetFolder) return;
+                
+                const btn = this;
+                const originalText = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '⏳...';
+                
+                try {
+                    const response = await fetch(`/email/${emailId}/move-to-folder`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCsrfToken()
+                        },
+                        credentials: 'include',
+                        body: JSON.stringify({ target_folder: targetFolder })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        window.location.href = '/list';
+                    } else {
+                        alert('❌ ' + (data.error || 'Fehler beim Verschieben'));
+                        btn.disabled = false;
+                        btn.innerHTML = originalText;
+                    }
+                } catch (error) {
+                    alert('❌ Fehler: ' + error.message);
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                }
+                return;
+            } else if (action === 'toggle-read') {
+                const isCurrentlySeen = document.getElementById('toggleReadBtn').innerHTML.includes('Ungelesen');
+                if (isCurrentlySeen) {
+                    confirmMsg = '🔘 Email als ungelesen markieren?';
+                } else {
+                    confirmMsg = '👁️ Email als gelesen markieren?';
+                }
+            } else if (action === 'mark-flag') {
+                const isCurrentlyFlagged = document.getElementById('markFlagBtn').innerHTML.includes('Unflag');
+                if (isCurrentlyFlagged) {
+                    confirmMsg = '🚩 Flag entfernen (nicht mehr als wichtig markieren)?';
+                } else {
+                    confirmMsg = '🚩 Flag setzen (als wichtig markieren)?';
+                }
+            }
+            
+            if (!confirm(confirmMsg)) return;
+            
+            const btn = this;
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '⏳...';
+            
+            try {
+                const response = await fetch(`/email/${emailId}/${action}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    credentials: 'include'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    if (action === 'delete') {
+                        window.location.href = '/list';
+                    } else if (action === 'move-trash') {
+                        window.location.href = '/list';
+                    } else if (action === 'toggle-read') {
+                        const isNowSeen = data.is_seen;
+                        btn.innerHTML = isNowSeen ? '👁️ Ungelesen' : '🔘 Gelesen';
+                        
+                        const seenBadge = document.querySelector('#flagsCurrent .badge.bg-info');
+                        if (isNowSeen && !seenBadge) {
+                            const newBadge = document.createElement('span');
+                            newBadge.className = 'badge bg-info';
+                            newBadge.textContent = '👁️ Gelesen';
+                            document.getElementById('flagsCurrent').appendChild(newBadge);
+                        } else if (!isNowSeen && seenBadge) {
+                            seenBadge.remove();
+                        } else if (isNowSeen && seenBadge) {
+                            seenBadge.textContent = '👁️ Gelesen';
+                        }
+                        
+                        const unseenBadge = document.querySelector('#flagsCurrent .badge.bg-secondary');
+                        if (!isNowSeen && !unseenBadge) {
+                            const newBadge = document.createElement('span');
+                            newBadge.className = 'badge bg-secondary';
+                            newBadge.textContent = '🔘 Ungelesen';
+                            document.getElementById('flagsCurrent').appendChild(newBadge);
+                        } else if (isNowSeen && unseenBadge && unseenBadge.textContent.includes('Ungelesen')) {
+                            unseenBadge.remove();
+                        }
+                        
+                        btn.disabled = false;
+                    } else if (action === 'mark-flag') {
+                        const isFlaggedNow = data.flagged;
+                        btn.innerHTML = isFlaggedNow ? '🚩 Unflag' : '🚩 Flag';
+                        
+                        const badge = document.querySelector('#flagsCurrent .badge.bg-danger');
+                        if (isFlaggedNow && !badge) {
+                            const newBadge = document.createElement('span');
+                            newBadge.className = 'badge bg-danger';
+                            newBadge.textContent = '🚩 Markiert';
+                            document.getElementById('flagsCurrent').appendChild(newBadge);
+                        } else if (!isFlaggedNow && badge) {
+                            badge.remove();
+                        }
+                        
+                        btn.disabled = false;
+                    }
+                } else {
+                    alert('❌ ' + (data.error || 'Fehler bei der Aktion'));
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                }
+            } catch (error) {
+                alert('❌ Fehler: ' + error.message);
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+    });
+});
+</script>
+
+<!-- Modal: Tag hinzufügen -->
+<div class="modal fade" id="addTagModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Tag hinzufügen</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                {% if all_user_tags %}
+                <div class="list-group">
+                    {% for tag in all_user_tags %}
+                    <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center assign-tag-btn"
+                            data-tag-id="{{ tag.id }}"
+                            style="border-left: 24px solid {{ tag.color }};">
+                        {{ tag.name }}
+                        <span class="badge bg-primary rounded-pill">{{ tag.emails|length if tag.emails else 0 }}</span>
+                    </button>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted">Keine Tags vorhanden. Erstellen Sie zunächst Tags in den Einstellungen.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Phase H: Send Reply Modal -->
+<div class="modal fade" id="sendReplyModal" tabindex="-1" aria-labelledby="sendReplyModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="sendReplyModalLabel">📤 Antwort senden</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="replyToAddress" class="form-label fw-bold">An:</label>
+                    <input type="text" class="form-control" id="replyToAddress" readonly value="{{ decrypted_sender|default('') }}">
+                </div>
+                
+                <div class="mb-3">
+                    <label for="replySubject" class="form-label fw-bold">Betreff:</label>
+                    <input type="text" class="form-control" id="replySubject" value="Re: {{ decrypted_subject|default('Kein Betreff') }}">
+                </div>
+                
+                <div class="mb-3">
+                    <label for="replyBody" class="form-label fw-bold">Nachricht:</label>
+                    <textarea id="replyBody" class="form-control" rows="12" 
+                              placeholder="Ihre Antwort..."
+                              style="font-family: inherit;"></textarea>
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <span id="sendReplyCharCount">0</span> Zeichen
+                        </small>
+                    </div>
+                </div>
+                
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="includeQuoteCheck" checked>
+                    <label class="form-check-label" for="includeQuoteCheck">
+                        Original-Email zitieren
+                    </label>
+                </div>
+                
+                <!-- Status Messages -->
+                <div id="sendReplyLoading" class="text-center py-3 mt-3" style="display: none;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Sende Email...</span>
+                    </div>
+                    <p class="mt-2 text-muted">Email wird gesendet...</p>
+                </div>
+                
+                <div id="sendReplySuccess" class="alert alert-success mt-3" style="display: none;">
+                    ✅ Email erfolgreich gesendet!
+                </div>
+                
+                <div id="sendReplyError" class="alert alert-danger mt-3" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                <button type="button" class="btn btn-primary" id="confirmSendReplyBtn">
+                    📤 Senden
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Phase F.1: Similar Emails Loader -->
+<script nonce="{{ csp_nonce() }}">
+document.addEventListener('DOMContentLoaded', function() {
+    const emailId = {{ email.raw_email_id }};
+    const similarContainer = document.getElementById('similarEmailsContainer');
+    
+    if (!similarContainer) return;
+    
+    // Load similar emails
+    fetch(`/api/emails/${emailId}/similar?limit=5`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.similar_emails && data.similar_emails.length > 0) {
+                renderSimilarEmails(data.similar_emails);
+            } else {
+                similarContainer.innerHTML = '<div class="text-muted small">Keine ähnlichen E-Mails gefunden.</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Similar emails error:', error);
+            similarContainer.innerHTML = '<div class="text-danger small">Fehler beim Laden ähnlicher E-Mails</div>';
+        });
+    
+    function renderSimilarEmails(emails) {
+        let html = '<div class="list-group list-group-flush small">';
+        
+        emails.forEach(email => {
+            const date = email.date ? new Date(email.date).toLocaleDateString('de-DE', {month: 'short', day: 'numeric'}) : '';
+            const score = (email.similarity_score * 100).toFixed(0);
+            
+            html += `
+                <a href="/email/${email.email_id}" class="list-group-item list-group-item-action p-2">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="fw-bold small">${escapeHtml(email.subject || '(Kein Betreff)')}</div>
+                            <div class="text-muted" style="font-size: 0.75rem;">${escapeHtml(email.from)} • ${date}</div>
+                        </div>
+                        <span class="badge bg-primary ms-2" style="font-size: 0.65rem;">${score}%</span>
+                    </div>
+                </a>
+            `;
+        });
+        
+        html += '</div>';
+        similarContainer.innerHTML = html;
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+});
+</script>
+
+<!-- Phase G.1: Reply Draft Generator Modal -->
+<div class="modal fade" id="replyDraftModal" tabindex="-1" aria-labelledby="replyDraftModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="replyDraftModalLabel">✍️ Antwort-Entwurf generieren</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 🆕 Provider/Model Selection -->
+                <div class="mb-4 border-bottom pb-3">
+                    <h6 class="mb-3">
+                        🤖 KI-Modell 
+                        <small class="text-muted">(Optional)</small>
+                    </h6>
+                    
+                    <div class="row g-2">
+                        <!-- Provider Dropdown -->
+                        <div class="col-md-6">
+                            <label for="replyProvider" class="form-label small text-muted">
+                                Provider
+                            </label>
+                            <select class="form-select form-select-sm" id="replyProvider">
+                                <option value="">🔧 Standard (aus Settings)</option>
+                                <!-- Wird dynamisch gefüllt via JavaScript -->
+                            </select>
+                        </div>
+                        
+                        <!-- Model Dropdown -->
+                        <div class="col-md-6">
+                            <label for="replyModel" class="form-label small text-muted">
+                                Modell
+                            </label>
+                            <select class="form-select form-select-sm" id="replyModel">
+                                <option value="">Standard</option>
+                                <!-- Wird dynamisch gefüllt via JavaScript -->
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- 🆕 Anonymisierungs-Toggle -->
+                    <div class="mt-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="useAnonymization">
+                            <label class="form-check-label" for="useAnonymization">
+                                🔒 <strong>Anonymisierung</strong> 
+                                <small class="text-muted">(Empfohlen für Cloud-Provider)</small>
+                            </label>
+                        </div>
+                        <div id="cloudWarning" class="alert alert-sm mt-2 mb-0" style="display: none; padding: 0.5rem; font-size: 0.875rem;"></div>
+                    </div>
+                    
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            💡 Leer lassen = Deine Standard-Einstellungen verwenden
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- 🆕 NEU: Generieren-Button -->
+                <div class="mb-3 text-center">
+                    <button type="button" class="btn btn-primary btn-lg" id="generateReplyBtn">
+                        ✨ Antwort-Entwurf generieren
+                    </button>
+                </div>
+                
+                <!-- Ton-Auswahl -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Ton der Antwort:</label>
+                    <div class="btn-group w-100" role="group" id="toneButtonGroup">
+                        <button type="button" class="btn btn-outline-primary tone-btn" data-tone="formal">
+                            📜 Formell
+                        </button>
+                        <button type="button" class="btn btn-outline-primary tone-btn" data-tone="friendly">
+                            😊 Freundlich
+                        </button>
+                        <button type="button" class="btn btn-outline-primary tone-btn" data-tone="brief">
+                            ⚡ Kurz & Knapp
+                        </button>
+                        <button type="button" class="btn btn-outline-primary tone-btn" data-tone="decline">
+                            ❌ Höflich ablehnen
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Loading Indicator -->
+                <div id="replyLoading" class="text-center py-4" style="display: none;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Generiere Antwort...</span>
+                    </div>
+                    <p class="mt-2 text-muted">KI generiert Antwort-Entwurf...</p>
+                </div>
+                
+                <!-- Generated Reply -->
+                <div id="replyContent" style="display: none;">
+                    <div class="alert alert-info mb-3">
+                        <small><strong>💡 Hinweis:</strong> Dies ist ein KI-generierter Entwurf. Bitte überprüfen und ggf. anpassen!</small>
+                    </div>
+                    <label class="form-label fw-bold">Generierter Antwort-Text:</label>
+                    <textarea id="replyText" class="form-control" rows="10" 
+                              placeholder="Antwort-Entwurf wird hier erscheinen..."
+                              style="font-family: inherit;"></textarea>
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <span id="replyCharCount">0</span> Zeichen • 
+                            Ton: <strong id="replyToneName">-</strong>
+                            <span id="replyProviderInfo" style="display: none;"></span>
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Error Message -->
+                <div id="replyError" class="alert alert-danger" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Schließen</button>
+                <button type="button" class="btn btn-primary" id="copyReplyBtn" style="display: none;">
+                    📋 In Zwischenablage kopieren
+                </button>
+                <!-- Phase H: SMTP Send Button -->
+                <button type="button" class="btn btn-success" id="sendDraftBtn" style="display: none;">
+                    📤 Entwurf senden
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Phase G.1: Reply Generator JavaScript -->
+<script nonce="{{ csp_nonce() }}">
+document.addEventListener('DOMContentLoaded', function() {
+    const emailId = {{ email.raw_email_id }};
+    const replyModal = new bootstrap.Modal(document.getElementById('replyDraftModal'));
+    
+    let currentTone = 'formal';
+    let generatedReply = '';
+    
+    // Connect "Antwort-Entwurf generieren" button
+    const replyBtn = document.querySelector('.todo-btn[data-action="reply"]');
+    if (replyBtn) {
+        replyBtn.addEventListener('click', function() {
+            // Reset modal state
+            resetReplyModal();
+            // Show modal
+            replyModal.show();
+        });
+    }
+    
+    // 🆕 NEU: Generieren-Button Handler
+    document.getElementById('generateReplyBtn').addEventListener('click', async function() {
+        // Prüfe ob ein Ton ausgewählt wurde
+        const activeToneBtn = document.querySelector('.tone-btn.active');
+        if (!activeToneBtn) {
+            // Wähle "formal" als Default
+            const formalBtn = document.querySelector('.tone-btn[data-tone="formal"]');
+            if (formalBtn) {
+                formalBtn.classList.add('active');
+                currentTone = 'formal';
+            }
+        }
+        
+        // Starte Generierung
+        await generateReply(currentTone || 'formal');
+    });
+    
+    // Tone button handlers
+    document.querySelectorAll('.tone-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            // Update active state
+            document.querySelectorAll('.tone-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            
+            currentTone = this.dataset.tone;
+            
+            // ❌ Entfernt: Auto-generate - nur Ton merken
+            // User muss jetzt auf "Generieren" klicken
+        });
+    });
+    
+    // Modal shown: Load providers (aber KEINE Auto-Generierung mehr!)
+    document.getElementById('replyDraftModal').addEventListener('shown.bs.modal', function() {
+        // 🆕 Load available providers
+        loadAvailableProviders();
+        
+        // ❌ ENTFERNT: Auto-generate
+        // User muss jetzt auf "Generieren"-Button klicken
+    });
+    document.getElementById('copyReplyBtn').addEventListener('click', function() {
+        const replyText = document.getElementById('replyText').value;
+        
+        navigator.clipboard.writeText(replyText).then(() => {
+            // Visual feedback
+            const btn = this;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '✅ Kopiert!';
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-success');
+            
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-primary');
+            }, 2000);
+        }).catch(err => {
+            alert('Fehler beim Kopieren: ' + err.message);
+        });
+    });
+    
+    // Auto-generate with "formal" tone when modal opens
+    document.getElementById('replyDraftModal').addEventListener('shown.bs.modal', function() {
+        // 🆕 Load available providers
+        loadAvailableProviders();
+        
+        // Select first tone button
+        const firstToneBtn = document.querySelector('.tone-btn[data-tone="formal"]');
+        if (firstToneBtn) {
+            firstToneBtn.click();
+        }
+    });
+    
+    // 🆕 Load available AI providers (use existing API!)
+    // GLOBAL: Speichere defaults für Zugriff in Event Handlers
+    let defaultProvider = "{{ user.preferred_ai_provider or 'ollama' }}";
+    let defaultModel = "{{ user.preferred_ai_model or 'llama3.2' }}";
+    
+    async function loadAvailableProviders() {
+        const providerSelect = document.getElementById('replyProvider');
+        
+        // Zeige Standard-Werte während des Ladens
+        providerSelect.innerHTML = '<option value="">🔧 Standard wird geladen...</option>';
+        
+        try {
+            // Nutze BESTEHENDE Settings-API
+            const response = await fetch('/api/available-providers', {
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                throw new Error('Provider-API nicht erreichbar');
+            }
+            
+            const data = await response.json();
+            
+            // Build dropdown mit Standard-Info (nutze GLOBALE defaults)
+            providerSelect.innerHTML = `<option value="">🔧 Standard (${defaultProvider})</option>`;
+            
+            if (data.providers && data.providers.length > 0) {
+                data.providers.forEach(p => {
+                    const option = document.createElement('option');
+                    option.value = p.id;  // ✅ API liefert "id" nicht "value"!
+                    option.textContent = p.name;  // ✅ Name enthält schon Icon + Text
+                    // ✅ is_cloud bestimmen: alles außer ollama ist cloud
+                    option.dataset.cloud = (p.id !== 'ollama');
+                    providerSelect.appendChild(option);
+                });
+            } else {
+                // Fallback wenn API keine Provider liefert
+                console.warn('Keine Provider von API erhalten, nutze Fallback');
+                providerSelect.innerHTML += `
+                    <option value="ollama" data-cloud="false">🦙 Ollama (Lokal)</option>
+                    <option value="openai" data-cloud="true">🤖 OpenAI (Cloud)</option>
+                    <option value="anthropic" data-cloud="true">🧠 Anthropic (Cloud)</option>
+                `;
+            }
+            
+            // Zeige Standard-Modell in Model-Dropdown
+            const modelSelect = document.getElementById('replyModel');
+            modelSelect.innerHTML = `<option value="">Standard (${defaultModel})</option>`;
+            
+        } catch (err) {
+            console.error('Failed to load providers:', err);
+            // Fallback
+            providerSelect.innerHTML = `
+                <option value="">🔧 Standard (aus Settings)</option>
+                <option value="ollama" data-cloud="false">🦙 Ollama (Lokal)</option>
+                <option value="openai" data-cloud="true">🤖 OpenAI (Cloud)</option>
+                <option value="anthropic" data-cloud="true">🧠 Anthropic (Cloud)</option>
+            `;
+        }
+    }
+    
+    // 🆕 Provider change → Load models + Auto-toggle anonymization
+    document.getElementById('replyProvider').addEventListener('change', async function() {
+        const provider = this.value;
+        const modelSelect = document.getElementById('replyModel');
+        const anonToggle = document.getElementById('useAnonymization');
+        const warningBox = document.getElementById('cloudWarning');
+        
+        // ⚠️ WICHTIG: Wenn kein Provider gewählt → SOFORT returnen (wie Settings!)
+        if (!provider || provider === '') {
+            // ✅ Zeige Standard-Modell (wie beim initialen Load)
+            modelSelect.innerHTML = `<option value="">Standard (${defaultModel})</option>`;
+            warningBox.style.display = 'none';
+            anonToggle.checked = false;
+            return; // ❌ KEINE API-Calls mit leerem Provider!
+        }
+        
+        const selectedOption = this.options[this.selectedIndex];
+        const isCloud = selectedOption.dataset.cloud === 'true';
+        
+        // Reset model dropdown
+        modelSelect.innerHTML = '<option value="">Lade Modelle...</option>';
+        
+        // 🔒 Auto-Anonymisierung für Cloud-Provider
+        if (isCloud) {
+            anonToggle.checked = true;
+            warningBox.className = 'alert alert-info';
+            warningBox.innerHTML = '🔒 Cloud-Provider: Anonymisierung automatisch aktiviert (empfohlen)';
+            warningBox.style.display = 'block';
+        } else {
+            anonToggle.checked = false;
+            warningBox.style.display = 'none';
+        }
+        
+        // Load models for selected provider
+        modelSelect.innerHTML = '<option value="">Lade Modelle...</option>';
+        
+        try {
+            // ✅ Nutze GLEICHE API wie Settings: /api/models/${provider}
+            const response = await fetch(`/api/models/${provider}`, {
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                throw new Error('Models-API nicht erreichbar');
+            }
+            
+            const data = await response.json();
+            let models = data.models || [];
+            
+            // Filter: Nur Chat-Modelle (keine Embedding-Modelle für Reply-Gen)
+            models = models.filter(m => m.type === 'chat' || !m.type);
+            
+            modelSelect.innerHTML = '<option value="">Bitte wählen...</option>';
+            
+            if (models.length === 0) {
+                modelSelect.innerHTML = '<option value="">Keine Chat-Modelle verfügbar</option>';
+            } else {
+                models.forEach(m => {
+                    const option = document.createElement('option');
+                    option.value = m.id;
+                    option.textContent = m.name || m.id;
+                    modelSelect.appendChild(option);
+                });
+            }
+            
+        } catch (err) {
+            console.error('Failed to load models:', err);
+            modelSelect.innerHTML = '<option value="">Fehler beim Laden</option>';
+        }
+    });
+    
+    // 🆕 Warnung wenn User Anonymisierung deaktiviert bei Cloud
+    document.getElementById('useAnonymization').addEventListener('change', function() {
+        const provider = document.getElementById('replyProvider').value;
+        const selectedOption = document.getElementById('replyProvider').options[document.getElementById('replyProvider').selectedIndex];
+        const isCloud = selectedOption.dataset.cloud === 'true';
+        const warningBox = document.getElementById('cloudWarning');
+        
+        if (!this.checked && isCloud) {
+            warningBox.className = 'alert alert-danger';
+            warningBox.innerHTML = '⚠️ <strong>WARNUNG:</strong> Original-Daten werden an Cloud-Provider gesendet!';
+            warningBox.style.display = 'block';
+        } else if (this.checked && isCloud) {
+            warningBox.className = 'alert alert-info';
+            warningBox.innerHTML = '🔒 Cloud-Provider: Anonymisierung aktiv';
+            warningBox.style.display = 'block';
+        } else {
+            warningBox.style.display = 'none';
+        }
+    });
+    
+    function resetReplyModal() {
+        document.getElementById('replyLoading').style.display = 'none';
+        document.getElementById('replyContent').style.display = 'none';
+        document.getElementById('replyError').style.display = 'none';
+        document.getElementById('copyReplyBtn').style.display = 'none';
+        document.getElementById('sendDraftBtn').style.display = 'none';
+        document.getElementById('replyText').value = '';
+        document.querySelectorAll('.tone-btn').forEach(b => b.classList.remove('active'));
+        generatedReply = '';
+        
+        // 🆕 Reset Provider/Model Selection
+        document.getElementById('replyProvider').value = '';
+        document.getElementById('replyModel').innerHTML = '<option value="">Standard</option>';
+        document.getElementById('useAnonymization').checked = false;
+        document.getElementById('cloudWarning').style.display = 'none';
+        document.getElementById('replyProviderInfo').style.display = 'none';
+    }
+    
+    async function generateReply(tone) {
+        console.log('🔍🔍🔍 generateReply() aufgerufen mit tone:', tone);
+        
+        // Show loading (erweitert mit Anonymisierungs-Hinweis)
+        const loadingDiv = document.getElementById('replyLoading');
+        loadingDiv.style.display = 'block';
+        document.getElementById('replyContent').style.display = 'none';
+        document.getElementById('replyError').style.display = 'none';
+        document.getElementById('copyReplyBtn').style.display = 'none';
+        
+        try {
+            // 🆕 Lese Provider/Model/Anonymization aus UI
+            const selectedProvider = document.getElementById('replyProvider').value;
+            const selectedModel = document.getElementById('replyModel').value;
+            const useAnonymization = document.getElementById('useAnonymization').checked;
+            
+            console.log('🔍 Provider:', selectedProvider, 'Model:', selectedModel, 'Anonym:', useAnonymization);
+            
+            // 🆕 Check ob Anonymisierung aktiv ist
+            if (useAnonymization) {
+                loadingDiv.innerHTML = '<div class="spinner-border spinner-border-sm"></div> <strong>⏳ Anonymisiere Email & generiere Antwort...</strong><br><small class="text-muted">Erstmalige Anonymisierung wird in Datenbank gespeichert</small>';
+            } else {
+                loadingDiv.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Generiere Antwort-Entwurf...';
+            }
+            
+            // Build request body
+            const requestBody = { tone: tone };
+            
+            // Füge provider/model nur hinzu wenn BEIDE ausgewählt
+            if (selectedProvider && selectedModel) {
+                requestBody.provider = selectedProvider;
+                requestBody.model = selectedModel;
+                console.log(`🎯 Using selected: ${selectedProvider}/${selectedModel}`);
+            } else {
+                console.log('🔧 Using default from settings');
+            }
+            
+            // Anonymisierung: Sende nur wenn explizit gesetzt (nicht bei default-false)
+            const selectedOption = document.getElementById('replyProvider').options[document.getElementById('replyProvider').selectedIndex];
+            const isCloud = selectedOption.dataset.cloud === 'true';
+            
+            // Sende use_anonymization:
+            // - Bei Cloud ohne explizite Auswahl → Backend entscheidet (auto-true)
+            // - Bei expliziter User-Wahl → Sende diese
+            if (selectedProvider) {
+                requestBody.use_anonymization = useAnonymization;
+            }
+            // Sonst: Backend nutzt Auto-Logic basierend auf Settings
+            
+            const response = await fetch(`/api/emails/${emailId}/generate-reply`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                credentials: 'include',
+                body: JSON.stringify(requestBody)  // 🆕 Mit provider/model/anonymization
+            });
+            
+            const data = await response.json();
+            
+            console.log('🔍 API Response received:', data);
+            console.log('🔍 success:', data.success, 'has reply_text:', !!data.reply_text);
+            
+            if (data.success && data.reply_text) {
+                // 🆕 De-Anonymisierung falls nötig
+                let displayText = data.reply_text;
+                
+                console.log('🔍 Debug - was_anonymized:', data.was_anonymized);
+                console.log('🔍 Debug - entity_map:', data.entity_map);
+                console.log('🔍 Debug - reply_text (first 200 chars):', data.reply_text.substring(0, 200));
+                
+                if (data.was_anonymized && data.entity_map) {
+                    // De-anonymisiere für Anzeige
+                    displayText = deAnonymizeText(data.reply_text, data.entity_map);
+                    console.log('🔓 Text de-anonymisiert für Anzeige');
+                    console.log('🔍 Debug - displayText (first 200 chars):', displayText.substring(0, 200));
+                }
+                
+                // Show reply
+                generatedReply = displayText;
+                document.getElementById('replyText').value = generatedReply;
+                document.getElementById('replyToneName').textContent = data.tone_name || tone;
+                
+                // 🆕 Provider-Info anzeigen
+                const providerInfo = document.getElementById('replyProviderInfo');
+                if (data.provider_used) {
+                    providerInfo.innerHTML = ` • Provider: <strong>${data.provider_used}/${data.model_used}</strong>`;
+                // Reset loading text
+                document.getElementById('replyLoading').innerHTML = '<div class="spinner-border spinner-border-sm"></div> Generiere Antwort-Entwurf...';
+                
+                    if (data.was_anonymized) {
+                        providerInfo.innerHTML += ' 🔒';
+                    }
+                    providerInfo.style.display = 'inline';
+                }
+                
+                updateCharCount();
+                
+                document.getElementById('replyLoading').style.display = 'none';
+                document.getElementById('replyContent').style.display = 'block';
+                document.getElementById('copyReplyBtn').style.display = 'inline-block';
+                document.getElementById('sendDraftBtn').style.display = 'inline-block';
+            } else {
+                // Show error
+                showReplyError(data.error || 'Generierung fehlgeschlagen');
+            }
+            
+        } catch (error) {
+            console.error('Reply generation error:', error);
+            showReplyError('Netzwerk-Fehler: ' + error.message);
+        }
+    }
+    
+    // 🆕 De-Anonymisierungs-Funktion
+    function deAnonymizeText(text, entityMap) {
+        if (!entityMap) {
+            console.log('⚠️ deAnonymizeText: No entityMap provided');
+            return text;
+        }
+        
+        let result = text;
+        
+        // EntityMap hat Struktur: {forward: {...}, reverse: {...}, counters: {...}}
+        // Für De-Anonymisierung brauchen wir reverse: {[PERSON_1]: "Max Muster", ...}
+        const reverseMap = entityMap.reverse || entityMap;
+        
+        if (!reverseMap || Object.keys(reverseMap).length === 0) {
+            console.log('⚠️ deAnonymizeText: reverseMap is empty');
+            console.log('🔍 entityMap structure:', entityMap);
+            return text;
+        }
+        
+        console.log('🔓 De-anonymizing with', Object.keys(reverseMap).length, 'mappings');
+        
+        // Ersetze Platzhalter durch Original-Werte
+        // Regex-Pattern: [PERSON_1], [ORG_2], [EMAIL_3], [ABSENDER_VORNAME], [EMPFÄNGER_VOLLNAME] etc.
+        const placeholderRegex = /\[(PERSON|ORG|GPE|LOC|EMAIL|PHONE|IBAN|URL|ADDRESS|TITLE)_\d+\]|\[(ABSENDER|EMPFÄNGER)_(VORNAME|NACHNAME|VOLLNAME)\]/g;
+        
+        result = text.replace(placeholderRegex, (match) => {
+            // 🔧 FIX: Suche MIT Klammern (so wie reverse Map gespeichert ist)
+            if (reverseMap[match]) {
+                console.log(`🔄 Replaced ${match} -> ${reverseMap[match]}`);
+                return reverseMap[match];
+            }
+            
+            // Fallback: Ohne Klammern probieren (Backward-Compatibility)
+            const keyWithoutBrackets = match.slice(1, -1);
+            if (reverseMap[keyWithoutBrackets]) {
+                console.log(`🔄 Replaced ${match} -> ${reverseMap[keyWithoutBrackets]} (fallback)`);
+                return reverseMap[keyWithoutBrackets];
+            }
+            
+            // Falls nicht gefunden, original lassen
+            console.log(`⚠️ No mapping found for ${match}`);
+            return match;
+        });
+        
+        return result;
+    }
+    
+    function showReplyError(message) {
+        document.getElementById('replyLoading').style.display = 'none';
+        document.getElementById('replyContent').style.display = 'none';
+        document.getElementById('replyError').textContent = message;
+        document.getElementById('replyError').style.display = 'block';
+    }
+    
+    function updateCharCount() {
+        const text = document.getElementById('replyText').value;
+        document.getElementById('replyCharCount').textContent = text.length;
+    }
+    
+    // Update char count on edit
+    document.getElementById('replyText').addEventListener('input', updateCharCount);
+    
+    // Phase H: Send Draft Button (from generated reply)
+    document.getElementById('sendDraftBtn').addEventListener('click', async function() {
+        const replyText = document.getElementById('replyText').value;
+        
+        if (!replyText.trim()) {
+            alert('⚠️ Bitte geben Sie eine Nachricht ein.');
+            return;
+        }
+        
+        if (!confirm('📤 Email wirklich senden?')) {
+            return;
+        }
+        
+        // Disable button während des Sendens
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sende...';
+        
+        try {
+            const response = await fetch(`/api/emails/${emailId}/send-reply`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    reply_text: replyText,
+                    include_quote: true
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                alert('✅ Email erfolgreich gesendet!');
+                // Modal schließen
+                bootstrap.Modal.getInstance(document.getElementById('replyDraftModal')).hide();
+                // Optional: Seite neu laden um gesendete Email zu sehen
+                // location.reload();
+            } else {
+                alert('❌ Fehler beim Senden: ' + (data.error || 'Unbekannter Fehler'));
+                this.disabled = false;
+                this.innerHTML = '📤 Entwurf senden';
+            }
+        } catch (error) {
+            console.error('Send error:', error);
+            alert('❌ Netzwerk-Fehler: ' + error.message);
+            this.disabled = false;
+            this.innerHTML = '📤 Entwurf senden';
+        }
+    });
+});
+</script>
+
+<!-- Phase H: Send Reply Modal JavaScript -->
+<script nonce="{{ csp_nonce() }}">
+document.addEventListener('DOMContentLoaded', function() {
+    const emailId = {{ email.id }};
+    const sendReplyModal = new bootstrap.Modal(document.getElementById('sendReplyModal'));
+    
+    // Open Send Reply Modal
+    document.getElementById('sendReplyBtn').addEventListener('click', function() {
+        resetSendReplyModal();
+        sendReplyModal.show();
+    });
+    
+    // Char count for reply body
+    document.getElementById('replyBody').addEventListener('input', function() {
+        const text = this.value;
+        document.getElementById('sendReplyCharCount').textContent = text.length;
+    });
+    
+    // Send Reply Button
+    document.getElementById('confirmSendReplyBtn').addEventListener('click', async function() {
+        const replyBody = document.getElementById('replyBody').value;
+        const includeQuote = document.getElementById('includeQuoteCheck').checked;
+        
+        if (!replyBody.trim()) {
+            alert('⚠️ Bitte geben Sie eine Nachricht ein.');
+            return;
+        }
+        
+        // Show loading
+        document.getElementById('sendReplyLoading').style.display = 'block';
+        document.getElementById('sendReplySuccess').style.display = 'none';
+        document.getElementById('sendReplyError').style.display = 'none';
+        this.disabled = true;
+        
+        try {
+            const response = await fetch(`/api/emails/${emailId}/send-reply`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    reply_text: replyBody,
+                    include_quote: includeQuote
+                })
+            });
+            
+            const data = await response.json();
+            
+            document.getElementById('sendReplyLoading').style.display = 'none';
+            
+            if (data.success) {
+                document.getElementById('sendReplySuccess').style.display = 'block';
+                
+                // Auto-close after 2 seconds
+                setTimeout(function() {
+                    sendReplyModal.hide();
+                    // Optional: Seite neu laden
+                    // location.reload();
+                }, 2000);
+            } else {
+                document.getElementById('sendReplyError').textContent = 
+                    '❌ Fehler: ' + (data.error || 'Unbekannter Fehler');
+                document.getElementById('sendReplyError').style.display = 'block';
+                this.disabled = false;
+            }
+        } catch (error) {
+            console.error('Send error:', error);
+            document.getElementById('sendReplyLoading').style.display = 'none';
+            document.getElementById('sendReplyError').textContent = 
+                '❌ Netzwerk-Fehler: ' + error.message;
+            document.getElementById('sendReplyError').style.display = 'block';
+            this.disabled = false;
+        }
+    });
+    
+    function resetSendReplyModal() {
+        document.getElementById('replyBody').value = '';
+        document.getElementById('sendReplyCharCount').textContent = '0';
+        document.getElementById('includeQuoteCheck').checked = true;
+        document.getElementById('sendReplyLoading').style.display = 'none';
+        document.getElementById('sendReplySuccess').style.display = 'none';
+        document.getElementById('sendReplyError').style.display = 'none';
+        document.getElementById('confirmSendReplyBtn').disabled = false;
+    }
+    
+    // ===== Bewertung Korrigieren Modal =====
+    const correctionModal = document.getElementById('correctionModal');
+    if (correctionModal) {
+        correctionModal.addEventListener('show.bs.modal', async function() {
+            // Aktuelle Werte vorausfüllen (Priorität: user_override > optimize > initial)
+            const currentDring = {{ email.user_override_dringlichkeit if email.user_override_dringlichkeit is not none else (email.optimize_dringlichkeit if email.optimize_dringlichkeit is not none else email.dringlichkeit) if email.dringlichkeit else 'null' }};
+            const currentWich = {{ email.user_override_wichtigkeit if email.user_override_wichtigkeit is not none else (email.optimize_wichtigkeit if email.optimize_wichtigkeit is not none else email.wichtigkeit) if email.wichtigkeit else 'null' }};
+            const currentKat = "{{ email.user_override_kategorie if email.user_override_kategorie else (email.optimize_kategorie_aktion if email.optimize_kategorie_aktion else email.kategorie_aktion) if email.kategorie_aktion else 'aktion_erforderlich' }}";
+            // Lade neuesten Spam-Wert: user_override > optimize > initial
+            const currentSpam = {{ 'true' if (email.user_override_spam_flag if email.user_override_spam_flag is not none else (email.optimize_spam_flag if email.optimize_spam_flag is not none else email.spam_flag)) else 'false' }};
+            
+            if (currentDring) {
+                document.querySelector(`input[name="dringlichkeit"][value="${currentDring}"]`).checked = true;
+            }
+            if (currentWich) {
+                document.querySelector(`input[name="wichtigkeit"][value="${currentWich}"]`).checked = true;
+            }
+            document.getElementById('kategorie').value = currentKat;
+            document.getElementById('spamFlag').checked = currentSpam;
+        });
+        
+        // Speichern Button
+        document.getElementById('saveCorrectionBtn').addEventListener('click', async function() {
+            const dring = document.querySelector('input[name="dringlichkeit"]:checked')?.value;
+            const wich = document.querySelector('input[name="wichtigkeit"]:checked')?.value;
+            const kat = document.getElementById('kategorie').value;
+            const spam = document.getElementById('spamFlag').checked;
+            const note = document.getElementById('noteInput').value;
+            
+            const correctionData = {
+                dringlichkeit: dring ? parseInt(dring) : null,
+                wichtigkeit: wich ? parseInt(wich) : null,
+                kategorie: kat,
+                spam_flag: spam,
+                note: note
+            };
+            
+            this.disabled = true;
+            this.innerHTML = '⏳ Speichern...';
+            
+            try {
+                const response = await fetch(`/email/${emailId}/correct`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify(correctionData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    alert('✅ Korrektur gespeichert! Die E-Mail wird für das Training verwendet.');
+                    bootstrap.Modal.getInstance(correctionModal).hide();
+                    location.reload(); // Seite neu laden um aktualisierte Werte anzuzeigen
+                } else {
+                    alert('❌ Fehler: ' + (data.error || 'Unbekannter Fehler'));
+                    this.disabled = false;
+                    this.innerHTML = '💾 Speichern & als Training markieren';
+                }
+            } catch (error) {
+                console.error('Korrektur speichern fehlgeschlagen:', error);
+                alert('❌ Netzwerk-Fehler: ' + error.message);
+                this.disabled = false;
+                this.innerHTML = '💾 Speichern & als Training markieren';
+            }
+        });
+    }
+});
+</script>
+
+{% endblock %}

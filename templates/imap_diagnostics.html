@@ -1,0 +1,1345 @@
+{% extends "base.html" %}
+
+{% block title %}IMAP-Diagnostics - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-10 mx-auto">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">🔧 IMAP Connection Diagnostics</h4>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">
+                    Teste die IMAP-Verbindung zu deinen Mail-Accounts. Diagnostics prüft:
+                    Verbindung, Authentifizierung, Server-Capabilities, Namespace, Folder-Zugriff, Folder-Listing, Flag-Detection, Server-ID und Extensions.
+                </p>
+
+                <!-- Account Selection -->
+                <div class="mb-4">
+                    <label for="accountSelect" class="form-label"><strong>Mail-Account wählen:</strong></label>
+                    <select id="accountSelect" class="form-select" required>
+                        <option value="">-- Bitte wählen --</option>
+                        {% for account in accounts %}
+                        <option value="{{ account.id }}">
+                            {{ account.name }} ({{ account.decrypted_imap_username or 'Kein Username' }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Phase 15: Folder Selection für Test 12 (DB Sync Verification) -->
+                <div class="mb-4" id="folderSelectionContainer" style="display: none;">
+                    <label for="folderSelect" class="form-label">
+                        <strong>📁 Ordner für DB Sync-Check wählen (Test 12):</strong>
+                    </label>
+                    <select id="folderSelect" class="form-select">
+                        <option value="">-- Alle Ordner überprüfen --</option>
+                        <!-- Wird gefüllt nach erfolgreicher Diagnostics (aus folders-Liste) -->
+                    </select>
+                    <small class="text-muted">
+                        Test 12 checkt ob Mails korrekt zwischen DB und IMAP synchronisiert sind.
+                        Ordner auswählen für spezifischen Test, oder leer lassen für alle Ordner.
+                    </small>
+                </div>
+
+                <!-- Test Button -->
+                <div class="mb-4">
+                    <button id="testBtn" class="btn btn-primary btn-lg" disabled>
+                        🧪 Verbindung testen
+                    </button>
+                    <small class="text-muted ms-2" id="testHint">Wähle einen Account</small>
+                </div>
+
+                <!-- Loading Indicator -->
+                <div id="loadingIndicator" class="alert alert-info" style="display: none;">
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm me-2" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <strong>Test läuft...</strong>
+                    </div>
+                </div>
+
+                <!-- Results Container -->
+                <div id="resultsContainer" style="display: none;">
+                    <hr class="my-4">
+                    <h5>📊 Test-Ergebnisse</h5>
+
+                    <!-- Connection Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="connectionStatus">1️⃣ Verbindung & Authentifizierung</strong>
+                        </div>
+                        <div class="card-body" id="connectionDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- Capabilities Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="capabilitiesStatus">2️⃣ Server-Capabilities</strong>
+                        </div>
+                        <div class="card-body" id="capabilitiesDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- Namespace Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="namespaceStatus">3️⃣ Namespace & Delimiter</strong>
+                        </div>
+                        <div class="card-body" id="namespaceDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- Folder Access Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="folderStatus">4️⃣ Folder-Zugriff (INBOX)</strong>
+                        </div>
+                        <div class="card-body" id="folderDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- Folder Listing Test -->
+                    <div class="card mb-3">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong id="foldersListStatus">5️⃣ Folder-Listing</strong>
+                            </div>
+                            <div>
+                                <button id="toggleSubscribedBtn" class="btn btn-sm btn-light text-dark" style="display: none; padding: 4px 10px; font-size: 0.85em; font-weight: 500; border: 1px solid #ddd;">
+                                    📌 Nur abonniert
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body" id="foldersListDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- Flag Detection Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="flagsStatus">6️⃣ Flag-Detection</strong>
+                        </div>
+                        <div class="card-body" id="flagsDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- Server ID & Provider Detection -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="serverIdStatus">7️⃣ Server-ID & Provider</strong>
+                        </div>
+                        <div class="card-body" id="serverIdDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- Extensions Support -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="extensionsStatus">8️⃣ Extensions Support</strong>
+                        </div>
+                        <div class="card-body" id="extensionsDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- THREAD Support Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="threadStatus">9️⃣ THREAD Support</strong>
+                        </div>
+                        <div class="card-body" id="threadDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- SORT Support Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="sortStatus">🔟 SORT Support</strong>
+                        </div>
+                        <div class="card-body" id="sortDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- Envelope Parsing Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="envelopeStatus">1️⃣1️⃣ Envelope Parsing</strong>
+                        </div>
+                        <div class="card-body" id="envelopeDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- DB Sync Verification Test -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong id="dbSyncStatus">1️⃣2️⃣ DB Sync Verification (Archiv)</strong>
+                        </div>
+                        <div class="card-body" id="dbSyncDetails">
+                            <!-- Wird dynamisch gefüllt -->
+                        </div>
+                    </div>
+
+                    <!-- Summary -->
+                    <div class="alert" id="summaryAlert" role="alert">
+                        <strong id="summaryTitle">Zusammenfassung</strong>
+                        <p class="mb-0" id="summaryText"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+    // Account Selection Handler
+    document.getElementById('accountSelect').addEventListener('change', function() {
+        const testBtn = document.getElementById('testBtn');
+        const testHint = document.getElementById('testHint');
+        
+        if (this.value) {
+            testBtn.disabled = false;
+            testHint.textContent = 'Bereit zum Testen';
+            // Phase 15: Folder-Auswahl anzeigen (wird nach Test gefüllt)
+            document.getElementById('folderSelectionContainer').style.display = 'none';
+        } else {
+            testBtn.disabled = true;
+            testHint.textContent = 'Wähle einen Account';
+            document.getElementById('folderSelectionContainer').style.display = 'none';
+        }
+        
+        // Hide previous results
+        document.getElementById('resultsContainer').style.display = 'none';
+    });
+
+    // Test Button Handler
+    document.getElementById('testBtn').addEventListener('click', async function() {
+        const accountId = document.getElementById('accountSelect').value;
+        if (!accountId) return;
+
+        // Show loading
+        document.getElementById('loadingIndicator').style.display = 'block';
+        document.getElementById('resultsContainer').style.display = 'none';
+        this.disabled = true;
+
+        try {
+            // CSRF Token
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+
+            // Phase 15: Hole ausgewählten Ordner (für Test 12)
+            const folderSelect = document.getElementById('folderSelect');
+            const selectedFolder = folderSelect.value || null;  // null = alle Ordner
+
+            // API Call with 150s timeout (max server wait + buffer)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 150000);
+            
+            const response = await fetch(`/api/imap-diagnostics/${accountId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ folder_name: selectedFolder }),  // Phase 15
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+
+            const result = await response.json();
+
+            // Hide loading
+            document.getElementById('loadingIndicator').style.display = 'none';
+
+            if (response.ok && result.success) {
+                displayResults(result.diagnostics);
+            } else {
+                displayError(result.error || 'Unbekannter Fehler');
+            }
+        } catch (error) {
+            document.getElementById('loadingIndicator').style.display = 'none';
+            if (error.name === 'AbortError') {
+                displayError('Timeout: Test-Timeout nach 2.5 Minuten. Server antwortet zu langsam - überprüfen Sie die Netzwerkverbindung.');
+            } else {
+                displayError('Netzwerkfehler: ' + error.message);
+            }
+        } finally {
+            this.disabled = false;
+        }
+    });
+
+    // Toggle Subscribed Folders Button Handler
+    document.getElementById('toggleSubscribedBtn').addEventListener('click', async function() {
+        if (!lastFoldersData) return;
+        
+        const accountId = document.getElementById('accountSelect').value;
+        if (!accountId) return;
+
+        const subscribedOnly = !lastFoldersData.subscribed_only;
+        
+        // Show loading
+        document.getElementById('loadingIndicator').style.display = 'block';
+        this.disabled = true;
+
+        try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 150000);
+            
+            const response = await fetch(`/api/imap-diagnostics/${accountId}?subscribed_only=${subscribedOnly}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ subscribed_only: subscribedOnly }),
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+            const result = await response.json();
+            document.getElementById('loadingIndicator').style.display = 'none';
+
+            if (response.ok && result.success && result.diagnostics.folders) {
+                displayFoldersList(result.diagnostics.folders);
+            } else {
+                displayFoldersList({ success: false, error: 'Fehler beim Umschalten der Folder-Liste' });
+            }
+        } catch (error) {
+            document.getElementById('loadingIndicator').style.display = 'none';
+            displayFoldersList({ success: false, error: 'Network Error: ' + error.message });
+        } finally {
+            this.disabled = false;
+        }
+    });
+
+    function displayResults(diagnostics) {
+        const container = document.getElementById('resultsContainer');
+        container.style.display = 'block';
+
+        // 1. Connection Test
+        displayConnectionTest(diagnostics.connection);
+
+        // 2. Capabilities Test
+        displayCapabilitiesTest(diagnostics.capabilities);
+
+        // 3. Namespace Test
+        displayNamespaceTest(diagnostics.namespace);
+
+        // 4. Folder Access Test
+        displayFolderTest(diagnostics.inbox_access);
+
+        // 5. Folder Listing Test
+        displayFoldersList(diagnostics.folders);
+
+        // Phase 15: Fülle Folder-Select für Test 12 nach erfolgreichem Folder-Listing
+        if (diagnostics.folders && diagnostics.folders.success && diagnostics.folders.folders) {
+            populateFolderSelect(diagnostics.folders.folders);
+        }
+
+        // 6. Flag Detection Test
+        displayFlagsTest(diagnostics.flags);
+
+        // 7. Server ID & Provider
+        displayServerIdTest(diagnostics.server_id);
+
+        // 8. Extensions
+        displayExtensionsTest(diagnostics.extensions);
+
+        // 9. THREAD Support
+        if (diagnostics.thread) {
+            displayThreadTest(diagnostics.thread);
+        }
+
+        // 10. SORT Support
+        if (diagnostics.sort) {
+            displaySortTest(diagnostics.sort);
+        }
+
+        // 11. Envelope Parsing
+        if (diagnostics.envelope) {
+            displayEnvelopeTest(diagnostics.envelope);
+        }
+
+        // 12. DB Sync Verification
+        if (diagnostics.db_sync) {
+            displayDbSyncTest(diagnostics.db_sync);
+        }
+
+        // Summary
+        displaySummary(diagnostics);
+    }
+
+    // Phase 15: Fülle Folder-Select Dropdown für Test 12
+    function populateFolderSelect(foldersArray) {
+        const folderSelect = document.getElementById('folderSelect');
+        const folderContainer = document.getElementById('folderSelectionContainer');
+        
+        // Clear existing options (except "Alle Ordner")
+        folderSelect.innerHTML = '<option value="">-- Alle Ordner überprüfen --</option>';
+        
+        // Add folder options
+        if (foldersArray && foldersArray.length > 0) {
+            foldersArray.forEach(folder => {
+                const option = document.createElement('option');
+                option.value = folder.name;
+                // Phase 15b: folder.count existiert nicht in list_all_folders() Response
+                option.textContent = folder.name;  // Nur Ordnername ohne Count
+                folderSelect.appendChild(option);
+            });
+            
+            // Show folder selection container
+            folderContainer.style.display = 'block';
+        } else {
+            folderContainer.style.display = 'none';
+        }
+    }
+
+    // Phase 15: Multi-Folder DB Sync Display
+    function displayMultiFolderDbSync(data, statusEl, detailsEl) {
+        const allSync = data.folders_with_issues === 0;
+        statusEl.innerHTML = allSync ? '1️⃣2️⃣ DB Sync Verification (Multi-Folder) ✅' : '1️⃣2️⃣ DB Sync Verification (Multi-Folder) ⚠️';
+        
+        let html = `
+            <div class="alert ${allSync ? 'alert-success' : 'alert-warning'}">
+                <strong>${data.summary}</strong><br>
+                <small class="text-muted">
+                    Geprüft: ${data.total_folders} Ordner | 
+                    ${allSync ? '✅ Alle synchronisiert' : `⚠️ ${data.folders_with_issues} mit Issues`}
+                </small>
+            </div>
+        `;
+        
+        // Übersichtstabelle mit allen Ordnern
+        html += `<h6 class="mt-3">📊 Übersicht:</h6>`;
+        html += `
+            <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Ordner</th>
+                            <th>IMAP</th>
+                            <th>DB</th>
+                            <th>Sync</th>
+                            <th>Details</th>
+                            <th>Aktion</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        let folderIndex = 0;
+        for (const [folderName, folderData] of Object.entries(data.folders)) {
+            if (!folderData.success) {
+                html += `
+                    <tr class="table-danger">
+                        <td><strong>${folderName}</strong></td>
+                        <td colspan="5"><span class="text-danger">❌ ${folderData.error || 'Fehler'}</span></td>
+                    </tr>
+                `;
+                continue;
+            }
+            
+            const isSync = folderData.sync_ok;
+            const rowClass = isSync ? '' : 'table-warning';
+            const syncIcon = isSync ? '✅' : '⚠️';
+            const hasMails = folderData.all_mails && folderData.all_mails.length > 0;
+            
+            html += `
+                <tr class="${rowClass}">
+                    <td><strong>${folderName}</strong></td>
+                    <td><span class="badge bg-primary">${folderData.imap_count || 0}</span></td>
+                    <td><span class="badge bg-info">${folderData.db_count || 0}</span></td>
+                    <td>${syncIcon}</td>
+                    <td><small>${folderData.message || '—'}</small></td>
+                    <td>
+                        ${hasMails ? `<button class="btn btn-sm btn-outline-primary toggle-folder-details" data-folder-id="folder_${folderIndex}">📋 Details</button>` : '—'}
+                    </td>
+                </tr>
+            `;
+            
+            // Phase 15a: Detaillierte Mail-Liste pro Ordner (expandierbar)
+            if (hasMails) {
+                html += `
+                    <tr id="folder_${folderIndex}" class="folder-details" style="display: none;">
+                        <td colspan="6" class="bg-light">
+                            ${renderFolderMailDetails(folderName, folderData)}
+                        </td>
+                    </tr>
+                `;
+            }
+            
+            folderIndex++;
+        }
+        
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        detailsEl.innerHTML = html;
+        
+        // Phase 15a: Event-Delegation für toggle-folder-details Buttons (CSP-konform)
+        attachFolderDetailsToggleListeners();
+    }
+    
+    // Phase 15a: Attach Event-Listeners für Folder-Details Toggle (CSP-konform)
+    function attachFolderDetailsToggleListeners() {
+        // Event-Delegation: Ein Listener für alle toggle-buttons
+        document.querySelectorAll('.toggle-folder-details').forEach(button => {
+            button.addEventListener('click', function() {
+                const folderId = this.getAttribute('data-folder-id');
+                toggleFolderDetails(folderId);
+            });
+        });
+    }
+    
+    // Phase 15a: Rendere detaillierte Mail-Liste für einen Ordner
+    function renderFolderMailDetails(folderName, folderData) {
+        let html = `
+            <h6 class="mt-2">📧 Mails in Ordner "${folderName}" (${folderData.all_mails.length}):</h6>
+            <div class="table-responsive">
+                <table class="table table-sm" style="font-size: 0.85em;">
+                    <thead class="table-secondary">
+                        <tr>
+                            <th rowspan="2">Status</th>
+                            <th colspan="2" class="text-center bg-primary text-white">📡 IMAP</th>
+                            <th colspan="2" class="text-center bg-info text-white">💾 DB</th>
+                            <th rowspan="2">Betreff</th>
+                            <th rowspan="2">👁️</th>
+                            <th rowspan="2">🚩</th>
+                            <th rowspan="2">↩️</th>
+                            <th rowspan="2">Datum</th>
+                        </tr>
+                        <tr>
+                            <th class="bg-primary text-white">UID</th>
+                            <th class="bg-primary text-white">UIDVAL</th>
+                            <th class="bg-info text-white">UID</th>
+                            <th class="bg-info text-white">UIDVAL</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        folderData.all_mails.forEach(mail => {
+            // Status Badge
+            let statusBadge = '';
+            if (mail.in_imap && mail.in_db) {
+                statusBadge = '<span class="badge bg-success">✅</span>';
+            } else if (mail.in_imap && !mail.in_db) {
+                statusBadge = '<span class="badge bg-warning">📡</span>';
+            } else if (!mail.in_imap && mail.in_db) {
+                statusBadge = '<span class="badge bg-danger">💾</span>';
+            }
+            
+            // Phase 15b: Getrennte IMAP/DB Werte
+            const imapUid = mail.imap_uid !== null && mail.imap_uid !== undefined ? mail.imap_uid : '—';
+            const imapUidval = mail.imap_uidvalidity !== null && mail.imap_uidvalidity !== undefined ? mail.imap_uidvalidity : '—';
+            const dbUid = mail.db_uid !== null && mail.db_uid !== undefined ? mail.db_uid : '—';
+            const dbUidval = mail.db_uidvalidity !== null && mail.db_uidvalidity !== undefined ? mail.db_uidvalidity : '—';
+            
+            // Highlight wenn UID oder UIDVAL unterschiedlich
+            let rowClass = '';
+            let uidMismatch = false;
+            let uidvalMismatch = false;
+            
+            if (mail.in_imap && mail.in_db) {
+                if (mail.imap_uid !== mail.db_uid) {
+                    uidMismatch = true;
+                    rowClass = 'table-danger';
+                }
+                if (mail.imap_uidvalidity !== mail.db_uidvalidity) {
+                    uidvalMismatch = true;
+                    rowClass = 'table-danger';
+                }
+            }
+            
+            // Flags
+            const seenIcon = mail.is_seen ? '✅' : '—';
+            const flagIcon = mail.is_flagged ? '🚩' : '—';
+            const replyIcon = mail.is_answered ? '↩️' : '—';
+            
+            // Datum kürzen
+            const dateShort = mail.received_at ? mail.received_at.substring(0, 16) : '—';
+            
+            // Subject kürzen
+            const subjectShort = mail.subject && mail.subject.length > 50 ? mail.subject.substring(0, 47) + '...' : (mail.subject || '(no subject)');
+            
+            // Styling für Mismatches
+            const uidStyle = uidMismatch ? 'style="background-color: #ffcccc; font-weight: bold;"' : '';
+            const uidvalStyle = uidvalMismatch ? 'style="background-color: #ffcccc; font-weight: bold;"' : '';
+            
+            html += `
+                <tr class="${rowClass}">
+                    <td>${statusBadge}</td>
+                    <td class="bg-light" ${uidStyle}><strong>${imapUid}</strong></td>
+                    <td class="bg-light" ${uidvalStyle}><small>${imapUidval}</small></td>
+                    <td class="bg-light" ${uidStyle}><strong>${dbUid}</strong></td>
+                    <td class="bg-light" ${uidvalStyle}><small>${dbUidval}</small></td>
+                    <td title="${mail.subject || ''}">${subjectShort}</td>
+                    <td class="text-center">${seenIcon}</td>
+                    <td class="text-center">${flagIcon}</td>
+                    <td class="text-center">${replyIcon}</td>
+                    <td><small>${dateShort}</small></td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                    </tbody>
+                </table>
+            </div>
+            <small class="text-muted">
+                <strong>Legende:</strong>
+                <span class="badge bg-success">✅</span> = IMAP & DB |
+                <span class="badge bg-warning">📡</span> = Nur IMAP |
+                <span class="badge bg-danger">💾</span> = Nur DB |
+                👁️ = Gelesen | 🚩 = Markiert | ↩️ = Beantwortet<br>
+                <strong class="text-danger">Rot hinterlegt:</strong> UID oder UIDVALIDITY unterschiedlich zwischen IMAP und DB (Sync-Problem!)
+            </small>
+        `;
+        
+        return html;
+    }
+    
+    // Phase 15a: Toggle Folder Details
+    function toggleFolderDetails(folderId) {
+        const detailsRow = document.getElementById(folderId);
+        if (detailsRow) {
+            detailsRow.style.display = detailsRow.style.display === 'none' ? 'table-row' : 'none';
+        }
+    }
+
+    function displayConnectionTest(data) {
+        const statusEl = document.getElementById('connectionStatus');
+        const detailsEl = document.getElementById('connectionDetails');
+
+        if (data.success) {
+            statusEl.innerHTML = '1️⃣ Verbindung & Authentifizierung ✅';
+            detailsEl.innerHTML = `
+                <p class="text-success mb-2"><strong>✅ Verbindung erfolgreich</strong></p>
+                <ul class="mb-0">
+                    <li>Server: ${data.host}:${data.port}</li>
+                    <li>SSL: ${data.ssl ? 'Ja' : 'Nein'}</li>
+                    <li>Authentifizierung: Erfolgreich</li>
+                </ul>
+            `;
+        } else {
+            statusEl.innerHTML = '1️⃣ Verbindung & Authentifizierung ❌';
+            detailsEl.innerHTML = `
+                <p class="text-danger mb-2"><strong>❌ Verbindung fehlgeschlagen</strong></p>
+                <p class="mb-0"><strong>Fehler:</strong> ${data.error}</p>
+            `;
+        }
+    }
+
+    function displayCapabilitiesTest(data) {
+        const statusEl = document.getElementById('capabilitiesStatus');
+        const detailsEl = document.getElementById('capabilitiesDetails');
+
+        if (data.success) {
+            statusEl.innerHTML = '2️⃣ Server-Capabilities ✅';
+            
+            const caps = data.capabilities || [];
+            const important = ['IDLE', 'NAMESPACE', 'UIDPLUS', 'MOVE', 'ID'];
+            
+            let html = '<p class="mb-3"><strong>🔹 Wichtige Features:</strong></p><ul class="mb-3">';
+            important.forEach(cap => {
+                const supported = caps.includes(cap);
+                html += `<li>${supported ? '✅' : '❌'} ${cap}</li>`;
+            });
+            html += '</ul>';
+            
+            html += `<p class="mb-2"><strong>🔹 Alle Capabilities (${caps.length} total):</strong></p>`;
+            html += '<div style="background-color: #f8f9fa; padding: 12px; border-radius: 4px; font-family: monospace; font-size: 0.9em; line-height: 1.6; word-break: break-word;">';
+            html += caps.join(', ');
+            html += '</div>';
+            
+            detailsEl.innerHTML = html;
+        } else {
+            statusEl.innerHTML = '2️⃣ Server-Capabilities ❌';
+            detailsEl.innerHTML = `
+                <p class="text-danger mb-0"><strong>Fehler:</strong> ${data.error}</p>
+            `;
+        }
+    }
+
+    function displayNamespaceTest(data) {
+        const statusEl = document.getElementById('namespaceStatus');
+        const detailsEl = document.getElementById('namespaceDetails');
+
+        if (data.success) {
+            statusEl.innerHTML = '3️⃣ Namespace & Delimiter ✅';
+            
+            const personal = data.namespace?.personal || 'N/A';
+            const delimiter = data.delimiter || '/';
+            
+            detailsEl.innerHTML = `
+                <ul class="mb-0">
+                    <li><strong>Personal Namespace:</strong> ${personal}</li>
+                    <li><strong>Folder Delimiter:</strong> "${delimiter}"</li>
+                </ul>
+            `;
+        } else {
+            statusEl.innerHTML = '3️⃣ Namespace & Delimiter ⚠️';
+            detailsEl.innerHTML = `
+                <p class="text-warning mb-0">Server unterstützt NAMESPACE nicht (nicht kritisch)</p>
+            `;
+        }
+    }
+
+    function displayFolderTest(data) {
+        const statusEl = document.getElementById('folderStatus');
+        const detailsEl = document.getElementById('folderDetails');
+
+        if (data.success) {
+            statusEl.innerHTML = '4️⃣ Folder-Zugriff (INBOX) ✅';
+            
+            const exists = data.exists || 0;
+            const recent = data.recent || 0;
+            const unseen = data.unseen || 0;
+            
+            detailsEl.innerHTML = `
+                <p class="text-success mb-2"><strong>✅ INBOX erfolgreich geöffnet</strong></p>
+                <ul class="mb-0">
+                    <li><strong>Emails gesamt:</strong> ${exists}</li>
+                    <li><strong>Ungelesen:</strong> ${unseen}</li>
+                    <li><strong>Recent:</strong> ${recent}</li>
+                </ul>
+            `;
+        } else {
+            statusEl.innerHTML = '4️⃣ Folder-Zugriff (INBOX) ❌';
+            detailsEl.innerHTML = `
+                <p class="text-danger mb-0"><strong>Fehler:</strong> ${data.error}</p>
+            `;
+        }
+    }
+
+    let lastFoldersData = null;
+    
+    function displayFoldersList(data) {
+        const statusEl = document.getElementById('foldersListStatus');
+        const detailsEl = document.getElementById('foldersListDetails');
+        const toggleBtn = document.getElementById('toggleSubscribedBtn');
+        
+        lastFoldersData = data;
+
+        if (data.success && data.folders && data.folders.length > 0) {
+            statusEl.innerHTML = `5️⃣ Folder-Listing ✅`;
+            
+            const folders = data.folders;
+            const isSubscribedOnly = data.subscribed_only || false;
+            const listType = data.list_type || 'all';
+            
+            let html = `<p class="mb-3"><strong>📁 ${folders.length} Ordner gefunden (${isSubscribedOnly ? 'nur abonniert' : 'alle'}):</strong></p>`;
+            html += '<div style="max-height: 400px; overflow-y: auto;">';
+            html += '<table class="table table-sm table-bordered mb-0">';
+            html += '<thead class="table-light"><tr><th>Ordner</th><th>Flags</th><th>Special</th></tr></thead><tbody>';
+            
+            folders.forEach(folder => {
+                const name = folder.name || '(unbekannt)';
+                const flags = folder.flags && folder.flags.length > 0 ? folder.flags.join(', ') : 'keine';
+                
+                let special = '';
+                if (folder.is_drafts) special += '📝 ';
+                if (folder.is_sent) special += '✉️ ';
+                if (folder.is_trash) special += '🗑️ ';
+                if (folder.is_junk) special += '⚠️ ';
+                if (folder.is_archive) special += '📦 ';
+                special = special.trim() || '-';
+                
+                html += `<tr><td style="font-family: monospace; font-size: 0.9em;">${name}</td><td style="font-size: 0.85em;">${flags}</td><td>${special}</td></tr>`;
+            });
+            
+            html += '</tbody></table>';
+            html += '</div>';
+            
+            detailsEl.innerHTML = html;
+            toggleBtn.style.display = 'block';
+            toggleBtn.textContent = isSubscribedOnly ? '📭 Alle anzeigen' : '📌 Nur abonniert';
+            toggleBtn.className = 'btn btn-sm text-dark ' + (isSubscribedOnly ? 'btn-primary' : 'btn-light');
+            if (isSubscribedOnly) {
+                toggleBtn.style.borderColor = '#0d6efd';
+            } else {
+                toggleBtn.style.borderColor = '#ddd';
+            }
+        } else if (data.success) {
+            statusEl.innerHTML = '5️⃣ Folder-Listing ⚠️';
+            detailsEl.innerHTML = '<p class="text-warning mb-0">Keine Ordner gefunden oder leere Liste</p>';
+            toggleBtn.style.display = 'none';
+        } else {
+            statusEl.innerHTML = '5️⃣ Folder-Listing ❌';
+            detailsEl.innerHTML = `<p class="text-danger mb-0"><strong>Fehler:</strong> ${data.error}</p>`;
+            toggleBtn.style.display = 'none';
+        }
+    }
+
+    function displayFlagsTest(data) {
+        const statusEl = document.getElementById('flagsStatus');
+        const detailsEl = document.getElementById('flagsDetails');
+
+        if (data.success) {
+            statusEl.innerHTML = '6️⃣ Flag-Detection ✅';
+            
+            const stats = data.statistics || {};
+            const total = data.total_messages || 0;
+            const sample = data.sample_count || 0;
+            const flags = data.flags_found || [];
+            
+            let html = `<p class="text-success mb-2"><strong>✅ Flag-Detection erfolgreich</strong></p>`;
+            html += `<div class="row mb-3">`;
+            html += `  <div class="col-md-6"><p class="mb-1"><strong>📊 Statistik (${sample} von ${total} Emails):</strong></p>`;
+            html += `    <ul class="mb-0" style="font-size: 0.95em;">`;
+            html += `      <li>👁️ Gelesen: <strong>${stats.seen || 0}</strong></li>`;
+            html += `      <li>🔵 Ungelesen: <strong>${stats.unseen || 0}</strong></li>`;
+            html += `      <li>⭐ Flagged: <strong>${stats.flagged || 0}</strong></li>`;
+            html += `      <li>✉️ Answered: <strong>${stats.answered || 0}</strong></li>`;
+            html += `    </ul>`;
+            html += `  </div>`;
+            html += `  <div class="col-md-6"><p class="mb-1"><strong>🔐 UIDVALIDITY pro Ordner:</strong></p>`;
+            html += `    <div style="font-size: 0.85em; max-height: 120px; overflow-y: auto;">`;
+            if (data.folder_uidvalidities && Object.keys(data.folder_uidvalidities).length > 0) {
+                html += `      <table class="table table-sm table-bordered mb-0">`;
+                html += `        <thead class="table-light"><tr><th>Ordner</th><th>UIDVALIDITY</th></tr></thead><tbody>`;
+                for (const [folder, uidval] of Object.entries(data.folder_uidvalidities)) {
+                    html += `        <tr><td><small>${folder}</small></td><td><code>${uidval}</code></td></tr>`;
+                }
+                html += `      </tbody></table>`;
+            } else {
+                html += `      <p class="text-muted mb-0"><small>Keine UIDVALIDITY-Daten verfügbar</small></p>`;
+            }
+            html += `    </div>`;
+            html += `  </div>`;
+            html += `</div>`;
+            html += `<div class="row">`;
+            html += `  <div class="col-12"><p class="mb-1"><strong>🏷️ Verfügbare Flags (${flags.length}):</strong></p>`;
+            html += `    <div style="background-color: #f8f9fa; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em; max-height: 150px; overflow-y: auto;">`;
+            if (flags.length > 0) {
+                html += flags.join('<br>');
+            } else {
+                html += 'Keine Flags gefunden';
+            }
+            html += `    </div></div>`;
+            html += `</div>`;
+            
+            if (data.sample_messages && data.sample_messages.length > 0) {
+                html += `<p class="mb-2"><strong>📧 Sample-Emails (${data.sample_messages.length} von max 50):</strong></p>`;
+                html += `<div style="max-height: 400px; overflow-y: auto; font-size: 0.85em;">`;
+                html += `<table class="table table-sm table-striped mb-0">`;
+                html += `<thead class="table-dark sticky-top"><tr>`;
+                html += `  <th style="width: 60px;">UID</th>`;
+                html += `  <th style="width: 120px;">Ordner</th>`;
+                html += `  <th style="width: 100px;">UIDVALIDITY</th>`;
+                html += `  <th style="width: 180px;">Message-ID</th>`;
+                html += `  <th>Betreff</th>`;
+                html += `  <th style="width: 50px;">Seen</th>`;
+                html += `  <th style="width: 50px;">Flag</th>`;
+                html += `  <th style="width: 50px;">Reply</th>`;
+                html += `</tr></thead><tbody>`;
+                data.sample_messages.forEach(msg => {
+                    html += `<tr>`;
+                    html += `  <td>${msg.uid}</td>`;
+                    html += `  <td><small>${msg.folder || 'INBOX'}</small></td>`;
+                    html += `  <td><code style="font-size: 0.75em;">${msg.uidvalidity || 'N/A'}</code></td>`;
+                    html += `  <td><small style="word-break: break-all;">${msg.message_id || '(keine)'}</small></td>`;
+                    html += `  <td><small>${msg.subject || '(kein Betreff)'}</small></td>`;
+                    html += `  <td class="text-center">${msg.is_seen ? '✅' : '❌'}</td>`;
+                    html += `  <td class="text-center">${msg.is_flagged ? '⭐' : '−'}</td>`;
+                    html += `  <td class="text-center">${msg.is_answered ? '✉️' : '−'}</td>`;
+                    html += `</tr>`;
+                });
+                html += `</tbody></table>`;
+                html += `</div>`;
+                html += `<p class="text-muted mt-2 mb-0"><small>💡 Zeigt max 50 Mails aus allen Ordnern (ohne Filterung)</small></p>`;
+            }
+            
+            detailsEl.innerHTML = html;
+        } else if (data.total_messages === 0) {
+            statusEl.innerHTML = '6️⃣ Flag-Detection ⚠️';
+            detailsEl.innerHTML = '<p class="text-warning mb-0">INBOX ist leer - keine Flags zum Testen</p>';
+        } else {
+            statusEl.innerHTML = '6️⃣ Flag-Detection ❌';
+            detailsEl.innerHTML = `<p class="text-danger mb-0"><strong>Fehler:</strong> ${data.error}</p>`;
+        }
+    }
+
+    function displayServerIdTest(data) {
+        const statusEl = document.getElementById('serverIdStatus');
+        const detailsEl = document.getElementById('serverIdDetails');
+
+        if (data.success || data.provider) {
+            statusEl.innerHTML = '7️⃣ Server-ID & Provider ✅';
+            
+            let html = `<p class="text-success mb-2"><strong>✅ Provider erkannt</strong></p>`;
+            html += `<div class="row">`;
+            html += `  <div class="col-md-6">`;
+            html += `    <p class="mb-2"><strong>🌐 Provider:</strong></p>`;
+            html += `    <p style="background-color: #e7f3ff; padding: 10px; border-radius: 4px; margin: 0; font-weight: bold;">${data.provider || 'Unbekannt'}</p>`;
+            html += `  </div>`;
+            
+            if (data.server_info && Object.keys(data.server_info).length > 0) {
+                html += `  <div class="col-md-6">`;
+                html += `    <p class="mb-2"><strong>📋 Server-Info:</strong></p>`;
+                html += `    <ul class="mb-0" style="font-size: 0.9em;">`;
+                Object.entries(data.server_info).forEach(([key, value]) => {
+                    html += `      <li><strong>${key}:</strong> ${value}</li>`;
+                });
+                html += `    </ul>`;
+                html += `  </div>`;
+            }
+            html += `</div>`;
+            
+            detailsEl.innerHTML = html;
+        } else {
+            statusEl.innerHTML = '7️⃣ Server-ID & Provider ⚠️';
+            detailsEl.innerHTML = `<p class="text-warning mb-0">Server unterstützt ID-Extension nicht (nicht kritisch). Provider: ${data.provider || 'Unbekannt'}</p>`;
+        }
+    }
+
+    function displayExtensionsTest(data) {
+        const statusEl = document.getElementById('extensionsStatus');
+        const detailsEl = document.getElementById('extensionsDetails');
+
+        if (data.success && data.extensions) {
+            statusEl.innerHTML = '8️⃣ Extensions Support ✅';
+            
+            let html = '';
+            
+            // Server-Antworten für ENABLE-Commands anzeigen
+            if (data.server_responses && data.server_responses.length > 0) {
+                html += `<div style="background-color: #f0f8ff; padding: 15px; border-radius: 6px; margin-bottom: 20px; border-left: 4px solid #0066cc;">`;
+                html += `<p class="mb-3" style="font-weight: bold; color: #0066cc;">📡 CAPABILITY Server-Antworten</p>`;
+                html += `<p style="font-size: 0.9em; margin-bottom: 12px;">Prüfung ob Extensions verfügbar sind</p>`;
+                
+                html += `<div style="font-family: monospace; font-size: 0.85em; background-color: #fff; padding: 12px; border-radius: 4px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">`;
+                
+                data.server_responses.forEach((cmd, idx) => {
+                    const statusIcon = cmd.status === 'OK' ? '✅' : (cmd.status === 'NOT_FOUND' ? '❌' : '⚠️');
+                    const statusColor = cmd.status === 'OK' ? '#28a745' : (cmd.status === 'NOT_FOUND' ? '#dc3545' : '#ffc107');
+                    
+                    html += `<div style="margin-bottom: 10px; padding: 8px; background-color: #fafafa; border-left: 3px solid ${statusColor};">`;
+                    html += `<div style="color: ${statusColor}; font-weight: bold; margin-bottom: 4px;">${statusIcon} ${cmd.command}</div>`;
+                    html += `<div style="color: #666; font-size: 0.95em; word-break: break-word;">${cmd.response}</div>`;
+                    html += `</div>`;
+                });
+                
+                html += `</div></div>`;
+            }
+            
+            // Extensions danach
+            const exts = data.extensions || {};
+            const totalAvailable = data.total_available || 0;
+            const totalEnabled = data.total_enabled || 0;
+            
+            html += `<p class="text-success mb-3"><strong>✅ ${data.message}</strong></p>`;
+            html += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">`;
+            
+            Object.entries(exts).forEach(([extName, extInfo]) => {
+                const isAvailable = extInfo.available;
+                const isEnabled = extInfo.enabled;
+                const statusIcon = isAvailable ? '✅' : '❌';
+                const enabledIcon = isEnabled ? '✅' : (isAvailable ? '⚪' : '❌');
+                const bgColor = isEnabled ? '#d4edda' : (isAvailable ? '#fff3cd' : '#f8d7da');
+                
+                html += `<div style="background-color: ${bgColor}; padding: 10px; border-radius: 4px; font-size: 0.9em; border: 1px solid #ddd;">`;
+                html += `  <p class="mb-1"><strong>${extName}</strong></p>`;
+                html += `  <p class="mb-1" style="font-size: 0.85em;"><span style="color: #666;">Server:</span> ${statusIcon} | <span style="color: #666;">Aktiviert:</span> ${enabledIcon}</p>`;
+                html += `  <p class="mb-0" style="color: #666; font-size: 0.85em;">${extInfo.name}</p>`;
+                html += `</div>`;
+            });
+            
+            html += `</div>`;
+            detailsEl.innerHTML = html;
+        } else {
+            statusEl.innerHTML = '8️⃣ Extensions Support ❌';
+            detailsEl.innerHTML = `<p class="text-danger mb-0"><strong>Fehler:</strong> ${data.error || 'Unbekannter Fehler'}</p>`;
+        }
+    }
+
+    function displayThreadTest(data) {
+        const statusEl = document.getElementById('threadStatus');
+        const detailsEl = document.getElementById('threadDetails');
+
+        if (data.supported) {
+            statusEl.innerHTML = `9️⃣ THREAD Support ${data.supported ? '✅' : '⚠️'}`;
+            let html = `<p class="text-success mb-2"><strong>THREAD Extension unterstützt</strong></p>`;
+            html += `<ul>`;
+            
+            if (data.algorithms && data.algorithms.length > 0) {
+                html += `<li><strong>Unterstützte Algorithmen:</strong> ${data.algorithms.join(', ')}</li>`;
+            }
+            
+            if (data.thread_results && data.thread_results.thread_count !== undefined) {
+                html += `<li><strong>Threads gefunden:</strong> ${data.thread_results.thread_count}</li>`;
+                html += `<li><strong>Nachrichten in Threads:</strong> ${data.thread_results.total_messages_in_threads}</li>`;
+                html += `<li><strong>Größter Thread:</strong> ${data.thread_results.largest_thread} Nachrichten</li>`;
+                
+                if (data.thread_results.average_messages_per_thread !== undefined) {
+                    html += `<li><strong>⌀ Pro Thread:</strong> ${data.thread_results.average_messages_per_thread} Nachrichten</li>`;
+                }
+                
+                if (data.thread_results.oldest_date && data.thread_results.newest_date) {
+                    html += `<li><strong>📅 Zeitspanne:</strong> ${data.thread_results.oldest_date} bis ${data.thread_results.newest_date}</li>`;
+                }
+            }
+            
+            // Sample threads with collapsible details
+            if (data.thread_results && data.thread_results.sample_threads && data.thread_results.sample_threads.length > 0) {
+                html += `</ul><p class="mt-3 mb-2"><strong>📦 Sample Threads:</strong></p>`;
+                html += `<div style="margin-left: 15px;">`;
+                
+                data.thread_results.sample_threads.forEach((thread, idx) => {
+                    const id = 'thread-sample-' + idx;
+                    html += `<div style="margin-bottom: 10px; border-left: 2px solid #0066cc; padding-left: 10px;">`;
+                    html += `<button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#${id}" aria-expanded="false">
+                        Thread ${thread.thread_num}: ${thread.size} Nachrichten
+                    </button>`;
+                    html += `<div class="collapse mt-2" id="${id}">`;
+                    
+                    if (thread.messages) {
+                        thread.messages.forEach((msg, msgIdx) => {
+                            html += `<div style="font-size: 0.9em; margin: 5px 0; padding: 5px; background: #f9f9f9; border-radius: 3px;">`;
+                            html += `[${msgIdx + 1}] ${msg.date || '?'}: <em>${msg.subject || '(kein Betreff)'}</em>`;
+                            html += `</div>`;
+                        });
+                    }
+                    
+                    if (thread.oldest && thread.newest) {
+                        html += `<p style="font-size: 0.85em; color: #666; margin-top: 5px; margin-bottom: 0;">
+                            🕐 ${thread.oldest} - ${thread.newest}
+                        </p>`;
+                    }
+                    
+                    html += `</div></div>`;
+                });
+                
+                html += `</div>`;
+            } else {
+                html += `</ul>`;
+            }
+            
+            detailsEl.innerHTML = html;
+        } else {
+            statusEl.innerHTML = '9️⃣ THREAD Support ⚠️';
+            detailsEl.innerHTML = `<p class="text-warning mb-0"><strong>Nicht unterstützt:</strong> Server unterstützt THREAD Extension nicht (optional)</p>`;
+        }
+    }
+
+    function displaySortTest(data) {
+        const statusEl = document.getElementById('sortStatus');
+        const detailsEl = document.getElementById('sortDetails');
+
+        if (data.supported) {
+            statusEl.innerHTML = `🔟 SORT Support ${data.working_criteria > 0 ? '✅' : '⚠️'}`;
+            let html = `<p class="text-success mb-2"><strong>SORT Extension unterstützt</strong></p>`;
+            html += `<ul>`;
+            
+            if (data.charsets && data.charsets.length > 0) {
+                html += `<li><strong>Unterstützte Zeichensätze:</strong> ${data.charsets.join(', ')}</li>`;
+            }
+            
+            html += `<li><strong>Funktionsfähige Sortierkriterien:</strong> ${data.working_criteria}/${Object.keys(data.sort_results || {}).length}</li>`;
+            
+            if (data.sort_results) {
+                html += `<li><strong>Getestete Kriterien:</strong>`;
+                html += `<ul style="margin-top: 8px;">`;
+                
+                Object.entries(data.sort_results).forEach(([criteria, result]) => {
+                    const icon = result.success ? '✅' : '❌';
+                    html += `<li>${icon} ${result.label} (${criteria})</li>`;
+                });
+                
+                html += `</ul></li>`;
+            }
+            
+            html += `</ul>`;
+            detailsEl.innerHTML = html;
+        } else {
+            statusEl.innerHTML = '🔟 SORT Support ⚠️';
+            detailsEl.innerHTML = `<p class="text-warning mb-0"><strong>Nicht unterstützt:</strong> Server unterstützt SORT Extension nicht (optional)</p>`;
+        }
+    }
+
+    function displayEnvelopeTest(data) {
+        const statusEl = document.getElementById('envelopeStatus');
+        const detailsEl = document.getElementById('envelopeDetails');
+
+        if (data.success && data.sample_count > 0) {
+            statusEl.innerHTML = '1️⃣1️⃣ Envelope Parsing ✅';
+            let html = `<p class="text-success mb-2"><strong>Envelope Parsing erfolgreich</strong></p>`;
+            html += `<p class="mb-3"><strong>📊 ${data.sample_count} Nachrichten analysiert (von ${data.total_messages} gesamt):</strong></p>`;
+            
+            if (data.envelopes && data.envelopes.length > 0) {
+                html += `<div style="max-height: 400px; overflow-y: auto;">`;
+                
+                data.envelopes.forEach((env, idx) => {
+                    const replyIndicator = env.is_reply ? '↩️' : '📨';
+                    const positionStr = env.position ? `${env.position}/${env.total_samples}` : `${idx + 1}`;
+                    
+                    html += `<div style="border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; border-radius: 4px;">`;
+                    html += `<p class="mb-2"><strong>Email ${idx + 1} ${replyIndicator}</strong> (UID: ${env.uid}, Position: ${positionStr})</p>`;
+                    
+                    if (env.date) {
+                        html += `<p class="mb-1"><strong>📅 Datum:</strong> ${env.date}</p>`;
+                    }
+                    
+                    html += `<p class="mb-1"><strong>📝 Betreff:</strong> ${env.subject}</p>`;
+                    
+                    if (env.from && env.from.length > 0) {
+                        html += `<p class="mb-1"><strong>👤 Von:</strong> ${env.from.join(', ')}</p>`;
+                    }
+                    
+                    if (env.to && env.to.length > 0) {
+                        html += `<p class="mb-1"><strong>📮 An:</strong> ${env.to.join(', ')}</p>`;
+                    }
+                    
+                    if (env.cc && env.cc.length > 0) {
+                        html += `<p class="mb-1"><strong>📋 CC:</strong> ${env.cc.join(', ')}</p>`;
+                    }
+                    
+                    if (env.message_id) {
+                        html += `<p class="mb-1" style="font-size: 0.85em;"><strong>🔗 Message-ID:</strong> <code>${env.message_id}</code></p>`;
+                    }
+                    
+                    if (env.in_reply_to) {
+                        html += `<p class="mb-1" style="font-size: 0.85em;"><strong>↩️ In-Reply-To:</strong> <code>${env.in_reply_to}</code></p>`;
+                    } else if (env.is_reply === false) {
+                        html += `<p class="mb-1" style="font-size: 0.85em; color: #28a745;"><strong>✉️ Root-Message:</strong> (Keine Antwort auf andere Email)</p>`;
+                    }
+                    
+                    html += `</div>`;
+                });
+                
+                html += `</div>`;
+            }
+            
+            detailsEl.innerHTML = html;
+        } else if (data.success) {
+            statusEl.innerHTML = '1️⃣1️⃣ Envelope Parsing ⚠️';
+            detailsEl.innerHTML = `<p class="text-warning mb-0"><strong>Keine Mails gefunden:</strong> INBOX ist leer oder nicht zugänglich</p>`;
+        } else {
+            statusEl.innerHTML = '1️⃣1️⃣ Envelope Parsing ❌';
+            detailsEl.innerHTML = `<p class="text-danger mb-0"><strong>Fehler:</strong> ${data.error || 'Unbekannter Fehler'}</p>`;
+        }
+    }
+    function displayDbSyncTest(data) {
+        const statusEl = document.getElementById('dbSyncStatus');
+        const detailsEl = document.getElementById('dbSyncDetails');
+
+        if (data.success) {
+            // Phase 15: Multi-Folder Mode?
+            if (data.multi_folder_mode && data.folders) {
+                displayMultiFolderDbSync(data, statusEl, detailsEl);
+                return;
+            }
+            
+            // Single-Folder Mode (wie bisher)
+            const isSync = data.sync_ok;
+            statusEl.innerHTML = isSync ? '1️⃣2️⃣ DB Sync Verification ✅' : '1️⃣2️⃣ DB Sync Verification ⚠️';
+            
+            let html = `
+                <div class="alert ${isSync ? 'alert-success' : 'alert-warning'}">
+                    <strong>${isSync ? '✅ Perfekt synchronisiert!' : '⚠️ Synchronisations-Unterschiede gefunden'}</strong><br>
+                    <div class="row mt-2">
+                        <div class="col-md-3">
+                            <span class="badge bg-primary">📡 IMAP: ${data.imap_count}</span>
+                        </div>
+                        <div class="col-md-3">
+                            <span class="badge bg-info">💾 DB: ${data.db_count}</span>
+                        </div>
+                        <div class="col-md-3">
+                            <span class="badge bg-success">✅ Beide: ${data.in_both}</span>
+                        </div>
+                        <div class="col-md-3">
+                            <span class="badge bg-warning">⚠️ Diff: ${data.only_imap + data.only_db}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            if (data.test_mail_found) {
+                html += `
+                    <div class="alert ${data.test_mail_synced ? 'alert-success' : 'alert-danger'}">
+                        <strong>🎯 Test-Mail (UID ${data.test_mail_uid}):</strong>
+                        ${data.test_mail_in_db ? '✅ Korrekt in DB synchronisiert' : '❌ NICHT in DB gefunden!'}
+                        ${!data.test_mail_in_db ? '<br><small class="text-muted">Hinweis: Mail könnte mit alter UIDVALIDITY in DB sein (rot markiert in Tabelle)</small>' : ''}
+                    </div>
+                `;
+            }
+            
+            // TABELLE mit ALLEN Mails
+            if (data.all_mails && data.all_mails.length > 0) {
+                html += `
+                    <h6 class="mt-3">📊 Alle Mails (${data.all_mails.length}):</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover" style="font-size: 0.85em;">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Herkunft</th>
+                                    <th>Ordner</th>
+                                    <th>UID</th>
+                                    <th>UIDVAL</th>
+                                    <th>Betreff</th>
+                                    <th>Message-ID</th>
+                                    <th>👁️</th>
+                                    <th>🚩</th>
+                                    <th>↩️</th>
+                                    <th>Datum</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                data.all_mails.forEach(mail => {
+                    // Status Badge
+                    let statusBadge = '';
+                    let herkunft = '';
+                    if (mail.in_imap && mail.in_db) {
+                        statusBadge = '<span class="badge bg-success">✅</span>';
+                        herkunft = '<small><strong class="text-success">IMAP + DB</strong></small>';
+                    } else if (mail.in_imap && !mail.in_db) {
+                        statusBadge = '<span class="badge bg-warning">📡</span>';
+                        herkunft = '<small><strong class="text-warning">Nur IMAP</strong></small>';
+                    } else if (!mail.in_imap && mail.in_db) {
+                        statusBadge = '<span class="badge bg-danger">💾</span>';
+                        herkunft = '<small><strong class="text-danger">Nur DB</strong></small>';
+                    }
+                    
+                    // Highlight Test-Mail ODER unterschiedliche UIDVALIDITY
+                    let rowClass = '';
+                    if (data.test_mail_uid === mail.uid) {
+                        rowClass = 'table-warning';
+                    } else if (mail.uidvalidity && mail.uidvalidity !== data.uidvalidity) {
+                        rowClass = 'table-danger';  // Alte UIDVALIDITY = Mail aus altem State
+                    }
+                    
+                    // Flags
+                    const seenIcon = mail.is_seen ? '✅' : '—';
+                    const flagIcon = mail.is_flagged ? '🚩' : '—';
+                    const replyIcon = mail.is_answered ? '↩️' : '—';
+                    
+                    // Datum kürzen
+                    const dateShort = mail.received_at ? mail.received_at.substring(0, 16) : '—';
+                    
+                    // Subject kürzen
+                    const subjectShort = mail.subject.length > 50 ? mail.subject.substring(0, 47) + '...' : mail.subject;
+                    
+                    // Message-ID kürzen
+                    const msgIdShort = mail.message_id.length > 30 ? mail.message_id.substring(0, 27) + '...' : mail.message_id;
+                    
+                    // UIDVALIDITY Warning
+                    let uidvalDisplay = mail.uidvalidity || '—';
+                    if (mail.uidvalidity && mail.uidvalidity !== data.uidvalidity) {
+                        uidvalDisplay = `<span class="text-danger" title="Alte UIDVALIDITY! Ordner wurde invalidiert.">${mail.uidvalidity} ⚠️</span>`;
+                    }
+                    
+                    html += `
+                        <tr class="${rowClass}">
+                            <td>${statusBadge}</td>
+                            <td>${herkunft}</td>
+                            <td><small><strong>${mail.folder || 'Archiv'}</strong></small></td>
+                            <td><strong>${mail.uid}</strong></td>
+                            <td><small>${uidvalDisplay}</small></td>
+                            <td title="${mail.subject}">${subjectShort}</td>
+                            <td><small><code title="${mail.message_id}">${msgIdShort}</code></small></td>
+                            <td class="text-center">${seenIcon}</td>
+                            <td class="text-center">${flagIcon}</td>
+                            <td class="text-center">${replyIcon}</td>
+                            <td><small>${dateShort}</small></td>
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                
+                // Legende
+                html += `
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <strong>Legende:</strong>
+                            <span class="badge bg-success">✅</span> = In IMAP & DB |
+                            <span class="badge bg-warning">📡</span> = Nur auf Server |
+                            <span class="badge bg-danger">💾</span> = Nur in DB |
+                            👁️ = Gelesen | 🚩 = Markiert | ↩️ = Beantwortet<br>
+                            <strong class="text-danger">Rot hinterlegt:</strong> Alte UIDVALIDITY (Ordner wurde invalidiert, Mail sollte neu gefetcht werden)
+                        </small>
+                    </div>
+                `;
+            }
+            
+            detailsEl.innerHTML = html;
+        } else {
+            statusEl.innerHTML = '1️⃣2️⃣ DB Sync Verification ⚠️';
+            detailsEl.innerHTML = `<p class="text-muted">${data.message || 'Skipped (no DB access)'}</p>`;
+        }
+    }
+    function displaySummary(diagnostics) {
+        const alertEl = document.getElementById('summaryAlert');
+        const titleEl = document.getElementById('summaryTitle');
+        const textEl = document.getElementById('summaryText');
+
+        const tests = [
+            diagnostics.connection?.success,
+            diagnostics.capabilities?.success,
+            diagnostics.namespace?.success,
+            diagnostics.inbox_access?.success,
+            diagnostics.folders?.success,
+            diagnostics.flags?.success,
+            diagnostics.extensions?.success
+        ];
+        
+        // Server ID is optional, don't count in overall success
+
+        const passedCount = tests.filter(t => t === true).length;
+        const totalCount = tests.length;
+
+        if (passedCount === totalCount) {
+            alertEl.className = 'alert alert-success';
+            titleEl.textContent = '✅ Alle Tests bestanden!';
+            textEl.textContent = 'Die IMAP-Verbindung funktioniert einwandfrei.';
+        } else if (passedCount >= totalCount - 1) {
+            alertEl.className = 'alert alert-warning';
+            titleEl.textContent = '⚠️ Tests größtenteils erfolgreich';
+            textEl.textContent = `${passedCount}/${totalCount} Tests bestanden. Kleinere Probleme erkannt.`;
+        } else {
+            alertEl.className = 'alert alert-danger';
+            titleEl.textContent = '❌ Tests fehlgeschlagen';
+            textEl.textContent = `Nur ${passedCount}/${totalCount} Tests bestanden. Bitte Einstellungen prüfen.`;
+        }
+    }
+
+    function displayError(errorMsg) {
+        const container = document.getElementById('resultsContainer');
+        container.style.display = 'block';
+        
+        container.innerHTML = `
+            <div class="alert alert-danger" role="alert">
+                <h5 class="alert-heading">❌ Fehler</h5>
+                <p class="mb-0">${errorMsg}</p>
+            </div>
+        `;
+    }
+</script>
+{% endblock %}

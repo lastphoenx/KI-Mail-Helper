@@ -1,0 +1,16 @@
+[Unit]
+Description=Mail Helper - Mail Processor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=thomas
+WorkingDirectory=/home/thomas/projects/KI-Mail-Helper
+EnvironmentFile=/home/thomas/projects/KI-Mail-Helper/.env
+ExecStart=/home/thomas/projects/KI-Mail-Helper/venv/bin/python -m src.00_main --process-once
+StandardOutput=append:/var/log/mail-helper-processor.log
+StandardError=append:/var/log/mail-helper-processor.log
+
+[Install]
+WantedBy=multi-user.target

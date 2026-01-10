@@ -1,0 +1,3 @@
+﻿"""
+Mail Helper - Test Suite
+"""
