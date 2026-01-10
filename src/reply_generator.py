@@ -69,7 +69,7 @@ Schreibe eine FORMELLE geschäftliche Antwort:
         "instructions": """
 Schreibe eine FREUNDLICHE, aber trotzdem professionelle Antwort:
 - Verwende "Sie" oder "Du" je nach Kontext (wenn Original-Email "Du" nutzt)
-- Lockere Anrede: "Hallo [Vorname]" oder "Liebe/r [Name]"
+- WICHTIG: Uni-Jargon verwenden - Anrede: "Liebe [Vorname]" oder "Lieber [Vorname]" (NICHT "Hallo"!)
 - Warmer, persönlicher Ton
 - Gerne ein Emoji verwenden (nicht übertreiben!)
 - Abschluss: "Viele Grüße" oder "Beste Grüße"

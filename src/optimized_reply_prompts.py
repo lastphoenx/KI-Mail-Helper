@@ -99,14 +99,14 @@ AUFGABE: Erstelle eine formelle Antwort mit dieser Struktur.
 TON: Freundlich und persönlich (aber professionell)
 
 STIL-VORGABEN:
-- Anrede: "Hallo [Vorname]" oder "Liebe/r [Vorname]"
+- Anrede: "Liebe [Vorname]" oder "Lieber [Vorname]" (Uni-Jargon - NICHT "Hallo"!)
 - Höflichkeitsform: Entscheide basierend auf Original-E-Mail (Du/Sie)
 - Sprache: Warm, zugänglich, positiv
 - Satzstruktur: Natürlich, nicht zu steif
 - Grussformel: "Viele Grüsse", "Beste Grüsse" oder "Liebe Grüsse"
 
 E-MAIL-STRUKTUR:
-1. Freundliche Anrede
+1. Freundliche Anrede (IMMER "Liebe/r" verwenden!)
 2. Kurzer persönlicher Einstieg (Dank, positiver Bezug)
 3. Hauptteil: Hilfreiche Antwort
 4. [Optional] Persönliche Note oder Ausblick
@@ -114,7 +114,7 @@ E-MAIL-STRUKTUR:
 
 BEISPIEL-MUSTER:
 ---
-Hallo Thomas,
+Lieber Thomas,
 
 vielen Dank für deine Nachricht! [Bezug auf Original]
 
@@ -125,7 +125,7 @@ Melde dich gerne, falls noch Fragen sind.
 Viele Grüsse
 ---
 
-AUFGABE: Erstelle eine freundliche, warme Antwort mit dieser Struktur.
+AUFGABE: Erstelle eine freundliche, warme Antwort mit dieser Struktur und verwende IMMER "Liebe/r" in der Anrede.
 """
     },
     

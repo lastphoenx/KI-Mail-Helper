@@ -2103,7 +2103,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 🆕 De-Anonymisierungs-Funktion
     function deAnonymizeText(text, entityMap) {
-        if (!entityMap || Object.keys(entityMap).length === 0) {
+        if (!entityMap) {
+            console.log('⚠️ deAnonymizeText: No entityMap provided');
             return text;
         }
         
@@ -2113,12 +2114,31 @@ document.addEventListener('DOMContentLoaded', function() {
         // Für De-Anonymisierung brauchen wir reverse: {[PERSON_1]: "Max Muster", ...}
         const reverseMap = entityMap.reverse || entityMap;
         
-        // Ersetze Platzhalter durch Original-Werte
-        for (const [placeholder, original] of Object.entries(reverseMap)) {
-            // Ersetze alle Vorkommen (case-sensitive)
-            const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-            result = result.replace(regex, original);
+        if (!reverseMap || Object.keys(reverseMap).length === 0) {
+            console.log('⚠️ deAnonymizeText: reverseMap is empty');
+            console.log('🔍 entityMap structure:', entityMap);
+            return text;
         }
+        
+        console.log('🔓 De-anonymizing with', Object.keys(reverseMap).length, 'mappings');
+        
+        // Ersetze Platzhalter durch Original-Werte
+        // Regex-Pattern: [PERSON_1], [ORG_2], [EMAIL_3] etc.
+        const placeholderRegex = /\[(PERSON|ORG|GPE|LOC|EMAIL|PHONE|IBAN|URL)_\d+\]/g;
+        
+        result = text.replace(placeholderRegex, (match) => {
+            // Entferne [ und ] für Lookup
+            const key = match.slice(1, -1);  // "[PERSON_1]" -> "PERSON_1"
+            
+            if (reverseMap[key]) {
+                console.log(`🔄 Replaced ${match} -> ${reverseMap[key]}`);
+                return reverseMap[key];
+            }
+            
+            // Falls nicht gefunden, original lassen
+            console.log(`⚠️ No mapping found for ${match}`);
+            return match;
+        });
         
         return result;
     }
