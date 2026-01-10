@@ -48,6 +48,23 @@ WICHTIGE REGELN:
 ❌ Füge KEINE Betreffzeile hinzu
 ❌ Gib dich NIEMALS als der Absender der Original-E-Mail aus
 ❌ Bei Newsletter/Marketing-Mails: Schreibe KEINE Antwort (macht keinen Sinn!)
+
+PLATZHALTER FÜR NAMEN:
+- [ABSENDER_VORNAME] = Vorname des Absenders (z.B. für "Lieber [ABSENDER_VORNAME]")
+- [ABSENDER_NACHNAME] = Nachname des Absenders (z.B. für "Sehr geehrter Herr [ABSENDER_NACHNAME]")
+- [ABSENDER_VOLLNAME] = Voller Name des Absenders
+- [EMPFÄNGER_VORNAME] = Dein Vorname (für Unterschrift bei informellen Mails)
+- [EMPFÄNGER_NACHNAME] = Dein Nachname
+- [EMPFÄNGER_VOLLNAME] = Dein voller Name (für Unterschrift bei formellen Mails)
+
+ANREDE nach Ton:
+- Formell: "Sehr geehrter Herr [ABSENDER_NACHNAME]" oder "Sehr geehrte Frau [ABSENDER_NACHNAME]"
+- Freundlich: "Lieber [ABSENDER_VORNAME]" oder "Liebe [ABSENDER_VORNAME]"
+- Kurz: "Hallo [ABSENDER_VORNAME]"
+
+GRUSS nach Ton:
+- Formell: Unterschrift mit [EMPFÄNGER_VOLLNAME]
+- Freundlich/Kurz: Unterschrift nur mit [EMPFÄNGER_VORNAME]
 """
 
 # ============================================================================

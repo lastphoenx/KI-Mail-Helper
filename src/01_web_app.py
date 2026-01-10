@@ -4427,6 +4427,20 @@ def api_generate_reply(raw_email_id):
                             raw_email.encrypted_body_sanitized, master_key
                         )
                         was_anonymized = True
+                        
+                        # EntityMap aus DB laden für De-Anonymisierung
+                        if raw_email.encrypted_entity_map:
+                            try:
+                                import json
+                                entity_map_json = encryption.EncryptionManager.decrypt_data(
+                                    raw_email.encrypted_entity_map, master_key
+                                )
+                                entity_map = json.loads(entity_map_json)
+                                logger.info(f"🔒 Loaded EntityMap from DB ({len(entity_map.get('reverse', {}))} entries)")
+                            except Exception as e:
+                                logger.warning(f"⚠️ EntityMap decryption failed: {e}")
+                                entity_map = None
+                        
                         logger.info(f"🔒 Using pre-sanitized content from Phase 22")
                     except Exception as decrypt_err:
                         logger.warning(f"⚠️ Sanitized content decryption failed: {decrypt_err}")
@@ -4454,7 +4468,14 @@ def api_generate_reply(raw_email_id):
                             )
                         
                         # Anonymisiere Subject + Body (Level 2 = Regex + spaCy Light)
-                        result = sanitizer.sanitize(decrypted_subject, decrypted_body, level=2, session_id=session_id)
+                        result = sanitizer.sanitize_with_roles(
+                            subject=decrypted_subject,
+                            body=decrypted_body,
+                            sender=decrypted_sender,
+                            recipient=user.username,
+                            level=2,
+                            session_id=session_id
+                        )
                         
                         # 🔍 DEBUG: Log Sanitizer Output (Statistiken)
                         if DebugLogger.is_enabled():
@@ -4479,12 +4500,18 @@ def api_generate_reply(raw_email_id):
                         raw_email.sanitization_level = 2
                         raw_email.sanitization_time_ms = result.processing_time_ms
                         
+                        # EntityMap für De-Anonymisierung verschlüsselt speichern
+                        entity_map = result.entity_map.to_dict()
+                        import json
+                        raw_email.encrypted_entity_map = encryption.EncryptionManager.encrypt_data(
+                            json.dumps(entity_map), master_key
+                        )
+                        
                         db.commit()
                         
                         # Nutze anonymisierte Daten
                         content_for_ai_subject = result.subject
                         content_for_ai_body = result.body
-                        entity_map = result.entity_map.to_dict()  # 🆕 Vollständige EntityMap mit forward/reverse für De-Anonymisierung
                         was_anonymized = True
                         
                         # 🔍 DEBUG: Log Sanitizer Output
@@ -4523,6 +4550,12 @@ def api_generate_reply(raw_email_id):
             logger.debug(f"🔍 REPLY API DEBUG - was_anonymized: {was_anonymized}")
             logger.debug(f"🔍 REPLY API DEBUG - entity_map keys: {list(entity_map.keys()) if entity_map else 'None'}")
             
+            # 🔐 SECURITY FIX: Sender auch anonymisieren wenn use_anonymization aktiv
+            if was_anonymized:
+                sender_for_ai = "[ABSENDER]"
+            else:
+                sender_for_ai = decrypted_sender
+            
             # 🆕 Use generate_reply_with_user_style() for personalized replies
             # Phase I.2: Pass account_id für Account-spezifische Signaturen
             result = generator.generate_reply_with_user_style(
@@ -4530,7 +4563,7 @@ def api_generate_reply(raw_email_id):
                 user_id=user.id,
                 original_subject=content_for_ai_subject,   # 🆕 Ggf. anonymisiert
                 original_body=content_for_ai_body,         # 🆕 Ggf. anonymisiert
-                original_sender=decrypted_sender,
+                original_sender=sender_for_ai,             # ✅ JETZT AUCH ANONYMISIERT!
                 tone=tone,
                 thread_context=thread_context if thread_context else None,
                 has_attachments=raw_email.has_attachments or False,

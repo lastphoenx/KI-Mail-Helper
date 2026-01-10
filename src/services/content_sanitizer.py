@@ -1,14 +1,18 @@
 """
-Content Sanitizer V5.2 - Email-Pseudonymisierung mit bidirektionalem Mapping
+Content Sanitizer V5.4 - Email-Pseudonymisierung mit granularen Rollen-Platzhaltern
 
-FIXES in V5.2:
+FIXES in V5.4:
 - V4.0: Telefonnummern, erweiterte Blacklist, konsistente Nummern
 - V4.1: Blacklist prüft erstes/letztes Wort, Zeilenumbruch-Filter
 - V4.2: Smart Extraction - "Lieber Max" → "Lieber [PERSON_X]"
 - V4.3: Leerzeichen nach Platzhalter wenn nächstes Zeichen Buchstabe
 - V5.0: HTML→Plain Text Konvertierung via BeautifulSoup
-- V5.1: inscriptis getestet - VERWORFEN (keine Zeilenumbrüche)
-- V5.2: BeautifulSoup optimiert + Signatur-Zeilen zusammenführen
+- V5.1: BeautifulSoup getestet - VERWORFEN (keine Zeilenumbrüche)
+- V5.2: nscriptis optimiert + Signatur-Zeilen zusammenführen
+- V5.3: Rollen-basierte Anonymisierung ([ABSENDER], [EMPFÄNGER])
+- V5.4: Granulare Namens-Platzhalter:
+        [ABSENDER_VORNAME], [ABSENDER_NACHNAME], [ABSENDER_VOLLNAME]
+        [EMPFÄNGER_VORNAME], [EMPFÄNGER_NACHNAME], [EMPFÄNGER_VOLLNAME]
 """
 
 import re
@@ -94,6 +98,10 @@ class EntityMap:
         
         return placeholder
     
+    def add_role_placeholder(self, placeholder: str, original: str):
+        """Fügt einen Rollen-Platzhalter direkt hinzu (ohne Counter)."""
+        self.reverse[placeholder] = original
+    
     def get_placeholder(self, original: str) -> Optional[str]:
         key = original.strip()
         # Erst exakt, dann normalisiert
@@ -143,7 +151,27 @@ class SanitizationResult:
         return self.entity_map.to_dict()
 
 
+@dataclass
+class NameParts:
+    """Strukturierte Namensbestandteile."""
+    vorname: str
+    nachname: str
+    vollname: str
+    titel: Optional[str] = None
+    
+    def to_dict(self) -> dict:
+        return {
+            "vorname": self.vorname,
+            "nachname": self.nachname,
+            "vollname": self.vollname,
+            "titel": self.titel
+        }
+
+
 class ContentSanitizer:
+    
+    # Titel die vor Namen stehen können
+    TITEL_PREFIXES = {'dr.', 'dr', 'prof.', 'prof', 'ing.', 'dipl.', 'mag.', 'msc', 'bsc', 'ma', 'ba'}
     
     # Erweiterte Blacklist für deutsche Wörter die spaCy falsch als PER erkennt
     SPACY_BLACKLIST = {
@@ -196,6 +224,55 @@ class ContentSanitizer:
     }
     
     SPACY_ENTITY_MAP = {'PER': 'PERSON', 'ORG': 'ORG', 'GPE': 'LOCATION', 'LOC': 'LOCATION'}
+    
+    def _extract_name_parts(self, full_name: str) -> NameParts:
+        """
+        Extrahiert Namensbestandteile aus vollem Namen.
+        
+        Beispiele:
+        - "Max Muster" → vorname="Max", nachname="Muster"
+        - "Dr. Max Muster" → vorname="Max", nachname="Muster", titel="Dr."
+        - "Anna Maria Müller" → vorname="Anna", nachname="Müller" (Maria geht verloren)
+        - "Max" → vorname="Max", nachname="Max"
+        
+        Returns:
+            NameParts mit vorname, nachname, vollname, titel
+        """
+        if not full_name:
+            return NameParts(vorname="", nachname="", vollname="")
+        
+        full_name = full_name.strip()
+        parts = full_name.split()
+        
+        titel = None
+        name_parts = []
+        
+        for p in parts:
+            p_lower = p.lower().strip('.')
+            if p_lower in self.TITEL_PREFIXES:
+                titel = p
+            else:
+                name_parts.append(p)
+        
+        if len(name_parts) >= 2:
+            vorname = name_parts[0]
+            nachname = name_parts[-1]
+            vollname = " ".join(name_parts)
+        elif len(name_parts) == 1:
+            vorname = name_parts[0]
+            nachname = name_parts[0]  # Fallback: gleiches wie Vorname
+            vollname = name_parts[0]
+        else:
+            vorname = full_name
+            nachname = full_name
+            vollname = full_name
+        
+        return NameParts(
+            vorname=vorname,
+            nachname=nachname,
+            vollname=vollname,
+            titel=titel
+        )
     
     def _is_html(self, text: str) -> bool:
         """Prüft ob Text HTML enthält."""
@@ -349,6 +426,7 @@ class ContentSanitizer:
         return text.strip()
     
     def sanitize(self, subject: str, body: str, level: int = 3, existing_map: Optional[EntityMap] = None, session_id: Optional[str] = None) -> SanitizationResult:
+        """Standard-Anonymisierung ohne Rollen-Ersetzung."""
         start_time = time.perf_counter()
         entity_map = existing_map if existing_map else EntityMap()
         entities_by_type: Dict[str, int] = {}
@@ -389,6 +467,200 @@ class ContentSanitizer:
             processing_time_ms=(time.perf_counter() - start_time) * 1000,
             entities_by_type=entities_by_type
         )
+    
+    def sanitize_with_roles(
+        self, 
+        subject: str, 
+        body: str, 
+        sender: str,
+        recipient: str = None,
+        level: int = 2,
+        existing_map: Optional[EntityMap] = None,
+        session_id: Optional[str] = None
+    ) -> SanitizationResult:
+        """
+        V5.4: Anonymisiert mit GRANULAREN semantischen Rollen-Platzhaltern.
+        
+        Args:
+            subject: Email-Betreff
+            body: Email-Body
+            sender: Absender-Header z.B. "Max Muster <max@example.com>"
+            recipient: Optional - Name des Users/Empfängers
+            level: Anonymisierungs-Level (1-3)
+            existing_map: Optionale bestehende EntityMap
+            session_id: Optionale Session-ID für Debug-Logging
+        
+        Ergebnis-Platzhalter:
+        - [ABSENDER_VORNAME]   → "Max"
+        - [ABSENDER_NACHNAME]  → "Muster"
+        - [ABSENDER_VOLLNAME]  → "Max Muster"
+        - [EMPFÄNGER_VORNAME]  → "Peter"
+        - [EMPFÄNGER_NACHNAME] → "Beispiel"
+        - [EMPFÄNGER_VOLLNAME] → "Peter Beispiel"
+        - Andere Personen      → [PERSON_1], [PERSON_2], etc.
+        """
+        
+        # 1. Extrahiere Absender-Name aus Header
+        sender_name = sender.split('<')[0].strip().strip('"') if sender else ""
+        sender_parts = self._extract_name_parts(sender_name)
+        
+        # 2. Extrahiere Empfänger-Namensbestandteile
+        recipient_parts = self._extract_name_parts(recipient) if recipient else None
+        
+        # 3. Normale Anonymisierung durchführen
+        result = self.sanitize(subject, body, level, existing_map, session_id)
+        
+        # 4. Finde und ersetze Absender-Platzhalter durch granulare Rollen
+        if sender_name:
+            sender_placeholders = self._find_name_variants(sender_name, result.entity_map)
+            
+            # Ersetze alle Absender-Platzhalter durch die granularen Varianten
+            for placeholder in sender_placeholders:
+                # Finde den Original-Text für diesen Platzhalter
+                original_text = result.entity_map.reverse.get(placeholder, "")
+                original_lower = original_text.lower() if original_text else ""
+                
+                # Entscheide welcher granulare Platzhalter passt
+                granular_placeholder = self._get_granular_placeholder(
+                    original_text, sender_parts, "ABSENDER"
+                )
+                
+                result.subject = result.subject.replace(placeholder, granular_placeholder)
+                result.body = result.body.replace(placeholder, granular_placeholder)
+            
+            # Entferne alte Platzhalter aus reverse map
+            for p in sender_placeholders:
+                if p in result.entity_map.reverse:
+                    del result.entity_map.reverse[p]
+            
+            # Füge granulare Platzhalter zur reverse map hinzu
+            result.entity_map.add_role_placeholder('[ABSENDER_VORNAME]', sender_parts.vorname)
+            result.entity_map.add_role_placeholder('[ABSENDER_NACHNAME]', sender_parts.nachname)
+            result.entity_map.add_role_placeholder('[ABSENDER_VOLLNAME]', sender_parts.vollname)
+            
+            logger.info(f"🎭 Absender: {sender_parts.vorname} | {sender_parts.nachname} | {sender_parts.vollname}")
+        
+        # 5. Finde und ersetze Empfänger-Platzhalter durch granulare Rollen
+        if recipient and recipient_parts:
+            recipient_placeholders = self._find_name_variants(recipient, result.entity_map)
+            
+            for placeholder in recipient_placeholders:
+                original_text = result.entity_map.reverse.get(placeholder, "")
+                
+                granular_placeholder = self._get_granular_placeholder(
+                    original_text, recipient_parts, "EMPFÄNGER"
+                )
+                
+                result.subject = result.subject.replace(placeholder, granular_placeholder)
+                result.body = result.body.replace(placeholder, granular_placeholder)
+            
+            # Entferne alte Platzhalter
+            for p in recipient_placeholders:
+                if p in result.entity_map.reverse:
+                    del result.entity_map.reverse[p]
+            
+            # Füge granulare Platzhalter hinzu
+            result.entity_map.add_role_placeholder('[EMPFÄNGER_VORNAME]', recipient_parts.vorname)
+            result.entity_map.add_role_placeholder('[EMPFÄNGER_NACHNAME]', recipient_parts.nachname)
+            result.entity_map.add_role_placeholder('[EMPFÄNGER_VOLLNAME]', recipient_parts.vollname)
+            
+            logger.info(f"🎭 Empfänger: {recipient_parts.vorname} | {recipient_parts.nachname} | {recipient_parts.vollname}")
+        
+        return result
+    
+    def _get_granular_placeholder(self, original_text: str, name_parts: NameParts, role: str) -> str:
+        """
+        Bestimmt welcher granulare Platzhalter für einen Original-Text passt.
+        
+        Args:
+            original_text: Der originale Name-Text (z.B. "Max", "Max Muster", "Dr. Max Muster")
+            name_parts: Die extrahierten Namensbestandteile
+            role: "ABSENDER" oder "EMPFÄNGER"
+        
+        Returns:
+            Passender Platzhalter: [ROLE_VORNAME], [ROLE_NACHNAME] oder [ROLE_VOLLNAME]
+        """
+        if not original_text:
+            return f"[{role}_VOLLNAME]"
+        
+        original_lower = original_text.lower().strip()
+        original_words = set(original_lower.split())
+        
+        vorname_lower = name_parts.vorname.lower() if name_parts.vorname else ""
+        nachname_lower = name_parts.nachname.lower() if name_parts.nachname else ""
+        
+        # Fall 1: Nur Vorname (z.B. "Max", "Lieber Max" → "Max")
+        if original_lower == vorname_lower or original_words == {vorname_lower}:
+            return f"[{role}_VORNAME]"
+        
+        # Fall 2: Nur Nachname (z.B. "Muster", "Herr Muster" → "Muster")
+        if original_lower == nachname_lower or original_words == {nachname_lower}:
+            return f"[{role}_NACHNAME]"
+        
+        # Fall 3: Enthält sowohl Vor- als auch Nachname → VOLLNAME
+        if vorname_lower in original_lower and nachname_lower in original_lower:
+            return f"[{role}_VOLLNAME]"
+        
+        # Fall 4: Enthält nur Vorname aber mehr Wörter (z.B. mit Titel)
+        if vorname_lower in original_lower and nachname_lower not in original_lower:
+            return f"[{role}_VORNAME]"
+        
+        # Fall 5: Enthält nur Nachname aber mehr Wörter
+        if nachname_lower in original_lower and vorname_lower not in original_lower:
+            return f"[{role}_NACHNAME]"
+        
+        # Fallback: VOLLNAME
+        return f"[{role}_VOLLNAME]"
+    
+    def _find_name_variants(self, name: str, entity_map: EntityMap) -> List[str]:
+        """Findet alle PERSON-Platzhalter die zu einem Namen gehören könnten."""
+        if not name:
+            return []
+        
+        variants = []
+        name_lower = name.lower()
+        name_parts = set(name_lower.split())
+        
+        # Extrahiere auch Vor- und Nachname separat
+        extracted = self._extract_name_parts(name)
+        vorname_lower = extracted.vorname.lower() if extracted.vorname else ""
+        nachname_lower = extracted.nachname.lower() if extracted.nachname else ""
+        
+        for original, placeholder in entity_map.forward.items():
+            if not placeholder.startswith('[PERSON_'):
+                continue
+            
+            original_lower = original.lower()
+            original_parts = set(original_lower.split())
+            
+            # Check 1: Voller Name ist Teilstring oder umgekehrt
+            if name_lower in original_lower or original_lower in name_lower:
+                variants.append(placeholder)
+                continue
+            
+            # Check 2: Wörter überlappen
+            if name_parts and original_parts:
+                if name_parts.issubset(original_parts) or original_parts.issubset(name_parts):
+                    variants.append(placeholder)
+                    continue
+            
+            # Check 3: Vorname oder Nachname matcht
+            if vorname_lower and vorname_lower == original_lower:
+                variants.append(placeholder)
+                continue
+            if nachname_lower and nachname_lower == original_lower:
+                variants.append(placeholder)
+                continue
+            
+            # Check 4: Vorname oder Nachname ist Teil des Originals
+            if vorname_lower and vorname_lower in original_parts:
+                variants.append(placeholder)
+                continue
+            if nachname_lower and nachname_lower in original_parts:
+                variants.append(placeholder)
+                continue
+        
+        return list(set(variants))
     
     def _apply_regex(self, subject: str, body: str, em: EntityMap) -> Tuple[str, str, Dict[str, int]]:
         counts: Dict[str, int] = {}
@@ -578,7 +850,7 @@ class ContentSanitizer:
                     first_word = words[0]
                     last_word = words[-1]
                     
-                    # "Lieber Max" → nur "Thomas" extrahieren
+                    # "Lieber Max" → nur "Max" extrahieren
                     if first_word in self.SPACY_BLACKLIST:
                         remaining = ' '.join(words[1:])
                         if remaining and remaining not in self.SPACY_BLACKLIST:
@@ -590,7 +862,7 @@ class ContentSanitizer:
                         else:
                             continue  # Nichts übrig
                     
-                    # "Thomas Gesendet" → nur "Thomas" extrahieren  
+                    # "Max Gesendet" → nur "Max" extrahieren  
                     elif last_word in self.SPACY_BLACKLIST:
                         remaining = ' '.join(words[:-1])
                         if remaining and remaining not in self.SPACY_BLACKLIST:
@@ -642,6 +914,11 @@ def sanitize_email(subject: str, body: str, level: int = 3) -> SanitizationResul
     return get_sanitizer().sanitize(subject, body, level)
 
 
+def sanitize_email_with_roles(subject: str, body: str, sender: str, recipient: str = None, level: int = 2) -> SanitizationResult:
+    """Convenience-Funktion für Rollen-basierte Anonymisierung mit granularen Platzhaltern."""
+    return get_sanitizer().sanitize_with_roles(subject, body, sender, recipient, level)
+
+
 def deanonymize_response(response: str, entity_map: EntityMap) -> str:
     return entity_map.deanonymize(response)
 
@@ -682,23 +959,36 @@ Tel +41 98 765 43 21
 Mail: max.mustermann@example.com | http://www.example.com
 """
     
-    result = get_sanitizer().sanitize("AW: Test", test, level=3)
+    print("=" * 70)
+    print("TEST: Rollen-basierte Anonymisierung V5.4 (Granular)")
+    print("=" * 70)
     
-    print("=" * 70)
-    print("ANONYMISIERT:")
-    print("=" * 70)
-    print(result.body)
-    print()
-    print("=" * 70)
-    print(f"ENTITY MAP ({result.entities_found} Entities):")
-    print("=" * 70)
-    for orig, ph in result.entity_map.forward.items():
-        print(f"  {ph:20} <- {orig[:50]}{'...' if len(orig) > 50 else ''}")
+    result = get_sanitizer().sanitize_with_roles(
+        subject="AW: Test",
+        body=test,
+        sender="Peter Beispiel <peter.beispiel@example.com>",
+        recipient="Max Mustermann",
+        level=2
+    )
     
-    print()
-    print("TESTS:")
-    print(f"  2025 intakt: {'✅' if '2025' in result.body else '❌'}")
-    print(f"  Telefon erkannt: {'✅' if '[PHONE_' in result.body else '❌'}")
-    print(f"  Von: korrekt: {'✅' if 'Von: [PERSON_' in result.body else '❌'}")
-    print(f"  Herzliche intakt: {'✅' if 'Herzliche' in result.body else '❌'}")
-    print(f"  Zeilenumbrüche: {'✅' if result.body.count(chr(10)) > 10 else '❌'}")
+    print("\nANONYMISIERTER BODY (Auszug):")
+    print("-" * 70)
+    print(result.body[:800])
+    
+    print("\n" + "=" * 70)
+    print("ENTITY MAP (Reverse - für De-Anonymisierung):")
+    print("=" * 70)
+    for ph, orig in sorted(result.entity_map.reverse.items()):
+        print(f"  {ph:25} → {orig[:35]}{'...' if len(orig) > 35 else ''}")
+    
+    print("\n" + "=" * 70)
+    print("ERWARTETE PLATZHALTER:")
+    print("=" * 70)
+    expected = [
+        "[ABSENDER_VORNAME]", "[ABSENDER_NACHNAME]", "[ABSENDER_VOLLNAME]",
+        "[EMPFÄNGER_VORNAME]", "[EMPFÄNGER_NACHNAME]", "[EMPFÄNGER_VOLLNAME]"
+    ]
+    for exp in expected:
+        found = exp in result.entity_map.reverse
+        in_body = exp in result.body
+        print(f"  {exp:25} in reverse_map: {'✅' if found else '❌'}  in body: {'✅' if in_body else '❌'}")

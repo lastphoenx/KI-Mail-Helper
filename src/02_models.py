@@ -908,6 +908,9 @@ class RawEmail(Base):
     sanitization_level = Column(Integer, nullable=True)  # 1=Regex, 2=spaCy-Light, 3=spaCy-Full
     sanitization_time_ms = Column(Float, nullable=True)
     sanitization_entities_count = Column(Integer, nullable=True)
+    
+    # EntityMap für De-Anonymisierung (verschlüsseltes JSON)
+    encrypted_entity_map = Column(Text, nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="raw_emails")

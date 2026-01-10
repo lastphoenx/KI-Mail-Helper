@@ -2123,16 +2123,21 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('🔓 De-anonymizing with', Object.keys(reverseMap).length, 'mappings');
         
         // Ersetze Platzhalter durch Original-Werte
-        // Regex-Pattern: [PERSON_1], [ORG_2], [EMAIL_3] etc.
-        const placeholderRegex = /\[(PERSON|ORG|GPE|LOC|EMAIL|PHONE|IBAN|URL)_\d+\]/g;
+        // Regex-Pattern: [PERSON_1], [ORG_2], [EMAIL_3], [ABSENDER_VORNAME], [EMPFÄNGER_VOLLNAME] etc.
+        const placeholderRegex = /\[(PERSON|ORG|GPE|LOC|EMAIL|PHONE|IBAN|URL|ADDRESS|TITLE)_\d+\]|\[(ABSENDER|EMPFÄNGER)_(VORNAME|NACHNAME|VOLLNAME)\]/g;
         
         result = text.replace(placeholderRegex, (match) => {
-            // Entferne [ und ] für Lookup
-            const key = match.slice(1, -1);  // "[PERSON_1]" -> "PERSON_1"
+            // 🔧 FIX: Suche MIT Klammern (so wie reverse Map gespeichert ist)
+            if (reverseMap[match]) {
+                console.log(`🔄 Replaced ${match} -> ${reverseMap[match]}`);
+                return reverseMap[match];
+            }
             
-            if (reverseMap[key]) {
-                console.log(`🔄 Replaced ${match} -> ${reverseMap[key]}`);
-                return reverseMap[key];
+            // Fallback: Ohne Klammern probieren (Backward-Compatibility)
+            const keyWithoutBrackets = match.slice(1, -1);
+            if (reverseMap[keyWithoutBrackets]) {
+                console.log(`🔄 Replaced ${match} -> ${reverseMap[keyWithoutBrackets]} (fallback)`);
+                return reverseMap[keyWithoutBrackets];
             }
             
             // Falls nicht gefunden, original lassen
