@@ -6,6 +6,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.3.1] - 2026-01-10
+
+### Added - Reply-Generator De-Anonymisierung
+
+#### Automatische De-Anonymisierung von AI-generierten Antworten
+
+**Motivation:**
+AI-Antworten auf anonymisierten Emails enthalten Platzhalter wie [PERSON_3], [ORG_2]. Diese müssen vor dem Versand durch echte Namen ersetzt werden.
+
+**Features:**
+
+**1. EntityMap Backend-Integration** (`src/reply_generator.py`)
+- ✅ **EntityMap.to_dict()**: Backend sendet vollständiges Mapping mit `forward` und `reverse`
+  - `forward`: `{"Thomas": "PERSON_1"}` (Original → Anonymisiert)
+  - `reverse`: `{"PERSON_1": "Thomas"}` (Anonymisiert → Original)
+- ✅ **Automatische Erkennung**: Prüft ob Email anonymisiert ist (`was_anonymized: True/False`)
+- ✅ **JSON-Response**: `entityMap` Objekt für Frontend verfügbar
+
+**2. Frontend De-Anonymisierung** (`templates/email_detail.html`)
+- ✅ **deAnonymizeText() Funktion**: Ersetzt alle `[ENTITY_X]` Platzhalter
+  - Verwendet `entityMap.reverse` für Rück-Übersetzung
+  - Regex: `/\[(PERSON|ORG|GPE|LOC|EMAIL|PHONE|IBAN|URL)_\d+\]/g`
+- ✅ **Tone-spezifische Anwendung**: 
+  - ✅ Formell, Freundlich, Höflich ablehnen → De-Anonymisierung funktioniert
+  - ⚠️ Kurz & Knapp → Debug-Logs zeigen keine Ausgabe (noch zu untersuchen)
+
+**3. Tone-Varianten** (4 Reply-Stile)
+- ✅ **Formell** - Professionell, Sie-Form
+- ✅ **Freundlich** - Persönlich, Du-Form möglich
+- ✅ **Kurz & Knapp** - Prägnant, direkt
+- ✅ **Höflich ablehnen** - Diplomatische Absage
+
+**4. Integration mit ContentSanitizer**
+- ✅ Reply-Generator erkennt automatisch ob Email anonymisiert ist
+- ✅ Lädt EntityMap aus `ContentSanitizer` Session
+- ✅ De-Anonymisierung erfolgt transparent für User
+
+**Workflow:**
+1. User generiert Reply auf anonymisierter Email
+2. AI erhält anonymisierte Version (z.B. "Hallo [PERSON_3]")
+3. Frontend ersetzt Platzhalter: "[PERSON_3]" → "Thomas"
+4. User sieht natürliche Antwort: "Hallo Thomas"
+
+**Known Issues:**
+- ⚠️ "Kurz & Knapp" Tone: De-Anonymisierung zeigt noch Platzhalter statt echte Namen
+  - Console-Logs erscheinen nicht → mögliche Browser-Cache-Issue
+  - Andere 3 Tones funktionieren einwandfrei
+
+---
+
 ## [1.3.0] - 2026-01-09
 
 ### Added - Email-Anonymisierung & Confidence Tracking

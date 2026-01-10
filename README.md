@@ -38,10 +38,10 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## Status
 
-**Version:** 1.4.0  
-**Development:** Aktiv (Reply Optimization für Small Local LLMs abgeschlossen)  
+**Version:** 1.3.1  
+**Development:** Aktiv (Reply De-Anonymisierung & Security Audit abgeschlossen)  
 **Stability:** Production-ready für Single-User-Deployment  
-**Next:** Performance Testing & Benchmarks
+**Next:** "Kurz & Knapp" De-Anonymisierung Bug-Fix
 
 **Abgeschlossene Phasen:**
 - ✅ Phase 0-12: Core System, Zero-Knowledge, Production Hardening
