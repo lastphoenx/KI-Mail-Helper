@@ -899,7 +899,7 @@ Die KI-Priorisierung nutzt eine hochentwickelte **Hybrid-Pipeline**, die deutsch
 
 ### 9.2 Email-Anonymisierung (DSGVO-konform)
 
-> **Neue Feature seit Version 1.3.0**
+> **Neue Feature seit Version 1.3.0 - Erweitert in 1.3.2 mit Rollen-basierten Platzhaltern**
 
 Wenn du Cloud-AI-Provider (OpenAI, Anthropic, Mistral) nutzt, werden personenbezogene Daten (PII) übertragen. Mit der **Email-Anonymisierung** kannst du diese Daten vor der Übertragung automatisch entfernen.
 
@@ -907,10 +907,36 @@ Wenn du Cloud-AI-Provider (OpenAI, Anthropic, Mistral) nutzt, werden personenbez
 
 Das System nutzt **spaCy Named Entity Recognition (NER)** mit dem deutschen Modell `de_core_news_sm`, um personenbezogene Informationen zu erkennen und zu ersetzen:
 
-- **Personen** (PER): `Hans Müller` → `[PERSON_1]`
+**Standard-Platzhalter:**
+- **Emails/Telefon** (Regex): `hans@test.de` → `[EMAIL_1]`
 - **Organisationen** (ORG): `Microsoft GmbH` → `[ORG_1]`
 - **Orte** (LOC): `Berlin` → `[LOC_1]`
-- **Emails/Telefon** (Regex): `hans@test.de` → `[EMAIL_1]`
+- **Andere Personen**: `Anna Schmidt` → `[PERSON_1]`
+
+**Semantische Rollen-Platzhalter (NEU in 1.3.2):**
+
+Für Sender und Empfänger verwendet das System **granulare Platzhalter**, um kontextgerechte AI-Antworten zu ermöglichen:
+
+- **Absender (Sender der Email):**
+  - `Max` → `[ABSENDER_VORNAME]`
+  - `Müller` → `[ABSENDER_NACHNAME]`
+  - `Max Müller` → `[ABSENDER_VOLLNAME]`
+  - `Dr. Max Müller` → `[ABSENDER_VOLLNAME]` (mit automatischer Titel-Erkennung)
+
+- **Empfänger (Du/User):**
+  - `Thomas` → `[EMPFÄNGER_VORNAME]`
+  - `Schmidt` → `[EMPFÄNGER_NACHNAME]`
+  - `Thomas Schmidt` → `[EMPFÄNGER_VOLLNAME]`
+
+**Warum Rollen-basierte Platzhalter?**
+
+Die AI kann nun kontextgerechte Anreden und Grüße generieren:
+
+| Ton | Anrede | Grußformel |
+|-----|--------|------------|
+| **Formell** | "Sehr geehrter Herr [ABSENDER_NACHNAME]" | Mit freundlichen Grüßen<br>[EMPFÄNGER_VOLLNAME] |
+| **Freundlich** | "Lieber [ABSENDER_VORNAME]" | Viele Grüße<br>[EMPFÄNGER_VORNAME] |
+| **Kurz & Knapp** | "Hallo [ABSENDER_VORNAME]" | Gruß<br>[EMPFÄNGER_VORNAME] |
 
 **Sanitization-Levels:**
 

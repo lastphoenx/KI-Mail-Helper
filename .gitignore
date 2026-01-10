@@ -48,6 +48,13 @@ emails.db
 *.log
 logs/
 server.log
+
+# Backups and Archives (AUDIT_REPORT.md recommendation)
+backups/
+backup_*/
+*.db.gz
+_archive/
+archive/
 server_test.log
 
 # Code Reviews (SENSIBEL - nicht auf GitHub!)

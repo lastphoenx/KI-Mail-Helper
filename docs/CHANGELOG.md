@@ -6,6 +6,100 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.3.2] - 2026-01-10
+
+### Added - Rollen-basierte Email-Anonymisierung mit granularen Platzhaltern
+
+#### Semantische Anonymisierung für kontextgerechte AI-Antworten
+
+**Motivation:**
+Bisherige Anonymisierung nutzte generische Platzhalter (PERSON_1, PERSON_2), wodurch AI keine kontextgerechten Anreden/Grüße generieren konnte. Mit semantischen Rollen ([ABSENDER_VORNAME], [EMPFÄNGER_VOLLNAME]) kann AI formelle vs. freundliche Anreden unterscheiden.
+
+**Features:**
+
+**1. Rollen-basierte Platzhalter** (`content_sanitizer.py v5.4`)
+- ✅ **Semantische Rollen**:
+  - `[ABSENDER_VORNAME]`, `[ABSENDER_NACHNAME]`, `[ABSENDER_VOLLNAME]` → Sender der Email
+  - `[EMPFÄNGER_VORNAME]`, `[EMPFÄNGER_NACHNAME]`, `[EMPFÄNGER_VOLLNAME]` → User/Empfänger
+  - `[PERSON_1]`, `[PERSON_2]`, ... → Andere Personen im Text
+- ✅ **Intelligente Namenserkennung**:
+  - Extrahiert Vor- und Nachnamen aus Sender-Header
+  - Titel-Erkennung (Dr., Prof., Ing., etc.)
+  - Mehrnamige Personen: "Anna Maria Müller" → Vorname="Anna", Nachname="Müller"
+- ✅ **Granulare Ersetzung**:
+  - "Max" → [ABSENDER_VORNAME]
+  - "Muster" → [ABSENDER_NACHNAME]
+  - "Max Muster" → [ABSENDER_VOLLNAME]
+  - "Dr. Max Muster" → [ABSENDER_VOLLNAME] (mit Titel-Parsing)
+
+**2. EntityMap Persistierung** (Database)
+- ✅ **encrypted_entity_map Spalte** in `raw_emails` Tabelle
+  - Migration `ph22b_add_encrypted_entity_map.py`
+  - Speichert vollständiges JSON-Mapping (forward + reverse)
+- ✅ **Bug-Fix**: EntityMap wird jetzt aus DB geladen für pre-sanitized Emails
+  - Vorher: entity_map=None bei pre-sanitized Content → De-Anonymisierung unmöglich
+  - Jetzt: Automatisches Laden und Decryption beim Reply-Generieren
+
+**3. Reply-Generator Integration** (`01_web_app.py`)
+- ✅ **sanitize_with_roles()**: Neue Methode mit Sender/Recipient Context
+- ✅ **Sender-Anonymisierung**: Auch Absender-Name in Reply-Prompt anonymisiert
+  - Vorher: `original_sender="Max Muster"` (Klartext an AI)
+  - Jetzt: `original_sender="[ABSENDER]"` (anonymisiert)
+- ✅ **EntityMap Encryption**: Automatische Speicherung nach Anonymisierung
+
+**4. AI-Prompt Enhancement** (`optimized_reply_prompts.py`)
+- ✅ **Platzhalter-Dokumentation** im System-Prompt
+  - Erklärt Bedeutung von [ABSENDER_VORNAME] vs. [ABSENDER_NACHNAME]
+  - Anrede-Beispiele nach Ton:
+    * Formell: "Sehr geehrter Herr [ABSENDER_NACHNAME]"
+    * Freundlich: "Lieber [ABSENDER_VORNAME]"
+    * Kurz: "Hallo [ABSENDER_VORNAME]"
+  - Grußformel-Beispiele:
+    * Formell: Unterschrift mit [EMPFÄNGER_VOLLNAME]
+    * Freundlich/Kurz: Nur [EMPFÄNGER_VORNAME]
+
+**5. Frontend De-Anonymisierung** (`email_detail.html`)
+- ✅ **Erweiterte Regex**: Erkennt auch Rollen-Platzhalter
+  ```javascript
+  /\[(PERSON|ORG|GPE|LOC|EMAIL|PHONE|IBAN|URL|ADDRESS|TITLE)_\d+\]|\[(ABSENDER|EMPFÄNGER)_(VORNAME|NACHNAME|VOLLNAME)\]/g
+  ```
+- ✅ **Fallback-Kompatibilität**: Unterstützt beide Formate (mit/ohne Klammern in reverse map)
+
+**Technical Details:**
+
+**Name-Parsing Beispiele:**
+```python
+"Max Muster" → vorname="Max", nachname="Muster", vollname="Max Muster"
+"Dr. Max Muster" → vorname="Max", nachname="Muster", vollname="Max Muster", titel="Dr."
+"Anna Maria Müller" → vorname="Anna", nachname="Müller", vollname="Anna Maria Müller"
+"Max" → vorname="Max", nachname="Max", vollname="Max"  # Einnamige Personen
+```
+
+**Workflow:**
+1. Email abholen mit Sender="Max Muster <max@example.com>"
+2. ContentSanitizer extrahiert: vorname="Max", nachname="Muster"
+3. Text wird anonymisiert:
+   - "Hallo Max" → "Hallo [ABSENDER_VORNAME]"
+   - "Max Muster" → "[ABSENDER_VOLLNAME]"
+   - "Herr Muster" → "Herr [ABSENDER_NACHNAME]"
+4. AI erhält semantische Platzhalter und wählt passende Anrede
+5. Frontend ersetzt zurück: [ABSENDER_VORNAME] → "Max"
+
+**Benefits:**
+- ✅ Kontextgerechte AI-Antworten (formell vs. freundlich)
+- ✅ Bessere Anreden: "Sehr geehrter Herr Müller" statt "Sehr geehrter [PERSON_1]"
+- ✅ Kompatibel mit reply-styles Feature
+- ✅ DSGVO-konform (Cloud-AI sieht nur Platzhalter)
+
+**Debug-System:**
+- ✅ DebugLogger mit 6 separaten Log-Dateien aktiviert
+  - `logs/debug_reply/sanitizer_input.log`
+  - `logs/debug_reply/sanitizer_anonymized_output.log`
+  - `logs/debug_reply/ai_input.log`, etc.
+- ⚠️ Vor Produktion deaktivieren: `src/debug_logger.py → ENABLED = False`
+
+---
+
 ## [1.3.1] - 2026-01-10
 
 ### Added - Reply-Generator De-Anonymisierung

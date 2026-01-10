@@ -30,7 +30,7 @@ class DebugLogger:
     # ⚠️ HIER EIN-/AUSSCHALTEN ⚠️
     # True = Logging aktiv (nur für Debugging!)
     # False = Logging deaktiviert (Produktion!)
-    ENABLED = True  # 🔍 DEBUG AKTIV für Anonymisierungs-Pipeline
+    ENABLED = False  # 🔒 PRODUCTION: Debug-Logging deaktiviert
     
     # Log-Verzeichnis
     LOG_DIR = Path("logs/debug_reply")

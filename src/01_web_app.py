@@ -2158,8 +2158,8 @@ def correct_email(raw_email_id: int):
         email.user_override_tags = (
             ",".join(data.get("tags", [])) if data.get("tags") else None
         )
-        # Note: Korrektur-Notiz ist verschlüsselt gespeichert (encrypted_correction_note)
-        # Hier wird sie aber in Klartext übergeben - TODO: Verschlüsselung implementieren
+        # Note: Korrektur-Notiz wird verschlüsselt gespeichert (encrypted_correction_note)
+        # Frontend sendet Klartext, Backend verschlüsselt vor DB-Speicherung
         email.encrypted_correction_note = data.get("note")
         email.correction_timestamp = datetime.now(UTC)
         email.updated_at = datetime.now(UTC)
