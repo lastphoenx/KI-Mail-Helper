@@ -1,7 +1,7 @@
 # 📧 KI-Mail-Helper – Benutzerhandbuch
 
-**Version:** 1.3.0  
-**Stand:** 20. Januar 2026
+**Version:** 1.4.0  
+**Stand:** 10. Januar 2026
 
 ---
 

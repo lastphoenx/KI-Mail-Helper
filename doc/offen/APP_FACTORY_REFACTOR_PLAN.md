@@ -1,6 +1,6 @@
 # 🏭 App Factory Pattern Refactoring - Konkretes Konzept
 
-**Zweck:** Refaktoriere `src/01_web_app.py` (3.5k Zeilen, 79 Routes) in modulare Blueprints  
+**Zweck:** Refaktoriere `src/01_web_app.py` (8.8k Zeilen, 79 Routes) in modulare Blueprints  
 **Aufwand:** 8-12 Stunden  
 **Nutzen:** Testability, Maintainability, Code Organization  
 **Status:** PLAN (nicht implementiert)
