@@ -1,0 +1,117 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+
+# Flask Server-Side Sessions (Zero-Knowledge)
+.flask_sessions/
+
+# Datenbank
+*.db
+
+# SQLite WAL Files (temporary, recreated per session)
+emails.db-wal
+emails.db-shm
+*.sqlite
+*.sqlite3
+emails.db
+*.db.backup*
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+logs/
+server.log
+
+# Backups and Archives (AUDIT_REPORT.md recommendation)
+backups/
+backup_*/
+*.db.gz
+_archive/
+archive/
+server_test.log
+
+# Code Reviews (SENSIBEL - nicht auf GitHub!)
+review_output/
+
+# Internal Documentation (nur spezifische Unterordner ausschließen)
+doc/development/               # Privat: Instruction_&_goal.md, Reorganization-Notizen
+doc/AI-model-discovery/        # Privat: Prototypen, nicht in Produktion
+doc/semantic_search_examples/  # Privat: Code-Beispiele & Patches
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporäre Dateien
+tmp/
+temp/
+*.tmp
+# Database backups and recovery logs
+# (covered by *.db.backup above)
+
+# Backups and Archives
+backups/
+backup_*/
+*.db.gz
+
+# Archive/Historical scripts
+_archive/
+archive/
+
+# Project-specific maintenance scripts (user-specific, veraltet)
+# scripts/fix_master_key.py  # ← Wenn noch gebraucht, auskommentieren
+
+# Linter/Tool Configurations (local development only)
+.flake8
+.pylintrc
+.mypy_cache/
+
+# Project Documentation & Reports (development/planning, not for VCS)
+REORGANIZATION_REPORT.md
+AUDIT_REPORT.md
+Instruction_&_goal.md
+
+# Internal Development Documentation (privat, nicht für GitHub)
+doc/development/               # Privat: Instruction_&_goal.md, Reorganization-Notizen
+doc/AI-model-discovery/        # Privat: Prototypen, nicht in Produktion
+doc/semantic_search_examples/  # Privat: Code-Beispiele & Patches
+
+# Code Templates (reference/snippet files)
+change_password_route.txt
+**/*:Zone.Identifier
+
+# Git History Backup
+.git-backup-*
+
+# Backup files
+*.backup*
+*.bak
+emails.db.fresh_clone_EMPTY

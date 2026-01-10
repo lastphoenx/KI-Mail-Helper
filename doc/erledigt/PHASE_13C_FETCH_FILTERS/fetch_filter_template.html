@@ -1,0 +1,160 @@
+<!-- ============================================================================
+     PHASE 13C PART 5: ERWEITERTE FETCH-FILTER UI
+     ============================================================================
+     
+     Diesen Block EINFÜGEN in templates/settings.html
+     NACH dem bestehenden "Delta-Sync" Checkbox-Block
+     VOR dem "💡 Tipp" Alert-Block
+     
+     Suche nach: <div class="col-12">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="useDeltaSync"
+     
+     Füge DANACH ein:
+     ============================================================================ -->
+
+                        <!-- Phase 13C Part 5: Erweiterte Filter -->
+                        <hr class="my-3 opacity-25">
+                        <h6 class="text-uppercase small opacity-75 mb-3">📋 Erweiterte Filter (Initial-Sync)</h6>
+                        
+                        <!-- SINCE Datum -->
+                        <div class="col-md-6 mb-3">
+                            <label for="sinceDate" class="form-label">Nur Mails ab Datum</label>
+                            <input type="date" class="form-control bg-dark text-light border-secondary" 
+                                   id="sinceDate" name="since_date"
+                                   value="{{ user_prefs.get('since_date', '')|string if user_prefs.get('since_date') else '' }}"
+                                   max="{{ now().strftime('%Y-%m-%d') }}">
+                            <small class="text-muted">Leer = alle Mails. Empfohlen: 2025-12-01 für neue Accounts</small>
+                        </div>
+                        
+                        <!-- Nur Ungelesene -->
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check form-switch mt-4">
+                                <input class="form-check-input" type="checkbox" id="unseenOnly" name="unseen_only"
+                                       {% if user_prefs.get('unseen_only', false) %}checked{% endif %}>
+                                <label class="form-check-label" for="unseenOnly">
+                                    <strong>Nur ungelesene Mails</strong>
+                                    <small class="d-block text-muted">IMAP UNSEEN Filter - spart massiv Zeit</small>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Ordner-Auswahl -->
+                        <div class="col-12 mb-3">
+                            <label class="form-label">Ordner-Filter</label>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card bg-dark border-secondary">
+                                        <div class="card-header py-2">
+                                            <small class="text-success">✅ Nur diese Ordner (Include)</small>
+                                        </div>
+                                        <div class="card-body py-2" id="includeFoldersContainer">
+                                            <small class="text-muted">Wähle einen Account und klicke "Ordner laden"</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card bg-dark border-secondary">
+                                        <div class="card-header py-2">
+                                            <small class="text-danger">❌ Diese Ordner ignorieren (Exclude)</small>
+                                        </div>
+                                        <div class="card-body py-2" id="excludeFoldersContainer">
+                                            <small class="text-muted">Standard-Ausschlüsse: Spam, Trash, Sent</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                <select class="form-select form-select-sm bg-dark text-light border-secondary d-inline-block w-auto" 
+                                        id="folderAccountSelect">
+                                    <option value="">-- Account wählen --</option>
+                                    {% for account in mail_accounts %}
+                                    <option value="{{ account.id }}">{{ account.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button" class="btn btn-sm btn-outline-light" onclick="loadFoldersForFilter()">
+                                    📂 Ordner laden
+                                </button>
+                            </div>
+                        </div>
+
+
+<!-- ============================================================================
+     JAVASCRIPT für Ordner-Laden
+     ============================================================================
+     
+     Füge diesen Script-Block am Ende des <script> Bereichs ein,
+     VOR dem schließenden </script> Tag
+     ============================================================================ -->
+
+<script>
+// Phase 13C Part 5: Ordner für Filter laden
+async function loadFoldersForFilter() {
+    const accountId = document.getElementById('folderAccountSelect').value;
+    if (!accountId) {
+        alert('Bitte zuerst einen Account auswählen');
+        return;
+    }
+    
+    const includeContainer = document.getElementById('includeFoldersContainer');
+    const excludeContainer = document.getElementById('excludeFoldersContainer');
+    
+    includeContainer.innerHTML = '<small class="text-muted">Lade Ordner...</small>';
+    excludeContainer.innerHTML = '<small class="text-muted">Lade Ordner...</small>';
+    
+    try {
+        const response = await fetch(`/account/${accountId}/mail-count`);
+        const data = await response.json();
+        
+        if (!data.folders) {
+            throw new Error('Keine Ordner gefunden');
+        }
+        
+        const folders = Object.keys(data.folders).sort();
+        
+        // Gespeicherte Auswahl laden
+        const savedInclude = {{ user_prefs.get('include_folders', '[]')|safe }};
+        const savedExclude = {{ user_prefs.get('exclude_folders', '[]')|safe }};
+        
+        // Standard-Exclude Ordner
+        const defaultExclude = ['Spam', 'Spamverdacht', 'Trash', 'Gelöscht', 'Papierkorb', 'Sent', 'Gesendet', 'Drafts', 'Entwürfe'];
+        
+        // Include Checkboxen
+        let includeHtml = '<div class="d-flex flex-wrap gap-2">';
+        folders.forEach(folder => {
+            const checked = savedInclude.length === 0 || savedInclude.includes(folder) ? 'checked' : '';
+            includeHtml += `
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" name="include_folders" 
+                           value="${folder}" id="inc_${folder.replace(/[^a-zA-Z0-9]/g, '_')}" ${checked}>
+                    <label class="form-check-label small" for="inc_${folder.replace(/[^a-zA-Z0-9]/g, '_')}">${folder}</label>
+                </div>
+            `;
+        });
+        includeHtml += '</div>';
+        includeHtml += '<small class="text-muted d-block mt-2">Keine Auswahl = alle Ordner</small>';
+        includeContainer.innerHTML = includeHtml;
+        
+        // Exclude Checkboxen
+        let excludeHtml = '<div class="d-flex flex-wrap gap-2">';
+        folders.forEach(folder => {
+            const isDefaultExclude = defaultExclude.some(ex => folder.toLowerCase().includes(ex.toLowerCase()));
+            const checked = savedExclude.includes(folder) || (savedExclude.length === 0 && isDefaultExclude) ? 'checked' : '';
+            excludeHtml += `
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" name="exclude_folders" 
+                           value="${folder}" id="exc_${folder.replace(/[^a-zA-Z0-9]/g, '_')}" ${checked}>
+                    <label class="form-check-label small" for="exc_${folder.replace(/[^a-zA-Z0-9]/g, '_')}">${folder}</label>
+                </div>
+            `;
+        });
+        excludeHtml += '</div>';
+        excludeContainer.innerHTML = excludeHtml;
+        
+    } catch (error) {
+        console.error('Fehler beim Laden der Ordner:', error);
+        includeContainer.innerHTML = `<small class="text-danger">Fehler: ${error.message}</small>`;
+        excludeContainer.innerHTML = `<small class="text-danger">Fehler: ${error.message}</small>`;
+    }
+}
+</script>

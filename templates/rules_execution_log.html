@@ -1,0 +1,176 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Regel-Ausführungslog - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>📊 Regel-Ausführungslog</h1>
+        <a href="/rules" class="btn btn-outline-secondary">
+            ← Zurück zu Regeln
+        </a>
+    </div>
+
+    <!-- Filter Card -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" action="/rules/execution-log">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label small">Regel filtern</label>
+                        <select name="rule_id" class="form-select form-select-sm">
+                            <option value="">Alle Regeln</option>
+                            {% for rule in all_rules %}
+                            <option value="{{ rule.id }}" {% if rule.id|string == rule_id %}selected{% endif %}>
+                                {{ rule.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-2">
+                        <label class="form-label small">Status</label>
+                        <select name="success" class="form-select form-select-sm">
+                            <option value="">Alle</option>
+                            <option value="true" {% if success_filter == 'true' %}selected{% endif %}>✅ Erfolg</option>
+                            <option value="false" {% if success_filter == 'false' %}selected{% endif %}>❌ Fehler</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-2">
+                        <label class="form-label small">Anzahl</label>
+                        <select name="limit" class="form-select form-select-sm">
+                            <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+                            <option value="100" {% if limit == 100 %}selected{% endif %}>100</option>
+                            <option value="250" {% if limit == 250 %}selected{% endif %}>250</option>
+                            <option value="500" {% if limit == 500 %}selected{% endif %}>500</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary btn-sm w-100">
+                            🔍 Filtern
+                        </button>
+                    </div>
+
+                    <div class="col-md-3 text-end">
+                        <a href="/rules/execution-log" class="btn btn-outline-secondary btn-sm">
+                            ↻ Filter zurücksetzen
+                        </a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Statistics Card -->
+    {% if logs %}
+    {% set success_count = logs|selectattr('log.success', 'equalto', True)|list|length %}
+    {% set error_count = logs|selectattr('log.success', 'equalto', False)|list|length %}
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h5 class="mb-1">{{ logs|length }}</h5>
+                    <small class="text-muted">Einträge gesamt</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-success bg-opacity-10">
+                <div class="card-body text-center">
+                    <h5 class="mb-1 text-success">✅ {{ success_count }}</h5>
+                    <small class="text-muted">Erfolgreich</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-danger bg-opacity-10">
+                <div class="card-body text-center">
+                    <h5 class="mb-1 text-danger">❌ {{ error_count }}</h5>
+                    <small class="text-muted">Fehler</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Execution Log Table -->
+    <div class="card">
+        <div class="card-header">
+            <strong>Ausführungsprotokoll</strong> (neueste zuerst)
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th width="5%">Status</th>
+                        <th width="15%">Zeitstempel</th>
+                        <th width="20%">Regel</th>
+                        <th width="10%">Aktion</th>
+                        <th width="25%">E-Mail Betreff</th>
+                        <th width="25%">Fehlermeldung</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in logs %}
+                    <tr class="{% if not item.log.success %}table-danger{% endif %}">
+                        <td class="text-center">
+                            {% if item.log.success %}
+                            <span class="badge bg-success">✅</span>
+                            {% else %}
+                            <span class="badge bg-danger">❌</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small>{{ item.log.executed_at.strftime('%d.%m.%Y %H:%M:%S') if item.log.executed_at else '-' }}</small>
+                        </td>
+                        <td>
+                            <a href="/rules" class="text-decoration-none">
+                                {{ item.rule.name }}
+                            </a>
+                            <br>
+                            <small class="text-muted">Priority: {{ item.rule.priority }}</small>
+                        </td>
+                        <td>
+                            <code class="small">{{ item.log.action_type }}</code>
+                        </td>
+                        <td>
+                            <a href="/email/{{ item.email_id }}" class="text-decoration-none" target="_blank">
+                                {{ item.subject|truncate(50) }}
+                            </a>
+                        </td>
+                        <td>
+                            {% if item.log.error_message %}
+                            <small class="text-danger font-monospace">
+                                {{ item.log.error_message|truncate(100) }}
+                            </small>
+                            {% else %}
+                            <small class="text-muted">-</small>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-5">
+                            <p class="mb-0">Keine Regel-Ausführungen gefunden</p>
+                            <small>Regeln werden ausgeführt wenn neue E-Mails abgerufen werden</small>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Help Text -->
+    <div class="alert alert-info mt-4">
+        <strong>💡 Info:</strong> Dieser Log zeigt alle Ausführungen von Auto-Rules.
+        <ul class="mb-0 mt-2">
+            <li><strong>✅ Erfolg:</strong> Regel wurde erfolgreich auf E-Mail angewendet</li>
+            <li><strong>❌ Fehler:</strong> Regel-Ausführung fehlgeschlagen (siehe Fehlermeldung)</li>
+            <li><strong>Aktion:</strong> Art der durchgeführten Aktion (move_to, mark_as_read, apply_tag, etc.)</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}
