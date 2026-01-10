@@ -76,7 +76,7 @@
                     <span class="badge d-inline-flex align-items-center gap-2 me-1" style="background-color: {{ tag.color }};">
                         {{ tag.name }}
                         <button type="button" class="btn btn-sm btn-transparent remove-tag-btn p-0" 
-                                data-email-id="{{ email.id }}"
+                                data-email-id="{{ email.raw_email_id }}"
                                 data-tag-id="{{ tag.id }}"
                                 data-tag-name="{{ tag.name }}"
                                 aria-label="Entfernen" style="font-size: 16px; line-height: 1; color: white; opacity: 0.8;">×</button>
@@ -97,7 +97,7 @@
             
             <button type="button" class="btn btn-sm btn-outline-secondary" id="addTagBtn">+ Tag hinzufügen</button>
             <button type="button" class="btn btn-sm btn-outline-info" id="reprocessEmailBtn" 
-                    data-email-id="{{ email.id }}" 
+                    data-email-id="{{ email.raw_email_id }}" 
                     title="Embedding & KI-Score neu generieren (nutzt aktuelles Base Model aus Settings)">
                 🔄 Email neu verarbeiten
             </button>
@@ -162,6 +162,11 @@
                         <> Raw HTML
                     </button>
                 </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="rawContentTab" data-bs-toggle="tab" data-bs-target="#rawContentContent" type="button" role="tab" aria-controls="rawContentContent" aria-selected="false">
+                        📄 Raw Content
+                    </button>
+                </li>
                 <!-- Phase 22: Anonymisiert-Tab (nur wenn Content vorhanden) -->
                 {% if raw_email and raw_email.has_sanitized_content %}
                 <li class="nav-item" role="presentation">
@@ -204,6 +209,25 @@
                     </div>
                 </div>
                 
+                <!-- Raw Content Tab -->
+                <div class="tab-pane fade" id="rawContentContent" role="tabpanel" aria-labelledby="rawContentTab">
+                    <div class="mt-3">
+                        <div class="alert alert-warning">
+                            <small>
+                                ⚠️ <strong>RAW CONTENT</strong> - Exakt das, was ContentSanitizer als Input bekommt (1:1 aus DB, entschlüsselt).
+                                <br>📊 Länge: {{ decrypted_body|length if decrypted_body else 0 }} Zeichen
+                            </small>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <small class="text-muted">Unverarbeiter DB-Content (decrypted_body)</small>
+                            <button class="btn btn-sm btn-outline-primary" id="copyRawContentBtn" title="Kopieren">
+                                📋 Kopieren
+                            </button>
+                        </div>
+                        <pre><code id="rawContentCode" style="max-height: 600px; overflow-y: auto; background: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; white-space: pre-wrap;">{{ decrypted_body|default('Kein Content verfügbar') }}</code></pre>
+                    </div>
+                </div>
+                
                 <!-- Phase 22: Anonymisiert-Tab Content -->
                 {% if raw_email and raw_email.has_sanitized_content %}
                 <div class="tab-pane fade" id="anonContent" role="tabpanel" aria-labelledby="anonTab">
@@ -240,13 +264,16 @@
                             </div>
                             <div>
                                 <label class="form-label"><strong>Inhalt:</strong></label>
-                                <div class="border bg-white">
-                                    <iframe 
-                                        srcdoc="{{ decrypted_body_sanitized|default('Nicht verfügbar')|e }}"
-                                        style="width: 100%; min-height: 400px; border: none;" 
-                                        sandbox="allow-same-origin"
-                                        title="Anonymisierter Inhalt">
-                                    </iframe>
+                                <div class="border bg-white p-3" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                                    <pre style="
+                                        white-space: pre-wrap; 
+                                        font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace; 
+                                        margin: 0; 
+                                        font-size: 13px; 
+                                        line-height: 1.6;
+                                        color: #2d3748;
+                                        background: none;
+                                    ">{{ decrypted_body_sanitized|default('Nicht verfügbar') }}</pre>
                                 </div>
                             </div>
                         </div>
@@ -623,7 +650,7 @@
 </div>
 
 <script nonce="{{ csp_nonce() }}">
-const emailId = {{ email.id }};
+const emailId = {{ email.raw_email_id }};
 
 function getCsrfToken() {
     return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
@@ -725,10 +752,17 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('copyRawHtmlBtn').addEventListener('click', function() {
         const code = document.getElementById('rawHtmlCode').textContent;
         navigator.clipboard.writeText(code).then(() => {
-            this.textContent = '✓ Kopiert!';
-            setTimeout(() => {
-                this.textContent = '📋 Kopieren';
-            }, 2000);
+            this.textContent = '✅ Kopiert!';
+            setTimeout(() => { this.textContent = '📋 Kopieren'; }, 2000);
+        });
+    });
+    
+    // Copy raw content button
+    document.getElementById('copyRawContentBtn').addEventListener('click', function() {
+        const code = document.getElementById('rawContentCode').textContent;
+        navigator.clipboard.writeText(code).then(() => {
+            this.textContent = '✅ Kopiert!';
+            setTimeout(() => { this.textContent = '📋 Kopieren'; }, 2000);
         });
     });
     
@@ -1506,7 +1540,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <!-- Phase F.1: Similar Emails Loader -->
 <script nonce="{{ csp_nonce() }}">
 document.addEventListener('DOMContentLoaded', function() {
-    const emailId = {{ email.id }};
+    const emailId = {{ email.raw_email_id }};
     const similarContainer = document.getElementById('similarEmailsContainer');
     
     if (!similarContainer) return;
@@ -1694,7 +1728,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <!-- Phase G.1: Reply Generator JavaScript -->
 <script nonce="{{ csp_nonce() }}">
 document.addEventListener('DOMContentLoaded', function() {
-    const emailId = {{ email.id }};
+    const emailId = {{ email.raw_email_id }};
     const replyModal = new bootstrap.Modal(document.getElementById('replyDraftModal'));
     
     let currentTone = 'formal';
@@ -1954,8 +1988,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     async function generateReply(tone) {
-        // Show loading
-        document.getElementById('replyLoading').style.display = 'block';
+        console.log('🔍🔍🔍 generateReply() aufgerufen mit tone:', tone);
+        
+        // Show loading (erweitert mit Anonymisierungs-Hinweis)
+        const loadingDiv = document.getElementById('replyLoading');
+        loadingDiv.style.display = 'block';
         document.getElementById('replyContent').style.display = 'none';
         document.getElementById('replyError').style.display = 'none';
         document.getElementById('copyReplyBtn').style.display = 'none';
@@ -1965,6 +2002,15 @@ document.addEventListener('DOMContentLoaded', function() {
             const selectedProvider = document.getElementById('replyProvider').value;
             const selectedModel = document.getElementById('replyModel').value;
             const useAnonymization = document.getElementById('useAnonymization').checked;
+            
+            console.log('🔍 Provider:', selectedProvider, 'Model:', selectedModel, 'Anonym:', useAnonymization);
+            
+            // 🆕 Check ob Anonymisierung aktiv ist
+            if (useAnonymization) {
+                loadingDiv.innerHTML = '<div class="spinner-border spinner-border-sm"></div> <strong>⏳ Anonymisiere Email & generiere Antwort...</strong><br><small class="text-muted">Erstmalige Anonymisierung wird in Datenbank gespeichert</small>';
+            } else {
+                loadingDiv.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Generiere Antwort-Entwurf...';
+            }
             
             // Build request body
             const requestBody = { tone: tone };
@@ -2002,14 +2048,22 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const data = await response.json();
             
+            console.log('🔍 API Response received:', data);
+            console.log('🔍 success:', data.success, 'has reply_text:', !!data.reply_text);
+            
             if (data.success && data.reply_text) {
                 // 🆕 De-Anonymisierung falls nötig
                 let displayText = data.reply_text;
+                
+                console.log('🔍 Debug - was_anonymized:', data.was_anonymized);
+                console.log('🔍 Debug - entity_map:', data.entity_map);
+                console.log('🔍 Debug - reply_text (first 200 chars):', data.reply_text.substring(0, 200));
                 
                 if (data.was_anonymized && data.entity_map) {
                     // De-anonymisiere für Anzeige
                     displayText = deAnonymizeText(data.reply_text, data.entity_map);
                     console.log('🔓 Text de-anonymisiert für Anzeige');
+                    console.log('🔍 Debug - displayText (first 200 chars):', displayText.substring(0, 200));
                 }
                 
                 // Show reply
@@ -2021,6 +2075,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 const providerInfo = document.getElementById('replyProviderInfo');
                 if (data.provider_used) {
                     providerInfo.innerHTML = ` • Provider: <strong>${data.provider_used}/${data.model_used}</strong>`;
+                // Reset loading text
+                document.getElementById('replyLoading').innerHTML = '<div class="spinner-border spinner-border-sm"></div> Generiere Antwort-Entwurf...';
+                
                     if (data.was_anonymized) {
                         providerInfo.innerHTML += ' 🔒';
                     }
@@ -2052,8 +2109,12 @@ document.addEventListener('DOMContentLoaded', function() {
         
         let result = text;
         
+        // EntityMap hat Struktur: {forward: {...}, reverse: {...}, counters: {...}}
+        // Für De-Anonymisierung brauchen wir reverse: {[PERSON_1]: "Max Muster", ...}
+        const reverseMap = entityMap.reverse || entityMap;
+        
         // Ersetze Platzhalter durch Original-Werte
-        for (const [placeholder, original] of Object.entries(entityMap)) {
+        for (const [placeholder, original] of Object.entries(reverseMap)) {
             // Ersetze alle Vorkommen (case-sensitive)
             const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
             result = result.replace(regex, original);
@@ -2216,19 +2277,6 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('sendReplySuccess').style.display = 'none';
         document.getElementById('sendReplyError').style.display = 'none';
         document.getElementById('confirmSendReplyBtn').disabled = false;
-    }
-    
-    // Helper: Get CSRF Token
-    function getCsrfToken() {
-        const meta = document.querySelector('meta[name="csrf-token"]');
-        if (meta) return meta.content;
-        
-        const cookies = document.cookie.split(';');
-        for (let cookie of cookies) {
-            const [name, value] = cookie.trim().split('=');
-            if (name === 'csrf_token') return value;
-        }
-        return '';
     }
     
     // ===== Bewertung Korrigieren Modal =====

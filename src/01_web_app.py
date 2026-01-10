@@ -63,6 +63,9 @@ mail_sync = importlib.import_module(".16_mail_sync", "src")
 semantic_search = importlib.import_module(".semantic_search", "src")
 smtp_sender = importlib.import_module(".19_smtp_sender", "src")
 
+# 🔍 Debug-Logging System
+from src.debug_logger import DebugLogger
+
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, template_folder="../templates")
@@ -2952,9 +2955,9 @@ def api_delete_tag(tag_id):
         db.close()
 
 
-@app.route("/api/emails/<int:email_id>/tags", methods=["GET"])
+@app.route("/api/emails/<int:raw_email_id>/tags", methods=["GET"])
 @login_required
-def api_get_email_tags(email_id):
+def api_get_email_tags(raw_email_id):
     """API: Tags einer E-Mail abrufen (für Learning-Modal)"""
     db = get_db_session()
 
@@ -2964,8 +2967,23 @@ def api_get_email_tags(email_id):
             return jsonify({"error": "Unauthorized"}), 401
 
         try:
+            # Hole processed_email.id via raw_email.id
+            processed = (
+                db.query(models.ProcessedEmail)
+                .join(models.RawEmail)
+                .filter(
+                    models.RawEmail.id == raw_email_id,
+                    models.RawEmail.user_id == user.id,
+                    models.RawEmail.deleted_at == None
+                )
+                .first()
+            )
+            
+            if not processed:
+                return jsonify([]), 200
+            
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
-            tags = tag_manager_mod.TagManager.get_email_tags(db, email_id, user.id)
+            tags = tag_manager_mod.TagManager.get_email_tags(db, processed.id, user.id)
 
             return (
                 jsonify(
@@ -2984,9 +3002,9 @@ def api_get_email_tags(email_id):
         db.close()
 
 
-@app.route("/api/emails/<int:email_id>/tag-suggestions", methods=["GET"])
+@app.route("/api/emails/<int:raw_email_id>/tag-suggestions", methods=["GET"])
 @login_required
-def api_get_tag_suggestions(email_id):
+def api_get_tag_suggestions(raw_email_id):
     """
     API: Tag-Vorschläge für eine E-Mail abrufen (Phase F.2).
 
@@ -3009,7 +3027,7 @@ def api_get_tag_suggestions(email_id):
                 db.query(models.ProcessedEmail)
                 .join(models.RawEmail)
                 .filter(
-                    models.ProcessedEmail.id == email_id,
+                    models.RawEmail.id == raw_email_id,
                     models.RawEmail.user_id == user.id,
                     models.RawEmail.deleted_at == None
                 )
@@ -3017,7 +3035,7 @@ def api_get_tag_suggestions(email_id):
             )
             
             if not processed or not processed.raw_email:
-                return jsonify({"suggestions": [], "email_id": email_id, "method": "none"}), 200
+                return jsonify({"suggestions": [], "email_id": raw_email_id, "method": "none"}), 200
             
             raw_email = processed.raw_email
             
@@ -3027,10 +3045,10 @@ def api_get_tag_suggestions(email_id):
                 assigned_tag_ids = [
                     assignment.tag_id 
                     for assignment in db.query(models.EmailTagAssignment)
-                    .filter_by(email_id=email_id).all()
+                    .filter_by(email_id=processed.id).all()
                 ]
                 
-                logger.info(f"Phase F.2: Email {email_id} - Assigned tags: {assigned_tag_ids}")
+                logger.info(f"Phase F.2: Email raw_id={raw_email_id} (processed_id={processed.id}) - Assigned tags: {assigned_tag_ids}")
                 
                 # Phase F.2 Enhanced: Email-Embedding-basierte Suggestions mit dynamischen Thresholds
                 # min_similarity=None → Nutzt get_suggestion_threshold() (70-80% basierend auf Tag-Anzahl)
@@ -3053,13 +3071,13 @@ def api_get_tag_suggestions(email_id):
                     for tag, similarity in tag_suggestions
                 ]
                 
-                logger.info(f"Phase F.2: Email {email_id} - Found {len(suggestions)} suggestions")
+                logger.info(f"Phase F.2: Email raw_id={raw_email_id} - Found {len(suggestions)} suggestions")
                 if suggestions:
                     logger.info(f"Phase F.2: Top suggestion: {suggestions[0]['name']} ({suggestions[0]['similarity']})")
                 
                 return jsonify({
                     "suggestions": suggestions, 
-                    "email_id": email_id,
+                    "email_id": raw_email_id,
                     "method": "embedding",  # Phase F.2
                     "embedding_available": True
                 }), 200
@@ -3068,27 +3086,27 @@ def api_get_tag_suggestions(email_id):
                 # Fallback: Alte text-basierte Methode (Phase 11c)
                 # Für Emails ohne Embedding (z.B. alte Daten vor Phase F.1)
                 suggestions = tag_manager_mod.TagManager.get_tag_suggestions_for_email(
-                    db, email_id, user.id, top_k=5
+                    db, processed.id, user.id, top_k=5
                 )
                 
                 return jsonify({
                     "suggestions": suggestions, 
-                    "email_id": email_id,
+                    "email_id": raw_email_id,
                     "method": "text-fallback",  # Legacy
                     "embedding_available": False
                 }), 200
                 
         except Exception as e:
             logger.error(f"Fehler beim Abrufen der Tag-Vorschläge: {e}")
-            return jsonify({"suggestions": [], "email_id": email_id}), 200
+            return jsonify({"suggestions": [], "email_id": raw_email_id}), 200
 
     finally:
         db.close()
 
 
-@app.route("/api/emails/<int:email_id>/tags", methods=["POST"])
+@app.route("/api/emails/<int:raw_email_id>/tags", methods=["POST"])
 @login_required
-def api_assign_tag_to_email(email_id):
+def api_assign_tag_to_email(raw_email_id):
     """API: Tag zu E-Mail zuweisen"""
     db = get_db_session()
 
@@ -3096,6 +3114,20 @@ def api_assign_tag_to_email(email_id):
         user = get_current_user_model(db)
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
+
+        # Hole processed_email.id via raw_email.id
+        processed = (
+            db.query(models.ProcessedEmail)
+            .join(models.RawEmail)
+            .filter(
+                models.RawEmail.id == raw_email_id,
+                models.RawEmail.user_id == user.id
+            )
+            .first()
+        )
+        
+        if not processed:
+            return jsonify({"error": "Email nicht gefunden"}), 404
 
         data = request.get_json()
         tag_id = data.get("tag_id")
@@ -3106,7 +3138,7 @@ def api_assign_tag_to_email(email_id):
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             success = tag_manager_mod.TagManager.assign_tag(
-                db, email_id, tag_id, user.id
+                db, processed.id, tag_id, user.id
             )
 
             if not success:
@@ -3116,7 +3148,7 @@ def api_assign_tag_to_email(email_id):
                 )
 
             # Learning: Update user_override_tags für ML-Training
-            _update_user_override_tags(db, email_id, user.id, tag_manager_mod)
+            _update_user_override_tags(db, processed.id, user.id, tag_manager_mod)
 
             return jsonify({"success": True})
         except ValueError as e:
@@ -3126,9 +3158,9 @@ def api_assign_tag_to_email(email_id):
         db.close()
 
 
-@app.route("/api/emails/<int:email_id>/tags/<int:tag_id>", methods=["DELETE"])
+@app.route("/api/emails/<int:raw_email_id>/tags/<int:tag_id>", methods=["DELETE"])
 @login_required
-def api_remove_tag_from_email(email_id, tag_id):
+def api_remove_tag_from_email(raw_email_id, tag_id):
     """API: Tag von E-Mail entfernen"""
     db = get_db_session()
 
@@ -3137,17 +3169,31 @@ def api_remove_tag_from_email(email_id, tag_id):
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
 
+        # Hole processed_email.id via raw_email.id
+        processed = (
+            db.query(models.ProcessedEmail)
+            .join(models.RawEmail)
+            .filter(
+                models.RawEmail.id == raw_email_id,
+                models.RawEmail.user_id == user.id
+            )
+            .first()
+        )
+        
+        if not processed:
+            return jsonify({"error": "Email nicht gefunden"}), 404
+
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             success = tag_manager_mod.TagManager.remove_tag(
-                db, email_id, tag_id, user.id
+                db, processed.id, tag_id, user.id
             )
 
             if not success:
                 return jsonify({"error": "Tag-Verknüpfung nicht gefunden"}), 404
 
             # Learning: Update user_override_tags für ML-Training
-            _update_user_override_tags(db, email_id, user.id, tag_manager_mod)
+            _update_user_override_tags(db, processed.id, user.id, tag_manager_mod)
 
             return jsonify({"success": True})
         except Exception as e:
@@ -3157,9 +3203,9 @@ def api_remove_tag_from_email(email_id, tag_id):
         db.close()
 
 
-@app.route("/api/emails/<int:email_id>/tags/<int:tag_id>/reject", methods=["POST"])
+@app.route("/api/emails/<int:raw_email_id>/tags/<int:tag_id>/reject", methods=["POST"])
 @login_required
-def api_reject_tag_for_email(email_id, tag_id):
+def api_reject_tag_for_email(raw_email_id, tag_id):
     """🚫 Phase F.3: Tag-Vorschlag ablehnen und als negatives Beispiel speichern"""
     db = get_db_session()
 
@@ -3168,12 +3214,26 @@ def api_reject_tag_for_email(email_id, tag_id):
         if not user:
             return jsonify({"error": "Unauthorized"}), 401
 
+        # Hole processed_email.id via raw_email.id
+        processed = (
+            db.query(models.ProcessedEmail)
+            .join(models.RawEmail)
+            .filter(
+                models.RawEmail.id == raw_email_id,
+                models.RawEmail.user_id == user.id
+            )
+            .first()
+        )
+        
+        if not processed:
+            return jsonify({"error": "Email nicht gefunden"}), 404
+
         try:
             tag_manager_mod = importlib.import_module("src.services.tag_manager")
             
             # Negative example hinzufügen
             success = tag_manager_mod.add_negative_example(
-                db, tag_id, email_id, rejection_source="ui"
+                db, tag_id, processed.id, rejection_source="ui"
             )
 
             if not success:
@@ -3181,7 +3241,7 @@ def api_reject_tag_for_email(email_id, tag_id):
 
             return jsonify({"success": True})
         except Exception as e:
-            logger.error(f"Fehler beim Ablehnen von Tag {tag_id} für Email {email_id}: {e}")
+            logger.error(f"Fehler beim Ablehnen von Tag {tag_id} für Email raw_id={raw_email_id}: {e}")
             return jsonify({"error": str(e)}), 500
 
     finally:
@@ -4060,10 +4120,10 @@ def api_semantic_search():
         db.close()
 
 
-@app.route("/api/emails/<int:email_id>/similar", methods=["GET"])
+@app.route("/api/emails/<int:raw_email_id>/similar", methods=["GET"])
 @login_required
 @limiter.limit("40 per minute")  # 🐛 BUG-012 FIX: Rate Limit für Embedding-Vergleiche
-def api_find_similar_emails(email_id):
+def api_find_similar_emails(raw_email_id):
     """
     API: Ähnliche E-Mails finden (Phase F.1)
     
@@ -4105,7 +4165,7 @@ def api_find_similar_emails(email_id):
             
         # Ownership Check: User muss die Email besitzen
         ref_email = db.query(models.RawEmail).filter_by(
-            id=email_id,
+            id=raw_email_id,
             user_id=user.id
         ).first()
         
@@ -4116,7 +4176,7 @@ def api_find_similar_emails(email_id):
         try:
             search_service = semantic_search.SemanticSearchService(db)
             results = search_service.find_similar(
-                email_id=email_id,
+                email_id=raw_email_id,
                 limit=limit,
                 account_id=account_id  # Übergebe Account-Filter (None = gleicher Account)
             )
@@ -4149,7 +4209,7 @@ def api_find_similar_emails(email_id):
                     
             return jsonify({
                 "similar_emails": formatted_results,
-                "reference_email_id": email_id,
+                "reference_email_id": raw_email_id,
                 "total": len(formatted_results)
             }), 200
             
@@ -4159,7 +4219,7 @@ def api_find_similar_emails(email_id):
             logger.error(f"Similar search failed: {search_err}")
             return jsonify({
                 "similar_emails": [],
-                "reference_email_id": email_id,
+                "reference_email_id": raw_email_id,
                 "total": 0,
                 "error": "Search service unavailable"
             }), 500
@@ -4213,9 +4273,9 @@ def api_embedding_stats():
 
 # ===== Phase G.1: Reply Draft Generator =====
 
-@app.route("/api/emails/<int:email_id>/generate-reply", methods=["POST"])
+@app.route("/api/emails/<int:raw_email_id>/generate-reply", methods=["POST"])
 @login_required
-def api_generate_reply(email_id):
+def api_generate_reply(raw_email_id):
     """
     API: Generiert Antwort-Entwurf auf eine Email (Phase G.1 + Provider/Anonymization)
     
@@ -4257,12 +4317,15 @@ def api_generate_reply(email_id):
         requested_model = data.get("model")        # Optional: User-Wahl
         use_anonymization = data.get("use_anonymization")  # Optional: Auto oder User-Wahl
         
+        # 🔍 DEBUG: Session-ID für Debug-Logging (MUSS am Anfang definiert werden!)
+        session_id = f"reply_{raw_email_id}_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
+        
         # Validiere Email-Zugriff
         processed = (
             db.query(models.ProcessedEmail)
             .join(models.RawEmail)
             .filter(
-                models.ProcessedEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.RawEmail.deleted_at == None,
                 models.ProcessedEmail.deleted_at == None
@@ -4297,7 +4360,7 @@ def api_generate_reply(email_id):
                 raw_email.encrypted_sender or "", master_key
             )
         except Exception as e:
-            logger.error(f"Decryption failed for email {email_id}: {e}")
+            logger.error(f"Decryption failed for email raw_id={raw_email_id}: {e}")
             return jsonify({
                 "success": False,
                 "error": "Entschlüsselung fehlgeschlagen"
@@ -4370,19 +4433,95 @@ def api_generate_reply(email_id):
                         # Fallback auf Original
                         content_for_ai_body = decrypted_body
                 else:
-                    # ⚠️ Kein sanitized Content verfügbar
-                    logger.warning(
-                        f"⚠️ Email {email_id} has no sanitized content. "
-                        f"Using ORIGINAL data with cloud provider {provider}! "
-                        f"Enable 'anonymize_with_spacy' in account settings."
+                    # 🔐 SECURITY FIX: ON-THE-FLY Anonymisierung + DB-Speicherung
+                    logger.info(
+                        f"⏳ Email raw_id={raw_email_id} (processed_id={processed.id}) has no sanitized content yet. "
+                        f"Running ContentSanitizer on-the-fly and STORING to DB..."
                     )
-                    content_for_ai_body = decrypted_body
+                    
+                    try:
+                        # Import ContentSanitizer
+                        from src.services.content_sanitizer import ContentSanitizer
+                        sanitizer = ContentSanitizer()
+                        
+                        # 🔍 DEBUG: Log Sanitizer Input
+                        if DebugLogger.is_enabled():
+                            DebugLogger.log_sanitizer_input(
+                                subject=decrypted_subject,
+                                body=decrypted_body,
+                                sender=decrypted_sender,
+                                session_id=session_id
+                            )
+                        
+                        # Anonymisiere Subject + Body (Level 2 = Regex + spaCy Light)
+                        result = sanitizer.sanitize(decrypted_subject, decrypted_body, level=2, session_id=session_id)
+                        
+                        # 🔍 DEBUG: Log Sanitizer Output (Statistiken)
+                        if DebugLogger.is_enabled():
+                            DebugLogger.log_sanitizer_output(
+                                result=result,
+                                session_id=session_id
+                            )
+                            # Log auch vollständigen anonymisierten Content
+                            DebugLogger.log_sanitizer_anonymized(
+                                result=result,
+                                session_id=session_id
+                            )
+                        
+                        # Verschlüssele und speichere in DB
+                        raw_email.encrypted_subject_sanitized = encryption.EmailDataManager.encrypt_email_subject(
+                            result.subject, master_key
+                        )
+                        raw_email.encrypted_body_sanitized = encryption.EmailDataManager.encrypt_email_body(
+                            result.body, master_key
+                        )
+                        raw_email.sanitization_entities_count = result.entities_found
+                        raw_email.sanitization_level = 2
+                        raw_email.sanitization_time_ms = result.processing_time_ms
+                        
+                        db.commit()
+                        
+                        # Nutze anonymisierte Daten
+                        content_for_ai_subject = result.subject
+                        content_for_ai_body = result.body
+                        entity_map = result.entity_map.to_dict()  # 🆕 Vollständige EntityMap mit forward/reverse für De-Anonymisierung
+                        was_anonymized = True
+                        
+                        # 🔍 DEBUG: Log Sanitizer Output
+                        if DebugLogger.is_enabled():
+                            DebugLogger.log_sanitizer_output(
+                                result=result,
+                                session_id=session_id
+                            )
+                        
+                        logger.info(
+                            f"✅ On-the-fly anonymization completed and STORED to DB. "
+                            f"Entities: {raw_email.sanitization_entities_count}"
+                        )
+                        
+                    except Exception as anon_err:
+                        logger.error(f"❌ On-the-fly anonymization FAILED: {anon_err}")
+                        db.rollback()
+                        return jsonify({
+                            "success": False,
+                            "error": f"Anonymisierung fehlgeschlagen: {str(anon_err)}"
+                        }), 500
             else:
                 # Original-Content gewünscht (z.B. lokale Modelle)
                 if is_cloud_provider:
                     logger.warning(f"⚠️ Using original content with cloud provider {provider} - User explicitly disabled anonymization")
             
             generator = reply_generator_mod.ReplyGenerator(ai_client=client)
+            
+            # 🔍 DEBUG: Zentrales Debug-Logging System
+            if DebugLogger.is_enabled():
+                logger.warning("⚠️ DEBUG-LOGGING IST AKTIV - Sensible Daten werden geloggt!")
+            
+            # Old debug logs
+            logger.debug(f"🔍 REPLY API DEBUG - content_for_ai_subject: {content_for_ai_subject}")
+            logger.debug(f"🔍 REPLY API DEBUG - content_for_ai_body (erste 400 Zeichen): {content_for_ai_body[:400]}...")
+            logger.debug(f"🔍 REPLY API DEBUG - was_anonymized: {was_anonymized}")
+            logger.debug(f"🔍 REPLY API DEBUG - entity_map keys: {list(entity_map.keys()) if entity_map else 'None'}")
             
             # 🆕 Use generate_reply_with_user_style() for personalized replies
             # Phase I.2: Pass account_id für Account-spezifische Signaturen
@@ -4407,7 +4546,7 @@ def api_generate_reply(email_id):
                 result["model_used"] = resolved_model
                 
                 logger.info(
-                    f"✅ Reply-Entwurf generiert für Email {email_id} "
+                    f"✅ Reply-Entwurf generiert für Email raw_id={raw_email_id} (processed_id={processed.id}) "
                     f"(Ton: {result['tone_used']}, Provider: {provider}/{resolved_model}, "
                     f"Anonymisiert: {was_anonymized}, {len(result['reply_text'])} chars)"
                 )
@@ -5410,9 +5549,9 @@ def api_test_smtp(account_id):
         db.close()
 
 
-@app.route('/api/emails/<int:email_id>/send-reply', methods=['POST'])
+@app.route('/api/emails/<int:raw_email_id>/send-reply', methods=['POST'])
 @login_required
-def api_send_reply(email_id):
+def api_send_reply(raw_email_id):
     """
     Sendet eine Antwort auf eine Email.
     
@@ -5669,9 +5808,9 @@ def api_send_email(account_id):
         db.close()
 
 
-@app.route('/api/emails/<int:email_id>/generate-and-send', methods=['POST'])
+@app.route('/api/emails/<int:raw_email_id>/generate-and-send', methods=['POST'])
 @login_required
-def api_generate_and_send_reply(email_id):
+def api_generate_and_send_reply(raw_email_id):
     """
     Generiert einen KI-Entwurf UND sendet ihn optional direkt.
     
@@ -5704,7 +5843,7 @@ def api_generate_and_send_reply(email_id):
     db = get_db_session()
     try:
         # Email laden
-        raw_email = db.query(models.RawEmail).get(email_id)
+        raw_email = db.query(models.RawEmail).get(raw_email_id)
         if not raw_email or raw_email.user_id != current_user.id:
             return jsonify({
                 "success": False,
@@ -5719,7 +5858,7 @@ def api_generate_and_send_reply(email_id):
         
         # 1. Draft generieren
         draft = generate_reply_draft(
-            email_id=email_id,
+            email_id=raw_email_id,
             master_key=master_key,
             tone=tone,
             custom_instructions=custom_instructions
@@ -5778,9 +5917,9 @@ def api_generate_and_send_reply(email_id):
 # ===== End Phase G.1 =====
 
 
-@app.route("/api/emails/<int:email_id>/check-embedding-compatibility", methods=["GET"])
+@app.route("/api/emails/<int:raw_email_id>/check-embedding-compatibility", methods=["GET"])
 @login_required
-def api_check_embedding_compatibility(email_id):
+def api_check_embedding_compatibility(raw_email_id):
     """
     Pre-Check: Prüft ob Email-Embedding mit GEWÄHLTEM Model kompatibel ist
     
@@ -5805,7 +5944,7 @@ def api_check_embedding_compatibility(email_id):
         raw_email = (
             db.query(models.RawEmail)
             .filter(
-                models.RawEmail.id == email_id,
+                models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
                 models.RawEmail.deleted_at == None
             )
@@ -5856,10 +5995,10 @@ def api_check_embedding_compatibility(email_id):
         db.close()
 
 
-@app.route("/api/emails/<int:email_id>/reprocess", methods=["POST"])
+@app.route("/api/emails/<int:raw_email_id>/reprocess", methods=["POST"])
 @login_required
 @limiter.limit("10 per minute")  # 🐛 BUG-012 FIX: Rate Limit für AI-Reprocessing
-def api_reprocess_email(email_id):
+def api_reprocess_email(raw_email_id):
     """
     API: Email neu verarbeiten (Phase F.2 Enhanced)
     
@@ -9234,6 +9373,29 @@ def start_server(host="0.0.0.0", port=5000, debug=True, use_https=False):
         # Standard HTTP-Modus (ohne HTTPS)
         print(f"🌐 Dashboard läuft auf http://{host}:{port}")
         app.run(host=host, port=port, debug=debug)
+
+
+# ===== Debug Logger Status API =====
+@app.route("/api/debug-logger-status")
+@login_required
+def api_debug_logger_status():
+    """API: Zeigt Status des Debug-Loggers (nur für Admins)"""
+    status = DebugLogger.get_status()
+    
+    if status["enabled"]:
+        return jsonify({
+            "enabled": True,
+            "warning": "⚠️ DEBUG-LOGGING IST AKTIV - Sensible Daten werden geloggt!",
+            "log_dir": status["log_dir"],
+            "log_files": status["log_files"],
+            "hint": "Zum Deaktivieren: src/debug_logger.py → ENABLED = False"
+        }), 200
+    else:
+        return jsonify({
+            "enabled": False,
+            "status": "✅ Debug-Logging ist deaktiviert",
+            "hint": "Zum Aktivieren: src/debug_logger.py → ENABLED = True"
+        }), 200
 
 
 if __name__ == "__main__":

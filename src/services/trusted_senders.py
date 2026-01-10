@@ -28,7 +28,7 @@ def prepare_suggestion(sender: str, suggested_type: str) -> str:
     - domain: domain.com (nur Domain ohne @)
     
     Args:
-        sender: Input z.B. '"Jira automation" <automation@projects-beispiel-firma.atlassian.net>'
+        sender: Input z.B. '"Notification System" <notifications@projects.example.com>'
         suggested_type: 'exact', 'email_domain', oder 'domain'
     
     Returns:
@@ -152,12 +152,12 @@ class TrustedSenderManager:
                     }
             
             elif ts.pattern_type == 'domain':
-                # SECURITY: Match exact domain OR subdomains (e.g., example.com matches @example.com and @mail.example.com)
-                # BUT NOT: test-example.com (different domain - suffix spoofing attack)
+                # SECURITY: Match exact domain OR subdomains (e.g., company.com matches @company.com and @mail.company.com)
+                # BUT NOT: test-company.com (different domain - suffix spoofing attack)
                 parts = sender_lower.split('@')
                 if len(parts) == 2:
                     sender_domain = parts[1]
-                    # Exact domain match: @example.com
+                    # Exact domain match: @company.com
                     if sender_domain == pattern:
                         logger.debug(f"✅ Trusted sender matched (domain exact): {sender_email}")
                         return {
@@ -168,7 +168,7 @@ class TrustedSenderManager:
                             'pattern_type': 'domain',
                             'account_id': ts.account_id
                         }
-                    # Subdomain match: @mail.example.com (but NOT test-example.com)
+                    # Subdomain match: @mail.company.com (but NOT test-company.com)
                     elif sender_domain.endswith('.' + pattern):
                         logger.debug(f"✅ Trusted sender matched (domain subdomain): {sender_email}")
                         return {

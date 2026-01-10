@@ -468,7 +468,7 @@ def process_pending_raw_emails(
                     logger.info("🛡️ Anonymisiere Inhalte (unabhängig vom Analyse-Modus)...")
                     sanitization_result = sanitizer.sanitize(
                         subject=decrypted_subject or "",
-                        body=clean_body,
+                        body=decrypted_body,  # ✅ Original HTML - wie im "Gerendert" Tab!
                         level=3  # Full spaCy (PER + ORG + GPE + LOC)
                     )
                     
@@ -610,7 +610,7 @@ def process_pending_raw_emails(
                     
                     sanitization_result = sanitizer.sanitize(
                         subject=decrypted_subject or "",
-                        body=clean_body,
+                        body=decrypted_body,  # ✅ Original HTML - wie im "Gerendert" Tab!
                         level=3
                     )
                     

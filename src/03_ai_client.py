@@ -1248,7 +1248,10 @@ class OpenAIClient(AIClient):
     def _check_temperature_support(self) -> bool:
         """Prüft dynamisch ob Modell temperature unterstützt via Model Discovery."""
         try:
-            from src import model_discovery as md04
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("md04", "src/04_model_discovery.py")
+            md04 = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(md04)
             models = md04.get_openai_models()
             for m in models:
                 if m.get("id") == self.model:
@@ -1259,6 +1262,14 @@ class OpenAIClient(AIClient):
             logger.warning(f"Temperature-Check fehlgeschlagen: {e}, nutze Fallback")
             # Fallback: Reasoning-Modelle (o1/o3/gpt-5) = False, Rest = True
             return not self.model.startswith(("o1-", "o3-", "gpt-5"))
+
+    def _check_model_type(self) -> str:
+        """
+        ALLE OpenAI Modelle verwenden nur noch Chat API.
+        Der /v1/completions Endpoint ist deprecated.
+        """
+        logger.info(f"✅ {self.model} wird als Chat-Modell behandelt (alle modernen Modelle)") 
+        return "chat"
 
     def analyze_email(
         self, subject: str, body: str, language: str = "de", context: Optional[str] = None,
@@ -1395,43 +1406,59 @@ class OpenAIClient(AIClient):
         user_prompt: str, 
         max_tokens: int = 1000
     ) -> str:
-        """Generiert Text mit OpenAI Chat Completions API."""
-        # ✅ DYNAMISCH: Check ob Modell temperature unterstützt via Model Discovery
+        """Generiert Text mit OpenAI API (Chat oder Completion basierend auf Modell)."""
+        model_type = self._check_model_type()
         supports_temp = self._check_temperature_support()
         
-        # GPT-5+ und O1/O3 verwenden max_completion_tokens statt max_tokens
-        is_new_model = self.model.startswith(("gpt-5", "o1", "o3"))
-        token_param = "max_completion_tokens" if is_new_model else "max_tokens"
-        
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            token_param: max_tokens
-        }
-        
-        # ✅ Temperature nur wenn Modell das unterstützt
-        if supports_temp:
-            payload["temperature"] = 0.7
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
         
+        # Dynamische API URL basierend auf Modell-Typ
+        if model_type == "completion":
+            api_url = "https://api.openai.com/v1/completions"
+            # Completion API Format
+            payload = {
+                "model": self.model,
+                "prompt": f"{system_prompt}\n\n{user_prompt}",
+                "max_tokens": max_tokens
+            }
+        else:
+            api_url = "https://api.openai.com/v1/chat/completions"
+            # Chat API Format  
+            is_new_chat_model = self.model.startswith(("gpt-4o", "o1", "o3", "gpt-5"))
+            token_param = "max_completion_tokens" if is_new_chat_model else "max_tokens"
+            
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ]
+            }
+            payload[token_param] = max_tokens
+        
+        if supports_temp:
+            payload["temperature"] = 0.7
+        
         try:
             response = requests.post(
-                self.API_URL,
+                api_url,  # ← Dynamische URL statt self.API_URL
                 json=payload,
                 headers=headers,
                 timeout=self.timeout
             )
             response.raise_for_status()
             data = response.json()
-            return data["choices"][0]["message"]["content"]
+            
+            # Antwort-Extraktion basierend auf API-Typ
+            if model_type == "completion":
+                return data["choices"][0]["text"]
+            else:
+                return data["choices"][0]["message"]["content"]
+                
         except requests.exceptions.HTTPError as e:
-            # Zeige Response Body für besseres Debugging
             error_detail = ""
             try:
                 error_detail = e.response.json().get("error", {}).get("message", "")
@@ -1442,7 +1469,57 @@ class OpenAIClient(AIClient):
         except requests.exceptions.RequestException as e:
             logger.error("OpenAI generate_text fehlgeschlagen: %s", e)
             raise
-    
+
+    def _generate_completion(
+        self, 
+        system_prompt: str, 
+        user_prompt: str, 
+        max_tokens: int = 1000
+    ) -> str:
+        """Generiert Text mit OpenAI Completions API für gpt-5.x Models."""
+        # Kombiniere System + User Prompt für Completions API
+        combined_prompt = f"{system_prompt}\n\nUser: {user_prompt}\nAssistant:"
+        
+        payload = {
+            "model": self.model,
+            "prompt": combined_prompt,
+            "max_tokens": max_tokens
+        }
+        
+        # Dynamisch temperature setzen (gpt-5 sollte es nicht unterstützen)
+        if self._check_temperature_support():
+            payload["temperature"] = 0.7
+            logger.debug(f"OpenAI Completions: temperature=0.7 für Modell {self.model}")
+        else:
+            logger.debug(f"OpenAI Completions: temperature übersprungen für Reasoning-Modell {self.model}")
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        
+        try:
+            response = requests.post(
+                "https://api.openai.com/v1/completions",  # Completions endpoint!
+                json=payload,
+                headers=headers,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["text"].strip()
+        except requests.exceptions.HTTPError as e:
+            error_detail = ""
+            try:
+                error_detail = e.response.json().get("error", {}).get("message", "")
+            except:
+                error_detail = e.response.text[:200] if e.response else ""
+            logger.error("OpenAI Completions fehlgeschlagen: %s - %s", e, error_detail)
+            raise
+        except requests.exceptions.RequestException as e:
+            logger.error("OpenAI Completions fehlgeschlagen: %s", e)
+            raise
+
     def _get_embedding(self, text: str) -> list[float] | None:
         """
         Generiert Embedding via OpenAI Embeddings API.
@@ -1651,6 +1728,16 @@ class AnthropicClient(AIClient):
 
         return _validate_ai_payload(parsed)
 
+    def _check_temperature_support(self) -> bool:
+        """Prüft dynamisch ob Modell temperature unterstützt."""
+        # Anthropic-spezifische Logik
+        reasoning_models = ["claude-3.5-haiku", "claude-3.5-sonnet-reasoning", "claude-3.6-haiku"] 
+        unsupported = [m for m in reasoning_models if self.model.startswith(m)]
+        if unsupported:
+            logger.debug(f"Anthropic Reasoning-Modell {self.model} unterstützt temperature nicht")
+            return False
+        return True  # Andere Claude-Modelle = OK
+    
     def generate_text(
         self, 
         system_prompt: str, 
@@ -1666,6 +1753,14 @@ class AnthropicClient(AIClient):
                 {"role": "user", "content": user_prompt}
             ]
         }
+        
+        # Dynamisch temperature setzen
+        if self._check_temperature_support():
+            payload["temperature"] = 0.7
+            logger.debug(f"Anthropic: temperature=0.7 für Modell {self.model}")
+        else:
+            logger.debug(f"Anthropic: temperature übersprungen für Reasoning-Modell {self.model}")
+        
         headers = {
             "x-api-key": self.api_key,
             "anthropic-version": "2023-06-01",
@@ -1779,6 +1874,16 @@ class MistralClient(AIClient):
         except Exception:
             return _fallback_response()
 
+    def _check_temperature_support(self) -> bool:
+        """Prüft ob Modell temperature unterstützt."""
+        # Mistral-spezifische Reasoning-Modelle detection
+        reasoning_models = ["mistral-reasoning"]  # Erweitern wenn neue kommen
+        unsupported = [m for m in reasoning_models if self.model.startswith(m)]
+        if unsupported:
+            logger.debug(f"Mistral Reasoning-Modell {self.model} unterstützt temperature nicht")
+            return False
+        return True  # Andere Mistral-Modelle = OK
+
     def generate_text(
         self, 
         system_prompt: str, 
@@ -1792,9 +1897,16 @@ class MistralClient(AIClient):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            "max_tokens": max_tokens,
-            "temperature": 0.7
+            "max_tokens": max_tokens
         }
+        
+        # Dynamisch temperature setzen
+        if self._check_temperature_support():
+            payload["temperature"] = 0.7
+            logger.debug(f"Mistral: temperature=0.7 für Modell {self.model}")
+        else:
+            logger.debug(f"Mistral: temperature übersprungen für Reasoning-Modell {self.model}")
+            
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",

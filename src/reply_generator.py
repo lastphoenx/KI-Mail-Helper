@@ -28,6 +28,9 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 
+# 🔍 Debug-Logging System
+from src.debug_logger import DebugLogger
+
 # 🆕 Optimierte Prompts importieren (mit Fallback für Backward-Compatibility)
 try:
     from src.optimized_reply_prompts import (
@@ -233,6 +236,20 @@ class ReplyGenerator:
         try:
             logger.info(f"🤖 Generiere Reply-Entwurf (Ton: {tone})")
             
+            # 🔍 DEBUG: Log AI Input um Anonymisierungs-Problem zu debuggen
+            logger.debug(f"🔍 REPLY DEBUG - AI Input User Prompt (erste 500 Zeichen): {user_prompt[:500]}...")
+            logger.debug(f"🔍 REPLY DEBUG - Original Body (erste 300 Zeichen): {original_body[:300]}...")
+            
+            # 🔍 Zentrales Debug-Logging
+            if DebugLogger.is_enabled():
+                session_id = f"reply_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                DebugLogger.log_ai_input(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    model=getattr(self.ai_client, 'model', 'unknown'),
+                    session_id=session_id
+                )
+            
             # Nutze generate_text() - in Phase G.2 zu allen AI Clients hinzugefügt
             if hasattr(self.ai_client, 'generate_text'):
                 reply_text = self.ai_client.generate_text(
@@ -250,8 +267,25 @@ class ReplyGenerator:
                 )
                 reply_text = result.get("summary_de", "")
             
+            # 🔍 DEBUG: Log AI Output um Anonymisierungs-Problem zu debuggen  
+            logger.debug(f"🔍 REPLY DEBUG - AI Raw Output (erste 300 Zeichen): {reply_text[:300]}...")
+            
+            # 🔍 Zentrales Debug-Logging
+            if DebugLogger.is_enabled():
+                DebugLogger.log_ai_output(
+                    response=reply_text,
+                    model=getattr(self.ai_client, 'model', 'unknown'),
+                    session_id=session_id
+                )
+            
             # Cleanup: Entferne mögliche Metadaten
             reply_text = self._cleanup_reply_text(reply_text)
+            
+            # 🆕 Normalisiere AI-generierte Platzhalter zu ContentSanitizer-Format
+            reply_text = self._normalize_ai_placeholders(reply_text, original_body)
+            
+            # 🔍 DEBUG: Log nach Cleanup
+            logger.debug(f"🔍 REPLY DEBUG - After Cleanup (erste 300 Zeichen): {reply_text[:300]}...")
             
             logger.info(f"✅ Reply-Entwurf generiert ({len(reply_text)} chars)")
             
@@ -347,6 +381,50 @@ Beziehe dich auf den Inhalt der Original-E-Mail und halte den vorgegebenen Ton e
             cleaned = cleaned[1:-1]
         
         return cleaned
+    
+    def _normalize_ai_placeholders(self, reply_text: str, original_body: str) -> str:
+        """
+        Normalisiert AI-generierte Platzhalter zu ContentSanitizer-Format.
+        
+        Problem: AI erstellt manchmal eigene Platzhalter wie [23_2], [EMAIL_1] etc.
+        statt die im Input vorhandenen [PERSON_X] zu verwenden.
+        
+        Diese Funktion ersetzt AI-generierte Platzhalter durch die korrekten
+        ContentSanitizer-Platzhalter basierend auf dem Original-Content.
+        
+        Args:
+            reply_text: AI-generierte Antwort (möglicherweise mit [23_2] etc.)
+            original_body: Original anonymisierter Body mit [PERSON_X] Platzhaltern
+        
+        Returns:
+            Reply-Text mit normalisierten Platzhaltern
+        """
+        import re
+        
+        # Extrahiere ContentSanitizer-Platzhalter aus Original-Body
+        sanitizer_placeholders = re.findall(r'\[(?:PERSON|ORG|ADDRESS|EMAIL|PHONE|IBAN|URL)_\d+\]', original_body)
+        
+        # Finde AI-generierte Platzhalter im Reply-Text 
+        # Muster: [Zahl_Zahl], [TEXT_Zahl], etc.
+        ai_placeholders = re.findall(r'\[\w*\d+_?\d*\]', reply_text)
+        
+        # Wenn AI eigene Platzhalter erstellt hat
+        if ai_placeholders and sanitizer_placeholders:
+            logger.debug(f"🔄 Normalisiere AI-Platzhalter: {ai_placeholders} → ContentSanitizer Format")
+            
+            # Einfache Zuordnung: Ersetze AI-Platzhalter durch die ersten verfügbaren Sanitizer-Platzhalter
+            for i, ai_placeholder in enumerate(set(ai_placeholders)):
+                if i < len(sanitizer_placeholders):
+                    # Verwende entsprechenden Sanitizer-Platzhalter
+                    sanitizer_replacement = sanitizer_placeholders[i]
+                    reply_text = reply_text.replace(ai_placeholder, sanitizer_replacement)
+                    logger.debug(f"🔄 {ai_placeholder} → {sanitizer_replacement}")
+                else:
+                    # Fallback: Entferne überzählige AI-Platzhalter
+                    reply_text = reply_text.replace(ai_placeholder, "[ANONYMIZED]")
+                    logger.warning(f"⚠️ Überzähliger AI-Platzhalter entfernt: {ai_placeholder}")
+        
+        return reply_text
     
     @staticmethod
     def get_available_tones() -> Dict[str, Dict[str, str]]:
@@ -501,6 +579,20 @@ Beziehe dich auf den Inhalt der Original-E-Mail und halte den vorgegebenen Ton e
         try:
             logger.info(f"🤖 Generiere Reply-Entwurf mit User-Stil (Ton: {tone})")
             
+            # 🔍 DEBUG: Log User-Style AI Input um Anonymisierungs-Problem zu debuggen
+            logger.debug(f"🔍 USER-STYLE DEBUG - AI Input User Prompt (erste 500 Zeichen): {user_prompt[:500]}...")
+            logger.debug(f"🔍 USER-STYLE DEBUG - Original Body (erste 300 Zeichen): {original_body[:300]}...")
+            
+            # 🔍 Zentrales Debug-Logging
+            if DebugLogger.is_enabled():
+                session_id = f"user_style_reply_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                DebugLogger.log_ai_input(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    model=getattr(self.ai_client, 'model', 'unknown'),
+                    session_id=session_id
+                )
+            
             # Nutze generate_text() - in Phase G.2 zu allen AI Clients hinzugefügt
             if hasattr(self.ai_client, 'generate_text'):
                 reply_text = self.ai_client.generate_text(
@@ -518,8 +610,25 @@ Beziehe dich auf den Inhalt der Original-E-Mail und halte den vorgegebenen Ton e
                 )
                 reply_text = result.get("summary_de", "")
             
+            # 🔍 DEBUG: Log User-Style AI Output um Anonymisierungs-Problem zu debuggen
+            logger.debug(f"🔍 USER-STYLE DEBUG - AI Raw Output (erste 300 Zeichen): {reply_text[:300]}...")
+            
+            # 🔍 Zentrales Debug-Logging
+            if DebugLogger.is_enabled():
+                DebugLogger.log_ai_output(
+                    response=reply_text,
+                    model=getattr(self.ai_client, 'model', 'unknown'),
+                    session_id=session_id
+                )
+            
             # Cleanup
             reply_text = self._cleanup_reply_text(reply_text)
+            
+            # 🆕 Normalisiere AI-generierte Platzhalter zu ContentSanitizer-Format
+            reply_text = self._normalize_ai_placeholders(reply_text, original_body)
+            
+            # 🔍 DEBUG: Log nach Cleanup
+            logger.debug(f"🔍 USER-STYLE DEBUG - After Cleanup (erste 300 Zeichen): {reply_text[:300]}...")
             
             logger.info(f"✅ Reply-Entwurf mit User-Stil generiert ({len(reply_text)} chars)")
             
