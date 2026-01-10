@@ -349,12 +349,11 @@ mail-helper/
 │   ├── ZERO_KNOWLEDGE_COMPLETE.md  # Zero-Knowledge Implementierung
 │   └── CHANGELOG.md            # Version History
 ├── doc/                        # Feature-Dokumentation
-│   ├── Changelogs/             # Phase-Changelogs
-│   ├── erledigt/               # Abgeschlossene Phasen
+│   ├── erledigt/               # Abgeschlossene Phasen + Changelogs
+│   ├── offen/                  # Geplante Features
+│   ├── backlog/                # Zurückgestellte Features
 │   ├── fetch-filters/          # Fetch-Filter Docs
 │   ├── imap/                   # IMAP-Strategie & Troubleshooting
-│   ├── ki-tags/                # Tag-Learning Architektur
-│   ├── smtp-modul/             # SMTP Integration (Phase H)
 │   └── ...
 ├── config/                     # Konfigurationsdateien
 │   ├── fail2ban-filter.conf    # Fail2Ban Filter Rules
