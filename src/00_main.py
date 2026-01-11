@@ -1,12 +1,24 @@
 """
 Mail Helper - Entry Point
 Hauptprogramm mit CLI-Optionen und Orchestrierung
+
+BLUEPRINT-REFACTORING SCHALTER:
+  USE_BLUEPRINTS=1 python src/00_main.py web
+  → Nutzt neue Blueprint-Architektur (src/app_factory.py)
+  
+  python src/00_main.py web (ohne Env-Variable)
+  → Nutzt alte monolithische App (src/01_web_app.py)
 """
 
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ============================================================================
+# BLUEPRINT-SCHALTER
+# ============================================================================
+USE_BLUEPRINTS = os.getenv("USE_BLUEPRINTS", "0") == "1"
 
 import argparse
 import sys
@@ -20,12 +32,29 @@ mail_fetcher = importlib.import_module(".06_mail_fetcher", "src")
 sanitizer = importlib.import_module(".04_sanitizer", "src")
 ai_client = importlib.import_module(".03_ai_client", "src")
 scoring = importlib.import_module(".05_scoring", "src")
-web_app = importlib.import_module(".01_web_app", "src")
 encryption = importlib.import_module(".08_encryption", "src")
 auth = importlib.import_module(".07_auth", "src")
 google_oauth = importlib.import_module(".10_google_oauth", "src")
 processing = importlib.import_module(".12_processing", "src")
 ai_pref_migration = importlib.import_module(".13_migrate_ai_preferences", "src")
+
+# Web-App wird lazy geladen je nach Schalter
+web_app = None
+
+def _get_web_app():
+    """Lazy-Load der Web-App basierend auf USE_BLUEPRINTS Schalter."""
+    global web_app
+    if web_app is None:
+        if USE_BLUEPRINTS:
+            # Neue Blueprint-Architektur
+            from src.app_factory import create_app
+            web_app = type('WebAppModule', (), {'app': create_app()})()
+            logging.getLogger(__name__).info("✅ Blueprint-Architektur geladen (USE_BLUEPRINTS=1)")
+        else:
+            # Alte monolithische App
+            web_app = importlib.import_module(".01_web_app", "src")
+            logging.getLogger(__name__).info("⚠️  Legacy-App geladen (01_web_app.py)")
+    return web_app
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -432,9 +461,27 @@ def main():
     if args.serve:
         logger.info("🌐 Starte Web-Dashboard...")
         init_db()
-        web_app.start_server(
-            host=args.host, port=args.port, debug=False, use_https=args.https
-        )
+        
+        # Blueprint-Schalter: Nutze lazy-geladene App
+        app_module = _get_web_app()
+        
+        if USE_BLUEPRINTS:
+            # Neue Blueprint-Architektur: app ist direkt das Flask-Objekt
+            from werkzeug.serving import run_simple
+            logger.info(f"🚀 Blueprint-Server auf {args.host}:{args.port}")
+            run_simple(
+                args.host, 
+                args.port, 
+                app_module.app, 
+                use_debugger=False, 
+                use_reloader=False,
+                threaded=True
+            )
+        else:
+            # Alte monolithische App: nutzt start_server()
+            app_module.start_server(
+                host=args.host, port=args.port, debug=False, use_https=args.https
+            )
         return 0
 
     elif args.process_once:

@@ -229,7 +229,119 @@ def create_app(config_name="production"):
     def inject_csp_nonce():
         return dict(csp_nonce=getattr(g, 'csp_nonce', ''))
     
+    # =========================================================================
+    # BACKWARDS-COMPATIBLE ENDPOINT ALIASE
+    # Ermöglicht: url_for('login') statt url_for('auth.login')
+    # Templates müssen NICHT geändert werden vor dem Schalter!
+    # =========================================================================
+    
+    _register_endpoint_aliases(app)
+    
     return app
+
+
+def _register_endpoint_aliases(app):
+    """Register backwards-compatible endpoint aliases.
+    
+    This allows old templates using url_for('login') to work
+    with the new Blueprint architecture using url_for('auth.login').
+    
+    Total: 11 unique endpoints need aliases (78 url_for() calls use them).
+    """
+    
+    # ┌─────────────────────────────────────────────────────────────────────┐
+    # │ ALIAS-TABELLE: Alt → Neu                                            │
+    # │ Anzahl = wie oft url_for('...') im Code/Templates vorkommt          │
+    # └─────────────────────────────────────────────────────────────────────┘
+    
+    aliases = {
+        # AUTH Blueprint (35 Aufrufe)
+        'login': 'auth.login',                    # 29× in Python + Templates
+        'setup_2fa': 'auth.setup_2fa',            # 3×
+        'verify_2fa': 'auth.verify_2fa',          # 1×
+        'index': 'auth.index',                    # 2×
+        
+        # EMAILS Blueprint (11 Aufrufe)
+        'dashboard': 'emails.dashboard',          # 6×
+        'list_view': 'emails.list_view',          # 5×
+        
+        # ACCOUNTS Blueprint (32 Aufrufe)
+        'settings': 'accounts.settings',          # 26×
+        'whitelist': 'accounts.whitelist',        # 3×
+        'ki_prio': 'accounts.ki_prio',            # 1×
+        'mail_fetch_config': 'accounts.mail_fetch_config',  # 1×
+        'google_oauth_callback': 'accounts.google_oauth_callback',  # 1×
+    }
+    
+    # Registriere alle Aliase
+    for old_name, new_name in aliases.items():
+        if new_name in app.view_functions:
+            app.view_functions[old_name] = app.view_functions[new_name]
+        else:
+            logger.warning(f"⚠️ Alias '{old_name}' → '{new_name}': Endpoint nicht gefunden!")
+    
+    logger.info(f"✅ {len(aliases)} Endpoint-Aliase registriert (Backwards-Compatibility)")
+```
+
+---
+
+## 🔄 BACKWARDS-COMPATIBLE ENDPOINT ALIASE
+
+### Übersicht
+
+| Nr | Alt (Legacy) | Neu (Blueprint) | Anzahl Aufrufe |
+|----|--------------|-----------------|----------------|
+| 1 | `login` | `auth.login` | 29× |
+| 2 | `setup_2fa` | `auth.setup_2fa` | 3× |
+| 3 | `verify_2fa` | `auth.verify_2fa` | 1× |
+| 4 | `index` | `auth.index` | 2× |
+| 5 | `dashboard` | `emails.dashboard` | 6× |
+| 6 | `list_view` | `emails.list_view` | 5× |
+| 7 | `settings` | `accounts.settings` | 26× |
+| 8 | `whitelist` | `accounts.whitelist` | 3× |
+| 9 | `ki_prio` | `accounts.ki_prio` | 1× |
+| 10 | `mail_fetch_config` | `accounts.mail_fetch_config` | 1× |
+| 11 | `google_oauth_callback` | `accounts.google_oauth_callback` | 1× |
+
+**Gesamt: 11 Aliase für 78 url_for() Aufrufe**
+
+### Warum Aliase?
+
+```html
+<!-- PROBLEM: Template nutzt alten Namen -->
+<a href="{{ url_for('settings') }}">Einstellungen</a>
+
+<!-- OHNE Alias: Jinja2 BuildError! -->
+<!-- MIT Alias: Funktioniert, weil 'settings' → 'accounts.settings' gemappt -->
+```
+
+### Wann entfernen?
+
+Die Aliase können **beliebig lange** bestehen bleiben. Empfehlung:
+
+1. **Phase 7 (Schalter):** Aliase aktiv, alte Templates
+2. **Phase 8 (optional):** Templates auf Blueprint-Syntax updaten
+3. **Phase 9 (optional):** Aliase entfernen, wenn alle Templates updated
+
+### Validierung
+
+```bash
+# Nach app_factory.py erstellt:
+python3 -c "
+from src.app_factory import create_app
+app = create_app()
+
+# Prüfe ob alle 11 Aliase registriert sind:
+aliases = ['login', 'setup_2fa', 'verify_2fa', 'index', 
+           'dashboard', 'list_view', 'settings', 'whitelist',
+           'ki_prio', 'mail_fetch_config', 'google_oauth_callback']
+
+for alias in aliases:
+    if alias in app.view_functions:
+        print(f'✅ {alias}')
+    else:
+        print(f'❌ {alias} FEHLT!')
+"
 ```
 
 ---
