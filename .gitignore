@@ -115,3 +115,4 @@ change_password_route.txt
 *.backup*
 *.bak
 emails.db.fresh_clone_EMPTY
+flask_session/
