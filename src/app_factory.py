@@ -133,21 +133,33 @@ def create_app(config_name="production"):
     @app.after_request
     def set_security_headers(response):
         """Set security headers on all responses (aus 01_web_app.py Zeile 186-230)"""
-        nonce = getattr(g, 'csp_nonce', '')
-        response.headers['Content-Security-Policy'] = (
-            f"default-src 'self'; "
-            f"script-src 'self' 'nonce-{nonce}'; "
-            f"style-src 'self' 'unsafe-inline'; "
-            f"img-src 'self' data: https:; "
-            f"font-src 'self' data:; "
-            f"frame-ancestors 'none'; "
-            f"base-uri 'self'; "
-            f"form-action 'self'"
-        )
+        # Skip für Endpoints die eigene Headers setzen (z.B. Email HTML Render)
+        if g.get("skip_security_headers", False):
+            return response
+        
+        # Security Headers für ALLE Responses - Defense-in-Depth
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['X-Frame-Options'] = 'DENY'
-        response.headers['X-XSS-Protection'] = '1; mode=block'
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        
+        # CSP nur bei erfolgreichen Responses (< 400)
+        if response.status_code < 400:
+            nonce = getattr(g, 'csp_nonce', '')
+            # CSP identisch zu 01_web_app.py Zeile 212-222
+            csp = (
+                "default-src 'self'; "
+                f"script-src 'self' https://cdn.jsdelivr.net 'nonce-{nonce}'; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "img-src 'self' data:; "
+                "font-src 'self' https://cdn.jsdelivr.net; "
+                "connect-src 'self'; "
+                "frame-ancestors 'none'; "
+                "base-uri 'self'; "
+                "form-action 'self';"
+            )
+            response.headers['Content-Security-Policy'] = csp
+        
         return response
     
     @app.before_request
