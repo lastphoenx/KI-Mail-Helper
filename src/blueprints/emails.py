@@ -40,7 +40,7 @@ def _get_models():
 def _get_encryption():
     global _encryption
     if _encryption is None:
-        _encryption = importlib.import_module(".05_encryption", "src")
+        _encryption = importlib.import_module(".08_encryption", "src")
     return _encryption
 
 
@@ -54,7 +54,7 @@ def _get_scoring():
 def _get_mail_fetcher_mod():
     global _mail_fetcher_mod
     if _mail_fetcher_mod is None:
-        _mail_fetcher_mod = importlib.import_module(".04_mail_fetcher", "src")
+        _mail_fetcher_mod = importlib.import_module(".06_mail_fetcher", "src")
     return _mail_fetcher_mod
 
 

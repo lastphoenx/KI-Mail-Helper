@@ -48,21 +48,21 @@ def _get_models():
 def _get_encryption():
     global _encryption
     if _encryption is None:
-        _encryption = importlib.import_module(".05_encryption", "src")
+        _encryption = importlib.import_module(".08_encryption", "src")
     return _encryption
 
 
 def _get_ai_client():
     global _ai_client
     if _ai_client is None:
-        _ai_client = importlib.import_module(".06_ai_client", "src")
+        _ai_client = importlib.import_module(".03_ai_client", "src")
     return _ai_client
 
 
 def _get_sanitizer():
     global _sanitizer
     if _sanitizer is None:
-        _sanitizer = importlib.import_module(".08_sanitizer", "src")
+        _sanitizer = importlib.import_module(".04_sanitizer", "src")
     return _sanitizer
 
 
@@ -83,7 +83,7 @@ def _get_mail_fetcher_mod():
 def _get_mail_sync():
     global _mail_sync
     if _mail_sync is None:
-        _mail_sync = importlib.import_module(".14_mail_sync", "src")
+        _mail_sync = importlib.import_module(".16_mail_sync", "src")
     return _mail_sync
 
 

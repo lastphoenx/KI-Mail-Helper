@@ -100,7 +100,7 @@ def tags_view():
     except Exception as e:
         logger.error(f"tags_view: Unerwarteter Fehler: {type(e).__name__}: {e}")
         flash("Fehler beim Laden der Tag-Seite", "danger")
-        return redirect(url_for("main.index"))
+        return redirect(url_for("index"))
 
 
 # =============================================================================
@@ -157,5 +157,5 @@ def tag_suggestions_page():
     except Exception as e:
         logger.error(f"tag_suggestions_page: Unerwarteter Fehler: {type(e).__name__}: {e}")
         flash("Fehler beim Laden der Tag-Vorschläge", "danger")
-        return redirect(url_for("main.index"))
+        return redirect(url_for("index"))
 

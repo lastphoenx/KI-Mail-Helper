@@ -43,7 +43,7 @@ def _get_models():
 def _get_encryption():
     global _encryption
     if _encryption is None:
-        _encryption = importlib.import_module(".05_encryption", "src")
+        _encryption = importlib.import_module(".08_encryption", "src")
     return _encryption
 
 

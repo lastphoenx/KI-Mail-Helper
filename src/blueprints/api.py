@@ -212,14 +212,14 @@ def _get_models():
 def _get_encryption():
     global _encryption
     if _encryption is None:
-        _encryption = importlib.import_module(".05_encryption", "src")
+        _encryption = importlib.import_module(".08_encryption", "src")
     return _encryption
 
 
 def _get_tag_manager():
     global _tag_manager
     if _tag_manager is None:
-        tag_mod = importlib.import_module(".06_tag_manager", "src")
+        tag_mod = importlib.import_module("src.services.tag_manager", "src")
         _tag_manager = tag_mod.TagManager
     return _tag_manager
 
@@ -227,7 +227,7 @@ def _get_tag_manager():
 def _get_auto_rules():
     global _auto_rules
     if _auto_rules is None:
-        rules_mod = importlib.import_module(".auto_rules", "src")
+        rules_mod = importlib.import_module("src.auto_rules_engine", "src")
         _auto_rules = rules_mod.AutoRulesEngine
     return _auto_rules
 
@@ -2011,7 +2011,7 @@ def api_batch_reprocess_embeddings():
     Returns job_id für Progress-Tracking
     """
     try:
-        models = importlib.import_module("src.models")
+        models = importlib.import_module(".02_models")
     except ImportError:
         return jsonify({"error": "Models not available"}), 500
     
@@ -3095,12 +3095,12 @@ def api_scan_account_senders(account_id):
     db = get_db_session()
     try:
         try:
-            models = importlib.import_module("src.models")
+            models = importlib.import_module(".02_models")
         except ImportError:
             return jsonify({"error": "Models not available"}), 500
         
         try:
-            encryption = importlib.import_module("src.encryption")
+            encryption = importlib.import_module(".08_encryption")
         except ImportError:
             return jsonify({"error": "Encryption not available"}), 500
         
@@ -3234,7 +3234,7 @@ def api_bulk_add_trusted_senders():
     db = get_db_session()
     try:
         try:
-            models = importlib.import_module("src.models")
+            models = importlib.import_module(".02_models")
         except ImportError:
             return jsonify({"error": "Models not available"}), 500
         
