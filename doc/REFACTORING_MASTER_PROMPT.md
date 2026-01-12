@@ -17,8 +17,8 @@
 | **Blueprints erstellt** | 9/9 | Alle functional |
 | **Zeilen Original** | 9.435 | Baseline |
 | **Zeilen Blueprint** | 8.919 | 94.5% (5.5% legitime Deduplizierung) |
-| **Implementierungsgrad** | ~98% | Siehe IMPLEMENTATION_STATUS.md |
-| **Production-Ready** | ✅ 98% | Alle kritischen Routes implementiert |
+| **Implementierungsgrad** | 100% | Alle Routes vollständig |
+| **Production-Ready** | ✅ 100% | Alle 123 Routes vollständig implementiert |
 
 ---
 
@@ -159,11 +159,11 @@ src/blueprints/
 
 **Note:** Diese sind **NICHT Stubs**, sondern **vollständig implementiert** mit bedingten Fallbacks für fehlende Models. Das ist **korrekt defensive Programmierung**.
 
-#### 🟡 2 LOWER PRIORITY (Defensive 501-Fallbacks)
-- `/api/batch-reprocess-embeddings` - Background job, nicht kritisch
-- `/api/imap-diagnostics/<id>` - Diagnostik-Tool, nicht kritisch
+#### ✅ Alle verbleibenden Routes implementiert
+- `/api/batch-reprocess-embeddings` - ✅ Background-Job mit Job-Queue
+- `/api/imap-diagnostics/<id>` - ✅ Vollständige IMAP-Diagnose
 
-**Note:** Diese haben funktionierende Fallbacks und sind nicht produktionskritisch.
+**Note:** Alle 123 Routes sind jetzt vollständig implementiert!
 
 ---
 
@@ -199,6 +199,8 @@ Diese waren als 501 "Not Implemented" markiert und wurden nachträglich vollstä
 | `/account/<id>/mail-count` | TODO Stub | ~170 Zeilen mit IMAP STATUS |
 | `/account/<id>/folders` | TODO Stub | ~80 Zeilen mit IMAP Folder-Listing |
 | `/emails/<id>/reprocess` | Partial | ~120 Zeilen mit Embedding-Regeneration |
+| `/api/batch-reprocess-embeddings` | TODO Stub | ~60 Zeilen mit Job-Queue |
+| `/api/imap-diagnostics/<id>` | TODO Stub | ~110 Zeilen mit IMAPDiagnostics |
 
 ### 🔧 Lazy-Load Helper nachträglich ergänzt
 
@@ -453,10 +455,10 @@ KI-Mail-Helper-Dev/
 | 5844 | `/emails/<id>/generate-and-send` POST | `api_generate_and_send_reply` | ✅ |
 | 5953 | `/emails/<id>/check-embedding-compatibility` GET | `api_check_embedding_compat` | ✅ |
 | 6031 | `/emails/<id>/reprocess` POST | `api_reprocess_email` | ✅ |
-| 6177 | `/batch-reprocess-embeddings` POST | `api_batch_reprocess_embeddings` | ⚠️ TODO |
+| 6177 | `/batch-reprocess-embeddings` POST | `api_batch_reprocess_embeddings` | ✅ |
 | 6472 | `/available-models/<provider>` GET | `api_available_models` | ✅ |
 | 6485 | `/available-providers` GET | `api_available_providers` | ✅ |
-| 7243 | `/imap-diagnostics/<id>` POST | `api_imap_diagnostics` | ⚠️ TODO |
+| 7243 | `/imap-diagnostics/<id>` POST | `api_imap_diagnostics` | ✅ |
 | 8508 | `/trusted-senders` GET | `api_get_trusted_senders` | ✅ |
 | 8554 | `/trusted-senders` POST | `api_add_trusted_sender` | ✅ |
 | 8619 | `/trusted-senders/<id>` PATCH | `api_update_trusted_sender` | ✅ |
@@ -501,7 +503,7 @@ KI-Mail-Helper-Dev/
 Original:     9.435 Zeilen (01_web_app.py)
 
 Refactored:
-  api.py:                3.220 Zeilen (67 Routes)
+  api.py:                3.359 Zeilen (67 Routes)
   accounts.py:           1.563 Zeilen (22 Routes)  
   email_actions.py:      1.044 Zeilen (11 Routes)
   emails.py:               903 Zeilen (5 Routes)
@@ -512,14 +514,14 @@ Refactored:
   admin.py:                 50 Zeilen (1 Route)
   blueprints/__init__.py:    42 Zeilen
   ─────────────────────────────
-  Blueprints:           8.319 Zeilen (123+ Routes)
+  Blueprints:           8.458 Zeilen (123+ Routes)
   
 Helpers:                 283 Zeilen
 AppFactory:              318 Zeilen
   ─────────────────────────────
-  GESAMT:              8.920 Zeilen
+  GESAMT:              9.059 Zeilen
   
-Differenz:             515 Zeilen (5.5%) - legitime Deduplizierung
+Differenz:             376 Zeilen (4.0%) - legitime Deduplizierung
 ```
 
 ---
@@ -576,5 +578,5 @@ Die neue Blueprint-Struktur ist **DEUTLICH besser für AI-Entwickler** (Claude O
 ---
 
 **Aktualisiert:** 12. Januar 2026  
-**Status:** ✅ Refactoring Complete, ✅ Implementation 98% done  
+**Status:** ✅ Refactoring Complete, ✅ Implementation 100% done  
 **Siehe auch:** `doc/phase0/IMPLEMENTATION_STATUS.md` + `doc/phase0/STUB_STATUS.md`
