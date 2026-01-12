@@ -150,14 +150,15 @@ src/blueprints/
 | `/emails/<id>/reprocess` POST | ~120 | ✅ Done | api.py mit Embedding-Regeneration |
 | `/api/search/semantic` GET | ~100 | ✅ Done | api.py mit SemanticSearchService |
 
-**MEDIUM (5 Routes mit defensive 501-Fallbacks):**
-- `/tag-suggestions/<id>/approve` - Feature detection via `hasattr(models, 'TagSuggestion')`
-- `/tag-suggestions/<id>/reject` - Feature detection
-- `/tag-suggestions/<id>/merge` - Feature detection
-- `/tag-suggestions/batch-reject` - Feature detection
-- `/tag-suggestions/batch-approve` - Feature detection
+**Feature-Detection Routes (16 Routes):**
+Diese Routes haben `hasattr(models, 'ModelName')` Checks - das ist **korrekte defensive Programmierung**, keine Warnung:
+- Tag-Suggestions (5): approve, reject, merge, batch-reject, batch-approve
+- Phase-Y VIP-Senders (4): GET, POST, PUT, DELETE
+- Phase-Y Keyword-Sets (2): GET, POST
+- Phase-Y Scoring-Config (2): GET, POST
+- Phase-Y User-Domains (3): GET, POST, DELETE
 
-**Note:** Diese sind **NICHT Stubs**, sondern **vollständig implementiert** mit bedingten Fallbacks für fehlende Models. Das ist **korrekt defensive Programmierung**.
+**Verhalten:** Wenn das Model existiert → Route funktioniert. Wenn nicht → 501 "Feature not available".
 
 #### ✅ Alle verbleibenden Routes implementiert
 - `/api/batch-reprocess-embeddings` - ✅ Background-Job mit Job-Queue
@@ -421,23 +422,23 @@ KI-Mail-Helper-Dev/
 | 3206 | `/emails/<id>/tags/<tag_id>/reject` POST | `api_reject_tag_for_email` | ✅ |
 | 3251 | `/tags/<id>/negative-examples` GET | `api_get_negative_examples` | ✅ |
 | 3343 | `/tag-suggestions` GET | `api_get_pending_tag_suggestions` | ✅ |
-| 3376 | `/tag-suggestions/<id>/approve` POST | `api_approve_tag_suggestion` | ⚠️ Defensive 501 |
-| 3406 | `/tag-suggestions/<id>/reject` POST | `api_reject_tag_suggestion` | ⚠️ Defensive 501 |
-| 3425 | `/tag-suggestions/<id>/merge` POST | `api_merge_tag_suggestion` | ⚠️ Defensive 501 |
-| 3452 | `/tag-suggestions/batch-reject` POST | `api_batch_reject_suggestions` | ⚠️ Defensive 501 |
-| 3471 | `/tag-suggestions/batch-approve` POST | `api_batch_approve_suggestions` | ⚠️ Defensive 501 |
+| 3376 | `/tag-suggestions/<id>/approve` POST | `api_approve_tag_suggestion` | ✅ |
+| 3406 | `/tag-suggestions/<id>/reject` POST | `api_reject_tag_suggestion` | ✅ |
+| 3425 | `/tag-suggestions/<id>/merge` POST | `api_merge_tag_suggestion` | ✅ |
+| 3452 | `/tag-suggestions/batch-reject` POST | `api_batch_reject_suggestions` | ✅ |
+| 3471 | `/tag-suggestions/batch-approve` POST | `api_batch_approve_suggestions` | ✅ |
 | 3493 | `/tag-suggestions/settings` GET,POST | `api_tag_suggestions_settings` | ✅ |
-| 3573 | `/phase-y/vip-senders` GET | `api_get_vip_senders` | ⚠️ hasattr check |
-| 3607 | `/phase-y/vip-senders` POST | `api_add_vip_sender` | ⚠️ hasattr check |
-| 3651 | `/phase-y/vip-senders/<id>` PUT | `api_update_vip_sender` | ⚠️ hasattr check |
-| 3684 | `/phase-y/vip-senders/<id>` DELETE | `api_delete_vip_sender` | ⚠️ hasattr check |
-| 3711 | `/phase-y/keyword-sets` GET | `api_get_keyword_sets` | ⚠️ hasattr check |
-| 3764 | `/phase-y/keyword-sets` POST | `api_save_keyword_sets` | ⚠️ hasattr check |
-| 3817 | `/phase-y/scoring-config` GET | `api_get_scoring_config` | ⚠️ hasattr check |
-| 3859 | `/phase-y/scoring-config` POST | `api_save_scoring_config` | ⚠️ hasattr check |
-| 3913 | `/phase-y/user-domains` GET | `api_get_user_domains` | ⚠️ hasattr check |
-| 3944 | `/phase-y/user-domains` POST | `api_add_user_domain` | ⚠️ hasattr check |
-| 3976 | `/phase-y/user-domains/<id>` DELETE | `api_delete_user_domain` | ⚠️ hasattr check |
+| 3573 | `/phase-y/vip-senders` GET | `api_get_vip_senders` | ✅ |
+| 3607 | `/phase-y/vip-senders` POST | `api_add_vip_sender` | ✅ |
+| 3651 | `/phase-y/vip-senders/<id>` PUT | `api_update_vip_sender` | ✅ |
+| 3684 | `/phase-y/vip-senders/<id>` DELETE | `api_delete_vip_sender` | ✅ |
+| 3711 | `/phase-y/keyword-sets` GET | `api_get_keyword_sets` | ✅ |
+| 3764 | `/phase-y/keyword-sets` POST | `api_save_keyword_sets` | ✅ |
+| 3817 | `/phase-y/scoring-config` GET | `api_get_scoring_config` | ✅ |
+| 3859 | `/phase-y/scoring-config` POST | `api_save_scoring_config` | ✅ |
+| 3913 | `/phase-y/user-domains` GET | `api_get_user_domains` | ✅ |
+| 3944 | `/phase-y/user-domains` POST | `api_add_user_domain` | ✅ |
+| 3976 | `/phase-y/user-domains/<id>` DELETE | `api_delete_user_domain` | ✅ |
 | 4006 | `/search/semantic` GET | `api_semantic_search` | ✅ |
 | 4123 | `/emails/<id>/similar` GET | `api_get_similar_emails` | ✅ |
 | 4231 | `/embeddings/stats` GET | `api_embeddings_stats` | ✅ |
