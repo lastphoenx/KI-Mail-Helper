@@ -299,15 +299,31 @@ def create_app(config_name="production"):
     return app
 
 def _register_endpoint_aliases(app):
-    """Register backwards-compatible endpoint aliases."""
+    """Register backwards-compatible endpoint aliases.
     
+    This allows old templates using url_for('login') to work
+    with the new Blueprint architecture using url_for('auth.login').
+    
+    We register URL rules that point to the same view functions,
+    allowing url_for() to resolve both old and new endpoint names.
+    """
+    
+    # Mapping: alt_endpoint → blueprint_endpoint
+    # Wir fügen URL-Regeln hinzu, die auf die Blueprint-View-Funktionen zeigen
     aliases = {
+        # AUTH Blueprint
         'login': 'auth.login',
+        'logout': 'auth.logout',
+        'register': 'auth.register',
         'setup_2fa': 'auth.setup_2fa',
         'verify_2fa': 'auth.verify_2fa',
         'index': 'auth.index',
+        
+        # EMAILS Blueprint
         'dashboard': 'emails.dashboard',
         'list_view': 'emails.list_view',
+        
+        # ACCOUNTS Blueprint
         'settings': 'accounts.settings',
         'whitelist': 'accounts.whitelist',
         'ki_prio': 'accounts.ki_prio',
@@ -318,10 +334,20 @@ def _register_endpoint_aliases(app):
     registered = 0
     for old_name, new_name in aliases.items():
         if new_name in app.view_functions:
-            app.view_functions[old_name] = app.view_functions[new_name]
-            registered += 1
+            # Finde die URL-Regel für den Blueprint-Endpoint
+            for rule in app.url_map.iter_rules():
+                if rule.endpoint == new_name:
+                    # Registriere dieselbe URL unter dem alten Endpoint-Namen
+                    app.add_url_rule(
+                        rule.rule,
+                        endpoint=old_name,
+                        view_func=app.view_functions[new_name],
+                        methods=rule.methods - {'OPTIONS', 'HEAD'}
+                    )
+                    registered += 1
+                    break
         else:
-            logger.warning(f"Alias '{old_name}' → '{new_name}': nicht gefunden")
+            logger.warning(f"Alias '{old_name}' → '{new_name}': Endpoint nicht gefunden")
     
     logger.info(f"✅ {registered}/{len(aliases)} Endpoint-Aliase registriert")
 

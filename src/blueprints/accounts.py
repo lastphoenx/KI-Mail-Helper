@@ -66,7 +66,7 @@ def _get_models():
 def _get_encryption():
     global _encryption
     if _encryption is None:
-        _encryption = importlib.import_module(".05_encryption", "src")
+        _encryption = importlib.import_module(".08_encryption", "src")
     return _encryption
 
 
@@ -101,7 +101,7 @@ def _get_mail_fetcher_mod():
 def _get_job_queue():
     global _job_queue
     if _job_queue is None:
-        job_mod = importlib.import_module(".background_jobs", "src")
+        job_mod = importlib.import_module(".14_background_jobs", "src")
         _job_queue = job_mod.job_queue
     return _job_queue
 
