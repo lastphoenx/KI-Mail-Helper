@@ -51,7 +51,7 @@ def tags_view():
             except ImportError as e:
                 logger.error(f"tags_view: TagManager konnte nicht geladen werden: {e}")
                 flash("Tag-Manager nicht verfügbar", "warning")
-                return render_template("tags.html", user=user, tags=[], csp_nonce=g.get("csp_nonce", ""))
+                return render_template("tags.html", user=user, tags=[])
 
             # Hole alle Tags des Users
             try:
@@ -59,7 +59,7 @@ def tags_view():
             except Exception as e:
                 logger.error(f"tags_view: Fehler beim Laden der Tags: {type(e).__name__}: {e}")
                 flash("Fehler beim Laden der Tags", "danger")
-                return render_template("tags.html", user=user, tags=[], csp_nonce=g.get("csp_nonce", ""))
+                return render_template("tags.html", user=user, tags=[])
 
             # Zähle E-Mails pro Tag
             tags_with_counts = []
@@ -95,12 +95,12 @@ def tags_view():
                 flash("Email-Zählung fehlgeschlagen", "warning")
 
             return render_template(
-                "tags.html", user=user, tags=tags_with_counts, csp_nonce=g.get("csp_nonce", "")
+                "tags.html", user=user, tags=tags_with_counts
             )
     except Exception as e:
         logger.error(f"tags_view: Unerwarteter Fehler: {type(e).__name__}: {e}")
         flash("Fehler beim Laden der Tag-Seite", "danger")
-        return redirect(url_for("index"))
+        return redirect(url_for("emails.dashboard"))
 
 
 # =============================================================================
@@ -151,11 +151,10 @@ def tag_suggestions_page():
                 user_tags=user_tags,
                 stats=stats,
                 queue_enabled=getattr(user, 'enable_tag_suggestion_queue', False),
-                auto_assignment_enabled=getattr(user, 'enable_auto_assignment', False),
-                csp_nonce=g.get("csp_nonce", "")
+                auto_assignment_enabled=getattr(user, 'enable_auto_assignment', False)
             )
     except Exception as e:
         logger.error(f"tag_suggestions_page: Unerwarteter Fehler: {type(e).__name__}: {e}")
         flash("Fehler beim Laden der Tag-Vorschläge", "danger")
-        return redirect(url_for("index"))
+        return redirect(url_for("emails.dashboard"))
 

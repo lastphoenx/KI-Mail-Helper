@@ -315,7 +315,7 @@
     </div>
 </div>
 
-<script nonce="{{ csp_nonce }}">
+<script nonce="{{ csp_nonce() }}">
 // ===== CSRF Token Helper =====
 function getCSRFToken() {
     const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');

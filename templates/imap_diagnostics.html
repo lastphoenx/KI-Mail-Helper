@@ -206,7 +206,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script nonce="{{ csp_nonce }}">
+<script nonce="{{ csp_nonce() }}">
     // Account Selection Handler
     document.getElementById('accountSelect').addEventListener('change', function() {
         const testBtn = document.getElementById('testBtn');

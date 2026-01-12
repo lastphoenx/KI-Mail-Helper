@@ -69,14 +69,14 @@ def _get_sanitizer():
 def _get_scoring():
     global _scoring
     if _scoring is None:
-        _scoring = importlib.import_module(".03_scoring", "src")
+        _scoring = importlib.import_module(".05_scoring", "src")
     return _scoring
 
 
 def _get_mail_fetcher_mod():
     global _mail_fetcher_mod
     if _mail_fetcher_mod is None:
-        _mail_fetcher_mod = importlib.import_module(".04_mail_fetcher", "src")
+        _mail_fetcher_mod = importlib.import_module(".06_mail_fetcher", "src")
     return _mail_fetcher_mod
 
 

@@ -746,7 +746,7 @@ function reprocessEmail(emailId) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    const emailId = {{ email.id }};
+    const emailId = {{ email.raw_email_id }};
     
     // Copy raw HTML button
     document.getElementById('copyRawHtmlBtn').addEventListener('click', function() {
@@ -1246,7 +1246,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         return new Promise((resolve) => {
-            let folderOptions = folders.map(f => `<option value="${f}">${f}</option>`).join('');
+            // folders sind Objekte mit .name Property
+            let folderOptions = folders.map(f => {
+                const folderName = typeof f === 'string' ? f : (f.name || f);
+                return `<option value="${folderName}">${folderName}</option>`;
+            }).join('');
             
             let modal = document.getElementById('moveFolderModal');
             if (!modal) {
@@ -2220,7 +2224,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <!-- Phase H: Send Reply Modal JavaScript -->
 <script nonce="{{ csp_nonce() }}">
 document.addEventListener('DOMContentLoaded', function() {
-    const emailId = {{ email.id }};
+    const emailId = {{ email.raw_email_id }};
     const sendReplyModal = new bootstrap.Modal(document.getElementById('sendReplyModal'));
     
     // Open Send Reply Modal

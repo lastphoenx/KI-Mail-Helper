@@ -1502,8 +1502,7 @@ def threads_view():
             "threads_view.html", 
             user=user, 
             user_accounts=user_accounts,
-            filter_account_id=filter_account_id,
-            csp_nonce=g.csp_nonce
+            filter_account_id=filter_account_id
         )
 
     finally:
@@ -2565,7 +2564,7 @@ def whitelist():
 @login_required
 def ki_prio():
     """KI-gestützte E-Mail Priorisierung: Konfiguration für spaCy Hybrid Pipeline"""
-    return render_template("phase_y_config.html", csp_nonce=g.get("csp_nonce", ""))
+    return render_template("phase_y_config.html")
 
 
 @app.route("/settings/fetch-config", methods=["POST"])
@@ -2763,7 +2762,7 @@ def tags_view():
             )
 
         return render_template(
-            "tags.html", user=user, tags=tags_with_counts, csp_nonce=g.csp_nonce
+            "tags.html", user=user, tags=tags_with_counts
         )
 
     finally:
@@ -3332,8 +3331,7 @@ def tag_suggestions_page():
             user_tags=user_tags,
             stats=stats,
             queue_enabled=user.enable_tag_suggestion_queue,
-            auto_assignment_enabled=user.enable_auto_assignment,  # NEW
-            csp_nonce=g.csp_nonce
+            auto_assignment_enabled=user.enable_auto_assignment  # NEW
         )
 
     finally:
@@ -4897,8 +4895,7 @@ def rules_management():
         return render_template(
             "rules_management.html",
             user=user,
-            rules=rules,
-            csp_nonce=g.csp_nonce
+            rules=rules
         )
     
     finally:
@@ -5463,8 +5460,7 @@ def rules_execution_log():
             all_rules=all_rules,
             limit=limit,
             rule_id=rule_id,
-            success_filter=success_filter,
-            csp_nonce=g.csp_nonce
+            success_filter=success_filter
         )
     
     finally:
@@ -7232,8 +7228,7 @@ def imap_diagnostics():
         return render_template(
             "imap_diagnostics.html",
             user=user,
-            accounts=mail_accounts,
-            csp_nonce=g.csp_nonce,
+            accounts=mail_accounts
         )
 
     finally:
