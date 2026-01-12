@@ -47,7 +47,7 @@ def _get_encryption():
 def _get_scoring():
     global _scoring
     if _scoring is None:
-        _scoring = importlib.import_module(".03_scoring", "src")
+        _scoring = importlib.import_module(".05_scoring", "src")
     return _scoring
 
 
@@ -607,8 +607,7 @@ def threads_view():
             "threads_view.html", 
             user=user, 
             user_accounts=user_accounts,
-            filter_account_id=filter_account_id,
-            csp_nonce=g.csp_nonce
+            filter_account_id=filter_account_id
         )
 
 

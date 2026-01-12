@@ -93,7 +93,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script nonce="{{ csp_nonce }}">
+<script nonce="{{ csp_nonce() }}">
 // Configuration constants
 const CONFIG = {
     ITEMS_PER_PAGE: 50,

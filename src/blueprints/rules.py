@@ -74,13 +74,12 @@ def rules_management():
             return render_template(
                 "rules_management.html",
                 user=user,
-                rules=rules,
-                csp_nonce=g.get("csp_nonce", "")
+                rules=rules
             )
     except Exception as e:
         logger.error(f"rules_management: Unerwarteter Fehler: {type(e).__name__}: {e}")
         flash("Fehler beim Laden der Regeln-Seite", "danger")
-        return redirect(url_for("main.index"))
+        return redirect(url_for("emails.dashboard"))
 
 
 # =============================================================================
@@ -654,8 +653,7 @@ def rules_execution_log():
                 all_rules=all_rules,
                 limit=limit,
                 rule_id=rule_id,
-                success_filter=success_filter,
-                csp_nonce=g.get("csp_nonce", "")
+                success_filter=success_filter
             )
     except Exception as e:
         logger.error(f"rules_execution_log: Fehler: {type(e).__name__}: {e}")

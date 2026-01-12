@@ -194,7 +194,7 @@ Beispiel: Emails related to subscriptions, membership platforms, recurring payme
     </div>
 </div>
 
-<script nonce="{{ csp_nonce }}">
+<script nonce="{{ csp_nonce() }}">
 // CSRF Token Helper
 function getCsrfToken() {
     return document.querySelector('meta[name="csrf-token"]').getAttribute('content');

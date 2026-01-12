@@ -94,7 +94,7 @@ def _get_password_validator():
 def _get_mail_fetcher_mod():
     global _mail_fetcher_mod
     if _mail_fetcher_mod is None:
-        _mail_fetcher_mod = importlib.import_module(".04_mail_fetcher", "src")
+        _mail_fetcher_mod = importlib.import_module(".06_mail_fetcher", "src")
     return _mail_fetcher_mod
 
 
@@ -258,7 +258,9 @@ def whitelist():
 @login_required
 def ki_prio():
     """KI-gestützte E-Mail Priorisierung: Konfiguration für spaCy Hybrid Pipeline"""
-    return render_template("phase_y_config.html", csp_nonce=g.get("csp_nonce", ""))
+    with get_db_session() as db:
+        user = get_current_user_model(db)
+        return render_template("phase_y_config.html", user=user)
 
 
 # =============================================================================
@@ -1175,8 +1177,51 @@ def delete_mail_account(account_id):
 @accounts_bp.route("/imap-diagnostics")
 @login_required
 def imap_diagnostics():
-    """IMAP Diagnostics Dashboard"""
-    return render_template("imap_diagnostics.html", csp_nonce=g.get("csp_nonce", ""))
+    """IMAP Connection Diagnostics Dashboard (Phase 11.5a)"""
+    models = _get_models()
+    encryption = _get_encryption()
+    
+    with get_db_session() as db:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect(url_for("auth.login"))
+        
+        # Phase INV: Zugriffskontrolle - nur für autorisierte User
+        if not user.imap_diagnostics_enabled:
+            flash("Zugriff verweigert. IMAP-Diagnostics ist für deinen Account nicht aktiviert.", "error")
+            return redirect(url_for("dashboard"))
+        
+        # Lade Mail-Accounts mit entschlüsselten Usernames
+        mail_accounts = (
+            db.query(models.MailAccount)
+            .filter_by(
+                user_id=user.id, enabled=True, auth_type="imap"
+            )
+            .all()
+        )
+        
+        # Entschlüssele Usernames für Anzeige
+        master_key = session.get("master_key")
+        if master_key:
+            for account in mail_accounts:
+                try:
+                    if account.encrypted_imap_username:
+                        account.decrypted_imap_username = (
+                            encryption.CredentialManager.decrypt_email_address(
+                                account.encrypted_imap_username, master_key
+                            )
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Konnte Username für Account {account.id} nicht entschlüsseln: {e}"
+                    )
+                    account.decrypted_imap_username = "***verschlüsselt***"
+        
+        return render_template(
+            "imap_diagnostics.html",
+            user=user,
+            accounts=mail_accounts
+        )
 
 
 @accounts_bp.route("/mail-account/<int:account_id>/fetch", methods=["POST"])
@@ -1302,7 +1347,7 @@ def get_account_mail_count(account_id):
     """
     models = _get_models()
     encryption = _get_encryption()
-    mail_fetcher = _get_mail_fetcher()
+    mail_fetcher = _get_mail_fetcher_mod()
     
     current_time = time.time()
     cache_key = account_id
@@ -1477,7 +1522,7 @@ def get_account_folders(account_id):
     """Listet verfügbare Ordner für einen IMAP-Account auf"""
     models = _get_models()
     encryption = _get_encryption()
-    mail_fetcher = _get_mail_fetcher()
+    mail_fetcher = _get_mail_fetcher_mod()
     
     try:
         with get_db_session() as db:
@@ -1559,5 +1604,43 @@ def get_account_folders(account_id):
 @accounts_bp.route("/whitelist-imap-setup")
 @login_required
 def whitelist_imap_setup_page():
-    """Bulk-Whitelist via IMAP-Scan"""
-    return render_template("whitelist_imap_setup.html", csp_nonce=g.get("csp_nonce", ""))
+    """Separate Seite für IMAP-Setup (Pre-Fetch Absender-Scan)"""
+    models = _get_models()
+    encryption = _get_encryption()
+    
+    master_key = session.get('master_key')
+    if not master_key:
+        flash('Bitte erst einloggen', 'warning')
+        return redirect(url_for('auth.login'))
+    
+    with get_db_session() as db:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect(url_for("auth.login"))
+        
+        # Alle Mail-Accounts des Users laden
+        mail_accounts = db.query(models.MailAccount).filter_by(user_id=user.id).all()
+        
+        # Zero-Knowledge: Entschlüssele Credentials für Anzeige
+        if master_key and mail_accounts:
+            for account in mail_accounts:
+                if account.auth_type == "imap":
+                    try:
+                        if account.encrypted_imap_server:
+                            account.decrypted_imap_server = encryption.EmailDataManager.decrypt_email_sender(
+                                account.encrypted_imap_server, master_key
+                            )
+                        if account.encrypted_imap_username:
+                            account.decrypted_imap_username = encryption.EmailDataManager.decrypt_email_sender(
+                                account.encrypted_imap_username, master_key
+                            )
+                    except Exception as e:
+                        logger.warning(f"Fehler beim Entschlüsseln der Account-Daten: {e}")
+                        account.decrypted_imap_server = None
+                        account.decrypted_imap_username = None
+        
+        return render_template(
+            'whitelist_imap_setup.html',
+            user=user,
+            mail_accounts=mail_accounts
+        )

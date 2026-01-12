@@ -198,7 +198,7 @@
     {% endif %}
 </div>
 
-<script nonce="{{ csp_nonce }}">
+<script nonce="{{ csp_nonce() }}">
 // API Base
 const API_BASE = '{{ url_for("index") }}';
 

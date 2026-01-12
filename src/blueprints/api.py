@@ -312,9 +312,8 @@ def api_get_email_tags(raw_email_id):
 @api_bp.route("/emails/<int:raw_email_id>/tag-suggestions", methods=["GET"])
 @login_required
 def api_get_email_tag_suggestions(raw_email_id):
-    """KI-basierte Tag-Vorschläge für eine Email"""
+    """KI-basierte Tag-Vorschläge für eine Email (Phase F.2)"""
     models = _get_models()
-    tag_manager = _get_tag_manager()
     
     try:
         with get_db_session() as db:
@@ -322,17 +321,75 @@ def api_get_email_tag_suggestions(raw_email_id):
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            raw_email = db.query(models.RawEmail).get(raw_email_id)
-            if not raw_email or raw_email.mail_account.user_id != user.id:
-                return jsonify({"error": "Not found"}), 404
+            # Phase F.2: Nutze Email-Embeddings direkt
+            processed = (
+                db.query(models.ProcessedEmail)
+                .join(models.RawEmail)
+                .filter(
+                    models.RawEmail.id == raw_email_id,
+                    models.RawEmail.mail_account.has(user_id=user.id),
+                    models.RawEmail.deleted_at == None
+                )
+                .first()
+            )
             
-            processed = db.query(models.ProcessedEmail).filter_by(raw_email_id=raw_email_id).first()
-            if not processed:
-                return jsonify({"suggestions": []})
+            if not processed or not processed.raw_email:
+                return jsonify({"suggestions": [], "email_id": raw_email_id, "method": "none"}), 200
+            
+            raw_email = processed.raw_email
             
             try:
-                suggestions = tag_manager.get_tag_suggestions(db, processed.id, user.id)
-                return jsonify({"suggestions": suggestions})
+                import importlib
+                tag_manager_mod = importlib.import_module("src.services.tag_manager")
+                
+                # Phase F.2: Wenn Email-Embedding vorhanden
+                if raw_email.email_embedding:
+                    # Bereits zugewiesene Tags holen
+                    assigned_tag_ids = [
+                        assignment.tag_id 
+                        for assignment in db.query(models.EmailTagAssignment)
+                        .filter_by(email_id=processed.id).all()
+                    ]
+                    
+                    # Phase F.2 Enhanced: Email-Embedding-basierte Suggestions
+                    tag_suggestions = tag_manager_mod.TagManager.suggest_tags_by_email_embedding(
+                        db=db,
+                        user_id=user.id,
+                        email_embedding_bytes=raw_email.email_embedding,
+                        top_k=5,
+                        min_similarity=None,  # Dynamisch
+                        exclude_tag_ids=assigned_tag_ids
+                    )
+                    
+                    suggestions = [
+                        {
+                            "id": tag.id,
+                            "name": tag.name,
+                            "color": tag.color,
+                            "similarity": round(similarity, 3)
+                        }
+                        for tag, similarity in tag_suggestions
+                    ]
+                    
+                    return jsonify({
+                        "suggestions": suggestions, 
+                        "email_id": raw_email_id,
+                        "method": "embedding",
+                        "embedding_available": True
+                    }), 200
+                else:
+                    # Fallback: Text-basierte Methode
+                    suggestions = tag_manager_mod.TagManager.get_tag_suggestions_for_email(
+                        db, processed.id, user.id, top_k=5
+                    )
+                    
+                    return jsonify({
+                        "suggestions": suggestions, 
+                        "email_id": raw_email_id,
+                        "method": "text-fallback",
+                        "embedding_available": False
+                    }), 200
+                    
             except Exception as e:
                 logger.warning(f"api_get_email_tag_suggestions: TagManager error: {e}")
                 return jsonify({"suggestions": []})
@@ -363,7 +420,7 @@ def api_add_tag_to_email(raw_email_id):
             if not raw_email or raw_email.mail_account.user_id != user.id:
                 return jsonify({"error": "Email nicht gefunden"}), 404
             
-            tag = db.query(models.Tag).filter_by(id=tag_id, user_id=user.id).first()
+            tag = db.query(models.EmailTag).filter_by(id=tag_id, user_id=user.id).first()
             if not tag:
                 return jsonify({"error": "Tag nicht gefunden"}), 404
             
@@ -463,7 +520,7 @@ def api_reject_tag_for_email(raw_email_id, tag_id):
             if not processed:
                 return jsonify({"error": "Verarbeitete Email nicht gefunden"}), 404
             
-            tag = db.query(models.Tag).filter_by(id=tag_id, user_id=user.id).first()
+            tag = db.query(models.EmailTag).filter_by(id=tag_id, user_id=user.id).first()
             if not tag:
                 return jsonify({"error": "Tag nicht gefunden"}), 404
             
@@ -979,7 +1036,7 @@ def api_get_tags():
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            tags = db.query(models.Tag).filter_by(user_id=user.id).order_by(models.Tag.name).all()
+            tags = db.query(models.EmailTag).filter_by(user_id=user.id).order_by(models.EmailTag.name).all()
             return jsonify([{
                 "id": t.id,
                 "name": t.name,
@@ -1073,7 +1130,7 @@ def api_update_tag(tag_id):
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            tag = db.query(models.Tag).filter_by(id=tag_id, user_id=user.id).first()
+            tag = db.query(models.EmailTag).filter_by(id=tag_id, user_id=user.id).first()
             if not tag:
                 return jsonify({"error": "Tag nicht gefunden"}), 404
             
@@ -1122,7 +1179,7 @@ def api_delete_tag(tag_id):
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            tag = db.query(models.Tag).filter_by(id=tag_id, user_id=user.id).first()
+            tag = db.query(models.EmailTag).filter_by(id=tag_id, user_id=user.id).first()
             if not tag:
                 return jsonify({"error": "Tag nicht gefunden"}), 404
             
@@ -1154,11 +1211,11 @@ def api_get_negative_examples(tag_id):
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            tag = db.query(models.Tag).filter_by(id=tag_id, user_id=user.id).first()
+            tag = db.query(models.EmailTag).filter_by(id=tag_id, user_id=user.id).first()
             if not tag:
                 return jsonify({"error": "Not found"}), 404
             
-            examples = db.query(models.TagNegativeExample).filter_by(
+            examples = db.query(models.EmailTagNegativeExample).filter_by(
                 user_id=user.id, tag_id=tag_id
             ).all()
             
@@ -1187,10 +1244,10 @@ def api_get_pending_tag_suggestions():
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'TagSuggestion'):
+            if not hasattr(models, 'TagSuggestionQueue'):
                 return jsonify([])
             
-            suggestions = db.query(models.TagSuggestion).filter_by(
+            suggestions = db.query(models.TagSuggestionQueue).filter_by(
                 user_id=user.id, status="pending"
             ).limit(50).all()
             
@@ -1217,10 +1274,10 @@ def api_approve_tag_suggestion(id):
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'TagSuggestion'):
+            if not hasattr(models, 'TagSuggestionQueue'):
                 return jsonify({"error": "Feature not available"}), 501
             
-            suggestion = db.query(models.TagSuggestion).filter_by(
+            suggestion = db.query(models.TagSuggestionQueue).filter_by(
                 id=id, user_id=user.id
             ).first()
             
@@ -1266,10 +1323,10 @@ def api_reject_tag_suggestion(id):
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'TagSuggestion'):
+            if not hasattr(models, 'TagSuggestionQueue'):
                 return jsonify({"error": "Feature not available"}), 501
             
-            suggestion = db.query(models.TagSuggestion).filter_by(
+            suggestion = db.query(models.TagSuggestionQueue).filter_by(
                 id=id, user_id=user.id
             ).first()
             
@@ -1308,17 +1365,17 @@ def api_merge_tag_suggestion(id):
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'TagSuggestion'):
+            if not hasattr(models, 'TagSuggestionQueue'):
                 return jsonify({"error": "Feature not available"}), 501
             
-            suggestion = db.query(models.TagSuggestion).filter_by(
+            suggestion = db.query(models.TagSuggestionQueue).filter_by(
                 id=id, user_id=user.id
             ).first()
             
             if not suggestion:
                 return jsonify({"error": "Vorschlag nicht gefunden"}), 404
             
-            target_tag = db.query(models.Tag).filter_by(
+            target_tag = db.query(models.EmailTag).filter_by(
                 id=target_tag_id, user_id=user.id
             ).first()
             
@@ -1358,13 +1415,13 @@ def api_batch_reject_suggestions():
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'TagSuggestion'):
+            if not hasattr(models, 'TagSuggestionQueue'):
                 return jsonify({"error": "Feature not available"}), 501
             
             try:
-                rejected_count = db.query(models.TagSuggestion).filter(
-                    models.TagSuggestion.id.in_(ids),
-                    models.TagSuggestion.user_id == user.id
+                rejected_count = db.query(models.TagSuggestionQueue).filter(
+                    models.TagSuggestionQueue.id.in_(ids),
+                    models.TagSuggestionQueue.user_id == user.id
                 ).update({"status": "rejected"}, synchronize_session=False)
                 
                 db.commit()
@@ -1398,14 +1455,14 @@ def api_batch_approve_suggestions():
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'TagSuggestion'):
+            if not hasattr(models, 'TagSuggestionQueue'):
                 return jsonify({"error": "Feature not available"}), 501
             
             approved_count = 0
             errors = []
             
             for suggestion_id in ids:
-                suggestion = db.query(models.TagSuggestion).filter_by(
+                suggestion = db.query(models.TagSuggestionQueue).filter_by(
                     id=suggestion_id, user_id=user.id, status="pending"
                 ).first()
                 
@@ -1952,8 +2009,10 @@ def api_semantic_search():
     if not query:
         return jsonify({"results": []})
     
-    if not validate_string(query, max_len=500):
-        return jsonify({"error": "Query too long (max 500)"}), 400
+    try:
+        validate_string(query, "query", max_len=500)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     
     try:
         with get_db_session() as db:
@@ -2083,176 +2142,173 @@ def api_get_reply_tones():
 @api_bp.route("/reply-styles", methods=["GET"])
 @login_required
 def api_get_reply_styles():
-    """User-definierte Antwort-Stile"""
-    models = _get_models()
-    
+    """Holt alle Reply-Style-Settings des Users"""
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'ReplyStyle'):
-                return jsonify([])
+            # Zero-Knowledge: Brauchen master_key zum Entschlüsseln
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Master-Key nicht verfügbar"}), 401
             
-            styles = db.query(models.ReplyStyle).filter_by(user_id=user.id).all()
-            return jsonify([{
-                "key": s.key,
-                "name": s.name,
-                "template": s.template,
-            } for s in styles])
+            from src.services.reply_style_service import ReplyStyleService
+            settings = ReplyStyleService.get_user_settings(db, user.id, master_key)
+            
+            return jsonify(settings)
     except Exception as e:
         logger.error(f"api_get_reply_styles: Fehler: {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"error": str(e)}), 500
 
 
 @api_bp.route("/reply-styles/<style_key>", methods=["GET"])
 @login_required
 def api_get_reply_style(style_key):
-    """Einzelnen Reply-Style laden"""
-    models = _get_models()
-    
-    # Validate input
-    if not validate_string(style_key, max_len=50):
-        return jsonify({"error": "Invalid style key"}), 400
-    
+    """Holt effektive Settings für einen spezifischen Stil (Merged: Defaults → Global → Style-Specific)"""
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'ReplyStyle'):
-                return jsonify({"error": "Not found"}), 404
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Master-Key nicht verfügbar"}), 401
             
-            style = db.query(models.ReplyStyle).filter_by(
-                user_id=user.id, key=style_key
-            ).first()
-            
-            if not style:
-                return jsonify({"error": "Not found"}), 404
-            
-            return jsonify({
-                "key": style.key,
-                "name": style.name,
-                "template": style.template,
-            })
+            from src.services.reply_style_service import ReplyStyleService
+            try:
+                settings = ReplyStyleService.get_effective_settings(
+                    db, user.id, style_key, master_key
+                )
+                return jsonify({"style_key": style_key, "settings": settings})
+            except ValueError as e:
+                return jsonify({"error": str(e)}), 400
     except Exception as e:
         logger.error(f"api_get_reply_style: Fehler bei '{style_key}': {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"error": str(e)}), 500
 
 
 @api_bp.route("/reply-styles/<style_key>", methods=["PUT"])
 @login_required
 def api_update_reply_style(style_key):
-    """Reply-Style aktualisieren"""
-    models = _get_models()
-    data = request.get_json() or {}
-    
-    # Validate input
-    if not validate_string(style_key, max_len=50):
-        return jsonify({"error": "Invalid style key"}), 400
-    
-    name = data.get("name", "").strip()
-    template = data.get("template", "")
-    
-    if name and not validate_string(name, max_len=100):
-        return jsonify({"error": "Style name too long (max 100)"}), 400
-    
+    """Speichert Settings für einen Stil"""
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'ReplyStyle'):
-                return jsonify({"error": "Not found"}), 404
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Master-Key nicht verfügbar"}), 401
             
-            style = db.query(models.ReplyStyle).filter_by(
-                user_id=user.id, key=style_key
-            ).first()
+            data = request.get_json() or {}
             
-            if not style:
-                # Create new
-                style = models.ReplyStyle(
-                    user_id=user.id,
-                    key=style_key,
-                    name=name or style_key,
-                    template=template,
-                )
-                db.add(style)
-            else:
-                if name:
-                    style.name = name
-                if "template" in data:
-                    style.template = template
-            
+            from src.services.reply_style_service import ReplyStyleService
             try:
-                db.commit()
-                return jsonify({"success": True})
-            except IntegrityError:
-                db.rollback()
-                logger.warning(f"api_update_reply_style: Duplicate key '{style_key}'")
-                return jsonify({"error": "Style key already exists"}), 409
-            except Exception as e:
-                db.rollback()
-                logger.error(f"api_update_reply_style: Commit-Fehler: {e}")
-                return jsonify({"error": "Database error"}), 500
+                setting = ReplyStyleService.save_settings(
+                    db, user.id, style_key, data, master_key
+                )
+                return jsonify({
+                    "success": True,
+                    "style_key": style_key,
+                    "message": f"Einstellungen für '{style_key}' gespeichert"
+                })
+            except ValueError as e:
+                return jsonify({"error": str(e)}), 400
     except Exception as e:
         logger.error(f"api_update_reply_style: Fehler bei '{style_key}': {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"error": str(e)}), 500
 
 
 @api_bp.route("/reply-styles/<style_key>", methods=["DELETE"])
 @login_required
 def api_delete_reply_style(style_key):
-    """Reply-Style löschen"""
-    models = _get_models()
-    
-    # Validate input
-    if not validate_string(style_key, max_len=50):
-        return jsonify({"error": "Invalid style key"}), 400
-    
+    """Löscht Style-spezifische Überschreibung (setzt auf Global zurück)"""
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'ReplyStyle'):
-                return jsonify({"error": "Not found"}), 404
+            from src.services.reply_style_service import ReplyStyleService
+            success = ReplyStyleService.delete_style_override(db, user.id, style_key)
             
-            style = db.query(models.ReplyStyle).filter_by(
-                user_id=user.id, key=style_key
-            ).first()
-            
-            if style:
-                db.delete(style)
-                try:
-                    db.commit()
-                except Exception as e:
-                    db.rollback()
-                    logger.error(f"api_delete_reply_style: Commit-Fehler: {e}")
-                    return jsonify({"error": "Database error"}), 500
-            
-            return jsonify({"success": True})
+            if success:
+                return jsonify({
+                    "success": True,
+                    "message": f"Überschreibung für '{style_key}' gelöscht, nutze jetzt Global"
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": "Konnte nicht löschen (evtl. 'global' oder nicht vorhanden)"
+                }), 400
     except Exception as e:
         logger.error(f"api_delete_reply_style: Fehler bei '{style_key}': {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"error": str(e)}), 500
 
 
 @api_bp.route("/reply-styles/preview", methods=["POST"])
 @login_required
 def api_preview_reply_style():
-    """Preview eines Reply-Styles"""
-    data = request.get_json() or {}
-    template = data.get("template", "")
-    sample_email = data.get("sample_email", "")
-    
-    # TODO: AI-basierte Preview-Generierung
-    return jsonify({
-        "preview": f"[Preview not implemented]\n\nTemplate: {template[:100]}...",
-    })
+    """Generiert eine Vorschau mit den aktuellen Settings"""
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({"error": "Unauthorized"}), 401
+            
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Master-Key nicht verfügbar"}), 401
+            
+            data = request.get_json() or {}
+            style_key = data.get("style_key", "formal")
+            sample_sender = data.get("sample_sender", "Max Mustermann <max@example.com>")
+            
+            from src.services.reply_style_service import ReplyStyleService
+            
+            try:
+                settings = ReplyStyleService.get_effective_settings(
+                    db, user.id, style_key, master_key
+                )
+            except ValueError:
+                return jsonify({"error": "Invalid style_key"}), 400
+            
+            # Einfache Vorschau bauen (ohne KI)
+            preview_parts = []
+            
+            # Anrede
+            salutation = settings.get("salutation", "Hallo")
+            # Extrahiere Name aus Sender
+            name = sample_sender.split("<")[0].strip() if "<" in sample_sender else sample_sender
+            if name:
+                preview_parts.append(f"{salutation} {name},")
+            else:
+                preview_parts.append(f"{salutation},")
+            
+            preview_parts.append("")
+            preview_parts.append("[Ihr Antwort-Text wird hier erscheinen...]")
+            preview_parts.append("")
+            
+            # Gruss
+            closing = settings.get("closing", "Grüsse")
+            preview_parts.append(closing)
+            
+            # Signatur
+            if settings.get("signature_enabled") and settings.get("signature_text"):
+                preview_parts.append(settings["signature_text"])
+            
+            return jsonify({
+                "preview_text": "\n".join(preview_parts),
+                "settings_used": settings
+            })
+    except Exception as e:
+        logger.error(f"api_preview_reply_style: Fehler: {type(e).__name__}: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 # =============================================================================
@@ -2287,8 +2343,10 @@ def api_create_rule():
     
     # Validate input
     name = data.get("name", "").strip()
-    if not validate_string(name, max_len=100):
-        return jsonify({"error": "Rule name required (max 100 chars)"}), 400
+    try:
+        validate_string(name, "name", max_len=100)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     
     try:
         with get_db_session() as db:
@@ -2328,8 +2386,10 @@ def api_update_rule(rule_id):
     # Validate input
     if "name" in data:
         name = data.get("name", "").strip()
-        if not validate_string(name, max_len=100):
-            return jsonify({"error": "Rule name too long (max 100)"}), 400
+        try:
+            validate_string(name, "name", max_len=100)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
     
     try:
         with get_db_session() as db:
@@ -2443,12 +2503,27 @@ def api_apply_rules():
 @api_bp.route("/rules/templates", methods=["GET"])
 @login_required
 def api_get_rule_templates():
-    """Vordefinierte Rule-Templates"""
-    return jsonify([
-        {"name": "newsletter", "description": "Newsletter automatisch taggen"},
-        {"name": "important_sender", "description": "Wichtige Absender priorisieren"},
-        {"name": "spam_filter", "description": "Spam-Erkennung"},
-    ])
+    """API: Vordefinierte Regel-Templates abrufen"""
+    try:
+        from src.auto_rules_engine import RULE_TEMPLATES
+        
+        return jsonify({
+            "templates": [
+                {
+                    "id": key,
+                    "name": template["name"],
+                    "description": template["description"],
+                    "priority": template.get("priority", 100),
+                    "conditions": template["conditions"],
+                    "actions": template["actions"]
+                }
+                for key, template in RULE_TEMPLATES.items()
+            ]
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der Templates: {e}")
+        return jsonify({"templates": []}), 500
 
 
 @api_bp.route("/rules/templates/<template_name>", methods=["POST"])
@@ -2458,8 +2533,10 @@ def api_apply_rule_template(template_name):
     AutoRulesEngine = _get_auto_rules()
     
     # Validate input
-    if not validate_string(template_name, max_len=50):
-        return jsonify({"error": "Invalid template name"}), 400
+    try:
+        validate_string(template_name, "template_name", max_len=50)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     
     try:
         with get_db_session() as db:
@@ -2531,20 +2608,32 @@ def api_get_accounts():
 @api_bp.route("/models/<provider>", methods=["GET"])
 @login_required
 def api_get_models(provider):
-    """Verfügbare Models für einen Provider"""
+    """API: Dynamische Model-Abfrage für Provider."""
     # Validate input
-    if not validate_string(provider, max_len=50):
-        return jsonify({"error": "Invalid provider"}), 400
+    try:
+        validate_string(provider, "provider", max_len=50)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     
-    # Hardcoded fallback - echte Implementation würde Provider abfragen
-    if provider.lower() == "ollama":
-        return jsonify([
-            {"name": "llama3.2:1b", "size": "1B"},
-            {"name": "llama3.2:3b", "size": "3B"},
-            {"name": "mistral:7b", "size": "7B"},
-        ])
-    
-    return jsonify([])
+    try:
+        import importlib
+        model_discovery = importlib.import_module('.04_model_discovery', 'src')
+        
+        # Modelle dynamisch von Provider abrufen
+        models_list = model_discovery.get_available_models(provider)
+        
+        return jsonify({
+            "provider": provider,
+            "models": models_list
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Model discovery failed for {provider}: {e}")
+        return jsonify({
+            "provider": provider,
+            "models": [],
+            "error": str(e)
+        }), 500
 
 
 @api_bp.route("/available-models/<provider>", methods=["GET"])
@@ -2552,28 +2641,33 @@ def api_get_models(provider):
 def api_available_models(provider):
     """Live-Abfrage verfügbarer Models"""
     # Validate input
-    if not validate_string(provider, max_len=50):
-        return jsonify({"error": "Invalid provider"}), 400
+    try:
+        validate_string(provider, "provider", max_len=50)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     
-    # TODO: Echte Provider-Abfrage
+    # Nutze die gleiche Logik wie api_get_models
     return api_get_models(provider)
 
 
 @api_bp.route("/available-providers", methods=["GET"])
 @login_required
 def api_available_providers():
-    """Verfügbare AI-Provider"""
-    return jsonify([
-        {"key": "ollama", "name": "Ollama (Local)", "available": True},
-        {"key": "openai", "name": "OpenAI", "available": False},
-        {"key": "anthropic", "name": "Anthropic", "available": False},
-    ])
+    """Gibt verfügbare KI-Provider zurück (basierend auf API-Keys)"""
+    try:
+        import importlib
+        provider_utils = importlib.import_module('.15_provider_utils', 'src')
+        providers = provider_utils.get_available_providers()
+        return jsonify({"providers": providers})
+    except Exception as e:
+        logger.error(f"Fehler beim Abrufen von Providern: {e}")
+        return jsonify({"error": "Provider konnten nicht abgerufen werden"}), 500
 
 
 @api_bp.route("/training-stats", methods=["GET"])
 @login_required
 def api_training_stats():
-    """Training-Statistiken"""
+    """Gibt Statistiken über Training für UI-Dashboard."""
     models = _get_models()
     
     try:
@@ -2582,20 +2676,44 @@ def api_training_stats():
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            total_emails = db.query(models.ProcessedEmail).join(models.RawEmail).join(models.MailAccount).filter(
-                models.MailAccount.user_id == user.id
-            ).count()
+            ProcessedEmail = models.ProcessedEmail
             
-            tagged_emails = db.query(models.ProcessedEmail).join(models.RawEmail).join(models.MailAccount).filter(
-                models.MailAccount.user_id == user.id,
-                models.ProcessedEmail.tags.any()
-            ).count()
+            total_emails = db.query(ProcessedEmail).count()
+            corrections_count = (
+                db.query(ProcessedEmail)
+                .filter(ProcessedEmail.user_override_dringlichkeit != None)
+                .count()
+            )
+            
+            last_correction = (
+                db.query(ProcessedEmail)
+                .filter(ProcessedEmail.correction_timestamp != None)
+                .order_by(ProcessedEmail.correction_timestamp.desc())
+                .first()
+            )
+            
+            last_correction_date = None
+            if last_correction and last_correction.correction_timestamp:
+                last_correction_date = last_correction.correction_timestamp.isoformat()
+            
+            from pathlib import Path
+            classifier_dir = Path(__file__).resolve().parent.parent / "classifiers"
+            trained_models = []
+            if classifier_dir.exists():
+                for f in classifier_dir.glob("*_clf.pkl"):
+                    model_name = f.stem.replace("_clf", "")
+                    trained_models.append(
+                        {"name": model_name, "exists": True, "modified": f.stat().st_mtime}
+                    )
             
             return jsonify({
                 "total_emails": total_emails,
-                "tagged_emails": tagged_emails,
-                "training_ready": tagged_emails >= 10,
-            })
+                "corrections_count": corrections_count,
+                "trained_models_count": len(trained_models),
+                "trained_models": trained_models,
+                "last_correction_date": last_correction_date,
+                "ready_for_training": corrections_count >= 5,
+            }), 200
     except Exception as e:
         logger.error(f"api_training_stats: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -2611,9 +2729,7 @@ def api_imap_diagnostics(account_id):
     models = _get_models()
     encryption = _get_encryption()
     
-    db = get_db_session()
-    
-    try:
+    with get_db_session() as db:
         user = get_current_user_model(db)
         if not user:
             return jsonify({"success": False, "error": "Unauthorized"}), 401
@@ -2713,9 +2829,6 @@ def api_imap_diagnostics(account_id):
                 "success": False,
                 "error": f"Diagnostics fehlgeschlagen: {str(e)}"
             }), 500
-    
-    finally:
-        db.close()
 
 
 # =============================================================================
@@ -2724,192 +2837,262 @@ def api_imap_diagnostics(account_id):
 @api_bp.route("/trusted-senders", methods=["GET"])
 @login_required
 def api_get_trusted_senders():
-    """Trusted Senders laden"""
+    """List trusted senders for current user, optionally filtered by account_id"""
     models = _get_models()
-    encryption = _get_encryption()
     
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
-                return jsonify({"error": "Unauthorized"}), 401
+                return {"success": False, "error": "Unauthorized"}, 401
             
-            if not hasattr(models, 'TrustedSender'):
-                return jsonify([])
+            # Get optional account_id parameter
+            account_id = request.args.get('account_id', type=int)
             
-            senders = db.query(models.TrustedSender).filter_by(user_id=user.id).all()
-            master_key = session.get("master_key")
+            # Build query
+            query = db.query(models.TrustedSender).filter_by(user_id=user.id)
             
-            result = []
-            for s in senders:
-                sender_data = {
-                    "id": s.id,
-                    "trust_level": s.trust_level if hasattr(s, 'trust_level') else "full",
-                }
-                
-                if master_key and hasattr(s, 'encrypted_email'):
-                    try:
-                        sender_data["email"] = encryption.EmailDataManager.decrypt_email_sender(
-                            s.encrypted_email, master_key
-                        )
-                    except Exception:
-                        sender_data["email"] = "[encrypted]"
-                
-                result.append(sender_data)
+            if account_id:
+                # For specific account: include account-specific AND global (account_id=NULL)
+                query = query.filter(
+                    (models.TrustedSender.account_id == account_id) |
+                    (models.TrustedSender.account_id.is_(None))
+                )
             
-            return jsonify(result)
+            trusted_senders = query.all()
+            
+            senders = []
+            for ts in trusted_senders:
+                senders.append({
+                    "id": ts.id,
+                    "sender_pattern": ts.sender_pattern,
+                    "pattern_type": ts.pattern_type,
+                    "label": ts.label or "",
+                    "use_urgency_booster": ts.use_urgency_booster,
+                    "added_at": ts.added_at.isoformat() if ts.added_at else None,
+                    "last_seen_at": ts.last_seen_at.isoformat() if ts.last_seen_at else None,
+                    "email_count": ts.email_count or 0,
+                    "account_id": ts.account_id
+                })
+            
+            return {"success": True, "senders": senders}, 200
     except Exception as e:
         logger.error(f"api_get_trusted_senders: Fehler: {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return {"success": False, "error": str(e)}, 500
 
 
 @api_bp.route("/trusted-senders", methods=["POST"])
 @login_required
 def api_add_trusted_sender():
-    """Trusted Sender hinzufügen"""
-    models = _get_models()
-    encryption = _get_encryption()
-    data = request.get_json() or {}
-    
-    email = data.get("email", "").strip().lower()
-    if not email:
-        return jsonify({"error": "Email required"}), 400
-    
-    if not validate_string(email, max_len=255):
-        return jsonify({"error": "Email too long (max 255)"}), 400
-    
-    trust_level = data.get("trust_level", "full")
-    if trust_level not in ["full", "partial", "low"]:
-        return jsonify({"error": "Invalid trust level"}), 400
-    
+    """Add a new trusted sender"""
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
-                return jsonify({"error": "Unauthorized"}), 401
+                return {"success": False, "error": "Unauthorized"}, 401
             
-            if not hasattr(models, 'TrustedSender'):
-                return jsonify({"error": "Feature not available"}), 501
+            data = request.get_json()
+            if not data:
+                return {"success": False, "error": "No JSON data"}, 400
             
-            master_key = session.get("master_key")
-            if not master_key:
-                return jsonify({"error": "Session expired"}), 401
+            sender_pattern = (data.get("sender_pattern") or "").strip()
+            pattern_type = (data.get("pattern_type") or "exact").strip()
+            label = (data.get("label") or "").strip() or None
+            use_urgency_booster = data.get("use_urgency_booster", True)
+            account_id = data.get("account_id")
             
-            sender = models.TrustedSender(
-                user_id=user.id,
-                encrypted_email=encryption.EmailDataManager.encrypt_email_sender(email, master_key),
-                trust_level=trust_level,
-            )
-            db.add(sender)
+            if not sender_pattern:
+                return {"success": False, "error": "sender_pattern erforderlich"}, 400
             
+            # Normalisiere pattern_type
+            if not pattern_type or pattern_type not in ["exact", "email_domain", "domain"]:
+                pattern_type = "exact"
+            
+            # Use TrustedSenderManager to add with validation
+            import importlib
+            trusted_senders_mod = importlib.import_module(".services.trusted_senders", "src")
             try:
-                db.commit()
-                return jsonify({"id": sender.id}), 201
-            except IntegrityError:
-                db.rollback()
-                logger.warning(f"api_add_trusted_sender: Duplicate email for user {user.id}")
-                return jsonify({"error": "Sender already exists"}), 409
-            except Exception as e:
-                db.rollback()
-                logger.error(f"api_add_trusted_sender: Commit-Fehler: {e}")
-                return jsonify({"error": "Database error"}), 500
+                ts = trusted_senders_mod.TrustedSenderManager.add_trusted_sender(
+                    db=db,
+                    user_id=user.id,
+                    sender_pattern=sender_pattern,
+                    account_id=account_id,
+                    pattern_type=pattern_type,
+                    label=label
+                )
+                if ts and ts.get('success'):
+                    response = {
+                        "success": True,
+                        "sender": {
+                            "id": ts['id'],
+                            "sender_pattern": ts['sender_pattern'],
+                            "pattern_type": ts['pattern_type'],
+                            "label": ts['label']
+                        }
+                    }
+                    # Pass through already_exists flag if present
+                    if ts.get('already_exists'):
+                        response['already_exists'] = True
+                        response['message'] = ts.get('message', 'Sender bereits in Liste')
+                    return response, 201
+                elif ts and not ts.get('success'):
+                    return {"success": False, "error": ts.get('error', 'Unknown error')}, 400
+                else:
+                    return {"success": False, "error": "Failed to add trusted sender"}, 400
+            except ValueError as e:
+                return {"success": False, "error": str(e)}, 400
     except Exception as e:
         logger.error(f"api_add_trusted_sender: Fehler: {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return {"success": False, "error": str(e)}, 500
 
 
 @api_bp.route("/trusted-senders/<int:sender_id>", methods=["PATCH"])
 @login_required
 def api_update_trusted_sender(sender_id):
-    """Trusted Sender aktualisieren"""
+    """Update a trusted sender (toggle use_urgency_booster flag)"""
     models = _get_models()
-    data = request.get_json() or {}
-    
-    # Validate input
-    trust_level = data.get("trust_level")
-    if trust_level and trust_level not in ["full", "partial", "low"]:
-        return jsonify({"error": "Invalid trust level"}), 400
     
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
-                return jsonify({"error": "Unauthorized"}), 401
+                return {"success": False, "error": "Unauthorized"}, 401
             
-            if not hasattr(models, 'TrustedSender'):
-                return jsonify({"error": "Not found"}), 404
+            account_id = request.args.get('account_id', type=int)
             
-            sender = db.query(models.TrustedSender).filter_by(
-                id=sender_id, user_id=user.id
-            ).first()
+            # Query with account filter if provided
+            query = db.query(models.TrustedSender).filter_by(
+                id=sender_id,
+                user_id=user.id
+            )
             
-            if not sender:
-                return jsonify({"error": "Not found"}), 404
+            if account_id:
+                # Verify sender belongs to this account or is global
+                query = query.filter(
+                    (models.TrustedSender.account_id == account_id) |
+                    (models.TrustedSender.account_id.is_(None))
+                )
             
-            if trust_level:
-                sender.trust_level = trust_level
+            ts = query.first()
             
-            try:
-                db.commit()
-                return jsonify({"success": True})
-            except Exception as e:
-                db.rollback()
-                logger.error(f"api_update_trusted_sender: Commit-Fehler: {e}")
-                return jsonify({"error": "Database error"}), 500
+            if not ts:
+                return {"success": False, "error": "Trusted sender not found"}, 404
+            
+            data = request.get_json()
+            if not data:
+                return {"success": False, "error": "No JSON data"}, 400
+            
+            # Update use_urgency_booster flag
+            if "use_urgency_booster" in data:
+                ts.use_urgency_booster = bool(data["use_urgency_booster"])
+            
+            if "label" in data:
+                label = data.get("label")
+                ts.label = label.strip() if label else None
+            
+            if "pattern_type" in data:
+                valid_types = ["exact", "email_domain", "domain"]
+                new_type = data.get("pattern_type", "").strip().lower()
+                if new_type in valid_types:
+                    ts.pattern_type = new_type
+                else:
+                    return {"success": False, "error": f"Invalid pattern_type: {new_type}"}, 400
+            
+            db.commit()
+            return {
+                "success": True,
+                "sender": {
+                    "id": ts.id,
+                    "sender_pattern": ts.sender_pattern,
+                    "pattern_type": ts.pattern_type,
+                    "label": ts.label,
+                    "use_urgency_booster": ts.use_urgency_booster,
+                    "account_id": ts.account_id
+                }
+            }, 200
     except Exception as e:
         logger.error(f"api_update_trusted_sender: Fehler: {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return {"success": False, "error": str(e)}, 500
 
 
 @api_bp.route("/trusted-senders/<int:sender_id>", methods=["DELETE"])
 @login_required
 def api_delete_trusted_sender(sender_id):
-    """Trusted Sender löschen"""
+    """Delete a trusted sender"""
     models = _get_models()
     
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
-                return jsonify({"error": "Unauthorized"}), 401
+                return {"success": False, "error": "Unauthorized"}, 401
             
-            if not hasattr(models, 'TrustedSender'):
-                return jsonify({"error": "Not found"}), 404
+            account_id = request.args.get('account_id', type=int)
             
-            sender = db.query(models.TrustedSender).filter_by(
-                id=sender_id, user_id=user.id
-            ).first()
+            # Query with account filter if provided
+            query = db.query(models.TrustedSender).filter_by(
+                id=sender_id,
+                user_id=user.id
+            )
             
-            if sender:
-                db.delete(sender)
-                try:
-                    db.commit()
-                except Exception as e:
-                    db.rollback()
-                    logger.error(f"api_delete_trusted_sender: Commit-Fehler: {e}")
-                    return jsonify({"error": "Database error"}), 500
+            if account_id:
+                # Verify sender belongs to this account or is global
+                query = query.filter(
+                    (models.TrustedSender.account_id == account_id) |
+                    (models.TrustedSender.account_id.is_(None))
+                )
             
-            return jsonify({"success": True})
+            ts = query.first()
+            
+            if not ts:
+                return {"success": False, "error": "Trusted sender not found"}, 404
+            
+            db.delete(ts)
+            db.commit()
+            return {"success": True}, 200
     except Exception as e:
         logger.error(f"api_delete_trusted_sender: Fehler: {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return {"success": False, "error": str(e)}, 500
 
 
 @api_bp.route("/trusted-senders/suggestions", methods=["GET"])
 @login_required
 def api_get_trusted_sender_suggestions():
-    """Vorschläge für Trusted Senders basierend auf Email-Historie"""
+    """Get suggestions for new trusted senders based on email history"""
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
-                return jsonify({"error": "Unauthorized"}), 401
+                return {"success": False, "error": "Unauthorized"}, 401
             
-            # TODO: Analyse der häufigsten Absender
-            return jsonify({"suggestions": []})
+            import importlib
+            trusted_senders_mod = importlib.import_module(".services.trusted_senders", "src")
+            
+            # Get master key from Flask session
+            master_key = session.get("master_key")
+            if not master_key:
+                return {"success": False, "error": "Master key not available"}, 400
+            
+            # Get optional account_id parameter
+            account_id = request.args.get('account_id', type=int)
+            
+            # Get suggestions
+            suggestions = trusted_senders_mod.TrustedSenderManager.get_suggestions_from_emails(
+                db=db,
+                user_id=user.id,
+                master_key=master_key,
+                limit=10,
+                account_id=account_id
+            )
+            
+            return {
+                "success": True,
+                "suggestions": suggestions,
+                "account_id": account_id
+            }, 200
     except Exception as e:
         logger.error(f"api_get_trusted_sender_suggestions: Fehler: {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return {"success": False, "error": str(e)}, 500
 
 
 # =============================================================================
@@ -2971,31 +3154,58 @@ def api_save_urgency_booster():
 @api_bp.route("/accounts/urgency-booster-settings", methods=["GET"])
 @login_required
 def api_get_urgency_booster_settings():
-    """Account-spezifische Urgency-Booster Settings"""
+    """Get UrgencyBooster settings for all user accounts"""
     models = _get_models()
+    encryption = _get_encryption()
     
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
-                return jsonify({"error": "Unauthorized"}), 401
+                return {"success": False, "error": "Unauthorized"}, 401
             
-            accounts = db.query(models.MailAccount).filter_by(user_id=user.id).all()
+            accounts = db.query(models.MailAccount).filter_by(user_id=user.id).order_by(models.MailAccount.name).all()
             
-            return jsonify([{
-                "account_id": a.id,
-                "account_name": a.name,
-                "urgency_enabled": getattr(a, 'urgency_booster_enabled', False),
-            } for a in accounts])
+            # Get master key for decryption
+            master_key = session.get("master_key")
+            
+            accounts_data = []
+            for account in accounts:
+                # Decrypt IMAP username for display
+                decrypted_email = None
+                if master_key and account.encrypted_imap_username:
+                    try:
+                        decrypted_email = encryption.EmailDataManager.decrypt_email_sender(
+                            account.encrypted_imap_username, master_key
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not decrypt email for account {account.id}: {e}")
+                
+                accounts_data.append({
+                    'id': account.id,
+                    'name': account.name,
+                    'decrypted_imap_username': decrypted_email,
+                    'urgency_booster_enabled': getattr(account, 'urgency_booster_enabled', True),
+                    'enable_ai_analysis_on_fetch': getattr(account, 'enable_ai_analysis_on_fetch', True),
+                    'anonymize_with_spacy': getattr(account, 'anonymize_with_spacy', False),
+                    'ai_analysis_anon_enabled': getattr(account, 'ai_analysis_anon_enabled', False),
+                    'ai_analysis_original_enabled': getattr(account, 'ai_analysis_original_enabled', False),
+                    'effective_ai_mode': account.effective_ai_mode if hasattr(account, 'effective_ai_mode') else 'llm_original'
+                })
+            
+            return {
+                "success": True,
+                "accounts": accounts_data
+            }, 200
     except Exception as e:
         logger.error(f"api_get_urgency_booster_settings: Fehler: {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return {"success": False, "error": str(e)}, 500
 
 
 @api_bp.route("/accounts/<int:account_id>/urgency-booster", methods=["POST"])
 @login_required
 def api_save_account_urgency_booster(account_id):
-    """Account-spezifische Urgency-Booster Settings speichern"""
+    """Set UrgencyBooster and Analysis Modes for a specific account (Phase Y2)"""
     models = _get_models()
     data = request.get_json() or {}
     
@@ -3003,28 +3213,64 @@ def api_save_account_urgency_booster(account_id):
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
-                return jsonify({"error": "Unauthorized"}), 401
+                return {"success": False, "error": "Unauthorized"}, 401
             
             account = db.query(models.MailAccount).filter_by(
                 id=account_id, user_id=user.id
             ).first()
             
             if not account:
-                return jsonify({"error": "Account not found"}), 404
+                return {"success": False, "error": "Account nicht gefunden"}, 404
             
-            if hasattr(account, 'urgency_booster_enabled'):
-                account.urgency_booster_enabled = bool(data.get("enabled", False))
+            # ===== PHASE Y2: ANALYSIS MODES =====
+            # Legacy-Support (alte Toggles)
+            if "urgency_booster_enabled" in data:
+                account.urgency_booster_enabled = bool(data["urgency_booster_enabled"])
+            if "enable_ai_analysis_on_fetch" in data:
+                account.enable_ai_analysis_on_fetch = bool(data["enable_ai_analysis_on_fetch"])
             
-            try:
-                db.commit()
-                return jsonify({"success": True})
-            except Exception as e:
-                db.rollback()
-                logger.error(f"api_save_account_urgency_booster: Commit-Fehler: {e}")
-                return jsonify({"error": "Database error"}), 500
+            # Phase Y2: Neue Toggle-Struktur
+            if "anonymize_with_spacy" in data:
+                account.anonymize_with_spacy = bool(data["anonymize_with_spacy"])
+            
+            if "analysis_mode" in data:
+                # Radio-Button Modus: Setze alle Toggles zurück, aktiviere nur gewählten
+                mode = data["analysis_mode"]
+                
+                account.urgency_booster_enabled = False
+                account.ai_analysis_anon_enabled = False
+                account.ai_analysis_original_enabled = False
+                
+                if mode == "spacy_booster":
+                    account.urgency_booster_enabled = True
+                elif mode == "llm_anon":
+                    if not account.anonymize_with_spacy:
+                        logger.warning("llm_anon gewählt aber anonymize_with_spacy=False, Fallback auf none")
+                    else:
+                        account.ai_analysis_anon_enabled = True
+                elif mode == "llm_original":
+                    account.ai_analysis_original_enabled = True
+                
+                # Legacy-Support: Synchronisiere enable_ai_analysis_on_fetch
+                account.enable_ai_analysis_on_fetch = (
+                    account.ai_analysis_original_enabled or account.ai_analysis_anon_enabled
+                )
+            
+            db.commit()
+            
+            logger.info(f"Account {account_id} settings: effective_mode={account.effective_ai_mode}")
+            return {
+                "success": True,
+                "effective_mode": account.effective_ai_mode,
+                "urgency_booster_enabled": account.urgency_booster_enabled,
+                "enable_ai_analysis_on_fetch": account.enable_ai_analysis_on_fetch,
+                "anonymize_with_spacy": account.anonymize_with_spacy,
+                "ai_analysis_anon_enabled": getattr(account, 'ai_analysis_anon_enabled', False),
+                "ai_analysis_original_enabled": getattr(account, 'ai_analysis_original_enabled', False)
+            }, 200
     except Exception as e:
         logger.error(f"api_save_account_urgency_booster: Fehler für Account {account_id}: {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return {"success": False, "error": str(e)}, 500
 
 
 # =============================================================================
@@ -3092,15 +3338,14 @@ def api_scan_account_senders(account_id):
         }), 401
     
     # CRITICAL: Account-Ownership validieren
-    db = get_db_session()
-    try:
+    with get_db_session() as db:
         try:
-            models = importlib.import_module(".02_models")
+            models = importlib.import_module(".02_models", "src")
         except ImportError:
             return jsonify({"error": "Models not available"}), 500
         
         try:
-            encryption = importlib.import_module(".08_encryption")
+            encryption = importlib.import_module(".08_encryption", "src")
         except ImportError:
             return jsonify({"error": "Encryption not available"}), 500
         
@@ -3179,15 +3424,13 @@ def api_scan_account_senders(account_id):
             
             return jsonify(result)
         
+        except Exception as e:
+            logger.error(f"api_scan_account_senders: Fehler für Account {account_id}: {type(e).__name__}: {e}")
+            return jsonify({"error": "Internal server error"}), 500
+        
         finally:
             # Scan-Lock immer freigeben
             _active_scans.discard(account_id)
-    
-    except Exception as e:
-        logger.error(f"api_scan_account_senders: Fehler für Account {account_id}: {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
-    finally:
-        db.close()
 
 
 # =============================================================================
