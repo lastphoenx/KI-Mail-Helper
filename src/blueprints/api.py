@@ -2002,10 +2002,67 @@ def api_embeddings_stats():
 @api_bp.route("/batch-reprocess-embeddings", methods=["POST"])
 @login_required
 def api_batch_reprocess_embeddings():
-    """Batch-Reprocessing aller Embeddings"""
-    data = request.get_json() or {}
-    # TODO: Background job for reprocessing
-    return jsonify({"success": True, "message": "Queued for processing"})
+    """
+    Batch-Reprocess: Regeneriert Embeddings für ALLE Emails (async mit Progress)
+    
+    Use Case: User wechselt Embedding-Model (z.B. all-minilm → bge-large)
+    → Alle Emails müssen neu embedded werden für konsistente Semantic Search!
+    
+    Returns job_id für Progress-Tracking
+    """
+    try:
+        models = importlib.import_module("src.models")
+    except ImportError:
+        return jsonify({"error": "Models not available"}), 500
+    
+    db = get_db_session()
+    
+    try:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"success": False, "error": "Unauthorized"}), 401
+        
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"success": False, "error": "Master-Key nicht verfügbar"}), 401
+        
+        # Hole aktuelles Embedding-Model aus Settings
+        provider_embedding = (user.preferred_embedding_provider or "ollama").lower()
+        model_embedding = user.preferred_embedding_model or "all-minilm:22m"
+        
+        # Enqueue async job
+        try:
+            job_queue = importlib.import_module("src.14_background_jobs")
+            job_id = job_queue.enqueue_batch_reprocess_job(
+                user_id=user.id,
+                master_key=master_key,
+                provider=provider_embedding,
+                model=model_embedding
+            )
+        except (ImportError, AttributeError) as e:
+            logger.warning(f"Job-Queue nicht verfügbar: {e}")
+            return jsonify({
+                "success": False,
+                "error": "Background-Jobs nicht verfügbar"
+            }), 503
+        
+        return jsonify({
+            "success": True,
+            "status": "queued",
+            "job_id": job_id,
+            "message": "Batch-Reprocess gestartet"
+        }), 200
+        
+    except ValueError as ve:
+        return jsonify({"success": False, "error": str(ve)}), 400
+    except Exception as e:
+        logger.error(f"Batch-Reprocess enqueue failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": f"Batch-Reprocess fehlgeschlagen: {str(e)}"
+        }), 500
+    finally:
+        db.close()
 
 
 # =============================================================================
@@ -2550,33 +2607,115 @@ def api_training_stats():
 @api_bp.route("/imap-diagnostics/<int:account_id>", methods=["POST"])
 @login_required
 def api_imap_diagnostics(account_id):
-    """IMAP-Diagnose für einen Account"""
+    """API: Run IMAP diagnostics for a specific account"""
     models = _get_models()
     encryption = _get_encryption()
     
+    db = get_db_session()
+    
     try:
-        with get_db_session() as db:
-            user = get_current_user_model(db)
-            if not user:
-                return jsonify({"error": "Unauthorized"}), 401
-            
-            account = db.query(models.MailAccount).filter_by(
-                id=account_id, user_id=user.id
-            ).first()
-            
-            if not account:
-                return jsonify({"error": "Account not found"}), 404
-            
-            # TODO: Echte IMAP-Diagnose
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"success": False, "error": "Unauthorized"}), 401
+        
+        # Lade Account
+        account = db.query(models.MailAccount).filter_by(
+            id=account_id, user_id=user.id
+        ).first()
+        
+        if not account:
+            return jsonify({"success": False, "error": "Account nicht gefunden"}), 404
+        
+        if account.auth_type != "imap":
+            return jsonify({"success": False, "error": "Nur IMAP-Accounts unterstützt"}), 400
+        
+        # Entschlüssele Credentials
+        master_key = session.get("master_key")
+        if not master_key:
             return jsonify({
-                "account_id": account_id,
-                "status": "ok",
-                "connection": True,
-                "folders": [],
-            })
-    except Exception as e:
-        logger.error(f"api_imap_diagnostics: Fehler für Account {account_id}: {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+                "success": False,
+                "error": "Session abgelaufen - bitte erneut anmelden"
+            }), 401
+        
+        try:
+            imap_server = encryption.CredentialManager.decrypt_server(
+                account.encrypted_imap_server, master_key
+            )
+            imap_username = encryption.CredentialManager.decrypt_email_address(
+                account.encrypted_imap_username, master_key
+            )
+            imap_password = encryption.CredentialManager.decrypt_imap_password(
+                account.encrypted_imap_password, master_key
+            )
+        except Exception as e:
+            logger.error(f"Fehler beim Entschlüsseln der Credentials: {e}")
+            return jsonify({
+                "success": False,
+                "error": "Fehler beim Entschlüsseln der Credentials"
+            }), 500
+        
+        # Run Diagnostics
+        try:
+            # Check for subscribed_only parameter
+            subscribed_only = False
+            try:
+                if request.args.get("subscribed_only"):
+                    subscribed_only = request.args.get("subscribed_only").lower() in ("true", "1", "yes")
+                elif request.is_json:
+                    json_data = request.get_json(silent=True) or {}
+                    subscribed_only = json_data.get("subscribed_only", False)
+            except Exception as param_error:
+                logger.debug(f"Parameter parsing error (using default): {param_error}")
+                subscribed_only = False
+            
+            try:
+                imap_diag_mod = importlib.import_module("src.imap_diagnostics")
+            except ImportError:
+                return jsonify({
+                    "success": False,
+                    "error": "IMAP-Diagnostics-Modul nicht verfügbar"
+                }), 503
+            
+            diagnostics = imap_diag_mod.IMAPDiagnostics(
+                host=imap_server,
+                port=account.imap_port or 993,
+                username=imap_username,
+                password=imap_password,
+                timeout=120,
+                ssl=(account.imap_encryption == "SSL"),
+            )
+            
+            # Folder-Parameter für Test 12
+            target_folder = None
+            if request.is_json:
+                json_data = request.get_json(silent=True) or {}
+                target_folder = json_data.get("folder_name", None)
+                logger.info(f"📁 Test 12 folder selection: {target_folder or 'ALL folders'}")
+            
+            result = diagnostics.run_diagnostics(
+                subscribed_only=subscribed_only,
+                account_id=account_id,
+                session=db,
+                folder_name=target_folder
+            )
+            
+            return jsonify({"success": True, "diagnostics": result}), 200
+        
+        except TimeoutError as e:
+            logger.error(f"IMAP Diagnostics Timeout: {e}")
+            return jsonify({
+                "success": False,
+                "error": "Verbindungs-Timeout: Server antwortet zu langsam."
+            }), 504
+        except Exception as e:
+            logger.error(f"IMAP Diagnostics Fehler: {e}")
+            return jsonify({
+                "success": False,
+                "error": f"Diagnostics fehlgeschlagen: {str(e)}"
+            }), 500
+    
+    finally:
+        db.close()
 
 
 # =============================================================================
