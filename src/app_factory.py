@@ -87,6 +87,18 @@ def create_app(config_name="production"):
     login_manager.login_message = "Bitte melden Sie sich an."
     login_manager.login_message_category = "info"
     
+    # UserWrapper für Flask-Login (aus 01_web_app.py Zeile 375-384)
+    from flask_login import UserMixin
+    
+    class UserWrapper(UserMixin):
+        """Wrapper für SQLAlchemy User-Model für Flask-Login"""
+        def __init__(self, user_model):
+            self.user_model = user_model
+            self.id = user_model.id
+        
+        def get_id(self):
+            return str(self.user_model.id)
+    
     @login_manager.user_loader
     def load_user(user_id):
         """Load user by ID for Flask-Login (aus 01_web_app.py Zeile 387-397)"""
@@ -94,9 +106,11 @@ def create_app(config_name="production"):
         db = SessionLocal()
         try:
             user = db.query(models.User).filter_by(id=int(user_id)).first()
-            return user
+            if user:
+                return UserWrapper(user)
         finally:
             db.close()
+        return None
     
     # Rate Limiter (aus 01_web_app.py Zeile 252-264)
     limiter = Limiter(
