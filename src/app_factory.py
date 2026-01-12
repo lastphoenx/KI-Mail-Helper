@@ -209,12 +209,27 @@ def create_app(config_name="production"):
     
     @app.errorhandler(404)
     def not_found(e):
-        return render_template("404.html"), 404
+        # Einfaches HTML ohne Template (404.html existiert nicht)
+        html = '''<!DOCTYPE html>
+        <html><head><title>404 - Nicht gefunden</title>
+        <style>body{font-family:sans-serif;text-align:center;padding:50px;}
+        h1{color:#dc3545;}a{color:#007bff;}</style></head>
+        <body><h1>404 - Seite nicht gefunden</h1>
+        <p>Die angeforderte Seite existiert nicht.</p>
+        <a href="/">Zurück zur Startseite</a></body></html>'''
+        return html, 404
     
     @app.errorhandler(500)
     def server_error(e):
         logger.error(f"Server error: {e}")
-        return render_template("500.html"), 500
+        html = '''<!DOCTYPE html>
+        <html><head><title>500 - Server-Fehler</title>
+        <style>body{font-family:sans-serif;text-align:center;padding:50px;}
+        h1{color:#dc3545;}a{color:#007bff;}</style></head>
+        <body><h1>500 - Interner Server-Fehler</h1>
+        <p>Ein unerwarteter Fehler ist aufgetreten.</p>
+        <a href="/">Zurück zur Startseite</a></body></html>'''
+        return html, 500
     
     # =========================================================================
     # REGISTER BLUEPRINTS
@@ -315,3 +330,98 @@ def _register_endpoint_aliases(app):
             logger.warning(f"⚠️ Alias '{old_name}' → '{new_name}': Endpoint nicht gefunden!")
     
     logger.info(f"✅ {registered}/{len(aliases)} Endpoint-Aliase registriert (Backwards-Compatibility)")
+
+
+# =============================================================================
+# SERVER START FUNCTION (identisch zu 01_web_app.py Zeile 9308-9408)
+# =============================================================================
+
+def start_server(host="0.0.0.0", port=5000, debug=False, use_https=False):
+    """Startet den Flask-Server mit optionalem HTTPS-Support.
+    
+    Args:
+        host: Server Host (default: 0.0.0.0)
+        port: Server Port (default: 5000)
+        debug: Debug-Modus (default: False)
+        use_https: HTTPS aktivieren (default: False)
+                   - True: Self-signed Certificate (adhoc) + HTTP Redirector
+                   - ('cert.pem', 'key.pem'): Eigene Zertifikate
+    """
+    import threading
+    
+    # Flask-Talisman für HTTPS Security Headers
+    try:
+        from flask_talisman import Talisman
+        TALISMAN_AVAILABLE = True
+    except ImportError:
+        TALISMAN_AVAILABLE = False
+    
+    _app = create_app()
+    
+    if use_https:
+        # Enable Secure Cookie Flag for HTTPS mode
+        _app.config["SESSION_COOKIE_SECURE"] = True
+        logger.info("🔒 SESSION_COOKIE_SECURE=True (HTTPS-Modus)")
+        
+        # Dual-Port Setup: HTTP Redirector + HTTPS Server
+        https_port = port + 1  # z.B. 5004 für HTTPS wenn port=5003
+        
+        # 1. HTTP Redirector auf port
+        def run_http_redirector():
+            """Einfacher HTTP→HTTPS Redirector"""
+            from flask import Flask as RedirectorApp
+            from werkzeug.serving import make_server as werkzeug_make_server
+            
+            redirector = RedirectorApp("redirector")
+            
+            @redirector.route("/", defaults={"path": ""})
+            @redirector.route("/<path:path>")
+            def redirect_to_https(path):
+                from flask import request as req, redirect as redir
+                https_url = req.url.replace("http://", "https://").replace(
+                    f":{port}", f":{https_port}"
+                )
+                return redir(https_url, code=301)
+            
+            print(f"🔀 HTTP Redirector läuft auf http://{host}:{port} → https://localhost:{https_port}")
+            # Nutze werkzeug's make_server statt wsgiref (unterstützt threaded)
+            redirector_server = werkzeug_make_server(host, port, redirector, threaded=True)
+            redirector_server.serve_forever()
+        
+        # Starte HTTP Redirector in separatem Thread
+        redirector_thread = threading.Thread(target=run_http_redirector, daemon=True)
+        redirector_thread.start()
+        
+        # 2. HTTPS Server auf port + 1
+        ssl_context = "adhoc" if use_https is True else use_https
+        logger.info(f"🔒 HTTPS aktiviert (Port {https_port}, Self-signed Certificate)")
+        
+        # Flask-Talisman für zusätzliche Security Headers
+        if TALISMAN_AVAILABLE and os.getenv("FORCE_HTTPS", "false").lower() == "true":
+            csp = {
+                "default-src": "'self'",
+                "script-src": ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+                "style-src": ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+                "img-src": "'self' data:",
+                "font-src": ["'self'", "https://cdn.jsdelivr.net"],
+                "connect-src": "'self'",
+                "frame-src": "'none'",
+                "object-src": "'none'",
+            }
+            Talisman(
+                _app,
+                force_https=False,
+                strict_transport_security=True,
+                strict_transport_security_max_age=31536000,
+                content_security_policy=csp,
+            )
+            logger.info("🔒 Flask-Talisman aktiviert - Security Headers + CSP")
+        
+        print(f"🌐 Blueprint-Dashboard läuft auf https://{host}:{https_port}")
+        print(f"💡 Tipp: Browser öffnet http://localhost:{port} → Auto-Redirect zu HTTPS")
+        _app.run(host=host, port=https_port, debug=debug, ssl_context=ssl_context)
+    
+    else:
+        # Standard HTTP-Modus (ohne HTTPS)
+        print(f"🌐 Blueprint-Dashboard läuft auf http://{host}:{port}")
+        _app.run(host=host, port=port, debug=debug)
