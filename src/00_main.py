@@ -47,8 +47,11 @@ def _get_web_app():
     if web_app is None:
         if USE_BLUEPRINTS:
             # Neue Blueprint-Architektur
-            from src.app_factory import create_app
-            web_app = type('WebAppModule', (), {'app': create_app()})()
+            from src.app_factory import create_app, start_server
+            web_app = type('WebAppModule', (), {
+                'app': create_app(),
+                'start_server': staticmethod(start_server)
+            })()
             logging.getLogger(__name__).info("✅ Blueprint-Architektur geladen (USE_BLUEPRINTS=1)")
         else:
             # Alte monolithische App
@@ -466,16 +469,9 @@ def main():
         app_module = _get_web_app()
         
         if USE_BLUEPRINTS:
-            # Neue Blueprint-Architektur: app ist direkt das Flask-Objekt
-            from werkzeug.serving import run_simple
-            logger.info(f"🚀 Blueprint-Server auf {args.host}:{args.port}")
-            run_simple(
-                args.host, 
-                args.port, 
-                app_module.app, 
-                use_debugger=False, 
-                use_reloader=False,
-                threaded=True
+            # Neue Blueprint-Architektur: nutzt ebenfalls start_server() für HTTPS
+            app_module.start_server(
+                host=args.host, port=args.port, debug=False, use_https=args.https
             )
         else:
             # Alte monolithische App: nutzt start_server()
