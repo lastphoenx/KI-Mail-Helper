@@ -216,6 +216,15 @@ def create_app(config_name="production"):
         return None
     
     # =========================================================================
+    # FAVICON ROUTE (verhindert 404-Spam in Logs)
+    # =========================================================================
+    
+    @app.route('/favicon.ico')
+    def favicon():
+        """Return empty response for favicon requests (no favicon file exists)"""
+        return '', 204  # No Content
+    
+    # =========================================================================
     # ERROR HANDLERS (aus 01_web_app.py Zeile 8491-8504)
     # =========================================================================
     
