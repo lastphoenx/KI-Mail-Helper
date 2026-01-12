@@ -272,13 +272,14 @@ def create_app(config_name="production"):
     app.register_blueprint(admin_bp)
     app.register_blueprint(thread_api)
     
+    # Context Processors für Templates (aus 01_web_app.py Zeile 160-162)
     @app.context_processor
-    def inject_csrf_token():
-        return dict(csrf_token=generate_csrf, csp_nonce=lambda: g.get("csp_nonce", ""))
-    
-    @app.context_processor
-    def inject_csp_nonce():
-        return dict(csp_nonce=getattr(g, 'csp_nonce', ''))
+    def inject_template_globals():
+        """Make csrf_token and csp_nonce available in all templates"""
+        return dict(
+            csrf_token=generate_csrf, 
+            csp_nonce=lambda: g.get("csp_nonce", "")
+        )
     
     @app.context_processor
     def inject_current_user_model():
