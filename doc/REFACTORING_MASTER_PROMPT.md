@@ -578,6 +578,173 @@ Die neue Blueprint-Struktur ist **DEUTLICH besser für AI-Entwickler** (Claude O
 
 ---
 
-**Aktualisiert:** 12. Januar 2026  
+## 🚨 KRITISCHE PATTERNS (NEU - 13. Januar 2026)
+
+Diese Patterns wurden während des Post-Refactoring-Tests identifiziert und MÜSSEN bei einem erneuten Refactoring beachtet werden:
+
+### 1. CSP-Nonce Context Processor
+
+**Problem:** Templates verwenden `{{ csp_nonce() }}` mit Klammern (Lambda-Aufruf).
+
+**RICHTIG (app_factory.py):**
+```python
+@app.context_processor
+def inject_globals():
+    return dict(
+        csrf_token=generate_csrf,
+        csp_nonce=lambda: g.get("csp_nonce", "")  # Lambda, NICHT String!
+    )
+```
+
+**FALSCH (in render_template):**
+```python
+# ❌ NIEMALS explizit übergeben - überschreibt Lambda mit String!
+render_template("page.html", csp_nonce=g.csp_nonce)
+render_template("page.html", csp_nonce=g.get("csp_nonce", ""))
+```
+
+**RICHTIG:**
+```python
+# ✅ Context Processor stellt csp_nonce automatisch bereit
+render_template("page.html")
+```
+
+---
+
+### 2. Module-Import-Mapping
+
+Die Module haben nummerierte Präfixe. Bei `importlib.import_module()` MUSS der volle Name verwendet werden:
+
+| Alias | Voller Modulname | Verwendung |
+|-------|------------------|------------|
+| `models` | `.02_models` | `importlib.import_module(".02_models", "src")` |
+| `ai_client` | `.03_ai_client` | `importlib.import_module(".03_ai_client", "src")` |
+| `model_discovery` | `.04_model_discovery` | `importlib.import_module(".04_model_discovery", "src")` |
+| `scoring` | `.05_scoring` | `importlib.import_module(".05_scoring", "src")` |
+| `mail_fetcher` | `.06_mail_fetcher` | `importlib.import_module(".06_mail_fetcher", "src")` |
+| `encryption` | `.08_encryption` | `importlib.import_module(".08_encryption", "src")` |
+| `provider_utils` | `.15_provider_utils` | `importlib.import_module(".15_provider_utils", "src")` |
+| `mail_sync` | `.16_mail_sync` | `importlib.import_module(".16_mail_sync", "src")` |
+
+**FEHLERQUELLE:** `import_module(".provider_utils", "src")` → ModuleNotFoundError!
+
+---
+
+### 3. Database Session Pattern
+
+**RICHTIG (Context Manager):**
+```python
+with get_db_session() as db:
+    user = get_current_user_model(db)
+    # ... operations ...
+    db.commit()
+# Session wird automatisch geschlossen
+```
+
+**FALSCH (Manuelles Management):**
+```python
+db = get_db_session()  # ❌ Gibt Generator zurück, nicht Session!
+try:
+    user = db.query(...)  # ❌ AttributeError: '_GeneratorContextManager'
+finally:
+    db.close()  # ❌ AttributeError: no 'close' method
+```
+
+---
+
+### 4. Email ID Mapping in Templates
+
+Die URL-Routen erwarten `raw_email_id`, NICHT `ProcessedEmail.id`:
+
+| Template Variable | Verwendung | Korrekt |
+|-------------------|------------|---------|
+| `{{ email.id }}` | Für ProcessedEmail-Referenzen | ❌ FALSCH für URLs |
+| `{{ email.raw_email_id }}` | Für URL-Generierung | ✅ RICHTIG |
+
+**Beispiel email_detail.html:**
+```javascript
+// ❌ FALSCH
+const emailId = {{ email.id }};
+fetch(`/email/${emailId}/move-to-folder`, ...)  // 404!
+
+// ✅ RICHTIG
+const emailId = {{ email.raw_email_id }};
+fetch(`/email/${emailId}/move-to-folder`, ...)  // OK
+```
+
+---
+
+### 5. Blueprint Endpoint Names
+
+Bei `url_for()` müssen Blueprint-Präfixe verwendet werden:
+
+| Legacy (01_web_app.py) | Blueprint | Korrekt |
+|------------------------|-----------|---------|
+| `url_for("index")` | ❌ Existiert nicht | `url_for("auth.index")` |
+| `url_for("login")` | ❌ | `url_for("auth.login")` |
+| `url_for("dashboard")` | ❌ | `url_for("emails.dashboard")` |
+| `url_for("list_view")` | ❌ | `url_for("emails.list_view")` |
+| `url_for("settings")` | ❌ | `url_for("accounts.settings")` |
+| `url_for("tags_view")` | ❌ | `url_for("tags.tags_view")` |
+| `url_for("rules_management")` | ❌ | `url_for("rules.rules_management")` |
+
+**Alias-Registry (app_factory.py):**
+```python
+ENDPOINT_ALIASES = {
+    "index": "auth.index",
+    "login": "auth.login",
+    "dashboard": "emails.dashboard",
+    # ... etc
+}
+```
+
+---
+
+### 6. Helper-Funktions-Signaturen
+
+| Funktion | Signatur | Beispiel |
+|----------|----------|----------|
+| `validate_string()` | `(value, field_name, max_len=255)` | `validate_string(name, "name", 100)` |
+| `validate_email()` | `(email, field_name)` | `validate_email(addr, "email")` |
+| `get_current_user_model()` | `(db_session)` | `user = get_current_user_model(db)` |
+
+**FEHLERQUELLE:**
+```python
+# ❌ FALSCH - fehlt field_name
+validate_string(data.get("name"), 100)  # TypeError: missing arg
+
+# ✅ RICHTIG
+validate_string(data.get("name"), "name", 100)
+```
+
+---
+
+### 7. API Response Format Konsistenz
+
+Einige APIs haben spezifische Response-Formate, die Legacy-kompatibel sein müssen:
+
+| Route | Legacy Format | Blueprint muss liefern |
+|-------|---------------|------------------------|
+| `/api/rules/templates` | `{"templates": [...]}` | Identisch |
+| `/api/available-providers` | `{"providers": [...]}` | Identisch |
+| `/api/models/<provider>` | `{"models": [...], "default": "..."}` | Identisch |
+| `/api/urgency-booster-settings` | `{"...Phase Y2 fields..."}` | Identisch |
+
+---
+
+## 📋 ERWEITERTE VALIDIERUNGS-CHECKLISTE
+
+### Nach Refactoring ZUSÄTZLICH prüfen:
+
+- [ ] **CSP-Nonce Test:** Seite laden, DevTools → Console → keine "CSP blocked" Meldungen
+- [ ] **Module-Import Test:** Alle Provider-/Model-APIs aufrufen
+- [ ] **DB-Session Test:** Alle POST-Routen testen (kein AttributeError)
+- [ ] **Email-ID Test:** Move/Delete/Flag auf Email-Detail-Seite testen
+- [ ] **url_for Test:** Alle Redirects in Error-Handlern testen
+- [ ] **API Response Test:** Frontend-Console auf JSON-Parse-Errors prüfen
+
+---
+
+**Aktualisiert:** 13. Januar 2026  
 **Status:** ✅ Refactoring Complete, ✅ Implementation 100% done  
 **Siehe auch:** `doc/phase0/IMPLEMENTATION_STATUS.md` + `doc/phase0/STUB_STATUS.md`
