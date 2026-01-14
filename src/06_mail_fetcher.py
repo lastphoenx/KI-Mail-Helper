@@ -392,6 +392,58 @@ class MailFetcher:
             f"🗑️  UIDVALIDITY CHANGE: {deleted_count} Emails in {folder} invalidiert"
         )
 
+    def search_uids(
+        self,
+        folder: str = "INBOX",
+        since: Optional[datetime] = None,
+        before: Optional[datetime] = None,
+        unseen_only: bool = False,
+        flagged_only: bool = False,
+    ) -> List[int]:
+        """
+        Sucht UIDs die den Filterkriterien entsprechen (ohne Mail-Inhalt zu laden).
+        
+        Returns:
+            Liste von UIDs die dem Filter entsprechen
+        """
+        if not self.connection:
+            self.connect()
+        
+        try:
+            conn = self.connection
+            if conn is None:
+                return []
+            
+            conn.select_folder(folder, readonly=True)
+            
+            # Build IMAP SEARCH criteria
+            search_criteria = []
+            
+            if unseen_only:
+                search_criteria.append('UNSEEN')
+            
+            if flagged_only:
+                search_criteria.append('FLAGGED')
+            
+            if since:
+                date_str = since.strftime("%d-%b-%Y")
+                search_criteria.append('SINCE')
+                search_criteria.append(date_str)
+            
+            if before:
+                date_str = before.strftime("%d-%b-%Y")
+                search_criteria.append('BEFORE')
+                search_criteria.append(date_str)
+            
+            # IMAPClient: search() gibt direkt Liste von UIDs zurück
+            messages = conn.search(search_criteria if search_criteria else ['ALL'])
+            
+            return list(messages) if messages else []
+            
+        except Exception as e:
+            logger.warning(f"⚠️  search_uids fehlgeschlagen für {folder}: {e}")
+            return []
+
     def fetch_new_emails(
         self, 
         folder: str = "INBOX", 
@@ -406,12 +458,15 @@ class MailFetcher:
         # Phase 14b: UIDVALIDITY Support
         account_id: Optional[int] = None,
         session = None,
+        # NEU: Spezifische UIDs laden (für Filter-basiertes Delta)
+        specific_uids: Optional[List[int]] = None,
     ) -> List[Dict]:
         """
         Holt E-Mails mit Threading-Informationen (Phase 12)
         + Server-Side Filtering (Phase 13C Part 2)
         + Delta-Sync (Phase 13C Part 4)
         + UIDVALIDITY-Check (Phase 14b)
+        + Filter-basiertes Delta (specific_uids)
 
         Args:
             folder: IMAP-Ordner (Standard: "INBOX")
@@ -423,6 +478,7 @@ class MailFetcher:
             uid_range: UID-Range für Delta-Sync (z.B. "123:*" = alle ab UID 123)
             account_id: MailAccount-ID für UIDVALIDITY-Check (Phase 14b)
             session: SQLAlchemy Session für UIDVALIDITY-Lookup (Phase 14b)
+            specific_uids: Liste spezifischer UIDs die geladen werden sollen (Filter-Delta)
 
         Returns:
             Liste von E-Mail-Dicts mit erweiterten Metadaten
@@ -482,15 +538,25 @@ class MailFetcher:
             # Phase 14b FIX: Setze als Instance-Variable für _fetch_email_by_id()
             self._current_folder_uidvalidity = folder_uidvalidity
 
-            # Phase 13C Part 4: Delta-Sync via UID-Range (IMAPClient)
-            search_criteria = []
-            
-            if uid_range:
+            # ════════════════════════════════════════════════════════════════
+            # NEU: Wenn specific_uids gegeben, nutze diese direkt
+            # ════════════════════════════════════════════════════════════════
+            if specific_uids:
+                mail_ids = list(reversed(specific_uids))[:limit]
+                print(f"📧 {len(mail_ids)} Mails aus spezifischen UIDs")
+            elif uid_range:
+                # Phase 13C Part 4: Delta-Sync via UID-Range (IMAPClient)
                 # UID-Range suche: z.B. "8:*" = alle Mails ab UID 8
-                # IMAPClient: search() braucht ['UID', '8:*'] als SEPARATE Elemente!
                 messages = conn.search(['UID', uid_range])
+                if not messages:
+                    print(f"📧 0 Mails gefunden (keine neuen seit UID {uid_range.split(':')[0]})")
+                    return []
+                mail_ids = list(reversed(messages))[:limit]
+                print(f"📧 {len(mail_ids)} Mails gefunden")
             else:
                 # Phase 13C Part 2: Build IMAP SEARCH criteria
+                search_criteria = []
+                
                 if unseen_only:
                     search_criteria.append('UNSEEN')
                 
@@ -510,28 +576,16 @@ class MailFetcher:
                 
                 # IMAPClient: search() gibt direkt Liste von UIDs zurück
                 messages = conn.search(search_criteria if search_criteria else ['ALL'])
-
-            # IMAPClient gibt direkt Liste von UIDs, nicht bytes string
-            if not messages:
-                if uid_range:
-                    print(f"📧 0 Mails gefunden (keine neuen seit UID {uid_range.split(':')[0]})")
-                else:
+                
+                if not messages:
                     print("📧 0 Mails gefunden")
-# IMAPClient gibt direkt Liste von UIDs, nicht bytes string
-            if not messages:
-                if uid_range:
-                    print(f"📧 0 Mails gefunden (keine neuen seit UID {uid_range.split(':')[0]})")
-                else:
-                    print("📧 0 Mails gefunden")
-                return []
-            
-            # messages ist bereits List[int], kein parsing nötig!
-            mail_ids = list(reversed(messages))
-            mail_ids = mail_ids[:limit]
-
-            if not uid_range and search_criteria:
-                print(f"🔍 Filter: {' '.join(str(c) for c in search_criteria)}")
-            print(f"📧 {len(mail_ids)} Mails gefunden")
+                    return []
+                
+                mail_ids = list(reversed(messages))[:limit]
+                
+                if search_criteria:
+                    print(f"🔍 Filter: {' '.join(str(c) for c in search_criteria)}")
+                print(f"📧 {len(mail_ids)} Mails gefunden")
 
             emails = []
             for mail_id in mail_ids:

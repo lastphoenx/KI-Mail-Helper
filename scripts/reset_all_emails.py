@@ -229,7 +229,7 @@ def reset_all_emails(account_id=None, user_id=None, email_ids=None, force=False,
                 print("❌ Abgebrochen")
                 return False
         
-        # Erst ProcessedEmails löschen (wegen Foreign Key)
+        # ProcessedEmails löschen (wegen Foreign Key)
         if hard_delete:
             # HARD DELETE: Records komplett weg, keine UID-Konflikte beim Re-Fetch
             deleted_processed = session.query(models.ProcessedEmail).filter(
@@ -245,6 +245,20 @@ def reset_all_emails(account_id=None, user_id=None, email_ids=None, force=False,
                 synchronize_session=False
             )
         session.flush()
+        
+        # ════════════════════════════════════════════════════════════════
+        # mail_server_state.raw_email_id auf NULL setzen (FK-Constraint!)
+        # ════════════════════════════════════════════════════════════════
+        if hasattr(models, 'MailServerState'):
+            updated_server_state = session.query(models.MailServerState).filter(
+                models.MailServerState.raw_email_id.in_(raw_ids)
+            ).update(
+                {"raw_email_id": None},
+                synchronize_session=False
+            )
+            if updated_server_state > 0:
+                print(f"   🔗 {updated_server_state} mail_server_state-Einträge entkoppelt")
+            session.flush()
         
         # Dann RawEmails löschen
         if hard_delete:
@@ -288,6 +302,7 @@ def reset_all_emails(account_id=None, user_id=None, email_ids=None, force=False,
         delete_mode = "HARD DELETE" if hard_delete else "SOFT DELETE (deleted_at)"
         print(f"✅ {deleted_processed} ProcessedEmail-Einträge gelöscht ({delete_mode})")
         print(f"✅ {deleted_raw} RawEmail-Einträge gelöscht ({delete_mode})")
+        print(f"ℹ️  MailServerState bleibt als Audit-Trail (raw_email_id wurde auf NULL gesetzt)")
         if reset_accounts > 0:
             print(f"✅ {reset_accounts} Mail-Account(s) zurückgesetzt:")
             print(f"   - initial_sync_done = False")

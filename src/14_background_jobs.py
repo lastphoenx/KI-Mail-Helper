@@ -394,9 +394,63 @@ class BackgroundJobQueue:
             if not master_key:
                 raise ValueError("DEK konnte nicht aus ServiceToken geladen werden")
 
-            # Phase 13C Part 3: FULL SYNC Mode - keine Filter mehr!
-            # Problem: UNSEEN-Filter führt zu unvollständigem Sync (nur 2/20 Mails in INBOX)
-            # Lösung: ALLE Mails aus ALLEN Ordnern fetchen (Server = Single Source of Truth)
+            # ═══════════════════════════════════════════════════════════════
+            # SCHRITT 1: State mit Server synchronisieren (DELETE + INSERT pro Ordner)
+            # ═══════════════════════════════════════════════════════════════
+            import json
+            mail_sync_v2 = importlib.import_module(".services.mail_sync_v2", "src")
+            
+            # Account-spezifische Filter laden
+            include_folders = None
+            if account.fetch_include_folders:
+                try:
+                    include_folders = json.loads(account.fetch_include_folders)
+                    logger.info(f"🔄 Schritt 1: State-Sync für Ordner: {include_folders}")
+                except json.JSONDecodeError:
+                    logger.warning("Ungültiges JSON in fetch_include_folders, ignoriere Filter")
+            
+            # IMAP-Verbindung für State-Sync aufbauen
+            MailFetcher = mail_fetcher_mod.MailFetcher
+            fetcher = MailFetcher(
+                server=encryption.CredentialManager.decrypt_server(
+                    account.encrypted_imap_server, master_key
+                ),
+                username=encryption.CredentialManager.decrypt_email_address(
+                    account.encrypted_imap_username, master_key
+                ),
+                password=encryption.CredentialManager.decrypt_imap_password(
+                    account.encrypted_imap_password, master_key
+                ),
+                port=account.imap_port,
+            )
+            fetcher.connect()
+            
+            try:
+                # Schritt 1: Nur State-Sync (kein Raw-Sync hier!)
+                sync_service = mail_sync_v2.MailSyncServiceV2(
+                    imap_connection=fetcher.connection,
+                    db_session=session,
+                    user_id=user.id,
+                    account_id=account.id
+                )
+                stats1 = sync_service.sync_state_with_server(include_folders)
+                
+                logger.info(
+                    f"✅ Schritt 1: {stats1.folders_scanned} Ordner, "
+                    f"{stats1.mails_on_server} Server-Mails, "
+                    f"+{stats1.state_inserted} -{stats1.state_deleted} State"
+                )
+                
+                # Account Last Sync Timestamp aktualisieren
+                account.last_server_sync_at = datetime.now(UTC)
+                session.commit()
+                
+            finally:
+                fetcher.disconnect()
+            
+            # ═══════════════════════════════════════════════════════════════
+            # SCHRITT 2: Neue Mails fetchen (Delta-Fetch, UNVERÄNDERT)
+            # ═══════════════════════════════════════════════════════════════
             
             raw_emails = self._fetch_raw_emails(
                 account, master_key, job.max_mails
@@ -412,6 +466,18 @@ class BackgroundJobQueue:
                 saved = self._persist_raw_emails(
                     session, user, account, raw_emails, master_key
                 )
+            
+            # ═══════════════════════════════════════════════════════════════
+            # SCHRITT 3: raw_emails mit State synchronisieren (MOVE-Erkennung!)
+            # ═══════════════════════════════════════════════════════════════
+            try:
+                stats3 = sync_service.sync_raw_emails_with_state()
+                logger.info(
+                    f"✅ Schritt 3: {stats3.raw_updated} MOVE erkannt, "
+                    f"{stats3.raw_deleted} gelöscht, {stats3.raw_linked} verlinkt"
+                )
+            except Exception as e:
+                logger.error(f"❌ Schritt 3 fehlgeschlagen: {e}")
 
             ai_instance = ai_client.build_client(job.provider, model=job.model)
 
@@ -684,35 +750,92 @@ class BackgroundJobQueue:
             
             logger.info(f"  📂 {len(filtered_folders)}/{len(folders)} Ordner nach Filter")
             
+            # ════════════════════════════════════════════════════════════════
+            # WICHTIG: Lade existierende message_ids auf ACCOUNT-Ebene!
+            # Eine Mail in INBOX soll nicht nochmal für Archiv gefetcht werden!
+            # ════════════════════════════════════════════════════════════════
+            existing_msgids_result = (
+                session.query(models.RawEmail.message_id)
+                .filter(
+                    models.RawEmail.mail_account_id == account.id,
+                    models.RawEmail.deleted_at.is_(None),
+                    models.RawEmail.message_id.isnot(None)
+                )
+                .all()
+            )
+            existing_msgids = set(r[0] for r in existing_msgids_result if r[0])
+            logger.debug(f"  📊 {len(existing_msgids)} message_ids bereits in DB (Account-Ebene)")
+            
             for folder_name in filtered_folders:
                 try:
-                    # Delta-Sync: Fetch nur Mails mit UID > last_known_uid
-                    uid_range = None
-                    if user_use_delta and folder_name in folder_max_uids:
-                        last_uid = folder_max_uids[folder_name]
-                        # UID-Range: (last_uid+1):* = Alle neuen Mails
-                        uid_range = f"{last_uid + 1}:*"
-                        logger.info(f"  🔄 {folder_name}: Delta ab UID {last_uid + 1}")
-                    
                     # Phase 13C Part 6: SINCE-Datum und UNSEEN-Filter vom Account
-                    # Filter werden IMMER angewendet, nicht nur beim Initial-Sync!
                     fetch_since = None
                     fetch_unseen = account_unseen_only
                     
-                    # SINCE macht nur Sinn wenn KEIN Delta-Sync (uid_range) aktiv ist
-                    # Bei Delta haben wir schon "nur neue" durch UID-Range
-                    if not uid_range and account_since_date:
+                    if account_since_date:
                         fetch_since = datetime.combine(account_since_date, datetime.min.time())
+                    
+                    # ════════════════════════════════════════════════════════════════
+                    # KORREKTUR: Filter-basiertes Delta-Sync
+                    # ════════════════════════════════════════════════════════════════
+                    # Wenn Filter aktiv sind (SINCE/UNSEEN), können wir nicht einfach
+                    # "UID > max_uid" verwenden, da ältere Mails dem Filter entsprechen könnten.
+                    # Stattdessen: Hole alle UIDs die dem Filter entsprechen und vergleiche mit DB.
+                    uid_range = None
+                    missing_uids = None
+                    
+                    if user_use_delta and account.initial_sync_done:
+                        # Hole existierende UIDs aus DB für diesen Ordner
+                        db_uids_result = (
+                            session.query(models.RawEmail.imap_uid)
+                            .filter(
+                                models.RawEmail.mail_account_id == account.id,
+                                models.RawEmail.imap_folder == folder_name,
+                                models.RawEmail.deleted_at.is_(None)
+                            )
+                            .all()
+                        )
+                        db_uids = set(int(r[0]) for r in db_uids_result if r[0])
+                        
+                        if fetch_since or fetch_unseen:
+                            # Filter-basiertes Delta: Hole UIDs vom Server die dem Filter entsprechen
+                            try:
+                                server_uids = fetcher.search_uids(
+                                    folder=folder_name,
+                                    since=fetch_since,
+                                    unseen_only=fetch_unseen
+                                )
+                                if server_uids:
+                                    # Berechne echtes Delta
+                                    missing_uids = [uid for uid in server_uids if uid not in db_uids]
+                                    logger.info(
+                                        f"  🔄 {folder_name}: Filter-Delta {len(missing_uids)}/{len(server_uids)} "
+                                        f"(Server: {len(server_uids)}, DB: {len(db_uids)})"
+                                    )
+                                    if not missing_uids:
+                                        logger.info(f"  ✓ {folder_name}: Alle {len(server_uids)} Mails bereits in DB")
+                                        continue
+                            except Exception as search_err:
+                                logger.warning(f"  ⚠️ UID-Search fehlgeschlagen für {folder_name}: {search_err}")
+                                # Fallback: Ohne Delta-Filter, hole alles was dem Filter entspricht
+                                missing_uids = None
+                        else:
+                            # Kein SINCE/UNSEEN-Filter: Klassisches UID-basiertes Delta
+                            if folder_name in folder_max_uids:
+                                last_uid = folder_max_uids[folder_name]
+                                uid_range = f"{last_uid + 1}:*"
+                                logger.info(f"  🔄 {folder_name}: Delta ab UID {last_uid + 1}")
                     
                     # IMAPClient braucht einfach den folder_name!
                     folder_emails = fetcher.fetch_new_emails(
-                        folder=folder_name,  # IMAPClient handled Namen automatisch
+                        folder=folder_name,
                         limit=mails_per_folder,
-                        unseen_only=fetch_unseen,  # UNSEEN Filter (immer aktiv)
-                        uid_range=uid_range,  # Phase 13C Part 4: Delta-Filter
-                        since=fetch_since,  # SINCE Filter (außer bei Delta)
-                        account_id=account.id,  # Phase 14b: UIDVALIDITY-Check
-                        session=session  # Phase 14b: DB-Session für UIDVALIDITY
+                        unseen_only=fetch_unseen if not missing_uids else False,  # Filter schon in UIDs
+                        uid_range=uid_range,
+                        since=fetch_since if not missing_uids else None,  # Filter schon in UIDs
+                        account_id=account.id,
+                        session=session,
+                        specific_uids=missing_uids  # NEU: Nur diese UIDs laden
                     )
                     all_emails.extend(folder_emails)
                     logger.info(f"  ✓ {folder_name}: {len(folder_emails)} Mails")
@@ -775,6 +898,7 @@ class BackgroundJobQueue:
             imap_folder = raw_email_data.get("imap_folder")
             imap_uid = raw_email_data.get("imap_uid")
             imap_uidvalidity = raw_email_data.get("imap_uidvalidity")
+            message_id = raw_email_data.get("message_id")
             
             if not imap_folder or not imap_uid or not imap_uidvalidity:
                 logger.warning(
@@ -783,8 +907,12 @@ class BackgroundJobQueue:
                 )
                 continue
             
-            # Phase 14e: Optional - Check if exists for UPDATE (Flags)
-            # Nur wenn wir Flags updaten wollen, sonst einfach INSERT versuchen
+            # ════════════════════════════════════════════════════════════════
+            # SCHRITT 2: NUR INSERT - KEINE MOVE-LOGIK HIER!
+            # MOVE-Erkennung macht Schritt 3 (sync_raw_emails_with_state)
+            # ════════════════════════════════════════════════════════════════
+            
+            # Check if exists by folder/uid/uidvalidity (RFC-konform)
             existing = (
                 session.query(models.RawEmail)
                 .filter_by(
@@ -799,7 +927,7 @@ class BackgroundJobQueue:
             )
             
             if existing:
-                # UPDATE: Mail existiert bereits, aktualisiere Flags/Status
+                # UPDATE: Mail existiert bereits (gleicher folder/uid), nur Flags aktualisieren
                 existing.imap_flags = raw_email_data.get("imap_flags")
                 existing.imap_is_seen = raw_email_data.get("imap_is_seen", False)
                 existing.imap_is_flagged = raw_email_data.get("imap_is_flagged", False)
@@ -808,6 +936,88 @@ class BackgroundJobQueue:
                 updated += 1
                 logger.debug(f"🔄 UPDATE: {imap_folder}/{imap_uid}")
                 continue
+            
+            # ════════════════════════════════════════════════════════════════
+            # WICHTIG: Prüfe ob message_id schon existiert (in IRGENDEINEM Ordner!)
+            # Fallback: content_hash (für Mails ohne message_id)
+            # 
+            # ACHTUNG: Auch soft-deleted Mails prüfen!
+            # → Falls soft-deleted: WIEDERHERSTELLEN (deleted_at=NULL) statt überspringen
+            # → Falls aktiv: Schritt 3 macht MOVE
+            # ════════════════════════════════════════════════════════════════
+            existing_by_msgid = None
+            
+            # Primär: message_id (inkl. soft-deleted!)
+            if message_id:
+                existing_by_msgid = (
+                    session.query(models.RawEmail)
+                    .filter_by(
+                        user_id=user.id,
+                        mail_account_id=account.id,
+                        message_id=message_id,
+                    )
+                    .first()  # KEIN .filter(deleted_at.is_(None)) - auch gelöschte finden!
+                )
+                
+                if existing_by_msgid:
+                    if existing_by_msgid.deleted_at:
+                        # WIEDERHERSTELLEN: Mail war gelöscht, ist aber wieder auf Server!
+                        existing_by_msgid.deleted_at = None
+                        existing_by_msgid.imap_folder = imap_folder
+                        existing_by_msgid.imap_uid = imap_uid
+                        existing_by_msgid.imap_uidvalidity = imap_uidvalidity
+                        existing_by_msgid.imap_flags = raw_email_data.get("imap_flags")
+                        existing_by_msgid.imap_is_seen = raw_email_data.get("imap_is_seen", False)
+                        existing_by_msgid.imap_is_flagged = raw_email_data.get("imap_is_flagged", False)
+                        existing_by_msgid.imap_is_answered = raw_email_data.get("imap_is_answered", False)
+                        existing_by_msgid.imap_last_seen_at = datetime.now(UTC)
+                        updated += 1
+                        logger.info(f"♻️ UNDELETE: {imap_folder}/{imap_uid} (id={existing_by_msgid.id})")
+                        continue
+                    else:
+                        # Mail aktiv, anderer Ordner → Schritt 3 macht MOVE
+                        skipped += 1
+                        logger.debug(
+                            f"⏭️ Skip: message_id existiert bereits in {existing_by_msgid.imap_folder} "
+                            f"(Schritt 3 macht MOVE nach {imap_folder})"
+                        )
+                        continue
+            
+            # Fallback: content_hash (für Mails ohne message_id)
+            content_hash = raw_email_data.get("content_hash")
+            if not existing_by_msgid and content_hash:
+                existing_by_hash = (
+                    session.query(models.RawEmail)
+                    .filter_by(
+                        user_id=user.id,
+                        mail_account_id=account.id,
+                        content_hash=content_hash,
+                    )
+                    .first()  # KEIN .filter(deleted_at.is_(None))
+                )
+                
+                if existing_by_hash:
+                    if existing_by_hash.deleted_at:
+                        # WIEDERHERSTELLEN
+                        existing_by_hash.deleted_at = None
+                        existing_by_hash.imap_folder = imap_folder
+                        existing_by_hash.imap_uid = imap_uid
+                        existing_by_hash.imap_uidvalidity = imap_uidvalidity
+                        existing_by_hash.imap_flags = raw_email_data.get("imap_flags")
+                        existing_by_hash.imap_is_seen = raw_email_data.get("imap_is_seen", False)
+                        existing_by_hash.imap_is_flagged = raw_email_data.get("imap_is_flagged", False)
+                        existing_by_hash.imap_is_answered = raw_email_data.get("imap_is_answered", False)
+                        existing_by_hash.imap_last_seen_at = datetime.now(UTC)
+                        updated += 1
+                        logger.info(f"♻️ UNDELETE: {imap_folder}/{imap_uid} (id={existing_by_hash.id})")
+                        continue
+                    else:
+                        skipped += 1
+                        logger.debug(
+                            f"⏭️ Skip: content_hash existiert bereits in {existing_by_hash.imap_folder} "
+                            f"(Schritt 3 macht MOVE nach {imap_folder})"
+                        )
+                        continue
             
             # ════════════════════════════════════════════════════════════════
             # PHASE 17: KLARTEXT IST HIER NOCH VERFÜGBAR!

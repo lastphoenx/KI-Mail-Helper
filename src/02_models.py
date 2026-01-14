@@ -581,6 +581,9 @@ class MailAccount(Base):
     # ===== PHASE X: ACCOUNT-LEVEL AI ANALYSIS CONTROL =====
     enable_ai_analysis_on_fetch = Column(Boolean, default=True, nullable=False)
     
+    # ===== SERVER SYNC TRACKING =====
+    last_server_sync_at = Column(DateTime, nullable=True)  # Letzter vollständiger Server-Scan
+    
     # ===== ANALYSIS MODES (HIERARCHICAL TOGGLES) =====
     # 1️⃣ Anonymisierung (unabhängig vom Analyse-Modus)
     anonymize_with_spacy = Column(Boolean, default=False, nullable=False)
@@ -822,6 +825,69 @@ class RecoveryCode(Base):
         return f"<RecoveryCode(id={self.id}, user={self.user_id}, used={'yes' if self.used_at else 'no'})>"
 
 
+class MailServerState(Base):
+    """Server-Zustand für ALLE Mails (auch nicht-gefetchte)
+    
+    Diese Tabelle hält den kompletten Zustand des Mail-Servers:
+    - Ermöglicht Move-Detection (gleiche message_id, anderer folder)
+    - Ermöglicht Delete-Detection (war in Tabelle, nicht mehr auf Server)
+    - Ermöglicht echtes Delta (was wurde gefetcht vs. was existiert)
+    
+    Sync-Flow:
+    1. SCAN SERVER → Alle ENVELOPEs holen → Hier speichern
+    2. VERGLEICH → message_id/content_hash gegen bestehende Einträge
+    3. DELTA-FETCH → Nur Mails mit raw_email_id IS NULL
+    """
+    __tablename__ = "mail_server_state"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    mail_account_id = Column(Integer, ForeignKey("mail_accounts.id"), nullable=False)
+    
+    # Server-Identifikation (ändert sich bei MOVE)
+    folder = Column(Text, nullable=False)
+    uid = Column(Integer, nullable=False)
+    uidvalidity = Column(Integer, nullable=False)
+    
+    # Stabiler Identifier (bleibt bei MOVE gleich)
+    message_id = Column(Text, nullable=True)  # Message-ID Header (kann NULL sein)
+    content_hash = Column(Text, nullable=False)  # SHA256(date + from + subject)
+    
+    # Server-Metadaten (aus ENVELOPE, ohne Body zu laden)
+    envelope_from = Column(Text, nullable=True)  # Absender (für Display ohne Fetch)
+    envelope_subject = Column(Text, nullable=True)  # Betreff (für Display ohne Fetch)
+    envelope_date = Column(DateTime, nullable=True)  # Datum
+    flags = Column(Text, nullable=True)  # IMAP Flags als String
+    
+    # Referenz zu gefetchter Mail (NULL = noch nicht gefetcht)
+    raw_email_id = Column(Integer, ForeignKey("raw_emails.id"), nullable=True)
+    
+    # Status
+    is_deleted = Column(Boolean, default=False)  # Auf Server gelöscht
+    
+    # Timestamps
+    first_seen_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    last_seen_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Unique constraint: Ein UID pro Folder/UIDVALIDITY
+    __table_args__ = (
+        UniqueConstraint('user_id', 'mail_account_id', 'folder', 'uid', 'uidvalidity', 
+                        name='uq_server_state_folder_uid'),
+        Index('idx_server_state_hash', 'user_id', 'mail_account_id', 'content_hash'),
+        Index('idx_server_state_msgid', 'user_id', 'mail_account_id', 'message_id'),
+        Index('idx_server_state_not_fetched', 'user_id', 'mail_account_id', 'raw_email_id'),
+    )
+    
+    # Relationships
+    user = relationship("User", backref="mail_server_states")
+    mail_account = relationship("MailAccount", backref="server_states")
+    raw_email = relationship("RawEmail", backref="server_state")
+    
+    def __repr__(self):
+        fetched = "✅" if self.raw_email_id else "❌"
+        return f"<MailServerState({self.folder}/{self.uid} {fetched})>"
+
+
 class RawEmail(Base):
     """Rohdaten der abgeholten E-Mails (Zero-Knowledge verschlüsselt)
 
@@ -911,6 +977,12 @@ class RawEmail(Base):
     
     # EntityMap für De-Anonymisierung (verschlüsseltes JSON)
     encrypted_entity_map = Column(Text, nullable=True)
+
+    # ===== PHASE 24: STABLE IDENTIFIER (für Move-Detection) =====
+    # stable_identifier = message_id wenn vorhanden, sonst "hash:<content_hash>"
+    # Ermöglicht Move-Detection auch für Mails ohne message_id
+    stable_identifier = Column(String(255), nullable=True, index=True)
+    content_hash = Column(String(64), nullable=True, index=True)  # SHA256[:32]
 
     # Relationships
     user = relationship("User", back_populates="raw_emails")

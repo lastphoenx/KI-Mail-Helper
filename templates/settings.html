@@ -437,6 +437,24 @@
                                     <a href="/settings/mail-account/{{ account.id }}/edit" class="btn btn-info">Bearbeiten</a>
                                     <button type="button" class="btn btn-outline-primary quick-count-btn" data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">📊 Count</button>
                                     <button type="button" class="btn btn-success fetch-mails-btn" data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">Abrufen</button>
+                                    
+                                    <!-- Sync Dropdown -->
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Synchronisations-Optionen">
+                                            🔄 Sync
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end">
+                                            <li><a class="dropdown-item sync-flags-btn" href="#" data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">
+                                                🏷️ Flags synchronisieren
+                                                <small class="d-block text-muted">Gelesen/Ungelesen-Status</small>
+                                            </a></li>
+                                            <li><a class="dropdown-item sync-server-btn" href="#" data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">
+                                                📡 Server-Scan
+                                                <small class="d-block text-muted">Verschobene/gelöschte Mails erkennen</small>
+                                            </a></li>
+                                        </ul>
+                                    </div>
+                                    
                                     <button type="button" class="btn btn-outline-danger purge-mails-btn" data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">Daten löschen</button>
                                     <form method="POST" action="/settings/mail-account/{{ account.id }}/delete" style="display: inline;" class="delete-account-form">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
@@ -796,6 +814,119 @@ function purgeMails(evt, accountId, accountName) {
         if (btn) {
             btn.disabled = false;
             btn.textContent = originalLabel || 'Daten löschen';
+        }
+    });
+}
+
+// Flag-Sync: Synchronisiert nur Gelesen/Ungelesen-Status vom Server
+// Nützlich wenn Mails auf anderem Client gelesen wurden
+function syncFlags(evt, accountId, accountName) {
+    const btn = evt ? evt.target : null;
+    const originalLabel = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Sync...';
+    }
+
+    fetch(`/mail-account/${accountId}/sync-flags`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        }
+    })
+    .then(async r => {
+        // Prüfe HTTP-Status BEVOR json() aufgerufen wird
+        if (!r.ok) {
+            const text = await r.text();
+            console.error('Sync-Flags Error:', r.status, text.substring(0, 500));
+            throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+        }
+        return r.json();
+    })
+    .then(data => {
+        if (data.status === 'ok') {
+            const updated = data.updated || 0;
+            const total = data.total || 0;
+            if (updated > 0) {
+                alert(`🔄 ${accountName}: ${updated} von ${total} Mails aktualisiert.`);
+            } else {
+                alert(`✅ ${accountName}: Alle ${total} Flags sind aktuell.`);
+            }
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+        }
+    })
+    .catch(e => alert(`❌ Fehler: ${e}`))
+    .finally(() => {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalLabel || '🏷️ Flags synchronisieren';
+        }
+    });
+}
+
+// Server-Scan: Vollständiger Scan aller Mails auf dem Server
+// Erkennt verschobene und gelöschte Mails
+function syncServer(evt, accountId, accountName) {
+    const btn = evt ? evt.target : null;
+    const originalLabel = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Scanning...';
+    }
+
+    fetch(`/mail-account/${accountId}/sync-server`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        }
+    })
+    .then(async r => {
+        if (!r.ok) {
+            const text = await r.text();
+            console.error('Sync-Server Error:', r.status, text.substring(0, 500));
+            throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+        }
+        return r.json();
+    })
+    .then(data => {
+        if (data.status === 'ok' || data.status === 'partial') {
+            let msg = `📡 ${accountName}: Server-Scan abgeschlossen\n\n`;
+            msg += `📁 ${data.folders_scanned} Ordner gescannt\n`;
+            msg += `📧 ${data.mails_on_server} Mails auf Server\n`;
+            msg += `✅ ${data.already_fetched} bereits lokal\n`;
+            
+            if (data.new_mails > 0) {
+                msg += `🆕 ${data.new_mails} neue Mails gefunden\n`;
+            }
+            if (data.moved_mails > 0) {
+                msg += `📁 ${data.moved_mails} verschobene Mails erkannt\n`;
+            }
+            if (data.deleted_mails > 0) {
+                msg += `🗑️ ${data.deleted_mails} gelöschte Mails markiert\n`;
+            }
+            
+            if (data.errors && data.errors.length > 0) {
+                msg += `\n⚠️ Fehler: ${data.errors.join(', ')}`;
+            }
+            
+            alert(msg);
+            
+            // Reload page to show updated counts
+            if (data.moved_mails > 0 || data.deleted_mails > 0) {
+                location.reload();
+            }
+        } else {
+            alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
+        }
+    })
+    .catch(e => alert(`❌ Fehler: ${e}`))
+    .finally(() => {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalLabel || '📡 Server-Scan';
         }
     });
 }
@@ -1241,7 +1372,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    // Event delegation for dynamic buttons (fetchMails, purgeMails, delete)
+    // Event delegation for dynamic buttons (fetchMails, purgeMails, delete, syncFlags)
     document.addEventListener('click', (e) => {
         if (e.target.classList.contains('fetch-mails-btn')) {
             const accountId = parseInt(e.target.dataset.accountId);
@@ -1257,6 +1388,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const accountId = parseInt(e.target.dataset.accountId);
             const accountName = e.target.dataset.accountName;
             quickCount(e, accountId, accountName);
+        }
+        
+        // Sync-Buttons: closest() weil Klick auf <small> child möglich
+        const syncFlagsBtn = e.target.closest('.sync-flags-btn');
+        if (syncFlagsBtn) {
+            e.preventDefault();
+            const accountId = parseInt(syncFlagsBtn.dataset.accountId);
+            const accountName = syncFlagsBtn.dataset.accountName;
+            syncFlags({target: syncFlagsBtn}, accountId, accountName);
+        }
+        
+        const syncServerBtn = e.target.closest('.sync-server-btn');
+        if (syncServerBtn) {
+            e.preventDefault();
+            const accountId = parseInt(syncServerBtn.dataset.accountId);
+            const accountName = syncServerBtn.dataset.accountName;
+            syncServer({target: syncServerBtn}, accountId, accountName);
         }
     });
     
@@ -1427,6 +1575,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const accountId = accountSelect ? accountSelect.value : null;
                 
                 if ((el === sinceDateInput || el === unseenCheckbox) && accountId) {
+                    // 🔧 FIX: Reset Request-Tracking und Account-ID damit Ordner WIRKLICH neu geladen werden
+                    currentMailCountRequest = null;
+                    lastLoadedAccountId = null;
+                    console.log('🔄 Toggle geändert - lade Ordner neu für Account', accountId);
                     // Ordner neu laden mit neuen Filtern
                     loadFoldersForFilter();
                 } else if (window.lastFetchData) {
@@ -1451,19 +1603,25 @@ async function loadFoldersForFilter() {
         return;
     }
     
-    // Verhindere doppelte Requests für denselben Account
-    if (lastLoadedAccountId === accountId && currentMailCountRequest) {
+    // Phase 13C Fix: Prüfe ob Request AKTUELL läuft (nicht abgeschlossen)
+    // AbortController.signal.aborted zeigt an, ob der Request noch aktiv ist
+    const isRequestRunning = currentMailCountRequest && !currentMailCountRequest.signal.aborted;
+    
+    // Verhindere doppelte Requests für denselben Account NUR wenn Request noch läuft
+    if (lastLoadedAccountId === accountId && isRequestRunning) {
         console.log('⏭️ Request für Account', accountId, 'läuft bereits - überspringe');
         return;
     }
     
     // Breche vorherigen Request ab wenn Account gewechselt wurde
-    if (currentMailCountRequest && lastLoadedAccountId !== accountId) {
+    if (isRequestRunning && lastLoadedAccountId !== accountId) {
         console.log('❌ Breche alten Request ab (Account-Wechsel)');
         currentMailCountRequest.abort();
         currentMailCountRequest = null;
     }
     
+    // Reset: Erlaube neuen Request für gleichen Account (z.B. nach Filter-Änderung)
+    currentMailCountRequest = null;
     lastLoadedAccountId = accountId;
     
     const includeContainer = document.getElementById('includeFoldersContainer');
@@ -1821,38 +1979,49 @@ function updateFetchPreview(data) {
     // Details mit HTML-Struktur für bessere Lesbarkeit
     let detailsHtml = '<div style="font-size: 0.9em;">';
     
-    // Remote (Server): Alle Ordner auflisten
-    detailsHtml += '<strong>Remote (Server):</strong><ul style="margin: 5px 0; padding-left: 20px;">';
-    allFolderDetails.forEach(fd => {
-        const style = fd.included ? '' : ' style="color: #999; text-decoration: line-through;"';
-        detailsHtml += `<li${style}>${fd.name}: <strong>${fd.total}</strong> Mails (<strong>${fd.unseen}</strong> ungelesen)</li>`;
-    });
-    detailsHtml += '</ul>';
+    // Filter-Info direkt nach der Zahl anzeigen (c)
+    let filterInfoParts = [];
+    if (unseenOnly) filterInfoParts.push('nur ungelesen');
+    if (sinceDate) {
+        // Datum in dd.mm.yyyy formatieren
+        const parts = sinceDate.split('-');
+        if (parts.length === 3) {
+            filterInfoParts.push(`ab ${parts[2]}.${parts[1]}.${parts[0]}`);
+        } else {
+            filterInfoParts.push(`ab ${sinceDate}`);
+        }
+    }
+    if (maxTotal > 0) filterInfoParts.push(`max ${maxTotal}`);
     
-    // Summary-Infos
-    if (summary.total_remote !== undefined) {
-        detailsHtml += `<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ccc;">`;
-        detailsHtml += `<strong>Gesamt Remote:</strong> ${summary.total_remote} Mails<br>`;
-        detailsHtml += `<strong>Ungelesen:</strong> ${summary.total_unseen}<br>`;
+    if (filterInfoParts.length > 0) {
+        // Zeige Filter-Info neben der Badge
+        const filterSpan = document.createElement('span');
+        filterSpan.className = 'text-muted ms-2';
+        filterSpan.textContent = `(${filterInfoParts.join(', ')})`;
+        previewCount.parentElement.appendChild(filterSpan);
     }
-    if (summary.total_local !== undefined) {
-        detailsHtml += `<strong>Lokal in DB:</strong> ${summary.total_local}<br>`;
+    
+    // Remote (Server): NUR gefilterte Ordner anzeigen (a - ausblenden statt durchstreichen)
+    const includedFolders = allFolderDetails.filter(fd => fd.included);
+    if (includedFolders.length > 0) {
+        detailsHtml += '<strong>Remote (Server):</strong><ul style="margin: 5px 0; padding-left: 20px;">';
+        includedFolders.forEach(fd => {
+            detailsHtml += `<li>${fd.name}: <strong>${fd.total}</strong> Mails (<strong>${fd.unseen}</strong> ungelesen)</li>`;
+        });
+        detailsHtml += '</ul>';
     }
-    if (summary.delta !== undefined) {
-        const deltaColor = summary.delta > 0 ? '#856404' : '#155724';
-        detailsHtml += `<strong style="color: ${deltaColor};">Delta:</strong> ${summary.delta} Mails fehlen lokal`;
-    }
+    
+    // Summary-Infos mit gefiltertem Delta (b)
+    detailsHtml += `<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ccc;">`;
+    detailsHtml += `<strong>Gesamt Remote:</strong> ${summary.total_remote || 0} Mails<br>`;
+    detailsHtml += `<strong>Ungelesen:</strong> ${summary.total_unseen || 0}<br>`;
+    detailsHtml += `<strong>Lokal in DB:</strong> ${summary.total_local || 0}<br>`;
+    
+    // Delta: Gefiltert vs. Lokal (nicht Total vs. Lokal)
+    const filteredDelta = Math.max(0, totalEstimate - (summary.total_local || 0));
+    const deltaColor = filteredDelta > 0 ? '#856404' : '#155724';
+    detailsHtml += `<strong style="color: ${deltaColor};">Delta:</strong> ${filteredDelta} Mails fehlen lokal`;
     detailsHtml += '</div>';
-    
-    // Zusätzliche Filter-Infos
-    if (unseenOnly || sinceDate || maxTotal > 0) {
-        detailsHtml += '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ccc;">';
-        detailsHtml += '<strong>Aktive Filter:</strong><ul style="margin: 5px 0; padding-left: 20px;">';
-        if (unseenOnly) detailsHtml += '<li>Nur Ungelesene</li>';
-        if (sinceDate) detailsHtml += `<li>Ab ${sinceDate}</li>`;
-        if (maxTotal > 0) detailsHtml += `<li>Max ${maxTotal} Mails</li>`;
-        detailsHtml += '</ul></div>';
-    }
     
     detailsHtml += '</div>';
     
