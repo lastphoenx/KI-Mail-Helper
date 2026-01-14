@@ -1000,8 +1000,30 @@ class TagManager:
             
             email_count = len(assigned_emails)
             
+            # BUGFIX 2026-01-14: Filtriere Test-Mails/leere Mails für besseres Learning
+            # Emails mit "test" im Subject oder sehr kurzen Subjects könnten unbrauchbar sein
+            def is_meaningful_email(email: models.RawEmail) -> bool:
+                """Prüft ob Email sinnvollen Inhalt für Learning hat"""
+                try:
+                    # Wenn kein Embedding → unbrauchbar
+                    if not email.email_embedding:
+                        return False
+                    
+                    # Sehr kurze Embeddings deuten auf leeren Content hin
+                    # (Embeddings sollten mindestens 384-1024 Dimensionen * 4 bytes = 1536-4096 bytes sein)
+                    if len(email.email_embedding) < 1500:
+                        return False
+                    
+                    return True
+                except Exception:
+                    return False
+            
+            # Filtriere unbrauchbare Emails
+            meaningful_emails = [e for e in assigned_emails if is_meaningful_email(e)]
+            email_count = len(meaningful_emails)
+            
             if email_count == 0:
-                logger.debug(f"🎓 Tag '{tag.name}': Keine Emails mit Embeddings für Learning")
+                logger.debug(f"🎓 Tag '{tag.name}': Keine Emails mit qualitativ hochwertigen Embeddings für Learning")
                 # Learned embedding löschen falls vorhanden
                 if tag.learned_embedding:
                     tag.learned_embedding = None
@@ -1020,7 +1042,7 @@ class TagManager:
             
             # Embeddings sammeln und mitteln
             embeddings = []
-            for email in assigned_emails:
+            for email in meaningful_emails:
                 try:
                     emb = np.frombuffer(email.email_embedding, dtype=np.float32)
                     embeddings.append(emb)
