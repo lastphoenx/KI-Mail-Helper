@@ -96,6 +96,13 @@ def generate_embedding_for_email(
             logger.debug("Leerer Text, kein Embedding generiert")
             return None, None, None
         
+        # BUGFIX 2026-01-14: Mindestlänge prüfen um sinnlose Embeddings zu vermeiden
+        # Test-Mails mit nur Signatur haben ~500 Zeichen aber keinen Inhalt
+        MIN_MEANINGFUL_LENGTH = 50
+        if len(text) < MIN_MEANINGFUL_LENGTH:
+            logger.debug(f"Text zu kurz ({len(text)} < {MIN_MEANINGFUL_LENGTH} chars), kein Embedding generiert")
+            return None, None, None
+        
         logger.info(f"📝 Generiere Embedding für Text ({len(text)} Zeichen)...")
         
         # Embedding mit Chunking generieren (für lange Emails wichtig!)
