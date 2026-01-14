@@ -1527,11 +1527,11 @@ def sync_mail_flags(account_id):
 
 @accounts_bp.route("/jobs/<string:job_id>")
 @login_required
-@limiter.limit("1200 per hour")  # Erhöht für lange Background-Jobs (Embedding-Generation)
+@limiter.exempt  # 🔥 Keine Rate-Limits für Job-Polling (alle 5s = 720 req/hour)
 def job_status(job_id):
     """Liefert Status-Infos zu einem Hintergrundjob
     
-    Note: Erhöhtes Rate-Limit (1200/hour statt Default 50/hour)!
+    Note: EXEMPT von Rate-Limiting!
     Job-Status-Polling kann sehr häufig sein bei langsamen Jobs
     (lokale LLMs, CPU-only) die 30-60+ Minuten dauern können.
     Bei 5s Polling = 720 Requests/Stunde für einen Job.

@@ -117,7 +117,11 @@ class MailSyncServiceV2:
     # SCHRITT 1: STATE-TABELLE MIT SERVER ABGLEICHEN
     # ═══════════════════════════════════════════════════════════════════════════
     
-    def sync_state_with_server(self, include_folders: Optional[List[str]] = None) -> SyncStats:
+    def sync_state_with_server(
+        self, 
+        include_folders: Optional[List[str]] = None,
+        progress_callback: Optional[callable] = None
+    ) -> SyncStats:
         """
         Schritt 1: Filter-Ordner scannen und mail_server_state aktualisieren.
         
@@ -132,6 +136,7 @@ class MailSyncServiceV2:
         Args:
             include_folders: Ordner die gescannt werden sollen (aus Filter).
                            Wenn None, werden bekannte Ordner aus State verwendet.
+            progress_callback: Optional callback(phase, message, **kwargs) für Progress-Updates.
         
         Returns:
             SyncStats mit Statistiken
@@ -153,8 +158,34 @@ class MailSyncServiceV2:
                     return stats
             
             # 2. Pro Ordner: DELETE + INSERT (simpel und robust!)
-            for folder in folders_to_scan:
-                self._sync_folder_state(folder, stats)
+            total_folders = len(folders_to_scan)
+            
+            logger.info(f"🔍 DEBUG: progress_callback ist {'GESETZT' if progress_callback else 'NICHT GESETZT'}")
+            
+            for idx, folder in enumerate(folders_to_scan, 1):
+                # Progress: Ordner startet
+                if progress_callback:
+                    logger.info(f"📤 DEBUG: Sende Progress-Update für Ordner {idx}/{total_folders}: {folder}")
+                    progress_callback(
+                        phase="state_sync_folder_start",
+                        message=f"Scanne Ordner '{folder}'...",
+                        folder_idx=idx,
+                        total_folders=total_folders,
+                        folder=folder
+                    )
+                    logger.info(f"✅ DEBUG: Progress-Update gesendet")
+                
+                # Sync Ordner (mit Batch-Updates)
+                folder_mail_count = self._sync_folder_state(folder, stats, progress_callback)
+                
+                # Progress: Ordner fertig
+                if progress_callback:
+                    progress_callback(
+                        phase="state_sync_folder_complete",
+                        message=f"✅ Ordner '{folder}' abgeschlossen",
+                        folder_name=folder,
+                        mails_in_folder=folder_mail_count
+                    )
             
             self.session.commit()
             
@@ -171,11 +202,21 @@ class MailSyncServiceV2:
         
         return stats
     
-    def _sync_folder_state(self, folder: str, stats: SyncStats):
+    def _sync_folder_state(
+        self, 
+        folder: str, 
+        stats: SyncStats,
+        progress_callback: Optional[callable] = None
+    ):
         """
         Synchronisiert mail_server_state für EINEN Ordner.
         
         Simpel: DELETE alle für diesen Ordner, dann INSERT alle vom Server.
+        
+        Args:
+            folder: Ordner-Name (z.B. "INBOX")
+            stats: SyncStats-Objekt zum Aktualisieren
+            progress_callback: Optional callback für Batch-Progress
         """
         MailServerState = self.models.MailServerState
         now = datetime.now(UTC)
@@ -192,7 +233,21 @@ class MailSyncServiceV2:
             
             if uids:
                 # Batch-Fetch ENVELOPEs
-                for i in range(0, len(uids), 500):
+                total_uids = len(uids)
+                
+                for i in range(0, total_uids, 500):
+                    # Progress: Batch-Update (nur wenn >500 Mails im Ordner)
+                    if total_uids > 500 and progress_callback:
+                        processed = min(i + 500, total_uids)
+                        percent = int((processed / total_uids) * 100)
+                        progress_callback(
+                            phase="state_sync_batch",
+                            message=f"Scanne Mails... {percent}%",
+                            processed=processed,
+                            total=total_uids,
+                            folder=folder
+                        )
+                    
                     batch_uids = uids[i:i+500]
                     envelopes = self.conn.fetch(batch_uids, ['ENVELOPE', 'FLAGS'])
                     
@@ -256,9 +311,13 @@ class MailSyncServiceV2:
             stats.folders_scanned += 1
             logger.debug(f"  ✓ {folder}: {len(server_mails)} Mails (deleted {deleted}, inserted {len(server_mails)})")
             
+            # Return mail count für Progress-Callback
+            return len(server_mails)
+            
         except Exception as e:
             stats.errors.append(f"{folder}: {str(e)}")
             logger.warning(f"  ⚠️ {folder}: {e}")
+            return 0  # Return 0 bei Fehler
     
     def _get_known_folders(self) -> List[str]:
         """

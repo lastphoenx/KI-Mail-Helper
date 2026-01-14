@@ -623,22 +623,11 @@ function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, star
             if (status === null) {
                 return;
             }
-            const currentIdx = status.current_email_index || 0;
             
-            // Wenn neue E-Mail begonnen wird, Timer zurücksetzen
-            if (lastEmailIndex !== null && currentIdx > lastEmailIndex) {
-                emailStartTime = Date.now();
-            }
-            if (emailStartTime === null) {
-                emailStartTime = Date.now();
-            }
-            
-            const emailElapsed = Math.floor((Date.now() - emailStartTime) / 1000);
-            const emailRemaining = perEmailTimeout - emailElapsed;
-            
+            // ⏱️ Update Timer
             document.getElementById('elapsedTime').textContent = formatTime(elapsed);
-            document.getElementById('remainingTime').textContent = emailRemaining > 0 ? '~' + formatTime(emailRemaining) : 'abgelaufen!';
             
+            // ✅ DONE/ERROR prüfen ZUERST (sonst bleibt Modal offen!)
             if (status.state === 'done') {
                 const saved = status.saved ?? 0;
                 const processed = status.processed ?? 0;
@@ -682,6 +671,45 @@ function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, star
                 });
                 return;
             }
+            
+            // 🔥 State-Sync Phase (Schritt 1): Zeige phase/message statt Email-Counter
+            if (status.phase && status.message) {
+                document.getElementById('progressText').textContent = `${accountName}: ${status.message}`;
+                
+                // Progress-Bar für Batch-Updates (State-Sync)
+                if (status.processed && status.total) {
+                    const progress = Math.min(95, (status.processed / status.total) * 100);
+                    document.getElementById('progressBar').style.width = progress + '%';
+                    document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+                    document.getElementById('emailCount').textContent = `${status.processed}/${status.total}`;
+                } else if (status.folder_idx && status.total_folders) {
+                    document.getElementById('emailCount').textContent = `Ordner ${status.folder_idx}/${status.total_folders}`;
+                } else {
+                    // Phase 2/3/4: Keine numerischen Updates, nur Message
+                    document.getElementById('emailCount').textContent = '—';
+                }
+                
+                document.getElementById('remainingTime').textContent = '—';
+                
+                // Poll weiter (Job läuft noch)
+                setTimeout(() => pollJobStatus(jobId, accountName, btn, originalLabel, attempt + 1, startTime, emailStartTime, 0), 5000);
+                return;  // ⚠️ Verhindert Email-Processing-Logik
+            }
+            
+            const currentIdx = status.current_email_index || 0;
+            
+            // Wenn neue E-Mail begonnen wird, Timer zurücksetzen
+            if (lastEmailIndex !== null && currentIdx > lastEmailIndex) {
+                emailStartTime = Date.now();
+            }
+            if (emailStartTime === null) {
+                emailStartTime = Date.now();
+            }
+            
+            const emailElapsed = Math.floor((Date.now() - emailStartTime) / 1000);
+            const emailRemaining = perEmailTimeout - emailElapsed;
+            
+            document.getElementById('remainingTime').textContent = emailRemaining > 0 ? '~' + formatTime(emailRemaining) : 'abgelaufen!';
             
             const totalEmails = status.total_emails || 1;
             const currentSubject = status.current_subject || '';

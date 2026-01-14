@@ -182,7 +182,7 @@ def create_app(config_name="production"):
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
-        default_limits=["200 per day", "50 per hour"],
+        default_limits=[],  # 🔥 KEINE Default-Limits - nur explizite Limits per Route
         storage_uri=rate_limit_storage,
     )
     app.limiter = limiter
