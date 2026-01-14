@@ -31,18 +31,18 @@ TAG-SUGGESTIONS:
     21. /tag-suggestions/batch-approve (POST) - api_batch_approve_suggestions
     22. /tag-suggestions/settings (GET,POST) - api_tag_suggestions_settings
 
-PHASE-Y (KI-Prio):
-    23. /phase-y/vip-senders (GET) - api_get_vip_senders
-    24. /phase-y/vip-senders (POST) - api_add_vip_sender
-    25. /phase-y/vip-senders/<id> (PUT) - api_update_vip_sender
-    26. /phase-y/vip-senders/<id> (DELETE) - api_delete_vip_sender
-    27. /phase-y/keyword-sets (GET) - api_get_keyword_sets
-    28. /phase-y/keyword-sets (POST) - api_save_keyword_sets
-    29. /phase-y/scoring-config (GET) - api_get_scoring_config
-    30. /phase-y/scoring-config (POST) - api_save_scoring_config
-    31. /phase-y/user-domains (GET) - api_get_user_domains
-    32. /phase-y/user-domains (POST) - api_add_user_domain
-    33. /phase-y/user-domains/<id> (DELETE) - api_delete_user_domain
+KI-PRIO (Hybrid AI-Pipeline Configuration):
+    23. /ki-prio/vip-senders (GET) - api_get_vip_senders
+    24. /ki-prio/vip-senders (POST) - api_add_vip_sender
+    25. /ki-prio/vip-senders/<id> (PUT) - api_update_vip_sender
+    26. /ki-prio/vip-senders/<id> (DELETE) - api_delete_vip_sender
+    27. /ki-prio/keyword-sets (GET) - api_get_keyword_sets
+    28. /ki-prio/keyword-sets (POST) - api_save_keyword_sets
+    29. /ki-prio/scoring-config (GET) - api_get_scoring_config
+    30. /ki-prio/scoring-config (POST) - api_save_scoring_config
+    31. /ki-prio/user-domains (GET) - api_get_user_domains
+    32. /ki-prio/user-domains (POST) - api_add_user_domain
+    33. /ki-prio/user-domains/<id> (DELETE) - api_delete_user_domain
 
 SEARCH & EMBEDDINGS:
     34. /search/semantic (GET) - api_semantic_search
@@ -111,6 +111,18 @@ from src.helpers import get_db_session, get_current_user_model
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# LAZY IMPORTS
+# =============================================================================
+_models = None
+
+def _get_models():
+    global _models
+    if _models is None:
+        _models = importlib.import_module(".02_models", "src")
+    return _models
 
 
 # =============================================================================
@@ -1559,34 +1571,49 @@ def api_tag_suggestions_settings():
 # =============================================================================
 # PHASE-Y / KI-PRIO (Routes 23-33)
 # =============================================================================
-@api_bp.route("/phase-y/vip-senders", methods=["GET"])
+@api_bp.route("/ki-prio/vip-senders", methods=["GET"])
 @login_required
 def api_get_vip_senders():
     """VIP-Absender laden"""
     models = _get_models()
     
     try:
+        account_id = request.args.get("account_id", type=int)
+        if not account_id:
+            return jsonify({"error": "account_id erforderlich"}), 400
+        
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'VIPSender'):
-                return jsonify([])
+            account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+            if not account:
+                return jsonify({"error": "Account nicht gefunden"}), 404
             
-            vips = db.query(models.VIPSender).filter_by(user_id=user.id).all()
-            return jsonify([{
-                "id": v.id,
-                "email_pattern": v.email_pattern,
-                "priority_boost": v.priority_boost,
-                "label": v.label if hasattr(v, 'label') else None,
-            } for v in vips])
+            if not hasattr(models, 'SpacyVIPSender'):
+                return jsonify({"vips": []})
+            
+            vips = db.query(models.SpacyVIPSender).filter_by(account_id=account_id).all()
+            return jsonify({
+                "vips": [
+                    {
+                        "id": v.id,
+                        "sender_pattern": v.sender_pattern,
+                        "pattern_type": v.pattern_type,
+                        "importance_boost": v.importance_boost,
+                        "label": v.label,
+                        "is_active": v.is_active
+                    }
+                    for v in vips
+                ]
+            }), 200
     except Exception as e:
         logger.error(f"api_get_vip_senders: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
 
-@api_bp.route("/phase-y/vip-senders", methods=["POST"])
+@api_bp.route("/ki-prio/vip-senders", methods=["POST"])
 @login_required
 def api_add_vip_sender():
     """VIP-Absender hinzufügen"""
@@ -1595,14 +1622,15 @@ def api_add_vip_sender():
     
     # Input Validation
     try:
-        email_pattern = validate_string(data.get("email_pattern"), "Email-Pattern", min_len=1, max_len=255)
-        label = validate_string(data.get("label"), "Label", min_len=0, max_len=100, allow_empty=True)
-    except ValueError as e:
+        account_id = int(data.get("account_id"))
+        sender_pattern = validate_string(data.get("sender_pattern"), "Sender Pattern", min_len=1, max_len=255)
+        label = validate_string(data.get("label", ""), "Label", min_len=0, max_len=100, allow_empty=True)
+    except (ValueError, TypeError) as e:
         return jsonify({"error": str(e)}), 400
     
-    priority_boost = data.get("priority_boost", 10)
-    if not isinstance(priority_boost, (int, float)) or priority_boost < -100 or priority_boost > 100:
-        return jsonify({"error": "priority_boost muss zwischen -100 und 100 liegen"}), 400
+    importance_boost = data.get("importance_boost", 3)
+    if not isinstance(importance_boost, (int, float)) or importance_boost < 1 or importance_boost > 100:
+        return jsonify({"error": "importance_boost muss zwischen 1 und 100 liegen"}), 400
     
     try:
         with get_db_session() as db:
@@ -1610,17 +1638,23 @@ def api_add_vip_sender():
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'VIPSender'):
+            account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+            if not account:
+                return jsonify({"error": "Account nicht gefunden"}), 404
+            
+            if not hasattr(models, 'SpacyVIPSender'):
                 return jsonify({"error": "Feature nicht verfügbar"}), 501
             
             try:
-                vip = models.VIPSender(
+                vip = models.SpacyVIPSender(
                     user_id=user.id,
-                    email_pattern=email_pattern,
-                    priority_boost=priority_boost,
+                    account_id=account_id,
+                    sender_pattern=sender_pattern,
+                    pattern_type=data.get("pattern_type", "exact"),
+                    importance_boost=importance_boost,
+                    label=label,
+                    is_active=data.get("is_active", True),
                 )
-                if hasattr(models.VIPSender, 'label'):
-                    vip.label = label
                     
                 db.add(vip)
                 db.commit()
@@ -1640,7 +1674,7 @@ def api_add_vip_sender():
         return jsonify({"error": "Internal server error"}), 500
 
 
-@api_bp.route("/phase-y/vip-senders/<int:vip_id>", methods=["PUT"])
+@api_bp.route("/ki-prio/vip-senders/<int:vip_id>", methods=["PUT"])
 @login_required
 def api_update_vip_sender(vip_id):
     """VIP-Absender aktualisieren"""
@@ -1649,15 +1683,15 @@ def api_update_vip_sender(vip_id):
     
     # Input Validation (optional fields)
     try:
-        email_pattern = validate_string(data.get("email_pattern"), "Email-Pattern", min_len=1, max_len=255) if "email_pattern" in data else None
-        label = validate_string(data.get("label"), "Label", min_len=0, max_len=100, allow_empty=True) if "label" in data else None
+        sender_pattern = validate_string(data.get("sender_pattern"), "Sender Pattern", min_len=1, max_len=255) if "sender_pattern" in data else None
+        label = validate_string(data.get("label", ""), "Label", min_len=0, max_len=100, allow_empty=True) if "label" in data else None
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     
-    priority_boost = data.get("priority_boost")
-    if priority_boost is not None:
-        if not isinstance(priority_boost, (int, float)) or priority_boost < -100 or priority_boost > 100:
-            return jsonify({"error": "priority_boost muss zwischen -100 und 100 liegen"}), 400
+    importance_boost = data.get("importance_boost")
+    if importance_boost is not None:
+        if not isinstance(importance_boost, (int, float)) or importance_boost < 1 or importance_boost > 100:
+            return jsonify({"error": "importance_boost muss zwischen 1 und 100 liegen"}), 400
     
     try:
         with get_db_session() as db:
@@ -1665,20 +1699,29 @@ def api_update_vip_sender(vip_id):
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'VIPSender'):
+            if not hasattr(models, 'SpacyVIPSender'):
                 return jsonify({"error": "Nicht gefunden"}), 404
             
-            vip = db.query(models.VIPSender).filter_by(id=vip_id, user_id=user.id).first()
+            # Verify ownership through MailAccount
+            vip = db.query(models.SpacyVIPSender).join(models.MailAccount).filter(
+                models.SpacyVIPSender.id == vip_id,
+                models.MailAccount.user_id == user.id
+            ).first()
+            
             if not vip:
                 return jsonify({"error": "Nicht gefunden"}), 404
             
             try:
-                if email_pattern is not None:
-                    vip.email_pattern = email_pattern
-                if priority_boost is not None:
-                    vip.priority_boost = priority_boost
-                if label is not None and hasattr(vip, 'label'):
+                if sender_pattern is not None:
+                    vip.sender_pattern = sender_pattern
+                if importance_boost is not None:
+                    vip.importance_boost = importance_boost
+                if label is not None:
                     vip.label = label
+                if "pattern_type" in data:
+                    vip.pattern_type = data["pattern_type"]
+                if "is_active" in data:
+                    vip.is_active = data["is_active"]
                 
                 db.commit()
                 
@@ -1697,7 +1740,7 @@ def api_update_vip_sender(vip_id):
         return jsonify({"error": "Internal server error"}), 500
 
 
-@api_bp.route("/phase-y/vip-senders/<int:vip_id>", methods=["DELETE"])
+@api_bp.route("/ki-prio/vip-senders/<int:vip_id>", methods=["DELETE"])
 @login_required
 def api_delete_vip_sender(vip_id):
     """VIP-Absender löschen"""
@@ -1709,10 +1752,15 @@ def api_delete_vip_sender(vip_id):
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'VIPSender'):
+            if not hasattr(models, 'SpacyVIPSender'):
                 return jsonify({"error": "Nicht gefunden"}), 404
             
-            vip = db.query(models.VIPSender).filter_by(id=vip_id, user_id=user.id).first()
+            # Verify ownership through MailAccount
+            vip = db.query(models.SpacyVIPSender).join(models.MailAccount).filter(
+                models.SpacyVIPSender.id == vip_id,
+                models.MailAccount.user_id == user.id
+            ).first()
+            
             if not vip:
                 return jsonify({"error": "Nicht gefunden"}), 404
             
@@ -1731,41 +1779,76 @@ def api_delete_vip_sender(vip_id):
         return jsonify({"error": "Internal server error"}), 500
 
 
-@api_bp.route("/phase-y/keyword-sets", methods=["GET"])
+@api_bp.route("/ki-prio/keyword-sets", methods=["GET"])
 @login_required
 def api_get_keyword_sets():
     """Keyword-Sets für Priorisierung laden"""
     models = _get_models()
     
     try:
+        account_id = request.args.get("account_id", type=int)
+        if not account_id:
+            return jsonify({"error": "account_id erforderlich"}), 400
+        
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'KeywordSet'):
+            account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+            if not account:
+                return jsonify({"error": "Account nicht gefunden"}), 404
+            
+            if not hasattr(models, 'SpacyKeywordSet'):
                 return jsonify({"keyword_sets": []})
             
-            sets = db.query(models.KeywordSet).filter_by(user_id=user.id).all()
+            sets = db.query(models.SpacyKeywordSet).filter_by(user_id=user.id, account_id=account_id).all()
+            
+            # Wenn keine Custom-Sets existieren, Default-Sets laden
+            if not sets:
+                try:
+                    spacy_config = importlib.import_module(".services.spacy_config_manager", "src")
+                    config_manager = spacy_config.SpacyConfigManager(db)
+                    default_sets = config_manager._get_default_keyword_sets()
+                    
+                    return jsonify({
+                        "keyword_sets": [
+                            {
+                                "id": None,
+                                "keyword_set_name": name,
+                                "keywords": keywords,
+                                "is_active": True,
+                                "is_default": True
+                            }
+                            for name, keywords in default_sets.items()
+                        ]
+                    }), 200
+                except Exception:
+                    return jsonify({"keyword_sets": []})
+            
             return jsonify({"keyword_sets": [{
                 "id": s.id,
-                "name": s.name,
-                "keywords": json.loads(s.keywords) if s.keywords else [],
-                "priority_boost": s.priority_boost,
+                "keyword_set_name": s.set_type,
+                "keywords": json.loads(s.keywords_json) if s.keywords_json else [],
+                "is_active": s.is_active,
+                "is_default": False
             } for s in sets]})
     except Exception as e:
         logger.error(f"api_get_keyword_sets: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
 
-@api_bp.route("/phase-y/keyword-sets", methods=["POST"])
+@api_bp.route("/ki-prio/keyword-sets", methods=["POST"])
 @login_required
 def api_save_keyword_sets():
     """Keyword-Sets speichern"""
     models = _get_models()
     data = request.get_json() or {}
     
-    keyword_sets = data.get("keyword_sets", [])
+    try:
+        account_id = int(data.get("account_id"))
+    except (ValueError, TypeError):
+        return jsonify({"error": "account_id erforderlich"}), 400
     
     try:
         with get_db_session() as db:
@@ -1773,31 +1856,50 @@ def api_save_keyword_sets():
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'KeywordSet'):
+            account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+            if not account:
+                return jsonify({"error": "Account nicht gefunden"}), 404
+            
+            if not hasattr(models, 'SpacyKeywordSet'):
                 return jsonify({"error": "Feature nicht verfügbar"}), 501
             
             try:
-                # Lösche existierende Sets
-                db.query(models.KeywordSet).filter_by(user_id=user.id).delete()
+                set_type = data.get("keyword_set_name")
+                keywords = data.get("keywords", [])
                 
-                # Erstelle neue Sets
-                for ks in keyword_sets:
-                    try:
-                        name = validate_string(ks.get("name"), "Name", min_len=1, max_len=100)
-                    except ValueError as e:
-                        return jsonify({"error": str(e)}), 400
-                    
-                    new_set = models.KeywordSet(
+                if not set_type:
+                    return jsonify({"error": "keyword_set_name erforderlich"}), 400
+                
+                # Prüfe ob Set bereits existiert
+                existing = db.query(models.SpacyKeywordSet).filter_by(
+                    user_id=user.id,
+                    account_id=account_id,
+                    set_type=set_type
+                ).first()
+                
+                if existing:
+                    # Update
+                    existing.keywords_json = json.dumps(keywords)
+                    existing.is_active = data.get("is_active", True)
+                    existing.points_per_match = data.get("points_per_match", 2)
+                    existing.max_points = data.get("max_points", 4)
+                else:
+                    # Create
+                    new_set = models.SpacyKeywordSet(
                         user_id=user.id,
-                        name=name,
-                        keywords=json.dumps(ks.get("keywords", [])),
-                        priority_boost=ks.get("priority_boost", 0),
+                        account_id=account_id,
+                        set_type=set_type,
+                        keywords_json=json.dumps(keywords),
+                        is_active=data.get("is_active", True),
+                        points_per_match=data.get("points_per_match", 2),
+                        max_points=data.get("max_points", 4),
+                        is_custom=data.get("is_custom", False)
                     )
                     db.add(new_set)
                 
                 db.commit()
                 
-                logger.info(f"Keyword-Sets gespeichert: {len(keyword_sets)} Sets")
+                logger.info(f"Keyword-Set gespeichert: {set_type}")
                 return jsonify({"success": True})
             except Exception as e:
                 db.rollback()
@@ -1808,57 +1910,91 @@ def api_save_keyword_sets():
         return jsonify({"error": "Internal server error"}), 500
 
 
-@api_bp.route("/phase-y/scoring-config", methods=["GET"])
+@api_bp.route("/ki-prio/scoring-config", methods=["GET"])
 @login_required
 def api_get_scoring_config():
     """Scoring-Konfiguration laden"""
     models = _get_models()
     
     try:
+        account_id = request.args.get("account_id", type=int)
+        if not account_id:
+            return jsonify({"error": "account_id erforderlich"}), 400
+        
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            # Lade Scoring-Config aus User-Preferences
-            prefs = {}
-            if hasattr(user, 'preferences') and user.preferences:
-                try:
-                    prefs = json.loads(user.preferences) if isinstance(user.preferences, str) else user.preferences
-                except:
-                    pass
+            account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+            if not account:
+                return jsonify({"error": "Account nicht gefunden"}), 404
             
-            scoring_config = prefs.get('scoring_config', {})
+            if not hasattr(models, 'SpacyScoringConfig'):
+                # Default-Werte
+                try:
+                    spacy_config = importlib.import_module(".services.spacy_config_manager", "src")
+                    config_manager = spacy_config.SpacyConfigManager(db)
+                    default_config = config_manager._get_default_scoring_config()
+                    return jsonify({"config": default_config, "is_default": True}), 200
+                except Exception:
+                    return jsonify({"config": {}, "is_default": True}), 200
+            
+            config = db.query(models.SpacyScoringConfig).filter_by(account_id=account_id).first()
+            
+            if not config:
+                # Default-Werte
+                try:
+                    spacy_config = importlib.import_module(".services.spacy_config_manager", "src")
+                    config_manager = spacy_config.SpacyConfigManager(db)
+                    default_config = config_manager._get_default_scoring_config()
+                    return jsonify({"config": default_config, "is_default": True}), 200
+                except Exception:
+                    return jsonify({
+                        "config": {
+                            "imperative_weight": 3,
+                            "deadline_weight": 4,
+                            "keyword_weight": 2,
+                            "vip_weight": 3,
+                            "question_threshold": 3,
+                            "negation_sensitivity": 2,
+                            "spacy_weight_initial": 100,
+                            "spacy_weight_learning": 30,
+                            "spacy_weight_trained": 15
+                        },
+                        "is_default": True
+                    }), 200
+            
             return jsonify({
-                "base_score": scoring_config.get('base_score', 50),
-                "recency_weight": scoring_config.get('recency_weight', 1.0),
-                "sender_weight": scoring_config.get('sender_weight', 1.0),
-                "keyword_weight": scoring_config.get('keyword_weight', 1.0),
-            })
+                "config": {
+                    "imperative_weight": config.imperative_weight,
+                    "deadline_weight": config.deadline_weight,
+                    "keyword_weight": config.keyword_weight,
+                    "vip_weight": config.vip_weight,
+                    "question_threshold": config.question_threshold,
+                    "negation_sensitivity": config.negation_sensitivity,
+                    "spacy_weight_initial": config.spacy_weight_initial,
+                    "spacy_weight_learning": config.spacy_weight_learning,
+                    "spacy_weight_trained": config.spacy_weight_trained
+                },
+                "is_default": False
+            }), 200
     except Exception as e:
         logger.error(f"api_get_scoring_config: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
 
-@api_bp.route("/phase-y/scoring-config", methods=["POST"])
+@api_bp.route("/ki-prio/scoring-config", methods=["POST"])
 @login_required
 def api_save_scoring_config():
     """Scoring-Konfiguration speichern"""
     models = _get_models()
     data = request.get_json() or {}
     
-    # Validierung
-    base_score = data.get("base_score", 50)
-    recency_weight = data.get("recency_weight", 1.0)
-    sender_weight = data.get("sender_weight", 1.0)
-    keyword_weight = data.get("keyword_weight", 1.0)
-    
-    if not isinstance(base_score, (int, float)) or base_score < 0 or base_score > 100:
-        return jsonify({"error": "base_score muss zwischen 0 und 100 liegen"}), 400
-    
-    for name, val in [("recency_weight", recency_weight), ("sender_weight", sender_weight), ("keyword_weight", keyword_weight)]:
-        if not isinstance(val, (int, float)) or val < 0 or val > 10:
-            return jsonify({"error": f"{name} muss zwischen 0 und 10 liegen"}), 400
+    try:
+        account_id = int(data.get("account_id"))
+    except (ValueError, TypeError):
+        return jsonify({"error": "account_id erforderlich"}), 400
     
     try:
         with get_db_session() as db:
@@ -1866,25 +2002,47 @@ def api_save_scoring_config():
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
+            account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+            if not account:
+                return jsonify({"error": "Account nicht gefunden"}), 404
+            
+            if not hasattr(models, 'SpacyScoringConfig'):
+                return jsonify({"error": "Feature nicht verfügbar"}), 501
+            
             try:
-                prefs = {}
-                if hasattr(user, 'preferences') and user.preferences:
-                    try:
-                        prefs = json.loads(user.preferences) if isinstance(user.preferences, str) else user.preferences
-                    except:
-                        pass
+                config = db.query(models.SpacyScoringConfig).filter_by(account_id=account_id).first()
                 
-                prefs['scoring_config'] = {
-                    'base_score': base_score,
-                    'recency_weight': recency_weight,
-                    'sender_weight': sender_weight,
-                    'keyword_weight': keyword_weight,
-                }
+                if config:
+                    # Update
+                    config.imperative_weight = data.get("imperative_weight", config.imperative_weight)
+                    config.deadline_weight = data.get("deadline_weight", config.deadline_weight)
+                    config.keyword_weight = data.get("keyword_weight", config.keyword_weight)
+                    config.vip_weight = data.get("vip_weight", config.vip_weight)
+                    config.question_threshold = data.get("question_threshold", config.question_threshold)
+                    config.negation_sensitivity = data.get("negation_sensitivity", config.negation_sensitivity)
+                    config.spacy_weight_initial = data.get("spacy_weight_initial", config.spacy_weight_initial)
+                    config.spacy_weight_learning = data.get("spacy_weight_learning", config.spacy_weight_learning)
+                    config.spacy_weight_trained = data.get("spacy_weight_trained", config.spacy_weight_trained)
+                else:
+                    # Create
+                    config = models.SpacyScoringConfig(
+                        user_id=user.id,
+                        account_id=account_id,
+                        imperative_weight=data.get("imperative_weight", 3),
+                        deadline_weight=data.get("deadline_weight", 4),
+                        keyword_weight=data.get("keyword_weight", 2),
+                        vip_weight=data.get("vip_weight", 3),
+                        question_threshold=data.get("question_threshold", 3),
+                        negation_sensitivity=data.get("negation_sensitivity", 2),
+                        spacy_weight_initial=data.get("spacy_weight_initial", 100),
+                        spacy_weight_learning=data.get("spacy_weight_learning", 30),
+                        spacy_weight_trained=data.get("spacy_weight_trained", 15)
+                    )
+                    db.add(config)
                 
-                user.preferences = json.dumps(prefs)
                 db.commit()
                 
-                logger.info(f"Scoring-Config für User {user.id} gespeichert")
+                logger.info(f"Scoring-Config für Account {account_id} gespeichert")
                 return jsonify({"success": True})
             except Exception as e:
                 db.rollback()
@@ -1895,32 +2053,41 @@ def api_save_scoring_config():
         return jsonify({"error": "Internal server error"}), 500
 
 
-@api_bp.route("/phase-y/user-domains", methods=["GET"])
+@api_bp.route("/ki-prio/user-domains", methods=["GET"])
 @login_required
 def api_get_user_domains():
     """User-Domains für Internal-Detection laden"""
     models = _get_models()
     
     try:
+        account_id = request.args.get("account_id", type=int)
+        if not account_id:
+            return jsonify({"error": "account_id erforderlich"}), 400
+        
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'UserDomain'):
+            account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+            if not account:
+                return jsonify({"error": "Account nicht gefunden"}), 404
+            
+            if not hasattr(models, 'SpacyUserDomain'):
                 return jsonify({"domains": []})
             
-            domains = db.query(models.UserDomain).filter_by(user_id=user.id).all()
+            domains = db.query(models.SpacyUserDomain).filter_by(account_id=account_id).all()
             return jsonify({"domains": [{
                 "id": d.id,
                 "domain": d.domain,
+                "is_active": d.is_active
             } for d in domains]})
     except Exception as e:
         logger.error(f"api_get_user_domains: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
 
-@api_bp.route("/phase-y/user-domains", methods=["POST"])
+@api_bp.route("/ki-prio/user-domains", methods=["POST"])
 @login_required
 def api_add_user_domain():
     """User-Domain hinzufügen"""
@@ -1928,8 +2095,9 @@ def api_add_user_domain():
     data = request.get_json() or {}
     
     try:
+        account_id = int(data.get("account_id"))
         domain = validate_string(data.get("domain"), "Domain", min_len=3, max_len=255)
-    except ValueError as e:
+    except (ValueError, TypeError) as e:
         return jsonify({"error": str(e)}), 400
     
     try:
@@ -1938,13 +2106,19 @@ def api_add_user_domain():
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'UserDomain'):
+            account = db.query(models.MailAccount).filter_by(id=account_id, user_id=user.id).first()
+            if not account:
+                return jsonify({"error": "Account nicht gefunden"}), 404
+            
+            if not hasattr(models, 'SpacyUserDomain'):
                 return jsonify({"error": "Feature nicht verfügbar"}), 501
             
             try:
-                ud = models.UserDomain(
+                ud = models.SpacyUserDomain(
                     user_id=user.id,
+                    account_id=account_id,
                     domain=domain.lower(),
+                    is_active=data.get("is_active", True)
                 )
                 db.add(ud)
                 db.commit()
@@ -1963,7 +2137,7 @@ def api_add_user_domain():
         return jsonify({"error": "Internal server error"}), 500
 
 
-@api_bp.route("/phase-y/user-domains/<int:domain_id>", methods=["DELETE"])
+@api_bp.route("/ki-prio/user-domains/<int:domain_id>", methods=["DELETE"])
 @login_required
 def api_delete_user_domain(domain_id):
     """User-Domain löschen"""
@@ -1975,10 +2149,15 @@ def api_delete_user_domain(domain_id):
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            if not hasattr(models, 'UserDomain'):
+            if not hasattr(models, 'SpacyUserDomain'):
                 return jsonify({"error": "Nicht gefunden"}), 404
             
-            ud = db.query(models.UserDomain).filter_by(id=domain_id, user_id=user.id).first()
+            # Verify ownership through MailAccount
+            ud = db.query(models.SpacyUserDomain).join(models.MailAccount).filter(
+                models.SpacyUserDomain.id == domain_id,
+                models.MailAccount.user_id == user.id
+            ).first()
+            
             if not ud:
                 return jsonify({"error": "Nicht gefunden"}), 404
             
@@ -2070,49 +2249,45 @@ def api_batch_reprocess_embeddings():
     
     Returns job_id für Progress-Tracking
     """
-    try:
-        models = importlib.import_module(".02_models")
-    except ImportError:
-        return jsonify({"error": "Models not available"}), 500
-    
-    db = get_db_session()
+    models = _get_models()
     
     try:
-        user = get_current_user_model(db)
-        if not user:
-            return jsonify({"success": False, "error": "Unauthorized"}), 401
-        
-        master_key = session.get("master_key")
-        if not master_key:
-            return jsonify({"success": False, "error": "Master-Key nicht verfügbar"}), 401
-        
-        # Hole aktuelles Embedding-Model aus Settings
-        provider_embedding = (user.preferred_embedding_provider or "ollama").lower()
-        model_embedding = user.preferred_embedding_model or "all-minilm:22m"
-        
-        # Enqueue async job
-        try:
-            job_queue = importlib.import_module("src.14_background_jobs")
-            job_id = job_queue.enqueue_batch_reprocess_job(
-                user_id=user.id,
-                master_key=master_key,
-                provider=provider_embedding,
-                model=model_embedding
-            )
-        except (ImportError, AttributeError) as e:
-            logger.warning(f"Job-Queue nicht verfügbar: {e}")
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({"success": False, "error": "Unauthorized"}), 401
+            
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"success": False, "error": "Master-Key nicht verfügbar"}), 401
+            
+            # Hole aktuelles Embedding-Model aus Settings
+            provider_embedding = (user.preferred_embedding_provider or "ollama").lower()
+            model_embedding = user.preferred_embedding_model or "all-minilm:22m"
+            
+            # Enqueue async job
+            try:
+                job_queue = importlib.import_module("src.14_background_jobs")
+                job_id = job_queue.enqueue_batch_reprocess_job(
+                    user_id=user.id,
+                    master_key=master_key,
+                    provider=provider_embedding,
+                    model=model_embedding
+                )
+            except (ImportError, AttributeError) as e:
+                logger.warning(f"Job-Queue nicht verfügbar: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": "Background-Jobs nicht verfügbar"
+                }), 503
+            
             return jsonify({
-                "success": False,
-                "error": "Background-Jobs nicht verfügbar"
-            }), 503
-        
-        return jsonify({
-            "success": True,
-            "status": "queued",
-            "job_id": job_id,
-            "message": "Batch-Reprocess gestartet"
-        }), 200
-        
+                "success": True,
+                "status": "queued",
+                "job_id": job_id,
+                "message": "Batch-Reprocess gestartet"
+            }), 200
+            
     except ValueError as ve:
         return jsonify({"success": False, "error": str(ve)}), 400
     except Exception as e:
@@ -2121,8 +2296,6 @@ def api_batch_reprocess_embeddings():
             "success": False,
             "error": f"Batch-Reprocess fehlgeschlagen: {str(e)}"
         }), 500
-    finally:
-        db.close()
 
 
 # =============================================================================
@@ -2319,7 +2492,7 @@ def api_preview_reply_style():
 @login_required
 def api_get_rules():
     """Alle Auto-Rules laden"""
-    AutoRulesEngine = _get_auto_rules()
+    models = _get_models()
     
     try:
         with get_db_session() as db:
@@ -2327,9 +2500,27 @@ def api_get_rules():
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            engine = AutoRulesEngine(db, user.id)
-            rules = engine.get_rules()
-            return jsonify([r.to_dict() for r in rules])
+            rules = db.query(models.AutoRule).filter_by(user_id=user.id).order_by(
+                models.AutoRule.priority.asc()
+            ).all()
+            
+            return jsonify({
+                "rules": [
+                    {
+                        "id": r.id,
+                        "name": r.name,
+                        "description": r.description,
+                        "is_active": r.is_active,
+                        "priority": r.priority,
+                        "conditions": r.conditions,
+                        "actions": r.actions,
+                        "times_triggered": r.times_triggered if hasattr(r, 'times_triggered') else 0,
+                        "last_triggered_at": r.last_triggered_at.isoformat() if hasattr(r, 'last_triggered_at') and r.last_triggered_at else None,
+                        "created_at": r.created_at.isoformat() if r.created_at else None
+                    }
+                    for r in rules
+                ]
+            }), 200
     except Exception as e:
         logger.error(f"api_get_rules: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -2339,7 +2530,7 @@ def api_get_rules():
 @login_required
 def api_create_rule():
     """Neue Auto-Rule erstellen"""
-    AutoRulesEngine = _get_auto_rules()
+    models = _get_models()
     data = request.get_json() or {}
     
     # Validate input
@@ -2349,29 +2540,48 @@ def api_create_rule():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     
+    conditions = data.get("conditions", {})
+    actions = data.get("actions", {})
+    
+    if not conditions:
+        return jsonify({"error": "Mindestens eine Bedingung erforderlich"}), 400
+    
+    if not actions:
+        return jsonify({"error": "Mindestens eine Aktion erforderlich"}), 400
+    
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            engine = AutoRulesEngine(db, user.id)
+            # Regel erstellen
+            rule = models.AutoRule(
+                user_id=user.id,
+                name=name,
+                description=data.get("description"),
+                priority=data.get("priority", 100),
+                is_active=data.get("is_active", True),
+                conditions=conditions,
+                actions=actions
+            )
             
-            try:
-                rule = engine.create_rule(
-                    name=name,
-                    conditions=data.get("conditions", {}),
-                    actions=data.get("actions", {}),
-                    priority=data.get("priority", 0),
-                )
-                return jsonify(rule.to_dict()), 201
-            except ValueError as e:
-                logger.warning(f"api_create_rule: Validation error: {e}")
-                return jsonify({"error": str(e)}), 400
-            except Exception as e:
-                db.rollback()
-                logger.error(f"api_create_rule: Fehler beim Erstellen: {e}")
-                return jsonify({"error": "Failed to create rule"}), 500
+            db.add(rule)
+            db.commit()
+            db.refresh(rule)
+            
+            logger.info(f"✅ Regel erstellt: '{rule.name}' (ID: {rule.id}) für User {user.id}")
+            
+            return jsonify({
+                "id": rule.id,
+                "name": rule.name,
+                "description": rule.description,
+                "is_active": rule.is_active,
+                "priority": rule.priority,
+                "conditions": rule.conditions,
+                "actions": rule.actions,
+                "created_at": rule.created_at.isoformat() if rule.created_at else None
+            }), 201
     except Exception as e:
         logger.error(f"api_create_rule: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -2381,7 +2591,7 @@ def api_create_rule():
 @login_required
 def api_update_rule(rule_id):
     """Auto-Rule aktualisieren"""
-    AutoRulesEngine = _get_auto_rules()
+    models = _get_models()
     data = request.get_json() or {}
     
     # Validate input
@@ -2398,20 +2608,43 @@ def api_update_rule(rule_id):
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            engine = AutoRulesEngine(db, user.id)
+            rule = db.query(models.AutoRule).filter_by(
+                id=rule_id,
+                user_id=user.id
+            ).first()
             
-            try:
-                rule = engine.update_rule(rule_id, data)
-                if not rule:
-                    return jsonify({"error": "Not found"}), 404
-                return jsonify(rule.to_dict())
-            except ValueError as e:
-                logger.warning(f"api_update_rule: Validation error: {e}")
-                return jsonify({"error": str(e)}), 400
-            except Exception as e:
-                db.rollback()
-                logger.error(f"api_update_rule: Fehler beim Update: {e}")
-                return jsonify({"error": "Failed to update rule"}), 500
+            if not rule:
+                return jsonify({"error": "Regel nicht gefunden"}), 404
+            
+            # Update fields
+            if "name" in data:
+                rule.name = data["name"]
+            if "description" in data:
+                rule.description = data["description"]
+            if "priority" in data:
+                rule.priority = data["priority"]
+            if "is_active" in data:
+                rule.is_active = data["is_active"]
+            if "conditions" in data:
+                rule.conditions = data["conditions"]
+            if "actions" in data:
+                rule.actions = data["actions"]
+            
+            db.commit()
+            db.refresh(rule)
+            
+            logger.info(f"✅ Regel aktualisiert: '{rule.name}' (ID: {rule.id})")
+            
+            return jsonify({
+                "id": rule.id,
+                "name": rule.name,
+                "description": rule.description,
+                "is_active": rule.is_active,
+                "priority": rule.priority,
+                "conditions": rule.conditions,
+                "actions": rule.actions,
+                "updated_at": rule.updated_at.isoformat() if rule.updated_at else None
+            })
     except Exception as e:
         logger.error(f"api_update_rule: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -2421,25 +2654,28 @@ def api_update_rule(rule_id):
 @login_required
 def api_delete_rule(rule_id):
     """Auto-Rule löschen"""
-    AutoRulesEngine = _get_auto_rules()
-    
+    models = _get_models()
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            engine = AutoRulesEngine(db, user.id)
+            rule = db.query(models.AutoRule).filter_by(
+                id=rule_id,
+                user_id=user.id
+            ).first()
             
-            try:
-                success = engine.delete_rule(rule_id)
-                if not success:
-                    return jsonify({"error": "Not found"}), 404
-                return jsonify({"success": True})
-            except Exception as e:
-                db.rollback()
-                logger.error(f"api_delete_rule: Fehler beim Löschen: {e}")
-                return jsonify({"error": "Failed to delete rule"}), 500
+            if not rule:
+                return jsonify({"error": "Regel nicht gefunden"}), 404
+            
+            rule_name = rule.name
+            db.delete(rule)
+            db.commit()
+            
+            logger.info(f"🗑️  Regel gelöscht: '{rule_name}' (ID: {rule_id})")
+            
+            return jsonify({"success": True})
     except Exception as e:
         logger.error(f"api_delete_rule: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -2449,6 +2685,7 @@ def api_delete_rule(rule_id):
 @login_required
 def api_test_rule(rule_id):
     """Testet Rule gegen Sample-Emails"""
+    models = _get_models()
     AutoRulesEngine = _get_auto_rules()
     data = request.get_json() or {}
     
@@ -2458,14 +2695,56 @@ def api_test_rule(rule_id):
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            engine = AutoRulesEngine(db, user.id)
+            rule = db.query(models.AutoRule).filter_by(
+                id=rule_id,
+                user_id=user.id
+            ).first()
             
-            try:
-                result = engine.test_rule(rule_id, limit=data.get("limit", 10))
-                return jsonify(result)
-            except Exception as e:
-                logger.error(f"api_test_rule: Fehler beim Testen: {e}")
-                return jsonify({"error": "Failed to test rule"}), 500
+            if not rule:
+                return jsonify({"error": "Regel nicht gefunden"}), 404
+            
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Master-Key nicht verfügbar"}), 401
+            
+            engine = AutoRulesEngine(user.id, master_key, db)
+            matches = []
+            email_id = data.get("email_id")
+            
+            if email_id:
+                # Teste eine spezifische E-Mail
+                results = engine.process_email(email_id, dry_run=True, rule_id=rule_id)
+                for result in results:
+                    matches.append({
+                        "email_id": result.email_id,
+                        "matched": result.success,
+                        "actions_would_execute": result.actions_executed
+                    })
+            else:
+                # Teste gegen die letzten 20 E-Mails
+                recent_emails = db.query(models.RawEmail).filter_by(
+                    user_id=user.id,
+                    deleted_at=None
+                ).order_by(models.RawEmail.received_at.desc()).limit(20).all()
+                
+                for email in recent_emails:
+                    results = engine.process_email(email.id, dry_run=True, rule_id=rule_id)
+                    if results and results[0].success:
+                        matches.append({
+                            "email_id": email.id,
+                            "matched": True,
+                            "actions_would_execute": results[0].actions_executed
+                        })
+            
+            logger.info(f"🧪 Regel '{rule.name}' getestet: {len(matches)} Matches")
+            
+            return jsonify({
+                "success": True,
+                "matches": matches,
+                "total_tested": 1 if email_id else 20,
+                "total_matches": len(matches),
+                "rule_name": rule.name
+            })
     except Exception as e:
         logger.error(f"api_test_rule: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -2475,6 +2754,7 @@ def api_test_rule(rule_id):
 @login_required
 def api_apply_rules():
     """Wendet alle aktiven Rules auf unverarbeitete Emails an"""
+    models = _get_models()
     AutoRulesEngine = _get_auto_rules()
     data = request.get_json() or {}
     
@@ -2484,18 +2764,60 @@ def api_apply_rules():
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            engine = AutoRulesEngine(db, user.id)
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Master-Key nicht verfügbar"}), 401
             
-            try:
-                result = engine.apply_all_rules(
-                    account_id=data.get("account_id"),
-                    limit=data.get("limit", 100),
-                )
-                return jsonify(result)
-            except Exception as e:
-                db.rollback()
-                logger.error(f"api_apply_rules: Fehler beim Anwenden: {e}")
-                return jsonify({"error": "Failed to apply rules"}), 500
+            engine = AutoRulesEngine(user.id, master_key, db)
+            email_ids = data.get("email_ids", [])
+            
+            stats = {
+                "emails_processed": 0,
+                "rules_triggered": 0,
+                "actions_executed": 0,
+                "errors": 0
+            }
+            
+            if email_ids:
+                # Spezifische E-Mails verarbeiten
+                for email_id in email_ids:
+                    try:
+                        results = engine.process_email(email_id, dry_run=False)
+                        
+                        for result in results:
+                            if result.success:
+                                stats["rules_triggered"] += 1
+                                stats["actions_executed"] += len(result.actions_executed)
+                            else:
+                                stats["errors"] += 1
+                        
+                        stats["emails_processed"] += 1
+                    except Exception as e:
+                        logger.error(f"Fehler bei E-Mail {email_id}: {e}")
+                        stats["errors"] += 1
+            else:
+                # Alle unverarbeiteten E-Mails
+                unprocessed = db.query(models.RawEmail).filter_by(
+                    user_id=user.id,
+                    deleted_at=None
+                ).limit(100).all()
+                
+                for email in unprocessed:
+                    try:
+                        results = engine.process_email(email.id, dry_run=False)
+                        
+                        for result in results:
+                            if result.success:
+                                stats["rules_triggered"] += 1
+                                stats["actions_executed"] += len(result.actions_executed)
+                        
+                        stats["emails_processed"] += 1
+                    except Exception as e:
+                        logger.error(f"Fehler bei E-Mail {email.id}: {e}")
+                        stats["errors"] += 1
+            
+            logger.info(f"✅ Regeln angewendet: {stats}")
+            return jsonify({"success": True, "stats": stats})
     except Exception as e:
         logger.error(f"api_apply_rules: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -2531,8 +2853,6 @@ def api_get_rule_templates():
 @login_required
 def api_apply_rule_template(template_name):
     """Wendet Rule-Template an"""
-    AutoRulesEngine = _get_auto_rules()
-    
     # Validate input
     try:
         validate_string(template_name, "template_name", max_len=50)
@@ -2545,18 +2865,33 @@ def api_apply_rule_template(template_name):
             if not user:
                 return jsonify({"error": "Unauthorized"}), 401
             
-            engine = AutoRulesEngine(db, user.id)
+            data = request.get_json() or {}
+            overrides = data.get("overrides", {})
             
-            try:
-                rule = engine.apply_template(template_name)
-                return jsonify(rule.to_dict()), 201
-            except ValueError as e:
-                logger.warning(f"api_apply_rule_template: Unknown template '{template_name}'")
-                return jsonify({"error": str(e)}), 400
-            except Exception as e:
-                db.rollback()
-                logger.error(f"api_apply_rule_template: Fehler: {e}")
-                return jsonify({"error": "Failed to apply template"}), 500
+            from src.auto_rules_engine import create_rule_from_template
+            
+            rule = create_rule_from_template(
+                db_session=db,
+                user_id=user.id,
+                template_name=template_name,
+                overrides=overrides
+            )
+            
+            if not rule:
+                return jsonify({"error": "Template nicht gefunden"}), 404
+            
+            return jsonify({
+                "success": True,
+                "rule": {
+                    "id": rule.id,
+                    "name": rule.name,
+                    "description": rule.description,
+                    "is_active": rule.is_active,
+                    "priority": rule.priority,
+                    "conditions": rule.conditions,
+                    "actions": rule.actions
+                }
+            }), 201
     except Exception as e:
         logger.error(f"api_apply_rule_template: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -2600,7 +2935,7 @@ def api_get_accounts():
                 
                 result.append(account_data)
             
-            return jsonify(result)
+            return jsonify({"accounts": result}), 200
     except Exception as e:
         logger.error(f"api_get_accounts: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -3338,13 +3673,10 @@ def api_scan_account_senders(account_id):
             'error': 'Nicht authentifiziert'
         }), 401
     
+    models = _get_models()
+    
     # CRITICAL: Account-Ownership validieren
     with get_db_session() as db:
-        try:
-            models = importlib.import_module(".02_models", "src")
-        except ImportError:
-            return jsonify({"error": "Models not available"}), 500
-        
         try:
             encryption = importlib.import_module(".08_encryption", "src")
         except ImportError:
@@ -3475,13 +3807,9 @@ def api_bulk_add_trusted_senders():
             'error': 'Nicht authentifiziert'
         }), 401
     
-    db = get_db_session()
+    models = _get_models()
+    
     try:
-        try:
-            models = importlib.import_module(".02_models")
-        except ImportError:
-            return jsonify({"error": "Models not available"}), 500
-        
         data = request.get_json()
         if not data or 'senders' not in data:
             return jsonify({
@@ -3494,110 +3822,109 @@ def api_bulk_add_trusted_senders():
         
         logger.info(f"📥 Bulk-Add Request: {len(senders)} Absender für User {current_user.id}, Account {account_id}")
         
-        # Account validieren (falls angegeben)
-        if account_id is not None:
-            account = db.query(models.MailAccount).filter_by(
-                id=account_id,
-                user_id=current_user.id  # ✅ Ownership-Check
-            ).first()
+        with get_db_session() as db:
+            # Account validieren (falls angegeben)
+            if account_id is not None:
+                account = db.query(models.MailAccount).filter_by(
+                    id=account_id,
+                    user_id=current_user.id  # ✅ Ownership-Check
+                ).first()
+                
+                if not account:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Account nicht gefunden oder keine Berechtigung'
+                    }), 404
             
-            if not account:
-                return jsonify({
-                    'success': False,
-                    'error': 'Account nicht gefunden oder keine Berechtigung'
-                }), 404
-        
-        added = []
-        skipped = []
-        
-        # Import Service
-        try:
-            from src.services.trusted_senders import TrustedSenderManager
-        except ImportError:
-            logger.error("TrustedSenderManager nicht verfügbar")
-            return jsonify({"error": "TrustedSenderManager not available"}), 500
-        
-        # TRANSACTIONAL Bulk-Add
-        try:
-            for sender_data in senders:
-                try:
-                    pattern = sender_data.get('pattern', '').strip()
-                    pattern_type = sender_data.get('type', 'exact')
-                    label = sender_data.get('label', '').strip() or None
-                    
-                    logger.debug(f"  Processing: {pattern} ({pattern_type})")
-                    
-                    if not pattern:
-                        skipped.append({
-                            'pattern': pattern,
-                            'reason': 'Leeres Pattern'
-                        })
-                        continue
-                    
-                    # Hinzufügen (Duplikat-Check im Service)
-                    result = TrustedSenderManager.add_trusted_sender(
-                        db=db,
-                        user_id=current_user.id,
-                        sender_pattern=pattern,
-                        pattern_type=pattern_type,
-                        label=label,
-                        account_id=account_id
-                    )
-                    
-                    if result.get('success'):
-                        if result.get('already_exists'):
-                            # Duplikat - skippen
-                            logger.info(f"  ⚠️  Duplikat: {pattern}")
+            added = []
+            skipped = []
+            
+            # Import Service
+            try:
+                from src.services.trusted_senders import TrustedSenderManager
+            except ImportError:
+                logger.error("TrustedSenderManager nicht verfügbar")
+                return jsonify({"error": "TrustedSenderManager not available"}), 500
+            
+            # TRANSACTIONAL Bulk-Add
+            try:
+                for sender_data in senders:
+                    try:
+                        pattern = sender_data.get('pattern', '').strip()
+                        pattern_type = sender_data.get('type', 'exact')
+                        label = sender_data.get('label', '').strip() or None
+                        
+                        logger.debug(f"  Processing: {pattern} ({pattern_type})")
+                        
+                        if not pattern:
                             skipped.append({
                                 'pattern': pattern,
-                                'reason': result.get('message', 'Absender existiert bereits')
+                                'reason': 'Leeres Pattern'
                             })
-                        else:
-                            # Erfolgreich hinzugefügt
-                            logger.info(f"  ✅ Hinzugefügt: {pattern}")
-                            added.append(pattern)
-                    else:
-                        # Fehler (z.B. Validierung, Limit)
-                        logger.warning(f"  ❌ Fehler für {pattern}: {result.get('error')}")
-                        skipped.append({
-                            'pattern': pattern,
-                            'reason': result.get('error', 'Unbekannter Fehler')
-                        })
+                            continue
                         
-                except Exception as e:
-                    logger.error(f"Bulk-Add Error for {sender_data}: {e}")
-                    skipped.append({
-                        'pattern': sender_data.get('pattern', 'unknown'),
-                        'reason': f"Exception: {str(e)}"
-                    })
-            
-            # Alle erfolgreich → Commit
-            db.commit()
-            
-            logger.info(f"✅ Bulk-Add abgeschlossen: {len(added)} hinzugefügt, {len(skipped)} übersprungen")
-            
-        except Exception as critical_error:
-            # Kritischer Fehler → ROLLBACK alles!
-            logger.error(f"CRITICAL: Bulk-Add Transaction failed, rolling back: {critical_error}")
-            db.rollback()
+                        # Hinzufügen (Duplikat-Check im Service)
+                        result = TrustedSenderManager.add_trusted_sender(
+                            db=db,
+                            user_id=current_user.id,
+                            sender_pattern=pattern,
+                            pattern_type=pattern_type,
+                            label=label,
+                            account_id=account_id
+                        )
+                        
+                        if result.get('success'):
+                            if result.get('already_exists'):
+                                # Duplikat - skippen
+                                logger.info(f"  ⚠️  Duplikat: {pattern}")
+                                skipped.append({
+                                    'pattern': pattern,
+                                    'reason': result.get('message', 'Absender existiert bereits')
+                                })
+                            else:
+                                # Erfolgreich hinzugefügt
+                                logger.info(f"  ✅ Hinzugefügt: {pattern}")
+                                added.append(pattern)
+                        else:
+                            # Fehler (z.B. Validierung, Limit)
+                            logger.warning(f"  ❌ Fehler für {pattern}: {result.get('error')}")
+                            skipped.append({
+                                'pattern': pattern,
+                                'reason': result.get('error', 'Unbekannter Fehler')
+                            })
+                            
+                    except Exception as e:
+                        logger.error(f"Bulk-Add Error for {sender_data}: {e}")
+                        skipped.append({
+                            'pattern': sender_data.get('pattern', 'unknown'),
+                            'reason': f"Exception: {str(e)}"
+                        })
+                
+                # Alle erfolgreich → Commit
+                db.commit()
+                
+                logger.info(f"✅ Bulk-Add abgeschlossen: {len(added)} hinzugefügt, {len(skipped)} übersprungen")
+                
+            except Exception as critical_error:
+                # Kritischer Fehler → ROLLBACK alles!
+                logger.error(f"CRITICAL: Bulk-Add Transaction failed, rolling back: {critical_error}")
+                db.rollback()
+                
+                return jsonify({
+                    'success': False,
+                    'error': f'Kritischer Fehler: {str(critical_error)}. Keine Änderungen wurden gespeichert.'
+                }), 500
             
             return jsonify({
-                'success': False,
-                'error': f'Kritischer Fehler: {str(critical_error)}. Keine Änderungen wurden gespeichert.'
-            }), 500
-        
-        return jsonify({
-            'success': True,
-            'added': len(added),
-            'skipped': len(skipped),
-            'details': {
-                'added': added,
-                'skipped': skipped
-            }
-        })
+                'success': True,
+                'added': len(added),
+                'skipped': len(skipped),
+                'details': {
+                    'added': added,
+                    'skipped': skipped
+                }
+            })
     
     except Exception as e:
         logger.error(f"api_bulk_add_trusted_senders: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
-    finally:
-        db.close()

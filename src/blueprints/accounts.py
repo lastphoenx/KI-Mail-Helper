@@ -38,6 +38,7 @@ import importlib
 import logging
 
 from src.helpers import get_db_session, get_current_user_model
+from src.app_factory import limiter
 
 accounts_bp = Blueprint("accounts", __name__)
 logger = logging.getLogger(__name__)
@@ -262,7 +263,7 @@ def ki_prio():
     """KI-gestützte E-Mail Priorisierung: Konfiguration für spaCy Hybrid Pipeline"""
     with get_db_session() as db:
         user = get_current_user_model(db)
-        return render_template("phase_y_config.html", user=user)
+        return render_template("ki_prio_config.html", user=user)
 
 
 # =============================================================================
@@ -1650,8 +1651,17 @@ def sync_server_state(account_id):
 
 @accounts_bp.route("/jobs/<string:job_id>")
 @login_required
+@limiter.limit("1200 per hour")  # Erhöht für lange Background-Jobs (Embedding-Generation)
 def job_status(job_id):
-    """Liefert Status-Infos zu einem Hintergrundjob"""
+    """Liefert Status-Infos zu einem Hintergrundjob
+    
+    Note: Erhöhtes Rate-Limit (1200/hour statt Default 50/hour)!
+    Job-Status-Polling kann sehr häufig sein bei langsamen Jobs
+    (lokale LLMs, CPU-only) die 30-60+ Minuten dauern können.
+    Bei 5s Polling = 720 Requests/Stunde für einen Job.
+    
+    Security durch @login_required - User sieht nur eigene Jobs.
+    """
     # Validate job_id format (prevent injection)
     if not job_id or len(job_id) > 100:
         return jsonify({"error": "Ungültige Job-ID"}), 400

@@ -1569,7 +1569,7 @@ class IMAPDiagnostics:
                 
             except Exception as e:
                 error_msg = str(e)
-                logger.error(f"Failed to verify DB sync: {error_msg}")
+                logger.warning(f"Failed to verify DB sync for {folder}: {error_msg}")
                 
                 # Bei Verbindungsfehler: Abbrechen statt weitermachen
                 if 'socket error' in error_msg or 'BYE' in error_msg or 'EOF' in error_msg:
@@ -1821,7 +1821,7 @@ class IMAPDiagnostics:
             }
         
         except Exception as e:
-            logger.error(f"Failed to verify DB sync: {type(e).__name__}: {e}")
+            logger.warning(f"Failed to verify DB sync: {type(e).__name__}: {e}")
             return {
                 'success': False,
                 'error': str(e),

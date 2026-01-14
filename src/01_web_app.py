@@ -2564,7 +2564,7 @@ def whitelist():
 @login_required
 def ki_prio():
     """KI-gestützte E-Mail Priorisierung: Konfiguration für spaCy Hybrid Pipeline"""
-    return render_template("phase_y_config.html")
+    return render_template("ki_prio_config.html")
 
 
 @app.route("/settings/fetch-config", methods=["POST"])

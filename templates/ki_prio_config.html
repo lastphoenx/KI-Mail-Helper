@@ -369,13 +369,15 @@ async function loadVIPs() {
     if (!currentAccountId) return;
     
     try {
-        const response = await fetch(`/api/phase-y/vip-senders?account_id=${currentAccountId}`);
+        const response = await fetch(`/api/ki-prio/vip-senders?account_id=${currentAccountId}`);
         const data = await response.json();
+        
+        console.log('⭐ Loaded VIPs:', data);  // DEBUG
         
         const tbody = document.getElementById('vipTableBody');
         tbody.innerHTML = '';
         
-        if (data.vips.length === 0) {
+        if (!data.vips || data.vips.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Keine VIP-Absender konfiguriert</td></tr>';
             return;
         }
@@ -421,7 +423,7 @@ async function addVIP() {
     }
     
     try {
-        const response = await fetch('/api/phase-y/vip-senders', {
+        const response = await fetch('/api/ki-prio/vip-senders', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -441,7 +443,8 @@ async function addVIP() {
             document.getElementById('vipDescription').value = '';
             await loadVIPs();
         } else {
-            alert('Fehler beim Hinzufügen');
+            const error = await response.json();
+            alert(error.error || 'Fehler beim Hinzufügen');
         }
     } catch (error) {
         console.error('Fehler:', error);
@@ -453,7 +456,7 @@ async function deleteVIP(vipId) {
     if (!confirm('VIP-Absender wirklich löschen?')) return;
     
     try {
-        const response = await fetch(`/api/phase-y/vip-senders/${vipId}`, {
+        const response = await fetch(`/api/ki-prio/vip-senders/${vipId}`, {
             method: 'DELETE',
             headers: {
                 'X-CSRFToken': getCSRFToken()
@@ -479,7 +482,7 @@ async function loadKeywordSets() {
     if (!currentAccountId) return;
     
     try {
-        const response = await fetch(`/api/phase-y/keyword-sets?account_id=${currentAccountId}`);
+        const response = await fetch(`/api/ki-prio/keyword-sets?account_id=${currentAccountId}`);
         const data = await response.json();
         
         console.log('📋 Keyword-Sets API Response:', data); // DEBUG
@@ -589,7 +592,7 @@ async function saveAllKeywordSets() {
                 .map(kw => kw.trim())
                 .filter(kw => kw.length > 0);
             
-            await fetch('/api/phase-y/keyword-sets', {
+            await fetch('/api/ki-prio/keyword-sets', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -697,7 +700,7 @@ async function loadScoringConfig() {
     }
     
     try {
-        const response = await fetch(`/api/phase-y/scoring-config?account_id=${currentAccountId}`);
+        const response = await fetch(`/api/ki-prio/scoring-config?account_id=${currentAccountId}`);
         const data = await response.json();
         const config = data.config;
         
@@ -848,7 +851,7 @@ async function saveScoringConfig() {
     }
     
     try {
-        const response = await fetch('/api/phase-y/scoring-config', {
+        const response = await fetch('/api/ki-prio/scoring-config', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -872,7 +875,8 @@ async function saveScoringConfig() {
             updateScoringStatusBadge(true); // Mark as saved
             alert('✅ Scoring-Konfiguration gespeichert!');
         } else {
-            alert('Fehler beim Speichern');
+            const error = await response.json();
+            alert(error.error || 'Fehler beim Speichern');
         }
     } catch (error) {
         console.error('Fehler:', error);
@@ -886,13 +890,15 @@ async function loadDomains() {
     if (!currentAccountId) return;
     
     try {
-        const response = await fetch(`/api/phase-y/user-domains?account_id=${currentAccountId}`);
+        const response = await fetch(`/api/ki-prio/user-domains?account_id=${currentAccountId}`);
         const data = await response.json();
+        
+        console.log('📍 Loaded domains:', data);  // DEBUG
         
         const tbody = document.getElementById('domainTableBody');
         tbody.innerHTML = '';
         
-        if (data.domains.length === 0) {
+        if (!data.domains || data.domains.length === 0) {
             tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Keine Domains konfiguriert</td></tr>';
             return;
         }
@@ -938,7 +944,7 @@ async function addDomain() {
     }
     
     try {
-        const response = await fetch('/api/phase-y/user-domains', {
+        const response = await fetch('/api/ki-prio/user-domains', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -954,7 +960,8 @@ async function addDomain() {
             document.getElementById('domainInput').value = '';
             await loadDomains();
         } else {
-            alert('Fehler beim Hinzufügen');
+            const error = await response.json();
+            alert(error.error || 'Fehler beim Hinzufügen');
         }
     } catch (error) {
         console.error('Fehler:', error);
@@ -966,7 +973,7 @@ async function deleteDomain(domainId) {
     if (!confirm('Domain wirklich löschen?')) return;
     
     try {
-        const response = await fetch(`/api/phase-y/user-domains/${domainId}`, {
+        const response = await fetch(`/api/ki-prio/user-domains/${domainId}`, {
             method: 'DELETE',
             headers: {
                 'X-CSRFToken': getCSRFToken()
