@@ -425,6 +425,22 @@ class BackgroundJobQueue:
             )
             fetcher.connect()
             
+            # Progress-Callback für State-Sync
+            def state_sync_progress(phase, message, **kwargs):
+                """Callback für kontinuierliche Progress-Updates während State-Sync."""
+                logger.info(f"🔔 DEBUG: Callback aufgerufen! phase={phase}, message={message}")
+                self._update_status(
+                    job.job_id,
+                    {
+                        "phase": phase,
+                        "message": message,
+                        **kwargs
+                    }
+                )
+                logger.info(f"✅ DEBUG: Status updated für Job {job.job_id}")
+            
+            logger.info(f"🎯 DEBUG: Callback-Funktion definiert, übergebe an sync_state_with_server")
+            
             try:
                 # Schritt 1: Nur State-Sync (kein Raw-Sync hier!)
                 sync_service = mail_sync_v2.MailSyncServiceV2(
@@ -433,7 +449,10 @@ class BackgroundJobQueue:
                     user_id=user.id,
                     account_id=account.id
                 )
-                stats1 = sync_service.sync_state_with_server(include_folders)
+                stats1 = sync_service.sync_state_with_server(
+                    include_folders, 
+                    progress_callback=state_sync_progress
+                )
                 
                 logger.info(
                     f"✅ Schritt 1: {stats1.folders_scanned} Ordner, "
@@ -451,6 +470,14 @@ class BackgroundJobQueue:
             # ═══════════════════════════════════════════════════════════════
             # SCHRITT 2: Neue Mails fetchen (Delta-Fetch, UNVERÄNDERT)
             # ═══════════════════════════════════════════════════════════════
+            
+            self._update_status(
+                job.job_id,
+                {
+                    "phase": "fetch_mails",
+                    "message": "Lade neue Mails...",
+                }
+            )
             
             raw_emails = self._fetch_raw_emails(
                 account, master_key, job.max_mails
@@ -470,6 +497,15 @@ class BackgroundJobQueue:
             # ═══════════════════════════════════════════════════════════════
             # SCHRITT 3: raw_emails mit State synchronisieren (MOVE-Erkennung!)
             # ═══════════════════════════════════════════════════════════════
+            
+            self._update_status(
+                job.job_id,
+                {
+                    "phase": "sync_raw",
+                    "message": "Synchronisiere Mails...",
+                }
+            )
+            
             try:
                 stats3 = sync_service.sync_raw_emails_with_state()
                 logger.info(
@@ -485,6 +521,8 @@ class BackgroundJobQueue:
                 self._update_status(
                     job.job_id,
                     {
+                        "phase": None,  # ⚠️ Phase clearen = Frontend zeigt Email-Counter
+                        "message": None,
                         "current_email_index": idx,
                         "total_emails": total,
                         "current_subject": subject,
@@ -500,6 +538,15 @@ class BackgroundJobQueue:
                 ai=ai_instance,
                 sanitize_level=job.sanitize_level,
                 progress_callback=progress_callback,
+            )
+            
+            # Phase Change: Processing fertig, starte Auto-Rules
+            self._update_status(
+                job.job_id,
+                {
+                    "phase": "auto_rules",
+                    "message": "Wende Auto-Rules an...",
+                }
             )
 
             # ═══════════════════════════════════════════════════════════════

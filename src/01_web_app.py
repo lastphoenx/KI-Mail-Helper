@@ -7510,7 +7510,7 @@ def purge_mail_account(account_id):
 
 @app.route("/jobs/<string:job_id>", methods=["GET"])
 @login_required
-@limiter.limit("1200 per hour")  # Erhöht für lange Background-Jobs (Embedding-Generation)
+@limiter.exempt  # 🔥 Keine Rate-Limits für Job-Polling (alle 5s = 720 req/hour)
 def job_status(job_id: str):
     """Liefert Status-Infos zu einem Hintergrundjob."""
     status = job_queue.get_status(job_id, current_user.id)
