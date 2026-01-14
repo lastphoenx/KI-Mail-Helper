@@ -402,6 +402,7 @@ const RulesManager = {
         this.loadTemplates();
     },
     
+
     async loadFoldersAndTags() {
         // Load Folders
         try {
@@ -436,8 +437,9 @@ const RulesManager = {
         select.innerHTML = '<option value="">-- Kein Verschieben --</option>';
         this.folders.forEach(folder => {
             const option = document.createElement('option');
-            option.value = folder;
-            option.textContent = folder;
+            const folderName = typeof folder === 'string' ? folder : folder.name;
+            option.value = folderName;
+            option.textContent = folderName;
             select.appendChild(option);
         });
     },

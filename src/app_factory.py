@@ -28,29 +28,50 @@ env_validator.validate_environment()
 
 from src.debug_logger import DebugLogger
 
+# Global limiter instance - initialized in create_app()
+limiter = None
+
 DATABASE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "emails.db")
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATABASE_PATH}")
 
+# Feature-Flags für Multi-User Migration
+USE_POSTGRESQL = DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://")
+USE_LEGACY_JOBS = os.getenv("USE_LEGACY_JOBS", "true").lower() == "true"
+
+if USE_POSTGRESQL:
+    logger.info("🐘 PostgreSQL Mode aktiviert")
+    connect_args = {"connect_timeout": 10}
+else:
+    logger.info("📦 SQLite Mode (Legacy)")
+    connect_args = {"check_same_thread": False, "timeout": 30.0}
+
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False, "timeout": 30.0}
+    connect_args=connect_args
 )
 
-@event.listens_for(engine, "connect")
-def set_sqlite_pragma(dbapi_conn, connection_record):
-    """SQLite Pragmas für Multi-Worker Concurrency"""
-    cursor = dbapi_conn.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA busy_timeout=30000")
-    cursor.execute("PRAGMA wal_autocheckpoint=1000")
-    cursor.close()
+if not USE_POSTGRESQL:
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_conn, connection_record):
+        """SQLite Pragmas für Multi-Worker Concurrency"""
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA wal_autocheckpoint=1000")
+        cursor.close()
 
 SessionLocal = sessionmaker(bind=engine)
 
-background_jobs = importlib.import_module(".14_background_jobs", "src")
-job_queue = background_jobs.BackgroundJobQueue(DATABASE_PATH)
+# Legacy Background Jobs (optional, wenn USE_LEGACY_JOBS=true)
+if USE_LEGACY_JOBS:
+    background_jobs = importlib.import_module(".14_background_jobs", "src")
+    job_queue = background_jobs.BackgroundJobQueue(DATABASE_PATH)
+    logger.info("⚙️  Legacy Job Queue aktiviert (USE_LEGACY_JOBS=true)")
+else:
+    job_queue = None
+    logger.info("🚀 Celery Mode - Legacy Job Queue deaktiviert")
 
 encryption = importlib.import_module(".08_encryption", "src")
 
@@ -157,6 +178,7 @@ def create_app(config_name="production"):
             rate_limit_storage = "memory://"
             logger.warning("🟡 Redis not available - using memory storage")
     
+    global limiter
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,

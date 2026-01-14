@@ -61,9 +61,9 @@ def prepare_suggestion(sender: str, suggested_type: str) -> str:
 # Validierungs-Regex (RFC 5321 + RFC 1123 compliant)
 # EMAIL_REGEX: Strikte Email-Validierung
 # - Verhindert konsekutive Punkte/Unterstriche (muss abwechseln)
-# - Erlaubt Plus für email-tags
-# - Format: local[.+_local]*@domain.tld
-EMAIL_REGEX = r'^[a-zA-Z0-9]+([._+][a-zA-Z0-9]+)*@[a-zA-Z0-9]+([.-][a-zA-Z0-9]+)*\.[a-zA-Z]{2,}$'
+# - Erlaubt Plus für email-tags und Bindestriche
+# - Format: local[.+_-local]*@domain.tld
+EMAIL_REGEX = r'^[a-zA-Z0-9]+([._+-][a-zA-Z0-9]+)*@[a-zA-Z0-9]+([.-][a-zA-Z0-9]+)*\.[a-zA-Z]{2,}$'
 
 # DOMAIN_REGEX: RFC 1123 konforme Domain-Validierung
 # - Jedes Label: [a-zA-Z0-9] oder [a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]
