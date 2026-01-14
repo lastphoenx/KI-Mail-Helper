@@ -52,16 +52,35 @@ def calculate_checksum(engine):
     return checksums
 
 
+def convert_sqlite_to_postgres_types(row_dict, target_table):
+    """Convert SQLite types to PostgreSQL-compatible types."""
+    from sqlalchemy import Boolean, Integer
+    
+    for column in target_table.columns:
+        if column.name in row_dict and row_dict[column.name] is not None:
+            # Convert integer 0/1 to boolean for Boolean columns
+            if isinstance(column.type, Boolean):
+                value = row_dict[column.name]
+                if isinstance(value, int):
+                    row_dict[column.name] = bool(value)
+    
+    return row_dict
+
+
 def migrate_table(source_engine, target_engine, table_name, dry_run=False):
     """Migrate single table from source to target."""
-    metadata = MetaData()
-    metadata.reflect(bind=source_engine)
+    source_metadata = MetaData()
+    source_metadata.reflect(bind=source_engine)
     
-    if table_name not in metadata.tables:
+    target_metadata = MetaData()
+    target_metadata.reflect(bind=target_engine)
+    
+    if table_name not in source_metadata.tables:
         print(f"⚠️  Tabelle {table_name} nicht in Source DB gefunden")
         return 0
     
-    table = metadata.tables[table_name]
+    table = source_metadata.tables[table_name]
+    target_table = target_metadata.tables.get(table_name)
     
     # Get row count
     with source_engine.connect() as source_conn:
@@ -91,6 +110,14 @@ def migrate_table(source_engine, target_engine, table_name, dry_run=False):
                 try:
                     # Convert row to dict
                     row_dict = dict(row._mapping)
+                    
+                    # Filter out columns that don't exist in target table
+                    if target_table is not None:
+                        target_columns = {col.name for col in target_table.columns}
+                        row_dict = {k: v for k, v in row_dict.items() if k in target_columns}
+                        
+                        # Convert SQLite types to PostgreSQL types
+                        row_dict = convert_sqlite_to_postgres_types(row_dict, target_table)
                     
                     # Insert into target
                     target_session.execute(table.insert().values(**row_dict))
@@ -144,7 +171,43 @@ def main():
     if args.tables:
         tables = args.tables
     else:
-        tables = list(source_checksums.keys())
+        # Define proper migration order (respecting foreign keys)
+        # Skip alembic_version as it's managed by Alembic itself
+        MIGRATION_ORDER = [
+            'users',  # First: users (no dependencies)
+            'mail_accounts',  # Then: mail_accounts (depends on users)
+            'raw_emails',  # Then: raw_emails (depends on mail_accounts)
+            'processed_emails',  # Then: processed_emails (depends on raw_emails)
+            'sender_patterns',  # Depends on users
+            'auto_rules',  # Depends on users
+            'email_tags',  # Depends on processed_emails
+            'mail_server_state',  # Depends on mail_accounts
+            'imap_diagnostics',
+            'processing_logs',
+            'ai_optimization_cache',
+            'tag_suggestion_queue',
+            'tag_suggestion_jobs',
+            'message_thread_cache',
+            'archive_metadata',
+            'mailbox_metadata',
+            'tag_rename_log',
+            'tag_mappings',
+            'tag_suggestions',
+            'tag_assignment_log',
+            'background_jobs',
+            'scheduled_jobs'
+        ]
+        
+        # Use ordered list, append any unknown tables at the end
+        tables = []
+        for table in MIGRATION_ORDER:
+            if table in source_checksums and table != 'alembic_version':
+                tables.append(table)
+        
+        # Add any remaining tables not in MIGRATION_ORDER (except alembic_version)
+        for table in source_checksums.keys():
+            if table not in tables and table != 'alembic_version':
+                tables.append(table)
     
     # Migrate tables
     total_migrated = 0
