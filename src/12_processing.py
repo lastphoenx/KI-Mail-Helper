@@ -490,6 +490,14 @@ def process_pending_raw_emails(
                         raw_email.sanitization_time_ms = sanitization_result.processing_time_ms
                         raw_email.sanitization_entities_count = sanitization_result.entities_found
                         
+                        # 🆕 EntityMap für De-Anonymisierung speichern
+                        import json
+                        entity_map_dict = sanitization_result.entity_map.to_dict()
+                        raw_email.encrypted_entity_map = \
+                            encryption_mod.EncryptionManager.encrypt_data(
+                                json.dumps(entity_map_dict), master_key
+                            )
+                        
                         logger.info(
                             f"✅ Anonymisierung: {sanitization_result.entities_found} entities "
                             f"in {sanitization_result.processing_time_ms:.1f}ms"
@@ -626,6 +634,14 @@ def process_pending_raw_emails(
                     raw_email.sanitization_level = sanitization_result.level
                     raw_email.sanitization_time_ms = sanitization_result.processing_time_ms
                     raw_email.sanitization_entities_count = sanitization_result.entities_found
+                    
+                    # 🆕 EntityMap für De-Anonymisierung speichern
+                    import json
+                    entity_map_dict = sanitization_result.entity_map.to_dict()
+                    raw_email.encrypted_entity_map = \
+                        encryption_mod.EncryptionManager.encrypt_data(
+                            json.dumps(entity_map_dict), master_key
+                        )
                     
                     logger.debug(
                         f"🔐 Background-Sanitization: {sanitization_result.entities_found} entities"

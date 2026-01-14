@@ -1,7 +1,7 @@
 # src/blueprints/accounts.py
 """Accounts Blueprint - Settings, Mail-Accounts, Fetch-Config.
 
-Routes (22 total):
+Routes (23 total):
     1. /reply-styles (GET) - reply_styles_page
     2. /settings (GET) - settings
     3. /mail-fetch-config (GET) - mail_fetch_config
@@ -20,10 +20,11 @@ Routes (22 total):
     16. /imap-diagnostics (GET) - imap_diagnostics
     17. /mail-account/<id>/fetch (POST) - fetch_mails
     18. /mail-account/<id>/purge (POST) - purge_mail_account
-    19. /jobs/<job_id> (GET) - job_status
-    20. /account/<id>/mail-count (GET) - get_account_mail_count
-    21. /account/<id>/folders (GET) - get_account_folders
-    22. /whitelist-imap-setup (GET) - whitelist_imap_setup_page
+    19. /mail-account/<id>/sync-flags (POST) - sync_mail_flags  ← NEU
+    20. /jobs/<job_id> (GET) - job_status
+    21. /account/<id>/mail-count (GET) - get_account_mail_count
+    22. /account/<id>/folders (GET) - get_account_folders
+    23. /whitelist-imap-setup (GET) - whitelist_imap_setup_page
 
 Extracted from 01_web_app.py lines: 2392-2720, 6322-6490, 6583-7520, 7763-8020, 8985-9050
 """
@@ -101,8 +102,9 @@ def _get_mail_fetcher_mod():
 def _get_job_queue():
     global _job_queue
     if _job_queue is None:
-        job_mod = importlib.import_module(".14_background_jobs", "src")
-        _job_queue = job_mod.job_queue
+        # Import aus app_factory wo job_queue instanziiert wird
+        from src.app_factory import job_queue as jq
+        _job_queue = jq
     return _job_queue
 
 
@@ -1230,6 +1232,11 @@ def fetch_mails(account_id):
     """Triggert Background-Job für Mail-Fetch"""
     models = _get_models()
     
+    # Lazy imports für AI und Sanitizer
+    import importlib
+    ai_client = importlib.import_module(".03_ai_client", "src")
+    sanitizer = importlib.import_module(".04_sanitizer", "src")
+    
     try:
         # KRITISCH: Prüfen ob Account dem User gehört!
         with get_db_session() as db:
@@ -1244,14 +1251,51 @@ def fetch_mails(account_id):
             if not account:
                 logger.warning(f"fetch_mails: User {user.id} versuchte Zugriff auf Account {account_id}")
                 return jsonify({"error": "Account nicht gefunden"}), 404
+            
+            # Master-Key aus Session
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({
+                    "error": "Session abgelaufen - bitte neu einloggen",
+                    "code": "SESSION_EXPIRED"
+                }), 401
+            
+            # Fetch-Limits
+            is_initial = not account.initial_sync_done
+            fetch_limit = 500 if is_initial else 50
+            
+            # AI Provider/Model
+            provider = (user.preferred_ai_provider or "ollama").lower()
+            resolved_model = ai_client.resolve_model(provider, user.preferred_ai_model)
+            use_cloud = ai_client.provider_requires_cloud(provider)
+            sanitize_level = sanitizer.get_sanitization_level(use_cloud)
         
         # Account gehört User - Job queuen
         job_queue = _get_job_queue()
         
         try:
-            job_id = job_queue.enqueue_fetch(current_user.id, account_id)
+            job_id = job_queue.enqueue_fetch_job(
+                user_id=user.id,
+                account_id=account.id,
+                master_key=master_key,
+                provider=provider,
+                model=resolved_model,
+                max_mails=fetch_limit,
+                sanitize_level=sanitize_level,
+                meta={"trigger": "settings", "is_initial": is_initial},
+            )
             logger.info(f"fetch_mails: Job {job_id} für Account {account_id} gequeued")
-            return jsonify({"job_id": job_id, "status": "queued"})
+            return jsonify({
+                "status": "queued",
+                "job_id": job_id,
+                "provider": provider,
+                "model": resolved_model,
+                "is_initial": is_initial,
+                "max_mails": fetch_limit
+            })
+        except ValueError as e:
+            logger.error(f"fetch_mails: Validierung fehlgeschlagen: {e}")
+            return jsonify({"error": str(e)}), 400
         except Exception as e:
             logger.error(f"fetch_mails: Queue-Fehler: {type(e).__name__}: {e}")
             return jsonify({"error": "Fehler beim Starten des Fetch-Jobs"}), 500
@@ -1315,6 +1359,295 @@ def purge_mail_account(account_id):
         return jsonify({"error": "Internal server error"}), 500
 
 
+@accounts_bp.route("/mail-account/<int:account_id>/sync-flags", methods=["POST"])
+@login_required
+def sync_mail_flags(account_id):
+    """Synchronisiert nur Flags (Gelesen/Ungelesen) vom IMAP-Server
+    
+    Delta-Sync Fix: Wenn eine Mail auf dem Server als gelesen markiert wird,
+    erkennt Delta-Sync das nicht, weil nur UIDs verglichen werden.
+    Diese Funktion holt die aktuellen Flags vom Server und aktualisiert die lokale DB.
+    """
+    from imapclient import IMAPClient
+    from datetime import datetime, UTC
+    
+    logger.info(f"sync_mail_flags: Starte für Account {account_id}")
+    
+    models = _get_models()
+    encryption = _get_encryption()
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({"error": "Nicht authentifiziert"}), 401
+            
+            # Authorization check
+            account = db.query(models.MailAccount).filter_by(
+                id=account_id, user_id=user.id
+            ).first()
+            
+            if not account:
+                logger.warning(f"sync_mail_flags: User {user.id} versuchte Sync auf Account {account_id}")
+                return jsonify({"error": "Account nicht gefunden"}), 404
+            
+            # Master-Key für Entschlüsselung
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Session abgelaufen - bitte erneut einloggen"}), 401
+            
+            # IMAP-Credentials entschlüsseln
+            try:
+                imap_server = encryption.CredentialManager.decrypt_email_address(
+                    account.encrypted_imap_server, master_key
+                )
+                imap_port = account.imap_port or 993
+                imap_username = encryption.CredentialManager.decrypt_email_address(
+                    account.encrypted_imap_username, master_key
+                )
+                imap_password = encryption.CredentialManager.decrypt_email_address(
+                    account.encrypted_imap_password, master_key
+                )
+            except Exception as e:
+                logger.error(f"sync_mail_flags: Entschlüsselung fehlgeschlagen: {e}")
+                return jsonify({"error": "Konnte Credentials nicht entschlüsseln"}), 500
+            
+            # Hole alle lokalen Mails für diesen Account (mit UIDs)
+            local_mails = db.query(models.RawEmail).filter(
+                models.RawEmail.mail_account_id == account_id,
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.imap_uid.isnot(None),
+                models.RawEmail.deleted_at.is_(None)
+            ).all()
+            
+            if not local_mails:
+                return jsonify({"status": "ok", "updated": 0, "total": 0, "message": "Keine lokalen Mails gefunden"})
+            
+            # Gruppiere nach Folder für effizienteres Fetching
+            mails_by_folder = {}
+            for mail in local_mails:
+                folder = mail.imap_folder or 'INBOX'
+                if folder not in mails_by_folder:
+                    mails_by_folder[folder] = []
+                mails_by_folder[folder].append(mail)
+            
+            total_updated = 0
+            total_checked = len(local_mails)
+            
+            try:
+                # IMAP-Verbindung aufbauen
+                client = IMAPClient(imap_server, port=imap_port, ssl=True, use_uid=True, timeout=60)
+                client.login(imap_username, imap_password)
+                
+                try:
+                    for folder, mails in mails_by_folder.items():
+                        try:
+                            client.select_folder(folder, readonly=True)
+                        except Exception as e:
+                            logger.warning(f"sync_mail_flags: Folder {folder} nicht erreichbar: {e}")
+                            continue
+                        
+                        # UIDs sammeln
+                        uids = [mail.imap_uid for mail in mails]
+                        
+                        # Flags vom Server holen (in Batches für große Ordner)
+                        batch_size = 500
+                        for i in range(0, len(uids), batch_size):
+                            batch_uids = uids[i:i+batch_size]
+                            
+                            try:
+                                flags_data = client.get_flags(batch_uids)
+                            except Exception as e:
+                                logger.warning(f"sync_mail_flags: Flags abrufen fehlgeschlagen für Batch: {e}")
+                                continue
+                            
+                            # Lokale Mails updaten
+                            for mail in mails:
+                                if mail.imap_uid not in flags_data:
+                                    continue
+                                
+                                server_flags = flags_data[mail.imap_uid]
+                                
+                                # Flags normalisieren (können bytes oder strings sein)
+                                def has_flag(flags, flag_name):
+                                    flag_bytes = flag_name.encode('ascii')
+                                    return flag_bytes in flags or flag_name in flags
+                                
+                                new_is_seen = has_flag(server_flags, '\\Seen')
+                                new_is_answered = has_flag(server_flags, '\\Answered')
+                                new_is_flagged = has_flag(server_flags, '\\Flagged')
+                                new_is_deleted = has_flag(server_flags, '\\Deleted')
+                                new_is_draft = has_flag(server_flags, '\\Draft')
+                                
+                                # Nur updaten wenn Änderung
+                                changed = False
+                                if mail.imap_is_seen != new_is_seen:
+                                    mail.imap_is_seen = new_is_seen
+                                    changed = True
+                                if mail.imap_is_answered != new_is_answered:
+                                    mail.imap_is_answered = new_is_answered
+                                    changed = True
+                                if mail.imap_is_flagged != new_is_flagged:
+                                    mail.imap_is_flagged = new_is_flagged
+                                    changed = True
+                                if mail.imap_is_deleted != new_is_deleted:
+                                    mail.imap_is_deleted = new_is_deleted
+                                    changed = True
+                                if mail.imap_is_draft != new_is_draft:
+                                    mail.imap_is_draft = new_is_draft
+                                    changed = True
+                                
+                                if changed:
+                                    mail.last_flag_sync_at = datetime.now(UTC)
+                                    total_updated += 1
+                    
+                    db.commit()
+                    
+                finally:
+                    client.logout()
+                    
+            except Exception as e:
+                logger.error(f"sync_mail_flags: IMAP-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"error": f"IMAP-Verbindung fehlgeschlagen: {str(e)}"}), 500
+            
+            logger.info(f"sync_mail_flags: Account {account_id}: {total_updated}/{total_checked} Flags aktualisiert")
+            return jsonify({
+                "status": "ok", 
+                "updated": total_updated, 
+                "total": total_checked,
+                "message": f"{total_updated} von {total_checked} Mails aktualisiert"
+            })
+                
+    except Exception as e:
+        logger.error(f"sync_mail_flags: Fehler: {type(e).__name__}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@accounts_bp.route("/mail-account/<int:account_id>/sync-server", methods=["POST"])
+@login_required
+def sync_server_state(account_id):
+    """Vollständiger Server-Sync: Scannt alle Mails auf dem Server.
+    
+    Erkennt:
+    - Neue Mails (noch nicht gefetcht)
+    - Verschobene Mails (gleiche Mail in anderem Ordner)
+    - Gelöschte Mails (war auf Server, jetzt nicht mehr)
+    
+    Dies ist ein schneller ENVELOPE-only Scan, der keine Mail-Bodies lädt.
+    Nach dem Scan werden die lokalen Ordner-Zuordnungen aktualisiert.
+    """
+    from imapclient import IMAPClient
+    from datetime import datetime, UTC
+    
+    logger.info(f"sync_server_state: Starte für Account {account_id}")
+    
+    models = _get_models()
+    encryption = _get_encryption()
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({"error": "Nicht authentifiziert"}), 401
+            
+            # Authorization check
+            account = db.query(models.MailAccount).filter_by(
+                id=account_id, user_id=user.id
+            ).first()
+            
+            if not account:
+                logger.warning(f"sync_server_state: User {user.id} versuchte Sync auf Account {account_id}")
+                return jsonify({"error": "Account nicht gefunden"}), 404
+            
+            # Master-Key für Entschlüsselung
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Session abgelaufen - bitte erneut einloggen"}), 401
+            
+            # IMAP-Credentials entschlüsseln
+            try:
+                imap_server = encryption.CredentialManager.decrypt_email_address(
+                    account.encrypted_imap_server, master_key
+                )
+                imap_port = account.imap_port or 993
+                imap_username = encryption.CredentialManager.decrypt_email_address(
+                    account.encrypted_imap_username, master_key
+                )
+                imap_password = encryption.CredentialManager.decrypt_email_address(
+                    account.encrypted_imap_password, master_key
+                )
+            except Exception as e:
+                logger.error(f"sync_server_state: Entschlüsselung fehlgeschlagen: {e}")
+                return jsonify({"error": "Konnte Credentials nicht entschlüsseln"}), 500
+            
+            # Ordner-Filter laden
+            include_folders = None
+            if account.fetch_include_folders:
+                try:
+                    include_folders = json.loads(account.fetch_include_folders) if isinstance(account.fetch_include_folders, str) else account.fetch_include_folders
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            
+            try:
+                # IMAP-Verbindung aufbauen
+                client = IMAPClient(imap_server, port=imap_port, ssl=True, use_uid=True, timeout=120)
+                client.login(imap_username, imap_password)
+                
+                try:
+                    # ════════════════════════════════════════════════════════════════
+                    # NEUER SAUBERER 3-SCHRITT-WORKFLOW (v2)
+                    # ════════════════════════════════════════════════════════════════
+                    from src.services.mail_sync_v2 import run_full_sync
+                    
+                    result = run_full_sync(
+                        imap_connection=client,
+                        db_session=db,
+                        user_id=user.id,
+                        account_id=account.id,
+                        include_folders=include_folders
+                    )
+                    
+                    # Account sync timestamp updaten
+                    account.last_server_sync_at = datetime.now(UTC)
+                    db.commit()
+                    
+                    logger.info(
+                        f"sync_server_state: Account {account_id}: "
+                        f"{result.folders_scanned} Ordner, {result.mails_on_server} Mails, "
+                        f"+{result.state_inserted} State, {result.raw_updated} Raw-Updates, "
+                        f"{result.raw_deleted} Raw-Deletes"
+                    )
+                    
+                    return jsonify({
+                        "status": "ok" if result.success else "partial",
+                        "folders_scanned": result.folders_scanned,
+                        "mails_on_server": result.mails_on_server,
+                        "new_mails": result.state_inserted,
+                        "moved_mails": result.state_updated,
+                        "deleted_mails": result.state_deleted + result.raw_deleted,
+                        "already_fetched": result.mails_on_server - result.state_inserted,
+                        "errors": result.errors if result.errors else None,
+                        "message": (
+                            f"✅ {result.folders_scanned} Ordner gescannt: "
+                            f"{result.state_inserted} neu, {result.state_updated} verschoben, "
+                            f"{result.state_deleted + result.raw_deleted} gelöscht"
+                        )
+                    })
+                    
+                finally:
+                    client.logout()
+                    
+            except Exception as e:
+                logger.error(f"sync_server_state: IMAP-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"error": f"IMAP-Verbindung fehlgeschlagen: {str(e)}"}), 500
+                
+    except Exception as e:
+        logger.error(f"sync_server_state: Fehler: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({"error": "Internal server error"}), 500
+
+
 @accounts_bp.route("/jobs/<string:job_id>")
 @login_required
 def job_status(job_id):
@@ -1350,15 +1683,6 @@ def get_account_mail_count(account_id):
     mail_fetcher = _get_mail_fetcher_mod()
     
     current_time = time.time()
-    cache_key = account_id
-    
-    # Cache-Check: Verwende gecachte Daten wenn < 30s alt
-    if cache_key in _mail_count_cache:
-        cache_entry = _mail_count_cache[cache_key]
-        cache_age = current_time - _mail_count_cache_time.get(cache_key, 0)
-        if cache_age < MAIL_COUNT_CACHE_TTL:
-            logger.info(f"⚡ Cache-Hit für Account {account_id} (Alter: {cache_age:.1f}s)")
-            return jsonify(cache_entry)
     
     # Optional: since_date für SINCE count (Format: YYYY-MM-DD)
     since_date_str = request.args.get('since_date')
@@ -1385,6 +1709,18 @@ def get_account_mail_count(account_id):
         except (json.JSONDecodeError, TypeError) as e:
             logger.warning(f"Ungültiges include_folders Format: {e}")
             include_folders_set = None
+    
+    # 🔧 FIX: Cache-Key muss Filter-Parameter enthalten!
+    # Sonst werden bei Filter-Änderung alte Daten zurückgegeben
+    cache_key = f"{account_id}:{since_date_str or ''}:{unseen_only}:{include_folders_param or ''}"
+    
+    # Cache-Check: Verwende gecachte Daten wenn < 30s alt
+    if cache_key in _mail_count_cache:
+        cache_entry = _mail_count_cache[cache_key]
+        cache_age = current_time - _mail_count_cache_time.get(cache_key, 0)
+        if cache_age < MAIL_COUNT_CACHE_TTL:
+            logger.info(f"⚡ Cache-Hit für Account {account_id} (Alter: {cache_age:.1f}s)")
+            return jsonify(cache_entry)
     
     try:
         with get_db_session() as db:

@@ -32,11 +32,20 @@ pyOpenSSL==25.0.0          # HTTPS support - Updated for cryptography 44.x compa
 
 # Phase 22: Email Anonymization (Pseudonymisierung)
 spacy>=3.7.0,<4.0.0
+# SpaCy-Modell muss separat installiert werden:
+#   python -m spacy download de_core_news_md
+# Oder direkt via pip:
+de-core-news-md @ https://github.com/explosion/spacy-models/releases/download/de_core_news_md-3.8.0/de_core_news_md-3.8.0-py3-none-any.whl
 
 # Utils
 python-dotenv==1.0.0       # .env-Datei Support
 requests==2.32.5           # HTTP-Requests - Security update
 imapclient==3.0.1          # IMAP email fetching (Phase 11.5)
+
+# HTML to Text Conversion (für Email-Body Verarbeitung)
+beautifulsoup4==4.12.3     # HTML parsing
+html2text==2024.2.26       # HTML to Markdown/Text
+inscriptis==2.5.0          # High-quality HTML to Text
 
 # Testing
 pytest==7.4.3

@@ -780,8 +780,9 @@ def api_generate_reply(raw_email_id):
                                         raw_email.encrypted_entity_map, master_key
                                     )
                                     entity_map = json.loads(entity_map_json)
-                                except Exception:
-                                    pass
+                                    logger.debug(f"✅ Entity-Map geladen: {len(entity_map.get('reverse', {}))} Mappings")
+                                except Exception as em_err:
+                                    logger.warning(f"⚠️ Entity-Map Entschlüsselung fehlgeschlagen: {em_err}")
                         except Exception as decrypt_err:
                             logger.warning(f"Sanitized content decryption failed: {decrypt_err}")
                     else:
@@ -838,7 +839,7 @@ def api_generate_reply(raw_email_id):
                     result["entity_map"] = entity_map
                     result["provider_used"] = provider
                     result["model_used"] = resolved_model
-                    logger.info(f"✅ Reply generiert für Email {raw_email_id} (Ton: {result['tone_used']})")
+                    logger.info(f"✅ Reply generiert für Email {raw_email_id} (Ton: {result['tone_used']}) - anonymized={was_anonymized}, entity_map_keys={list(entity_map.keys()) if entity_map else None}")
                 
                 return jsonify(result), 200 if result["success"] else 500
                 

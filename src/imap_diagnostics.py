@@ -1527,11 +1527,32 @@ class IMAPDiagnostics:
         Returns:
             Multi-folder result structure
         """
+        import time
+        
         results = {}
         total_issues = 0
         
-        for folder in folders:
+        # Limitiere auf Ordner mit lokalen Mails (viel weniger Requests!)
+        if session and account_id:
+            import importlib
+            models = importlib.import_module("src.02_models")
+            
+            # Nur Ordner prüfen, in denen wir lokale Mails haben
+            local_folders = session.query(models.RawEmail.imap_folder).filter(
+                models.RawEmail.mail_account_id == account_id,
+                models.RawEmail.deleted_at.is_(None)
+            ).distinct().all()
+            
+            local_folder_set = set(f[0] for f in local_folders if f[0])
+            folders = [f for f in folders if f in local_folder_set]
+            logger.info(f"🔍 DB Sync Check: Prüfe nur {len(folders)} Ordner mit lokalen Mails")
+        
+        for i, folder in enumerate(folders):
             try:
+                # Rate-Limiting: Pause zwischen Ordnern um Server nicht zu überlasten
+                if i > 0:
+                    time.sleep(0.1)  # 100ms Pause zwischen jedem Ordner
+                
                 # Rufe verify_db_sync für jeden Ordner einzeln auf
                 folder_result = self.verify_db_sync(
                     client=client, 
@@ -1547,11 +1568,26 @@ class IMAPDiagnostics:
                 results[folder] = folder_result
                 
             except Exception as e:
-                logger.error(f"Fehler beim Checken von Ordner '{folder}': {e}")
+                error_msg = str(e)
+                logger.error(f"Failed to verify DB sync: {error_msg}")
+                
+                # Bei Verbindungsfehler: Abbrechen statt weitermachen
+                if 'socket error' in error_msg or 'BYE' in error_msg or 'EOF' in error_msg:
+                    logger.error("🔌 Verbindung zum Server verloren - breche ab")
+                    return {
+                        'success': False,
+                        'multi_folder_mode': True,
+                        'folders': results,
+                        'summary': f'Verbindung abgebrochen nach {len(results)} Ordnern',
+                        'total_folders': len(folders),
+                        'folders_checked': len(results),
+                        'error': 'Server hat Verbindung geschlossen (zu viele Requests)'
+                    }
+                
                 results[folder] = {
                     'success': False,
-                    'error': str(e),
-                    'message': f'Fehler: {str(e)}'
+                    'error': error_msg,
+                    'message': f'Fehler: {error_msg}'
                 }
                 total_issues += 1
         
