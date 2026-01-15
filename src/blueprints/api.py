@@ -672,7 +672,7 @@ def api_get_similar_emails(raw_email_id):
 @api_bp.route("/emails/<int:raw_email_id>/generate-reply", methods=["POST"])
 @login_required
 def api_generate_reply(raw_email_id):
-    """API: Generiert Antwort-Entwurf auf eine Email (Phase G.1 + Provider/Anonymization)
+    """API: Generiert Antwort-Entwurf auf eine Email - ASYNC via Celery
     
     Request Body:
     {
@@ -682,8 +682,12 @@ def api_generate_reply(raw_email_id):
         "use_anonymization": true|false
     }
     """
+    import os
     models = _get_models()
     encryption = _get_encryption()
+    
+    # Check: Celery Mode?
+    use_celery = os.environ.get("USE_CELERY", "false").lower() == "true"
     
     try:
         with get_db_session() as db:
@@ -698,23 +702,90 @@ def api_generate_reply(raw_email_id):
             requested_model = data.get("model")
             use_anonymization = data.get("use_anonymization")
             
-            # Validiere Email-Zugriff
-            processed = db.query(models.ProcessedEmail).join(models.RawEmail).filter(
+            # Validiere Email-Zugriff (schneller Check, kein AI-Call!)
+            raw_email = db.query(models.RawEmail).filter(
                 models.RawEmail.id == raw_email_id,
                 models.RawEmail.user_id == user.id,
-                models.RawEmail.deleted_at == None,
-                models.ProcessedEmail.deleted_at == None
+                models.RawEmail.deleted_at == None
             ).first()
             
-            if not processed or not processed.raw_email:
+            if not raw_email:
                 return jsonify({"success": False, "error": "Email nicht gefunden"}), 404
             
-            raw_email = processed.raw_email
-            
-            # Zero-Knowledge: Entschlüssele Email-Daten
+            # Master-Key prüfen
             master_key = session.get("master_key")
             if not master_key:
                 return jsonify({"success": False, "error": "Master-Key nicht verfügbar"}), 401
+            
+            # ═══════════════════════════════════════════════════════════════
+            # CELERY PATH (NEW) - Async Processing
+            # ═══════════════════════════════════════════════════════════════
+            if use_celery:
+                import importlib
+                from src.tasks.reply_generation_tasks import generate_reply_draft
+                auth = importlib.import_module(".07_auth", "src")
+                ServiceTokenManager = auth.ServiceTokenManager
+                
+                try:
+                    # Phase 2 Security: ServiceToken erstellen
+                    _, service_token = ServiceTokenManager.create_token(
+                        user_id=user.id,
+                        master_key=master_key,
+                        session=db,
+                        days=1  # Reply-Token nur 1 Tag gültig
+                    )
+                    
+                    # Provider/Model Selection (hier vorab, da Task sie braucht)
+                    ai_client = _get_ai_client()
+                    if requested_provider and requested_model:
+                        provider = requested_provider.lower()
+                        resolved_model = ai_client.resolve_model(provider, requested_model, kind="optimize")
+                    else:
+                        provider = (getattr(user, 'preferred_ai_provider_optimize', None) or 
+                                   getattr(user, 'preferred_ai_provider', None) or "ollama").lower()
+                        optimize_model = getattr(user, 'preferred_ai_model_optimize', None) or getattr(user, 'preferred_ai_model', None)
+                        resolved_model = ai_client.resolve_model(provider, optimize_model, kind="optimize")
+                    
+                    # Anonymisierungs-Default ermitteln
+                    if use_anonymization is None:
+                        cloud_providers = ["openai", "anthropic", "google"]
+                        use_anonymization = provider in cloud_providers
+                    
+                    # Task starten (ASYNC!)
+                    task = generate_reply_draft.delay(
+                        user_id=user.id,
+                        raw_email_id=raw_email_id,
+                        service_token_id=service_token.id,
+                        tone=tone,
+                        provider=provider,
+                        model=resolved_model,
+                        use_anonymization=use_anonymization
+                    )
+                    
+                    logger.info(f"✅ GenerateReply Task {task.id} gequeued für Email {raw_email_id}")
+                    
+                    return jsonify({
+                        "success": True,
+                        "status": "queued",
+                        "task_id": task.id,
+                        "task_type": "celery",
+                        "message": "Antwort-Entwurf wird generiert..."
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"api_generate_reply: Celery-Fehler: {type(e).__name__}: {e}")
+                    return jsonify({"success": False, "error": "Fehler beim Starten des Reply-Tasks"}), 500
+            
+            # ═══════════════════════════════════════════════════════════════
+            # LEGACY PATH (OLD) - Synchronous Processing
+            # ═══════════════════════════════════════════════════════════════
+            processed = db.query(models.ProcessedEmail).filter(
+                models.ProcessedEmail.raw_email_id == raw_email_id,
+                models.ProcessedEmail.deleted_at == None
+            ).first()
+            
+            if not processed:
+                return jsonify({"success": False, "error": "ProcessedEmail nicht gefunden"}), 404
             
             try:
                 decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
@@ -907,15 +978,19 @@ def api_check_embedding_compat(raw_email_id):
 @api_bp.route("/emails/<int:raw_email_id>/reprocess", methods=["POST"])
 @login_required
 def api_reprocess_email(raw_email_id):
-    """API: Email neu verarbeiten (Phase F.2 Enhanced)
+    """API: Email neu verarbeiten (Phase F.2 Enhanced) - ASYNC via Celery
     
     Regeneriert:
     - Email-Embedding (mit aktuellem Base Model aus Settings)
     - AI-Score + Kategorie
     - Tag-Suggestions (automatisch mit neuem Embedding)
     """
+    import os
     models = _get_models()
     encryption = _get_encryption()
+    
+    # Check: Celery Mode?
+    use_celery = os.environ.get("USE_CELERY", "false").lower() == "true"
     
     try:
         with get_db_session() as db:
@@ -937,6 +1012,48 @@ def api_reprocess_email(raw_email_id):
             if not raw_email:
                 return jsonify({"success": False, "error": "Email nicht gefunden"}), 404
             
+            # ═══════════════════════════════════════════════════════════════
+            # CELERY PATH (NEW) - Async Processing
+            # ═══════════════════════════════════════════════════════════════
+            if use_celery:
+                import importlib
+                from src.tasks.email_processing_tasks import reprocess_email_base
+                auth = importlib.import_module(".07_auth", "src")
+                ServiceTokenManager = auth.ServiceTokenManager
+                
+                try:
+                    # Phase 2 Security: ServiceToken erstellen
+                    _, service_token = ServiceTokenManager.create_token(
+                        user_id=user.id,
+                        master_key=master_key,
+                        session=db,
+                        days=1  # Reprocess-Token nur 1 Tag gültig
+                    )
+                    
+                    # Task starten (ASYNC!)
+                    task = reprocess_email_base.delay(
+                        user_id=user.id,
+                        raw_email_id=raw_email_id,
+                        service_token_id=service_token.id
+                    )
+                    
+                    logger.info(f"✅ ReprocessEmail Task {task.id} gequeued für Email {raw_email_id}")
+                    
+                    return jsonify({
+                        "success": True,
+                        "status": "queued",
+                        "task_id": task.id,
+                        "task_type": "celery",
+                        "message": "Email wird neu verarbeitet..."
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"api_reprocess_email: Celery-Fehler: {type(e).__name__}: {e}")
+                    return jsonify({"success": False, "error": "Fehler beim Starten des Tasks"}), 500
+            
+            # ═══════════════════════════════════════════════════════════════
+            # LEGACY PATH (OLD) - Synchronous Processing
+            # ═══════════════════════════════════════════════════════════════
             # Entschlüssele für Reprocessing
             try:
                 decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
