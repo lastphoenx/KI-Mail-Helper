@@ -62,7 +62,26 @@ from src.tasks.sender_pattern_tasks import (
     update_pattern_from_correction,
 )
 
+from src.tasks.email_processing_tasks import (
+    reprocess_email_base,
+    optimize_email_processing,
+)
+
+from src.tasks.reply_generation_tasks import (
+    generate_reply_draft,
+)
+
 __all__ = [
     "sync_user_emails",
     "sync_all_accounts",
+    "apply_rules_to_emails",
+    "apply_rules_to_new_emails",
+    "test_rule",
+    "scan_sender_patterns",
+    "cleanup_old_patterns",
+    "get_pattern_statistics",
+    "update_pattern_from_correction",
+    "reprocess_email_base",
+    "optimize_email_processing",
+    "generate_reply_draft",
 ]
