@@ -1280,8 +1280,10 @@ def fetch_mails(account_id):
         # CELERY PATH (NEW) - Multi-User Ready
         # ═══════════════════════════════════════════════════════════════════
         if use_celery:
+            import importlib
             from src.tasks.mail_sync_tasks import sync_user_emails
-            from src.07_auth import ServiceTokenManager
+            auth = importlib.import_module(".07_auth", "src")
+            ServiceTokenManager = auth.ServiceTokenManager
             
             try:
                 # Phase 2 Security: ServiceToken erstellen (DEK nicht in Redis!)
