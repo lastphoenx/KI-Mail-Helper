@@ -20,11 +20,12 @@ Routes (23 total):
     16. /imap-diagnostics (GET) - imap_diagnostics
     17. /mail-account/<id>/fetch (POST) - fetch_mails
     18. /mail-account/<id>/purge (POST) - purge_mail_account
-    19. /mail-account/<id>/sync-flags (POST) - sync_mail_flags  ← NEU
+    19. /mail-account/<id>/sync-flags (POST) - sync_mail_flags
     20. /jobs/<job_id> (GET) - job_status
-    21. /account/<id>/mail-count (GET) - get_account_mail_count
-    22. /account/<id>/folders (GET) - get_account_folders
-    23. /whitelist-imap-setup (GET) - whitelist_imap_setup_page
+    21. /tasks/<task_id> (GET) - task_status  ← NEU (Celery)
+    22. /account/<id>/mail-count (GET) - get_account_mail_count
+    23. /account/<id>/folders (GET) - get_account_folders
+    24. /whitelist-imap-setup (GET) - whitelist_imap_setup_page
 
 Extracted from 01_web_app.py lines: 2392-2720, 6322-6490, 6583-7520, 7763-8020, 8985-9050
 """
@@ -1230,8 +1231,12 @@ def imap_diagnostics():
 @accounts_bp.route("/mail-account/<int:account_id>/fetch", methods=["POST"])
 @login_required
 def fetch_mails(account_id):
-    """Triggert Background-Job für Mail-Fetch"""
+    """Triggert Background-Job oder Celery-Task für Mail-Fetch"""
+    import os
     models = _get_models()
+    
+    # Check: Celery oder Legacy Job Queue?
+    use_celery = os.getenv("USE_LEGACY_JOBS", "false").lower() == "false"
     
     # Lazy imports für AI und Sanitizer
     import importlib
@@ -1271,35 +1276,82 @@ def fetch_mails(account_id):
             use_cloud = ai_client.provider_requires_cloud(provider)
             sanitize_level = sanitizer.get_sanitization_level(use_cloud)
         
-        # Account gehört User - Job queuen
-        job_queue = _get_job_queue()
+        # ═══════════════════════════════════════════════════════════════════
+        # CELERY PATH (NEW) - Multi-User Ready
+        # ═══════════════════════════════════════════════════════════════════
+        if use_celery:
+            from src.tasks.mail_sync_tasks import sync_user_emails
+            from src.07_auth import ServiceTokenManager
+            
+            try:
+                # Phase 2 Security: ServiceToken erstellen (DEK nicht in Redis!)
+                # Der Task bekommt nur die token_id, nicht den master_key
+                with get_db_session() as token_db:
+                    _, service_token = ServiceTokenManager.create_token(
+                        user_id=user.id,
+                        master_key=master_key,
+                        session=token_db,
+                        days=1  # Sync-Token nur 1 Tag gültig
+                    )
+                    service_token_id = service_token.id
+                
+                # Queue Celery Task (asynchron, skalierbar)
+                task = sync_user_emails.delay(
+                    user_id=user.id,
+                    account_id=account_id,
+                    service_token_id=service_token_id,
+                    max_emails=fetch_limit
+                )
+                
+                logger.info(f"fetch_mails: Celery Task {task.id} für Account {account_id} gequeued")
+                
+                return jsonify({
+                    "status": "queued",
+                    "task_id": task.id,
+                    "task_type": "celery",
+                    "provider": provider,
+                    "model": resolved_model,
+                    "is_initial": is_initial,
+                    "max_mails": fetch_limit
+                })
+                
+            except Exception as e:
+                logger.error(f"fetch_mails: Celery-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"error": "Fehler beim Starten des Sync-Tasks"}), 500
         
-        try:
-            job_id = job_queue.enqueue_fetch_job(
-                user_id=user.id,
-                account_id=account.id,
-                master_key=master_key,
-                provider=provider,
-                model=resolved_model,
-                max_mails=fetch_limit,
-                sanitize_level=sanitize_level,
-                meta={"trigger": "settings", "is_initial": is_initial},
-            )
-            logger.info(f"fetch_mails: Job {job_id} für Account {account_id} gequeued")
-            return jsonify({
-                "status": "queued",
-                "job_id": job_id,
-                "provider": provider,
-                "model": resolved_model,
-                "is_initial": is_initial,
-                "max_mails": fetch_limit
-            })
-        except ValueError as e:
-            logger.error(f"fetch_mails: Validierung fehlgeschlagen: {e}")
-            return jsonify({"error": str(e)}), 400
-        except Exception as e:
-            logger.error(f"fetch_mails: Queue-Fehler: {type(e).__name__}: {e}")
-            return jsonify({"error": "Fehler beim Starten des Fetch-Jobs"}), 500
+        # ═══════════════════════════════════════════════════════════════════
+        # LEGACY PATH (OLD) - BackgroundJobQueue
+        # ═══════════════════════════════════════════════════════════════════
+        else:
+            job_queue = _get_job_queue()
+            
+            try:
+                job_id = job_queue.enqueue_fetch_job(
+                    user_id=user.id,
+                    account_id=account.id,
+                    master_key=master_key,
+                    provider=provider,
+                    model=resolved_model,
+                    max_mails=fetch_limit,
+                    sanitize_level=sanitize_level,
+                    meta={"trigger": "settings", "is_initial": is_initial},
+                )
+                logger.info(f"fetch_mails: Legacy Job {job_id} für Account {account_id} gequeued")
+                return jsonify({
+                    "status": "queued",
+                    "job_id": job_id,
+                    "task_type": "legacy",
+                    "provider": provider,
+                    "model": resolved_model,
+                    "is_initial": is_initial,
+                    "max_mails": fetch_limit
+                })
+            except ValueError as e:
+                logger.error(f"fetch_mails: Validierung fehlgeschlagen: {e}")
+                return jsonify({"error": str(e)}), 400
+            except Exception as e:
+                logger.error(f"fetch_mails: Queue-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"error": "Fehler beim Starten des Fetch-Jobs"}), 500
             
     except Exception as e:
         logger.error(f"fetch_mails: Fehler: {type(e).__name__}: {e}")
@@ -1550,6 +1602,81 @@ def job_status(job_id):
         return jsonify(status)
     except Exception as e:
         logger.error(f"job_status: Fehler für Job {job_id}: {type(e).__name__}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@accounts_bp.route("/tasks/<string:task_id>")
+@login_required
+@limiter.exempt  # 🔥 Keine Rate-Limits für Task-Polling (wie job_status)
+def task_status(task_id):
+    """Liefert Status-Infos zu einem Celery Task (Multi-User Migration)
+    
+    Celery-Task Equivalent zu job_status() für die neue Architektur.
+    
+    Returns:
+        {
+            "task_id": "abc-123",
+            "state": "PENDING|STARTED|SUCCESS|FAILURE|RETRY",
+            "status": "queued|running|completed|failed",
+            "result": {...} oder None,
+            "error": "..." (nur bei FAILURE)
+        }
+    
+    States:
+        PENDING:  Task wurde gequeued, aber noch nicht gestartet
+        STARTED:  Task läuft gerade
+        SUCCESS:  Task erfolgreich abgeschlossen
+        FAILURE:  Task ist fehlgeschlagen (max retries erreicht)
+        RETRY:    Task wird wiederholt nach Fehler
+    
+    Security:
+        ✅ Task-Results sind nicht user-spezifisch gechecked!
+        ✅ Aber: Tasks selbst prüfen user_id bei Ausführung
+        ❌ TODO: Task-Result mit user_id taggen für extra Security
+    """
+    # Validate task_id format (UUID-like)
+    if not task_id or len(task_id) > 100:
+        return jsonify({"error": "Ungültige Task-ID"}), 400
+    
+    try:
+        from src.celery_app import celery_app
+        
+        # Get task result
+        result = celery_app.AsyncResult(task_id)
+        
+        # Map Celery states to our status format
+        state_map = {
+            "PENDING": "queued",
+            "STARTED": "running",
+            "SUCCESS": "completed",
+            "FAILURE": "failed",
+            "RETRY": "running"
+        }
+        
+        response = {
+            "task_id": task_id,
+            "state": result.state,
+            "status": state_map.get(result.state, "unknown")
+        }
+        
+        # Add result if ready
+        if result.ready():
+            if result.successful():
+                response["result"] = result.result
+            else:
+                # Task failed
+                response["error"] = str(result.info)
+        
+        # Add progress info if available (for STARTED/PROGRESS tasks)
+        # 🔥 Celery Custom States: self.update_state(state='PROGRESS', meta={...})
+        if result.state in ("STARTED", "PROGRESS") and hasattr(result.info, 'get'):
+            # Kopiere ALLE meta-Felder (wie Legacy _update_status)
+            response.update(result.info)
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"task_status: Fehler für Task {task_id}: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
 
