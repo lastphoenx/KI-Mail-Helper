@@ -772,7 +772,7 @@ document.addEventListener('DOMContentLoaded', function() {
         reprocessEmail(emailId);
     });
     
-    // Optimize button
+    // Optimize button (mit Celery-Unterstützung)
     document.getElementById('optimizeBtn').addEventListener('click', function(e) {
         e.preventDefault();
         const btn = this;
@@ -810,6 +810,93 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .then(response => response.json())
         .then(data => {
+            // ═══════════════════════════════════════════════════════════════
+            // CELERY PATH: Task gequeued → Poll for status
+            // ═══════════════════════════════════════════════════════════════
+            if (data.task_type === 'celery' && data.task_id) {
+                clearInterval(progressInterval);
+                console.log(`🚀 Celery Optimize Task gestartet: ${data.task_id}`);
+                document.getElementById('progressText').textContent = 'Optimize-Task gestartet...';
+                
+                // Poll task status
+                const pollTask = async (taskId, attempt = 0) => {
+                    try {
+                        const statusResp = await fetch(`/tasks/${taskId}`, {cache: 'no-store'});
+                        const status = await statusResp.json();
+                        
+                        // Progress update from task
+                        if (status.progress) {
+                            document.getElementById('progressBar').style.width = status.progress + '%';
+                            document.getElementById('progressPercent').textContent = Math.floor(status.progress) + '%';
+                        }
+                        if (status.message) {
+                            document.getElementById('progressText').textContent = status.message;
+                        }
+                        
+                        if (status.state === 'SUCCESS' || status.status === 'completed') {
+                            clearInterval(timerInterval);
+                            document.getElementById('progressBar').style.width = '100%';
+                            document.getElementById('progressPercent').textContent = '100%';
+                            const result = status.result || {};
+                            document.getElementById('progressText').textContent = 'Optimize-Pass abgeschlossen!';
+                            document.getElementById('statusMessage').style.display = 'block';
+                            document.getElementById('statusMessage').className = 'alert alert-success';
+                            document.getElementById('statusMessage').innerHTML = `✓ Neue Kategorie: <strong>${result.kategorie_aktion || 'undefined'}</strong>`;
+                            const closeBtn = document.getElementById('closeAnalysisBtn');
+                            closeBtn.style.display = 'block';
+                            closeBtn.onclick = () => { modal.hide(); location.reload(); };
+                            btn.disabled = false;
+                            btn.textContent = '🔧 Optimize-Pass (bessere Kategorisierung)';
+                            return;
+                        }
+                        
+                        if (status.state === 'FAILURE' || status.status === 'failed') {
+                            clearInterval(timerInterval);
+                            document.getElementById('progressBar').classList.add('bg-danger');
+                            document.getElementById('progressText').textContent = 'Fehler';
+                            document.getElementById('statusMessage').style.display = 'block';
+                            document.getElementById('statusMessage').className = 'alert alert-danger';
+                            document.getElementById('statusMessage').textContent = status.error || 'Optimize fehlgeschlagen';
+                            const closeBtn = document.getElementById('closeAnalysisBtn');
+                            closeBtn.style.display = 'block';
+                            closeBtn.onclick = () => { modal.hide(); };
+                            btn.disabled = false;
+                            btn.textContent = '🔧 Optimize-Pass (bessere Kategorisierung)';
+                            return;
+                        }
+                        
+                        // Weiter pollen (max 90 Versuche = 3 Minuten)
+                        if (attempt < 90) {
+                            setTimeout(() => pollTask(taskId, attempt + 1), 2000);
+                        } else {
+                            clearInterval(timerInterval);
+                            modal.hide();
+                            alert('⚠️ Task läuft noch im Hintergrund. Seite neu laden.');
+                            btn.disabled = false;
+                            btn.textContent = '🔧 Optimize-Pass (bessere Kategorisierung)';
+                        }
+                    } catch (err) {
+                        console.error('Poll error:', err);
+                        if (attempt < 5) {
+                            setTimeout(() => pollTask(taskId, attempt + 1), 3000);
+                        } else {
+                            clearInterval(timerInterval);
+                            modal.hide();
+                            alert('❌ Polling-Fehler');
+                            btn.disabled = false;
+                            btn.textContent = '🔧 Optimize-Pass (bessere Kategorisierung)';
+                        }
+                    }
+                };
+                
+                // Start polling
+                setTimeout(() => pollTask(data.task_id), 1000);
+                return;
+            }
+            
+            // ═══════════════════════════════════════════════════════════════
+            // LEGACY PATH: Sync response
+            // ═══════════════════════════════════════════════════════════════
             clearInterval(progressInterval);
             clearInterval(timerInterval);
             document.getElementById('progressBar').style.width = '100%';
@@ -970,9 +1057,90 @@ document.addEventListener('DOMContentLoaded', function() {
                     credentials: 'include'
                 });
                 
-                clearInterval(progressInterval);
-                
                 const data = await response.json();
+                
+                // ═══════════════════════════════════════════════════════════════
+                // CELERY PATH: Task gequeued → Poll for status
+                // ═══════════════════════════════════════════════════════════════
+                if (data.task_type === 'celery' && data.task_id) {
+                    clearInterval(progressInterval);
+                    console.log(`🚀 Celery Task gestartet: ${data.task_id}`);
+                    
+                    // Poll task status
+                    const pollTask = async (taskId, attempt = 0) => {
+                        try {
+                            const statusResp = await fetch(`/tasks/${taskId}`, {cache: 'no-store'});
+                            const status = await statusResp.json();
+                            
+                            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                            document.getElementById('reprocessElapsed').textContent = elapsed + 's';
+                            
+                            // Progress update from task
+                            if (status.progress) {
+                                const progress = Math.min(95, status.progress);
+                                document.getElementById('reprocessProgressBar').style.width = progress + '%';
+                                document.getElementById('reprocessProgressBar').textContent = Math.floor(progress) + '%';
+                            }
+                            
+                            if (status.state === 'SUCCESS' || status.status === 'completed') {
+                                document.getElementById('reprocessProgressBar').style.width = '100%';
+                                document.getElementById('reprocessProgressBar').textContent = '100%';
+                                document.getElementById('reprocessProgressBar').classList.remove('progress-bar-animated');
+                                
+                                setTimeout(() => {
+                                    progressModal.hide();
+                                    const result = status.result || {};
+                                    alert('✅ Email erfolgreich neu verarbeitet!\n\n' +
+                                          `Model: ${result.model || 'unbekannt'}\n` +
+                                          `Score: ${result.score !== undefined ? result.score : 'n/a'}`);
+                                    location.reload();
+                                }, 500);
+                                return;
+                            }
+                            
+                            if (status.state === 'FAILURE' || status.status === 'failed') {
+                                document.getElementById('reprocessProgressBar').classList.add('bg-danger');
+                                document.getElementById('reprocessProgressBar').classList.remove('progress-bar-animated');
+                                setTimeout(() => {
+                                    progressModal.hide();
+                                    alert('❌ Fehler: ' + (status.error || 'Task fehlgeschlagen'));
+                                    reprocessBtn.disabled = false;
+                                    reprocessBtn.innerHTML = originalText;
+                                }, 500);
+                                return;
+                            }
+                            
+                            // Weiter pollen (max 120 Versuche = 4 Minuten)
+                            if (attempt < 120) {
+                                setTimeout(() => pollTask(taskId, attempt + 1), 2000);
+                            } else {
+                                progressModal.hide();
+                                alert('⚠️ Task läuft noch im Hintergrund. Seite neu laden.');
+                                reprocessBtn.disabled = false;
+                                reprocessBtn.innerHTML = originalText;
+                            }
+                        } catch (err) {
+                            console.error('Poll error:', err);
+                            if (attempt < 5) {
+                                setTimeout(() => pollTask(taskId, attempt + 1), 3000);
+                            } else {
+                                progressModal.hide();
+                                alert('❌ Polling-Fehler. Task läuft evtl. noch im Hintergrund.');
+                                reprocessBtn.disabled = false;
+                                reprocessBtn.innerHTML = originalText;
+                            }
+                        }
+                    };
+                    
+                    // Start polling
+                    setTimeout(() => pollTask(data.task_id), 1000);
+                    return;
+                }
+                
+                // ═══════════════════════════════════════════════════════════════
+                // LEGACY PATH: Sync response
+                // ═══════════════════════════════════════════════════════════════
+                clearInterval(progressInterval);
                 
                 // Progress auf 100%
                 document.getElementById('reprocessProgressBar').style.width = '100%';
@@ -2055,6 +2223,91 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('🔍 API Response received:', data);
             console.log('🔍 success:', data.success, 'has reply_text:', !!data.reply_text);
             
+            // ═══════════════════════════════════════════════════════════════
+            // CELERY PATH: Task gequeued → Poll for status
+            // ═══════════════════════════════════════════════════════════════
+            if (data.task_type === 'celery' && data.task_id) {
+                console.log(`🚀 Celery GenerateReply Task gestartet: ${data.task_id}`);
+                loadingDiv.innerHTML = '<div class="spinner-border spinner-border-sm"></div> <strong>⏳ Antwort wird generiert (Hintergrund-Task)...</strong>';
+                
+                // Poll task status
+                const pollTask = async (taskId, attempt = 0) => {
+                    try {
+                        const statusResp = await fetch(`/tasks/${taskId}`, {cache: 'no-store'});
+                        const status = await statusResp.json();
+                        
+                        // Progress update from task
+                        if (status.message) {
+                            loadingDiv.innerHTML = `<div class="spinner-border spinner-border-sm"></div> ${status.message}`;
+                        }
+                        
+                        if (status.state === 'SUCCESS' || status.status === 'completed') {
+                            const result = status.result || {};
+                            
+                            if (result.success && result.reply_text) {
+                                // De-Anonymisierung falls nötig
+                                let displayText = result.reply_text;
+                                if (result.was_anonymized && result.entity_map) {
+                                    displayText = deAnonymizeText(result.reply_text, result.entity_map);
+                                    console.log('🔓 Text de-anonymisiert für Anzeige');
+                                }
+                                
+                                // Show reply
+                                generatedReply = displayText;
+                                document.getElementById('replyText').value = generatedReply;
+                                document.getElementById('replyToneName').textContent = result.tone_name || tone;
+                                
+                                // Provider-Info anzeigen
+                                const providerInfo = document.getElementById('replyProviderInfo');
+                                if (result.provider_used) {
+                                    providerInfo.innerHTML = ` • Provider: <strong>${result.provider_used}/${result.model_used}</strong>`;
+                                    if (result.was_anonymized) {
+                                        providerInfo.innerHTML += ' 🔒';
+                                    }
+                                    providerInfo.style.display = 'inline';
+                                }
+                                
+                                updateCharCount();
+                                
+                                loadingDiv.style.display = 'none';
+                                document.getElementById('replyContent').style.display = 'block';
+                                document.getElementById('copyReplyBtn').style.display = 'inline-block';
+                                document.getElementById('sendDraftBtn').style.display = 'inline-block';
+                            } else {
+                                showReplyError(result.error || 'Generierung fehlgeschlagen');
+                            }
+                            return;
+                        }
+                        
+                        if (status.state === 'FAILURE' || status.status === 'failed') {
+                            showReplyError(status.error || 'Task fehlgeschlagen');
+                            return;
+                        }
+                        
+                        // Weiter pollen (max 45 Versuche = 90 Sekunden)
+                        if (attempt < 45) {
+                            setTimeout(() => pollTask(taskId, attempt + 1), 2000);
+                        } else {
+                            showReplyError('Timeout - Task läuft noch im Hintergrund');
+                        }
+                    } catch (err) {
+                        console.error('Poll error:', err);
+                        if (attempt < 5) {
+                            setTimeout(() => pollTask(taskId, attempt + 1), 3000);
+                        } else {
+                            showReplyError('Polling-Fehler: ' + err.message);
+                        }
+                    }
+                };
+                
+                // Start polling
+                setTimeout(() => pollTask(data.task_id), 1000);
+                return;
+            }
+            
+            // ═══════════════════════════════════════════════════════════════
+            // LEGACY PATH: Sync response
+            // ═══════════════════════════════════════════════════════════════
             if (data.success && data.reply_text) {
                 // 🆕 De-Anonymisierung falls nötig
                 let displayText = data.reply_text;
