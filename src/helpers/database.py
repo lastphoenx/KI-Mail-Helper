@@ -167,3 +167,19 @@ def get_mail_account(session, account_id: int, user_id: int):
         id=account_id, 
         user_id=user_id  # Security: Ownership Check!
     ).first()
+
+
+def get_session_factory():
+    """Get the SessionLocal factory for context-managed usage.
+    
+    Für Verwendung in Celery Tasks mit Context Manager:
+    
+        SessionFactory = get_session_factory()
+        with SessionFactory() as db:
+            user = db.query(User).first()
+            # ... do work ...
+    
+    Returns:
+        SessionLocal factory (callable, returns sessions)
+    """
+    return _get_session_local()

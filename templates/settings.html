@@ -547,7 +547,10 @@ function fetchMails(evt, accountId, accountName) {
     .then(data => {
         if (data.status === 'queued') {
             alert(`🕒 ${accountName}: Analyse läuft im Hintergrund.`);
-            if (data.job_id) {
+            // Support für Legacy Jobs (job_id) und Celery Tasks (task_id)
+            if (data.task_id && data.task_type === 'celery') {
+                pollCeleryTaskStatus(data.task_id, accountName, btn, originalLabel);
+            } else if (data.job_id) {
                 pollJobStatus(data.job_id, accountName, btn, originalLabel);
             }
             return;
@@ -580,6 +583,139 @@ function getAnalysisModal() {
 // GEÄNDERT 2026-01-05: Verhindert Modal-Updates von mehreren parallelen Jobs
 // Siehe: doc/offen/REFACTORING_JOB_MODAL_TRACKING.md
 let currentActiveJobId = null;
+
+function pollCeleryTaskStatus(taskId, accountName, btn, originalLabel, attempt = 0, startTime = Date.now()) {
+    // Task-Ownership Management (wie pollJobStatus)
+    if (attempt === 0) {
+        if (currentActiveJobId && currentActiveJobId !== taskId) {
+            console.log(`⚠️ Task ${taskId} übernimmt Modal von ${currentActiveJobId}`);
+        }
+        currentActiveJobId = taskId;
+    }
+    
+    if (currentActiveJobId !== taskId) {
+        console.log(`🛑 Poll ignoriert: Task ${taskId} nicht aktiv (aktiv: ${currentActiveJobId})`);
+        return;
+    }
+    
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const modal = getAnalysisModal();
+    if (attempt === 0) modal.show();
+    
+    fetch(`/tasks/${taskId}`, {cache: 'no-store'})
+        .then(r => {
+            if (r.status === 404) {
+                throw new Error('Task nicht gefunden');
+            }
+            if (!r.ok) {
+                throw new Error(`HTTP ${r.status}`);
+            }
+            return r.json();
+        })
+        .then(status => {
+            // Update Timer
+            document.getElementById('elapsedTime').textContent = formatTime(elapsed);
+            
+            // SUCCESS State
+            if (status.state === 'SUCCESS' || status.status === 'completed') {
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressPercent').textContent = '100%';
+                document.getElementById('progressText').textContent = `✅ ${accountName}: Fertig!`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusTitle').textContent = '✅ Sync abgeschlossen';
+                
+                const result = status.result || {};
+                document.getElementById('statusDetails').textContent = 
+                    `${result.folders_scanned || 0} Ordner, ${result.mails_on_server || 0} Server-Mails`;
+                
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    modal.hide();
+                    currentActiveJobId = null;
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel || 'Abrufen';
+                    }
+                });
+                return;
+            }
+            
+            // FAILURE State
+            if (status.state === 'FAILURE' || status.status === 'failed') {
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressBar').classList.add('bg-danger');
+                document.getElementById('progressText').textContent = `❌ ${accountName}: Fehler`;
+                document.getElementById('statusMessage').style.display = 'block';
+                document.getElementById('statusMessage').querySelector('.alert').className = 'alert alert-danger mb-0';
+                document.getElementById('statusTitle').textContent = '❌ Fehler beim Sync';
+                document.getElementById('statusDetails').textContent = status.error || 'Task fehlgeschlagen';
+                document.getElementById('closeAnalysisBtn').style.display = 'block';
+                document.getElementById('closeAnalysisBtn').addEventListener('click', function() {
+                    modal.hide();
+                    currentActiveJobId = null;
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalLabel || 'Abrufen';
+                    }
+                });
+                return;
+            }
+            
+            // RUNNING State (STARTED, RETRY, PENDING, PROGRESS)
+            // 🔥 Legacy-kompatible Progress-Anzeige mit phase/message/current_email_index/total_emails
+            
+            // 1️⃣ State-Sync Phase (Schritt 1): Zeige phase/message
+            if (status.phase && status.message) {
+                document.getElementById('progressText').textContent = `${accountName}: ${status.message}`;
+                
+                // Progress-Bar für Batch-Updates (State-Sync)
+                if (status.processed && status.total) {
+                    const progress = Math.min(95, (status.processed / status.total) * 100);
+                    document.getElementById('progressBar').style.width = progress + '%';
+                    document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+                    document.getElementById('emailCount').textContent = `${status.processed}/${status.total}`;
+                } else if (status.folder_idx && status.total_folders) {
+                    document.getElementById('emailCount').textContent = `Ordner ${status.folder_idx}/${status.total_folders}`;
+                } else {
+                    document.getElementById('emailCount').textContent = '—';
+                }
+                document.getElementById('remainingTime').textContent = '—';
+            }
+            // 2️⃣ Email Processing Phase: Zeige current_email_index/total_emails
+            else if (status.current_email_index && status.total_emails) {
+                const progress = Math.min(95, (status.current_email_index / status.total_emails) * 100);
+                document.getElementById('progressBar').style.width = progress + '%';
+                document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+                document.getElementById('emailCount').textContent = `${status.current_email_index}/${status.total_emails}`;
+                
+                const subjectDisplay = status.current_subject ? ` - ${status.current_subject}` : '';
+                document.getElementById('progressText').textContent = `${accountName}: Mail ${status.current_email_index}/${status.total_emails}${subjectDisplay}`;
+                document.getElementById('remainingTime').textContent = '—';
+            }
+            // 3️⃣ Fallback: Zeige generischen Status
+            else {
+                document.getElementById('progressText').textContent = `${accountName}: Synchronisiere...`;
+                document.getElementById('emailCount').textContent = '—';
+                document.getElementById('remainingTime').textContent = '—';
+            }
+            
+            // Poll weiter
+            setTimeout(() => pollCeleryTaskStatus(taskId, accountName, btn, originalLabel, attempt + 1, startTime), 3000);
+        })
+        .catch(err => {
+            console.error('Task polling error:', err);
+            // Bei Fehler: Poll weiter (3 Versuche)
+            if (attempt < 3) {
+                setTimeout(() => pollCeleryTaskStatus(taskId, accountName, btn, originalLabel, attempt + 1, startTime), 5000);
+            } else {
+                document.getElementById('progressText').textContent = `❌ ${accountName}: Polling-Fehler`;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = originalLabel || 'Abrufen';
+                }
+            }
+        });
+}
 
 function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, startTime = Date.now(), emailStartTime = null, lastEmailIndex = null) {
     // Job-Ownership Management: Bei erstem Aufruf übernimmt dieser Job das Modal
