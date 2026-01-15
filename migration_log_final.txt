@@ -1,0 +1,76 @@
+======================================================================
+SQLite → PostgreSQL Migration
+======================================================================
+Source: sqlite:///emails.db
+Target: postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper
+Dry-Run: False
+
+📊 Berechne Source-Checksums...
+   Tabellen: 23
+   Total Rows: 6116
+
+🔄 Migriere alembic_version (1 rows)...
+  alembic_version:   0%|          | 0/1 [00:00<?, ?it/s]  alembic_version: 100%|██████████| 1/1 [00:00<00:00, 588.59it/s]
+✅ alembic_version: 1 rows migrated, 0 errors
+🔄 Migriere users (1 rows)...
+  users:   0%|          | 0/1 [00:00<?, ?it/s]  users: 100%|██████████| 1/1 [00:00<00:00, 335.44it/s]
+✅ users: 1 rows migrated, 0 errors
+🔄 Migriere mail_accounts (2 rows)...
+  mail_accounts:   0%|          | 0/2 [00:00<?, ?it/s]  mail_accounts: 100%|██████████| 2/2 [00:00<00:00, 275.41it/s]
+✅ mail_accounts: 2 rows migrated, 0 errors
+🔄 Migriere raw_emails (70 rows)...
+  raw_emails:   0%|          | 0/70 [00:00<?, ?it/s]  raw_emails:  61%|██████▏   | 43/70 [00:00<00:00, 429.10it/s]  raw_emails: 100%|██████████| 70/70 [00:00<00:00, 434.67it/s]
+✅ raw_emails: 70 rows migrated, 0 errors
+🔄 Migriere processed_emails (70 rows)...
+  processed_emails:   0%|          | 0/70 [00:00<?, ?it/s]  processed_emails:  81%|████████▏ | 57/70 [00:00<00:00, 563.09it/s]  processed_emails: 100%|██████████| 70/70 [00:00<00:00, 562.64it/s]
+✅ processed_emails: 70 rows migrated, 0 errors
+🔄 Migriere sender_patterns (35 rows)...
+  sender_patterns:   0%|          | 0/35 [00:00<?, ?it/s]  sender_patterns: 100%|██████████| 35/35 [00:00<00:00, 960.06it/s]
+✅ sender_patterns: 35 rows migrated, 0 errors
+🔄 Migriere auto_rules (1 rows)...
+  auto_rules:   0%|          | 0/1 [00:00<?, ?it/s]  auto_rules: 100%|██████████| 1/1 [00:00<00:00, 361.08it/s]
+✅ auto_rules: 1 rows migrated, 0 errors
+🔄 Migriere email_tags (16 rows)...
+  email_tags:   0%|          | 0/16 [00:00<?, ?it/s]  email_tags: 100%|██████████| 16/16 [00:00<00:00, 843.77it/s]
+✅ email_tags: 16 rows migrated, 0 errors
+🔄 Migriere mail_server_state (5785 rows)...
+  mail_server_state:   0%|          | 0/5785 [00:00<?, ?it/s]  mail_server_state:   2%|▏         | 104/5785 [00:00<00:05, 1039.98it/s]  mail_server_state:   4%|▎         | 208/5785 [00:00<00:05, 1005.86it/s]  mail_server_state:   5%|▌         | 316/5785 [00:00<00:05, 1037.51it/s]  mail_server_state:   7%|▋         | 420/5785 [00:00<00:05, 1037.76it/s]  mail_server_state:   9%|▉         | 524/5785 [00:00<00:05, 929.52it/s]   mail_server_state:  11%|█         | 619/5785 [00:00<00:05, 906.18it/s]  mail_server_state:  12%|█▏        | 713/5785 [00:00<00:05, 913.93it/s]  mail_server_state:  14%|█▍        | 821/5785 [00:00<00:05, 962.34it/s]  mail_server_state:  16%|█▌        | 929/5785 [00:00<00:04, 996.49it/s]  mail_server_state:  18%|█▊        | 1039/5785 [00:01<00:04, 1025.75it/s]  mail_server_state:  20%|█▉        | 1143/5785 [00:01<00:04, 1006.31it/s]  mail_server_state:  22%|██▏       | 1245/5785 [00:01<00:04, 1002.68it/s]  mail_server_state:  23%|██▎       | 1349/5785 [00:01<00:04, 1012.69it/s]  mail_server_state:  25%|██▌       | 1451/5785 [00:01<00:04, 1004.50it/s]  mail_server_state:  27%|██▋       | 1552/5785 [00:01<00:04, 989.59it/s]   mail_server_state:  29%|██▊       | 1652/5785 [00:01<00:04, 982.27it/s]  mail_server_state:  30%|███       | 1751/5785 [00:01<00:04, 983.24it/s]  mail_server_state:  32%|███▏      | 1864/5785 [00:01<00:03, 1024.09it/s]  mail_server_state:  34%|███▍      | 1975/5785 [00:01<00:03, 1049.41it/s]  mail_server_state:  36%|███▌      | 2097/5785 [00:02<00:03, 1098.15it/s]  mail_server_state:  38%|███▊      | 2220/5785 [00:02<00:03, 1136.62it/s]  mail_server_state:  40%|████      | 2334/5785 [00:02<00:03, 1134.67it/s]  mail_server_state:  43%|████▎     | 2466/5785 [00:02<00:02, 1189.45it/s]  mail_server_state:  45%|████▍     | 2586/5785 [00:02<00:02, 1178.29it/s]  mail_server_state:  47%|████▋     | 2704/5785 [00:02<00:02, 1034.75it/s]  mail_server_state:  49%|████▊     | 2811/5785 [00:02<00:02, 1006.92it/s]  mail_server_state:  51%|█████     | 2924/5785 [00:02<00:02, 1035.34it/s]  mail_server_state:  53%|█████▎    | 3041/5785 [00:02<00:02, 1072.62it/s]  mail_server_state:  54%|█████▍    | 3150/5785 [00:03<00:02, 1055.30it/s]  mail_server_state:  56%|█████▋    | 3261/5785 [00:03<00:02, 1069.67it/s]  mail_server_state:  58%|█████▊    | 3374/5785 [00:03<00:02, 1085.46it/s]  mail_server_state:  60%|██████    | 3487/5785 [00:03<00:02, 1096.80it/s]  mail_server_state:  62%|██████▏   | 3598/5785 [00:03<00:02, 1089.81it/s]  mail_server_state:  64%|██████▍   | 3708/5785 [00:03<00:01, 1086.68it/s]  mail_server_state:  66%|██████▌   | 3817/5785 [00:03<00:01, 1076.31it/s]  mail_server_state:  68%|██████▊   | 3929/5785 [00:03<00:01, 1086.27it/s]  mail_server_state:  70%|██████▉   | 4043/5785 [00:03<00:01, 1099.88it/s]  mail_server_state:  72%|███████▏  | 4162/5785 [00:03<00:01, 1124.59it/s]  mail_server_state:  74%|███████▍  | 4281/5785 [00:04<00:01, 1141.63it/s]  mail_server_state:  76%|███████▌  | 4398/5785 [00:04<00:01, 1147.77it/s]  mail_server_state:  78%|███████▊  | 4513/5785 [00:04<00:01, 1021.55it/s]  mail_server_state:  80%|███████▉  | 4618/5785 [00:04<00:01, 963.43it/s]   mail_server_state:  82%|████████▏ | 4717/5785 [00:04<00:01, 892.97it/s]  mail_server_state:  83%|████████▎ | 4814/5785 [00:04<00:01, 912.84it/s]  mail_server_state:  85%|████████▍ | 4908/5785 [00:04<00:01, 870.06it/s]  mail_server_state:  87%|████████▋ | 5009/5785 [00:04<00:00, 907.27it/s]  mail_server_state:  88%|████████▊ | 5113/5785 [00:04<00:00, 942.16it/s]  mail_server_state:  90%|█████████ | 5218/5785 [00:05<00:00, 971.66it/s]  mail_server_state:  92%|█████████▏| 5333/5785 [00:05<00:00, 1022.87it/s]  mail_server_state:  94%|█████████▍| 5444/5785 [00:05<00:00, 1047.48it/s]  mail_server_state:  96%|█████████▌| 5551/5785 [00:05<00:00, 1053.92it/s]  mail_server_state:  98%|█████████▊| 5657/5785 [00:05<00:00, 1034.27it/s]  mail_server_state: 100%|█████████▉| 5761/5785 [00:05<00:00, 1032.13it/s]  mail_server_state: 100%|██████████| 5785/5785 [00:05<00:00, 1030.04it/s]
+✅ mail_server_state: 5785 rows migrated, 0 errors
+📭 tag_suggestion_queue: Keine Daten
+📭 email_folders: Keine Daten
+🔄 Migriere email_tag_assignments (26 rows)...
+  email_tag_assignments:   0%|          | 0/26 [00:00<?, ?it/s]  email_tag_assignments: 100%|██████████| 26/26 [00:00<00:00, 1344.84it/s]
+✅ email_tag_assignments: 26 rows migrated, 0 errors
+🔄 Migriere invited_emails (1 rows)...
+  invited_emails:   0%|          | 0/1 [00:00<?, ?it/s]  invited_emails: 100%|██████████| 1/1 [00:00<00:00, 497.37it/s]
+✅ invited_emails: 1 rows migrated, 0 errors
+🔄 Migriere recovery_codes (10 rows)...
+  recovery_codes:   0%|          | 0/10 [00:00<?, ?it/s]  recovery_codes: 100%|██████████| 10/10 [00:00<00:00, 1481.72it/s]
+✅ recovery_codes: 10 rows migrated, 0 errors
+🔄 Migriere reply_style_settings (3 rows)...
+  reply_style_settings:   0%|          | 0/3 [00:00<?, ?it/s]  reply_style_settings: 100%|██████████| 3/3 [00:00<00:00, 667.81it/s]
+✅ reply_style_settings: 3 rows migrated, 0 errors
+🔄 Migriere rule_execution_logs (15 rows)...
+  rule_execution_logs:   0%|          | 0/15 [00:00<?, ?it/s]  rule_execution_logs: 100%|██████████| 15/15 [00:00<00:00, 928.20it/s]
+✅ rule_execution_logs: 15 rows migrated, 0 errors
+🔄 Migriere service_tokens (56 rows)...
+  service_tokens:   0%|          | 0/56 [00:00<?, ?it/s]  service_tokens: 100%|██████████| 56/56 [00:00<00:00, 1106.70it/s]
+✅ service_tokens: 56 rows migrated, 0 errors
+🔄 Migriere spacy_keyword_sets (12 rows)...
+  spacy_keyword_sets:   0%|          | 0/12 [00:00<?, ?it/s]  spacy_keyword_sets: 100%|██████████| 12/12 [00:00<00:00, 919.60it/s]
+✅ spacy_keyword_sets: 12 rows migrated, 0 errors
+🔄 Migriere spacy_scoring_config (1 rows)...
+  spacy_scoring_config:   0%|          | 0/1 [00:00<?, ?it/s]  spacy_scoring_config: 100%|██████████| 1/1 [00:00<00:00, 423.45it/s]
+✅ spacy_scoring_config: 1 rows migrated, 0 errors
+📭 spacy_user_domains: Keine Daten
+🔄 Migriere spacy_vip_senders (1 rows)...
+  spacy_vip_senders:   0%|          | 0/1 [00:00<?, ?it/s]  spacy_vip_senders: 100%|██████████| 1/1 [00:00<00:00, 335.06it/s]
+✅ spacy_vip_senders: 1 rows migrated, 0 errors
+📭 tag_negative_examples: Keine Daten
+🔄 Migriere trusted_senders (10 rows)...
+  trusted_senders:   0%|          | 0/10 [00:00<?, ?it/s]  trusted_senders: 100%|██████████| 10/10 [00:00<00:00, 846.22it/s]
+✅ trusted_senders: 10 rows migrated, 0 errors
+
+======================================================================
+✅ Validiere Migration...
+   ❌ alembic_version: Source=1, Target=2

@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Google OAuth Setup - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-4">
+    <div class="col-md-7">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">🔐 Google OAuth einrichten</h4>
+            </div>
+            <div class="card-body p-4">
+                {% if step == 1 %}
+                <!-- Schritt 1: OAuth Credentials eingeben -->
+                <div class="alert alert-info">
+                    <strong>📋 Schritt 1:</strong> Gib deine Google OAuth Credentials ein.
+                </div>
+                
+                <p class="mb-4">
+                    Du brauchst noch deine <strong>Client-ID</strong> und <strong>Client-Secret</strong>?
+                    <a href="#" data-bs-toggle="collapse" data-bs-target="#helpText">Klick hier für Anleitung</a>
+                </p>
+                
+                <div class="collapse mb-4" id="helpText">
+                    <div class="alert alert-light border">
+                        <strong>So bekommst du die Credentials:</strong>
+                        <ol class="small mt-2">
+                            <li>Gehe zu <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a></li>
+                            <li>Erstelle ein neues Projekt: "Mail Helper"</li>
+                            <li>Aktiviere die <strong>Gmail API</strong></li>
+                            <li>Gehe zu <strong>Anmeldedaten</strong> → <strong>OAuth 2.0-Client-ID erstellen</strong></li>
+                            <li>Wähle <strong>"Webapplikation"</strong></li>
+                            <li>Füge diese Redirect URI hinzu:
+                                <code>http://localhost:5000/settings/mail-account/google/callback</code>
+                            </li>
+                            <li>Kopiere <strong>Client-ID</strong> und <strong>Client-Secret</strong></li>
+                        </ol>
+                    </div>
+                </div>
+                
+                {% if error %}
+                <div class="alert alert-danger">
+                    {{ error }}
+                </div>
+                {% endif %}
+                
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <div class="mb-3">
+                        <label for="client_id" class="form-label">
+                            <strong>Client-ID</strong>
+                        </label>
+                        <input 
+                            type="text" 
+                            class="form-control" 
+                            id="client_id" 
+                            name="client_id" 
+                            placeholder="xxx.apps.googleusercontent.com"
+                            required
+                        >
+                        <small class="form-text text-muted">
+                            Aus Google Cloud Console
+                        </small>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="client_secret" class="form-label">
+                            <strong>Client-Secret</strong>
+                        </label>
+                        <input 
+                            type="password" 
+                            class="form-control" 
+                            id="client_secret" 
+                            name="client_secret" 
+                            placeholder="••••••••••"
+                            required
+                        >
+                        <small class="form-text text-muted">
+                            Dein Secret wird AES-256 verschlüsselt gespeichert
+                        </small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100 btn-lg">
+                        Weiter zu Google Anmeldung →
+                    </button>
+                </form>
+                
+                {% else %}
+                <!-- Schritt 2: Google Redirect -->
+                <div class="text-center py-5">
+                    <div style="font-size:3rem; margin-bottom:20px;">🔄</div>
+                    <p class="lead">Leite dich zu Google weiter...</p>
+                    <a href="{{ google_auth_url }}" class="btn btn-primary btn-lg">
+                        Mit Google anmelden
+                    </a>
+                </div>
+                {% endif %}
+                
+                <hr>
+                
+                <a href="/settings" class="btn btn-outline-secondary w-100">
+                    ← Zurück zu Einstellungen
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
