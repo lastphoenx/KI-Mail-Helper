@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <!-- CSP Header wird via Python gesetzt (siehe 01_web_app.py @app.after_request) -->
+    <title>{% block title %}Mail Helper{% endblock %}</title>
+    
+    <!-- Security Fix (Layer 5): Bootstrap with SRI Hashes -->
+    <link 
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" 
+        rel="stylesheet"
+        integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM"
+        crossorigin="anonymous">
+    <style>
+        .priority-rot { background-color: #dc3545; color: white; }
+        .priority-gelb { background-color: #ffc107; color: black; }
+        .priority-grün { background-color: #28a745; color: white; }
+        
+        .matrix-cell {
+            border: 2px solid #dee2e6;
+            min-height: 120px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .matrix-cell:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">📧 Mail Helper</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <div class="navbar-nav">
+                    <a class="nav-link" href="/dashboard">📊 Matrix</a>
+                    <a class="nav-link" href="/list">📋 Liste</a>
+                    <a class="nav-link" href="/threads">💬 Threads</a>
+                    <a class="nav-link" href="/tags">🏷️ Tags</a>
+                    <a class="nav-link" href="/tag-suggestions">💡 Tag-Vorschläge</a>
+                    <a class="nav-link" href="/rules">⚡ Auto-Rules</a>
+                    <a class="nav-link" href="/rules/execution-log">📊 Regel-Log</a>
+                    <a class="nav-link" href="/reply-styles">✍️ Antwort-Stile</a>
+                    <a class="nav-link" href="/imap-diagnostics">🔧 IMAP-Test</a>
+                    <a class="nav-link" href="/mail-fetch-config">🤖 AI beim Abruf</a>
+                    <a class="nav-link" href="/whitelist">📬 Trusted Senders</a>
+                    <a class="nav-link" href="/whitelist-imap-setup">⚡ IMAP Setup</a>
+                    <a class="nav-link" href="/ki-prio">🎯 KI-Priorisierung</a>
+                    <a class="nav-link" href="/settings">⚙️ Einstellungen</a>
+                </div>
+                <div class="navbar-nav ms-auto">
+                    {% if current_user.is_authenticated %}
+                    <div class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="userMenu" role="button" data-bs-toggle="dropdown">
+                            👤 {{ current_user.user_model.username }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenu">
+                            <li><a class="dropdown-item" href="/settings">Einstellungen</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="/logout">Abmelden</a></li>
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+    
+    <main class="container-xxl mt-4">
+        {% with flashes = get_flashed_messages(with_categories=true) %}
+        {% if flashes %}
+        <div class="mb-3">
+            {% for category, message in flashes %}
+            <div class="alert alert-{{ category }} shadow-sm" role="alert">
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Progress Modal -->
+    <div class="modal fade" id="progressModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">⏳ Analyse läuft...</h5>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <small class="text-muted" id="progressText">Wird gestartet...</small>
+                        <div class="progress mt-2" style="height: 25px;">
+                            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%">
+                                <span id="progressPercent">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row text-center small">
+                        <div class="col-4">
+                            <strong id="elapsedTime">0s</strong><br><small>Verstrichen</small>
+                        </div>
+                        <div class="col-4">
+                            <strong id="remainingTime">~10min</strong><br><small>Timeout (pro Mail)</small>
+                        </div>
+                        <div class="col-4">
+                            <strong id="emailCount">0/0</strong><br><small>Emails</small>
+                        </div>
+                    </div>
+                    <div class="mt-3" id="statusMessage" style="display: none;">
+                        <div class="alert alert-info mb-0">
+                            <strong id="statusTitle">Analyse abgeschlossen</strong><br>
+                            <small id="statusDetails">Die Analyse wurde erfolgreich abgeschlossen.</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" id="closeAnalysisBtn" style="display: none;">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Korrektur Modal -->
+    <div class="modal fade" id="correctionModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">✏️ Bewertung korrigieren</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-4">
+                        <label class="form-label"><strong>Dringlichkeit</strong></label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="dringlichkeit" id="dring1" value="1">
+                            <label class="btn btn-outline-primary" for="dring1">🟢 Niedrig (1)</label>
+                            <input type="radio" class="btn-check" name="dringlichkeit" id="dring2" value="2">
+                            <label class="btn btn-outline-warning" for="dring2">🟡 Mittel (2)</label>
+                            <input type="radio" class="btn-check" name="dringlichkeit" id="dring3" value="3">
+                            <label class="btn btn-outline-danger" for="dring3">🔴 Hoch (3)</label>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="form-label"><strong>Wichtigkeit</strong></label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="wichtigkeit" id="wich1" value="1">
+                            <label class="btn btn-outline-secondary" for="wich1">⬜ Unwichtig (1)</label>
+                            <input type="radio" class="btn-check" name="wichtigkeit" id="wich2" value="2">
+                            <label class="btn btn-outline-info" for="wich2">⬙ Wichtig (2)</label>
+                            <input type="radio" class="btn-check" name="wichtigkeit" id="wich3" value="3">
+                            <label class="btn btn-outline-success" for="wich3">⬛ Sehr wichtig (3)</label>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="kategorie" class="form-label"><strong>Kategorie / Aktion</strong></label>
+                        <select id="kategorie" class="form-select">
+                            <option value="nur_information">📧 Nur Information</option>
+                            <option value="aktion_erforderlich">📋 Aktion erforderlich</option>
+                            <option value="dringend">🚨 Dringend</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="spamFlag">
+                            <label class="form-check-label" for="spamFlag">
+                                <strong>🚫 Spam?</strong>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info mb-4" role="alert">
+                        <small>ℹ️ <strong>Tags</strong> verwalten Sie direkt in der E-Mail-Ansicht. Das Tag-System lernt automatisch über Embeddings.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="noteInput" class="form-label"><strong>Notiz (optional)</strong></label>
+                        <textarea id="noteInput" class="form-control" rows="2" placeholder="Warum hast du das korrigiert?"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="button" class="btn btn-primary" id="saveCorrectionBtn">💾 Speichern & als Training markieren</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Security Fix (Layer 5): Bootstrap JS with SRI Hash -->
+    <script 
+        src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz"
+        crossorigin="anonymous"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

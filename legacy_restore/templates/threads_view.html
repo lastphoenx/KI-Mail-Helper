@@ -1,0 +1,525 @@
+{% extends "base.html" %}
+
+{% block title %}Threads - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="row h-100" style="min-height: calc(100vh - 200px);">
+    <!-- Left Panel: Thread List -->
+    <div class="col-md-4 border-end" style="overflow-y: auto; max-height: calc(100vh - 200px);">
+        <div class="sticky-top bg-white p-3 border-bottom">
+            <h5>💬 Conversations</h5>
+            
+            <!-- Account Filter (wie bei /list) -->
+            {% if user_accounts and user_accounts|length > 1 %}
+            <div class="mb-2">
+                <label class="form-label small mb-1">📧 Account</label>
+                <select class="form-select form-select-sm" id="accountFilter">
+                    <option value="">Alle Accounts</option>
+                    {% for account in user_accounts %}
+                    <option value="{{ account.id }}" {% if account.id|string == filter_account_id %}selected{% endif %}>
+                        {{ account.decrypted_imap_username or account.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            
+            <!-- Count Filter -->
+            <div class="mb-2">
+                <label class="form-label small mb-1">💬 Thread-Größe</label>
+                <select class="form-select form-select-sm" id="countFilter">
+                    <option value="">Alle</option>
+                    <option value="2">Nur Conversations (≥2)</option>
+                    <option value="3">Mindestens 3 E-Mails</option>
+                    <option value="5">Längere Diskussionen (≥5)</option>
+                    <option value="10">Sehr lange Threads (≥10)</option>
+                </select>
+            </div>
+            
+            <div class="input-group mb-2">
+                <input 
+                    type="text" 
+                    class="form-control" 
+                    id="searchInput" 
+                    placeholder="Search subjects..."
+                    autocomplete="off">
+                <button class="btn btn-outline-secondary" id="searchBtn">🔍</button>
+            </div>
+            <small class="text-muted">Click a thread to view</small>
+        </div>
+        
+        <div id="threadList" class="list-group list-group-flush">
+            <div class="list-group-item">
+                <div class="spinner-border spinner-border-sm" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <span class="ms-2">Loading threads...</span>
+            </div>
+        </div>
+        
+        <!-- Pagination -->
+        <div class="p-3 border-top d-flex justify-content-between align-items-center">
+            <button class="btn btn-sm btn-outline-secondary" id="prevBtn" disabled>← Prev</button>
+            <small id="pageInfo">Page 1</small>
+            <button class="btn btn-sm btn-outline-secondary" id="nextBtn">Next →</button>
+        </div>
+    </div>
+    
+    <!-- Right Panel: Conversation View -->
+    <div class="col-md-8" style="overflow-y: auto; max-height: calc(100vh - 200px);">
+        <div id="conversationView">
+            <div class="p-4 text-center text-muted">
+                <h5>👈 Select a thread to view conversation</h5>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Full Email Modal -->
+<div class="modal fade" id="emailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="emailModalTitle">Email</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="emailModalBody">
+                <!-- Email content will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce() }}">
+// Configuration constants
+const CONFIG = {
+    ITEMS_PER_PAGE: 50,
+    PREVIEW_LENGTH: 100,
+    MIN_SEARCH_LENGTH: 2,
+    MODAL_FADE_TIMEOUT: 300
+};
+
+// Global state
+let currentThreads = [];
+let currentPage = 0;
+let itemsPerPage = CONFIG.ITEMS_PER_PAGE;
+let currentSelectedThreadId = null;
+let isSearchMode = false;
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    loadThreads(0);
+    
+    document.getElementById('searchBtn').addEventListener('click', performSearch);
+    document.getElementById('searchInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') performSearch();
+    });
+    
+    document.getElementById('prevBtn').addEventListener('click', () => {
+        if (currentPage > 0) loadThreads(currentPage - 1);
+    });
+    
+    document.getElementById('nextBtn').addEventListener('click', () => {
+        loadThreads(currentPage + 1);
+    });
+    
+    // Account-Filter Event-Listener (CSP-konform)
+    const accountFilter = document.getElementById('accountFilter');
+    if (accountFilter) {
+        accountFilter.addEventListener('change', filterByAccount);
+    }
+    
+    // Count-Filter Event-Listener
+    const countFilter = document.getElementById('countFilter');
+    if (countFilter) {
+        countFilter.addEventListener('change', filterByAccount);  // Reuse same function
+    }
+});
+
+/**
+ * Filter threads by account (reload with filter)
+ */
+function filterByAccount() {
+    currentPage = 0;  // Reset to first page
+    loadThreads(0);
+}
+
+/**
+ * Load threads from API with pagination
+ * @param {number} [page=0] - Page number to load
+ * @returns {Promise<void>}
+ */
+async function loadThreads(page = 0) {
+    try {
+        const offset = page * itemsPerPage;
+        
+        // Account-Filter aus Dropdown
+        const accountFilter = document.getElementById('accountFilter');
+        const accountId = accountFilter ? accountFilter.value : '';
+        const accountParam = accountId ? `&mail_account=${accountId}` : '';
+        
+        // Count-Filter aus Dropdown
+        const countFilter = document.getElementById('countFilter');
+        const minCount = countFilter ? countFilter.value : '';
+        const countParam = minCount ? `&min_count=${minCount}` : '';
+        
+        const url = `/api/threads?limit=${itemsPerPage}&offset=${offset}${accountParam}${countParam}`;
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+            if (response.status === 401) {
+                showError('Session expired. Please login again.');
+                window.location.href = '/login';
+                return;
+            }
+            throw new Error(`API error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        currentThreads = data.threads;
+        currentPage = page;
+        isSearchMode = false;
+        
+        renderThreadList(currentThreads);
+        updatePagination(data.total);
+        
+    } catch (error) {
+        console.error('Error loading threads:', error);
+        showError('Failed to load threads: ' + error.message);
+        
+        const threadList = document.getElementById('threadList');
+        threadList.innerHTML = '<div class="list-group-item text-danger">⚠️ Failed to load threads. <br/><small>Check your internet connection and try again.</small></div>';
+    }
+}
+
+/**
+ * Perform thread search with query string
+ * @returns {Promise<void>}
+ */
+async function performSearch() {
+    const query = document.getElementById('searchInput').value.trim();
+    if (query.length < CONFIG.MIN_SEARCH_LENGTH) {
+        showError(`Search query must be at least ${CONFIG.MIN_SEARCH_LENGTH} characters`);
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/threads/search?q=${encodeURIComponent(query)}`);
+        if (!response.ok) {
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            throw new Error(`API error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        currentThreads = data.results;
+        isSearchMode = true;
+        currentPage = 0;
+        
+        renderThreadList(currentThreads);
+        updatePagination(data.total, true);
+        
+    } catch (error) {
+        console.error('Error searching threads:', error);
+        showError('Search failed: ' + error.message);
+        
+        const threadList = document.getElementById('threadList');
+        threadList.innerHTML = '<div class="list-group-item text-danger">⚠️ Search failed. Please try again.</div>';
+    }
+}
+
+/**
+ * Render thread list in the DOM
+ * @param {Array<{thread_id: string, subject: string, latest_sender: string, count: number, latest_date: string, has_unread: boolean}>} threads - List of threads to render
+ * @returns {void}
+ */
+function renderThreadList(threads) {
+    const listContainer = document.getElementById('threadList');
+    
+    if (threads.length === 0) {
+        listContainer.innerHTML = '<div class="list-group-item text-muted">No threads found</div>';
+        return;
+    }
+    
+    listContainer.innerHTML = threads.map(thread => `
+        <a href="#" class="list-group-item list-group-item-action" data-thread-id="${thread.thread_id}">
+            <div class="d-flex w-100 justify-content-between">
+                <strong>${escapeHtml(thread.subject)}</strong>
+                ${thread.has_unread ? '<span class="badge bg-primary">New</span>' : ''}
+            </div>
+            <small class="text-muted">
+                ${escapeHtml(thread.latest_sender)} • ${thread.count} email(s)
+            </small>
+            <small class="text-muted d-block">
+                ${formatDate(thread.latest_date)}
+            </small>
+        </a>
+    `).join('');
+    
+    // Add event listeners
+    document.querySelectorAll('#threadList .list-group-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault();
+            const threadId = item.getAttribute('data-thread-id');
+            selectThread(threadId);
+        });
+    });
+}
+
+/**
+ * Select a thread and load its conversation
+ * @param {string} threadId - ID of the thread to select
+ * @returns {Promise<void>}
+ */
+async function selectThread(threadId) {
+    currentSelectedThreadId = threadId;
+    
+    // Highlight selected
+    document.querySelectorAll('#threadList .list-group-item').forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('data-thread-id') === threadId) {
+            item.classList.add('active');
+        }
+    });
+    
+    try {
+        const response = await fetch(`/api/threads/${threadId}`);
+        if (!response.ok) {
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            throw new Error(`API error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        renderConversation(data);
+        
+    } catch (error) {
+        console.error('Error loading conversation:', error);
+        showError('Failed to load conversation: ' + error.message);
+        
+        const conversationView = document.getElementById('conversationView');
+        conversationView.innerHTML = '<div class="p-4 text-danger">⚠️ Failed to load conversation. Please try again.</div>';
+    }
+}
+
+/**
+ * Render conversation view with email list
+ * @param {Object} data - Conversation data from API
+ * @param {string} data.thread_id - Thread ID
+ * @param {Array} data.emails - List of emails in thread
+ * @param {Object} data.stats - Thread statistics
+ * @returns {void}
+ */
+function renderConversation(data) {
+    const viewContainer = document.getElementById('conversationView');
+    
+    if (!data.emails || data.emails.length === 0) {
+        viewContainer.innerHTML = '<div class="p-4 text-muted">No emails in this thread</div>';
+        return;
+    }
+    
+    let stats = '';
+    if (data.stats) {
+        stats = `
+            <small class="text-muted">
+                ${data.stats.count} email(s) • 
+                ${data.stats.unread_count} unread • 
+                ${data.stats.with_attachments_count} with attachments • 
+                ${data.stats.span_days} days span
+            </small>
+        `;
+    }
+    
+    let html = `
+        <div class="p-3 border-bottom">
+            <h6>Thread ${data.thread_id}</h6>
+            ${stats}
+        </div>
+    `;
+    
+    html += data.emails.map(email => `
+        <div class="card border-0 border-bottom rounded-0 p-3">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <strong>${escapeHtml(email.sender)}</strong>
+                    ${email.is_answered ? '<span class="badge bg-info ms-2">Answered</span>' : ''}
+                    ${email.has_attachments ? '<span class="badge bg-warning ms-2">Attachments</span>' : ''}
+                </div>
+                <small class="text-muted">${formatDateTime(email.received_at)}</small>
+            </div>
+            <small class="d-block text-muted mt-1">${escapeHtml(email.subject)}</small>
+            <small class="text-muted d-block mt-2">Message-ID: ${escapeHtml(email.message_id)}</small>
+            <button class="btn btn-sm btn-link mt-2 view-email-btn" 
+                    data-message-id="${escapeHtml(email.message_id)}"
+                    data-subject="${escapeHtml(email.subject)}"
+                    data-sender="${escapeHtml(email.sender)}"
+                    data-date="${escapeHtml(email.received_at)}">
+                View full →
+            </button>
+        </div>
+    `).join('');
+    
+    viewContainer.innerHTML = html;
+    
+    // Add event listeners to all view-email buttons
+    document.querySelectorAll('.view-email-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            viewFullEmail(
+                this.dataset.messageId,
+                this.dataset.subject,
+                this.dataset.sender,
+                this.dataset.date
+            );
+        });
+    });
+}
+
+/**
+ * Display full email in modal
+ * @param {string} messageId - Email message ID
+ * @param {string} subject - Email subject
+ * @param {string} sender - Email sender
+ * @param {string} date - Email date
+ * @returns {void}
+ */
+function viewFullEmail(messageId, subject, sender, date) {
+    document.getElementById('emailModalTitle').textContent = `From: ${escapeHtml(sender)}`;
+    document.getElementById('emailModalBody').innerHTML = `
+        <div class="mb-3">
+            <strong>Subject:</strong> ${escapeHtml(subject)}<br>
+            <strong>From:</strong> ${escapeHtml(sender)}<br>
+            <strong>Date:</strong> ${formatDateTime(date)}<br>
+            <strong>Message-ID:</strong> <code>${escapeHtml(messageId)}</code>
+        </div>
+        <hr>
+        <div class="bg-light p-3 rounded">
+            <small class="text-muted">Full email body would be displayed here</small>
+        </div>
+    `;
+    new bootstrap.Modal(document.getElementById('emailModal')).show();
+}
+
+/**
+ * Update pagination UI buttons and info
+ * @param {number} total - Total number of items
+ * @param {boolean} [isSearch=false] - Whether in search mode
+ * @returns {void}
+ */
+function updatePagination(total, isSearch = false) {
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const pageInfo = document.getElementById('pageInfo');
+    
+    prevBtn.disabled = currentPage === 0;
+    
+    const hasNextPage = (currentPage + 1) * itemsPerPage < total && !isSearch;
+    nextBtn.disabled = !hasNextPage;
+    
+    pageInfo.textContent = isSearch 
+        ? `${currentThreads.length} results`
+        : `Page ${currentPage + 1}`;
+}
+
+/**
+ * Escape HTML special characters to prevent XSS
+ * @param {string} text - Text to escape
+ * @returns {string} Escaped HTML
+ */
+function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+/**
+ * Format date for display (time if today, date otherwise)
+ * @param {string} dateString - ISO date string
+ * @returns {string} Formatted date
+ */
+function formatDate(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const today = new Date();
+    
+    if (date.toDateString() === today.toDateString()) {
+        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+/**
+ * Format datetime for display
+ * @param {string} dateString - ISO datetime string
+ * @returns {string} Formatted datetime
+ */
+function formatDateTime(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        hour: '2-digit', 
+        minute: '2-digit'
+    });
+}
+
+/**
+ * Display error message as alert
+ * @param {string} message - Error message to display
+ * @returns {void}
+ */
+function showError(message) {
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-danger alert-dismissible fade show';
+    alert.innerHTML = `
+        ${escapeHtml(message)}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.querySelector('main').insertBefore(alert, document.querySelector('main').firstChild);
+}
+</script>
+
+<style>
+#threadList {
+    max-height: calc(100vh - 350px);
+    overflow-y: auto;
+}
+
+.list-group-item {
+    cursor: pointer;
+}
+
+.list-group-item.active {
+    background-color: #e7f1ff;
+    color: #0d6efd;
+    border-color: #0d6efd;
+}
+
+#conversationView {
+    padding: 0;
+}
+
+.card {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.card:hover {
+    background-color: #f8f9fa;
+}
+</style>
+{% endblock %}
