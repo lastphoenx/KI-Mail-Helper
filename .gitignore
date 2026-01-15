@@ -116,3 +116,5 @@ change_password_route.txt
 *.bak
 emails.db.fresh_clone_EMPTY
 flask_session/
+projects.lnk
+src/tasks/mail_sync_tasks_COMPLETE.py
