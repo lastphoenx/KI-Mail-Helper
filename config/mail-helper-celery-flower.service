@@ -1,0 +1,37 @@
+﻿[Unit]
+Description=KI-Mail-Helper Flower Monitoring (Celery Web UI)
+After=network.target redis-server.service mail-helper-celery-worker.service
+Requires=redis-server.service
+
+[Service]
+Type=simple
+User=thomas
+Group=thomas
+WorkingDirectory=/home/thomas/projects/KI-Mail-Helper-Dev
+Environment="PATH=/home/thomas/projects/KI-Mail-Helper-Dev/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/home/thomas/projects/KI-Mail-Helper-Dev/.env.local
+
+# Flower Web UI auf Port 5555
+ExecStart=/home/thomas/projects/KI-Mail-Helper-Dev/venv/bin/celery \
+    -A src.celery_app flower \
+    --port=5555 \
+    --url_prefix=flower \
+    --max_tasks=10000 \
+    --purge_offline_workers=60
+
+# Graceful Shutdown
+Restart=always
+RestartSec=10s
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Security Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource Limits
+MemoryMax=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
