@@ -476,11 +476,13 @@ def api_apply_rules():
                 logger.info("🚀 [CELERY] Applying rules asynchronously")
                 
                 try:
+                    import importlib
                     from src.tasks.rule_execution_tasks import (
                         apply_rules_to_emails,
                         apply_rules_to_new_emails
                     )
-                    from src.07_auth import ServiceTokenManager
+                    auth = importlib.import_module(".07_auth", "src")
+                    ServiceTokenManager = auth.ServiceTokenManager
                     
                     # Phase 2 Security: ServiceToken erstellen (DEK nicht in Redis!)
                     with get_db_session() as token_db:
