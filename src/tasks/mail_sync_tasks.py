@@ -608,6 +608,15 @@ def _persist_raw_emails(
                 raw_email_data["references"], master_key
             )
 
+        # Inline-Attachments (CID-Bilder) verschlüsseln
+        encrypted_inline_attachments = None
+        inline_attachments = raw_email_data.get("inline_attachments")
+        if inline_attachments:
+            import json
+            encrypted_inline_attachments = encryption.EncryptionManager.encrypt_data(
+                json.dumps(inline_attachments), master_key
+            )
+
         raw_email = models.RawEmail(
             user_id=user.id,
             mail_account_id=account.id,
@@ -637,6 +646,8 @@ def _persist_raw_emails(
             content_type=raw_email_data.get("content_type"),
             charset=raw_email_data.get("charset"),
             has_attachments=raw_email_data.get("has_attachments"),
+            # Inline-Attachments (CID-Bilder) für korrektes HTML-Rendering
+            encrypted_inline_attachments=encrypted_inline_attachments,
             # Phase 17: Semantic Search - Embeddings (NICHT verschlüsselt!)
             email_embedding=embedding_bytes,
             embedding_model=embedding_model,

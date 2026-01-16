@@ -797,6 +797,11 @@ class MailFetcher:
                 
                 # Nutze _parse_envelope() statt einzelne Extraktion
                 envelope_data = self._parse_envelope(msg, bodystructure_info, message_size)
+                
+                # Extrahiere Inline-Attachments (CID-Bilder)
+                inline_attachments = self._extract_inline_attachments(msg)
+            else:
+                inline_attachments = {}
             
             # Phase 13C: Decode IMAP UTF-7 folder names to UTF-8
             folder_utf8 = decode_imap_folder_name(folder)
@@ -817,6 +822,7 @@ class MailFetcher:
                 "imap_flags": imap_flags,
                 "thread_id": None,  # Wird später von _calculate_thread_ids() gesetzt
                 "parent_uid": None,  # Wird später von _calculate_thread_ids() gesetzt
+                "inline_attachments": inline_attachments,  # CID-Bilder
                 **flags_dict,  # Boolean flags (imap_is_seen, imap_is_flagged, etc.)
             }
             
@@ -895,6 +901,52 @@ class MailFetcher:
             logger.warning(f"⚠️ EMPTY BODY EXTRACTED: is_multipart={msg.is_multipart()}, content_type={msg.get_content_type()}, payload_len={len(str(msg.get_payload())) if msg.get_payload() else 0}")
         
         return body
+
+    def _extract_inline_attachments(self, msg) -> Dict[str, Dict[str, str]]:
+        """Extrahiert Inline-Attachments (CID-Bilder) aus E-Mail
+        
+        CID (Content-ID) wird in HTML als src="cid:uuid@domain" referenziert.
+        Diese Funktion extrahiert die Bilder und gibt sie als Dict zurück.
+        
+        Returns:
+            Dict mit Content-ID als Key: {
+                "uuid@domain": {
+                    "mime_type": "image/png",
+                    "data": "base64-encoded-data"
+                }
+            }
+        """
+        inline_attachments = {}
+        
+        if not msg.is_multipart():
+            return inline_attachments
+            
+        for part in msg.walk():
+            content_disposition = part.get_content_disposition()
+            content_id = part.get("Content-ID")
+            content_type = part.get_content_type()
+            
+            # Nur Inline-Attachments mit Content-ID (CID)
+            # content_disposition kann 'inline', None, oder 'attachment' sein
+            if content_id and content_type.startswith("image/"):
+                try:
+                    # Content-ID Format: <uuid@domain> oder uuid@domain
+                    cid = content_id.strip("<>")
+                    
+                    payload = part.get_payload(decode=True)
+                    if payload:
+                        import base64
+                        base64_data = base64.b64encode(payload).decode("ascii")
+                        
+                        inline_attachments[cid] = {
+                            "mime_type": content_type,
+                            "data": base64_data
+                        }
+                        logger.debug(f"Extracted inline attachment: cid={cid}, type={content_type}, size={len(payload)}")
+                except Exception as e:
+                    logger.warning(f"Failed to extract inline attachment {content_id}: {e}")
+        
+        return inline_attachments
 
     def _check_attachments_in_bodystructure(self, bodystructure) -> bool:
         """Prüft ob BODYSTRUCTURE Attachments enthält (IMAPClient)"""

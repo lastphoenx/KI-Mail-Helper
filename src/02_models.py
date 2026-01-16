@@ -978,6 +978,11 @@ class RawEmail(Base):
     # EntityMap für De-Anonymisierung (verschlüsseltes JSON)
     encrypted_entity_map = Column(Text, nullable=True)
 
+    # ===== INLINE ATTACHMENTS (CID-Bilder) =====
+    # Verschlüsseltes JSON: {"cid1": {"mime_type": "image/png", "data": "base64..."}, ...}
+    # Ermöglicht Anzeige von Inline-Bildern ohne externe Requests
+    encrypted_inline_attachments = Column(Text, nullable=True)
+
     # ===== PHASE 24: STABLE IDENTIFIER (für Move-Detection) =====
     # stable_identifier = message_id wenn vorhanden, sonst "hash:<content_hash>"
     # Ermöglicht Move-Detection auch für Mails ohne message_id
