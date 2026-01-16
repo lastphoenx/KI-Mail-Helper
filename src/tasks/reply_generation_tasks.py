@@ -1,4 +1,4 @@
-﻿# src/tasks/reply_generation_tasks.py
+# src/tasks/reply_generation_tasks.py
 """
 Celery Task für Antwort-Entwurf Generierung.
 

@@ -721,7 +721,6 @@ def api_generate_reply(raw_email_id):
             # CELERY PATH (NEW) - Async Processing
             # ═══════════════════════════════════════════════════════════════
             if use_celery:
-                import importlib
                 from src.tasks.reply_generation_tasks import generate_reply_draft
                 auth = importlib.import_module(".07_auth", "src")
                 ServiceTokenManager = auth.ServiceTokenManager

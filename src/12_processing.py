@@ -773,6 +773,16 @@ def process_pending_raw_emails(
             try:
                 session.add(processed_email)
                 
+                # 🐛 Race-Condition Fix: Flush sofort um UniqueViolation früh zu erkennen
+                try:
+                    session.flush()
+                except Exception as flush_err:
+                    if "UniqueViolation" in str(type(flush_err).__name__) or "duplicate key" in str(flush_err):
+                        logger.info(f"⏭️  RawEmail {raw_email.id} wurde parallel verarbeitet – überspringe")
+                        session.rollback()
+                        continue
+                    raise
+                
                 # Phase 10: Auto-assign suggested_tags from AI
                 # GEÄNDERT 2026-01-05: Nur existierende Tags zuweisen, keine Auto-Creation
                 # GEÄNDERT 2026-01-05: AI-Vorschläge gehen optional in Queue statt zu werden ignoriert
@@ -783,8 +793,7 @@ def process_pending_raw_emails(
                         tag_manager_mod = importlib.import_module(".services.tag_manager", "src")
                         suggestion_mod = importlib.import_module(".services.tag_suggestion_service", "src")
                         
-                        # Muss flushen damit processed_email.id verfügbar ist
-                        session.flush()
+                        # processed_email.id ist jetzt verfügbar (nach flush oben)
                         
                         for tag_name in suggested_tags[:5]:  # Max 5 Tags
                             if not tag_name or not isinstance(tag_name, str):
