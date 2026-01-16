@@ -38,38 +38,24 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## Status
 
-**Version:** 1.3.1  
-**Development:** Aktiv (Reply De-Anonymisierung & Security Audit abgeschlossen)  
-**Stability:** Production-ready für Single-User-Deployment  
-**Next:** "Kurz & Knapp" De-Anonymisierung Bug-Fix
+**Version:** 2.0.0 (Multi-User Edition)  
+**Development:** Aktiv  
+**Architecture:** Flask Blueprints + PostgreSQL + Celery  
+**Stability:** Production-ready  
 
-**Abgeschlossene Phasen:**
-- ✅ Phase 0-12: Core System, Zero-Knowledge, Production Hardening
-- ✅ Phase 13C: Account-spezifische Fetch-Filter
-- ✅ Phase 14: RFC-konformer IMAP UID-Sync (UIDVALIDITY)
-- ✅ Phase 15: Multi-Folder UIDPLUS Support
-- ✅ Phase E: Thread-Context & Conversation View
-- ✅ Phase F1: Semantic Search mit Embeddings
-- ✅ Phase F2: Smart Tag Suggestions & Learning (Enhanced 2026-01-06)
-- ✅ Phase F.3: Negative Feedback für Tag-Learning
-- ✅ Phase G: AI Action Engine (Reply Generator + Auto-Rules)
-- ✅ Phase H: SMTP Mail-Versand mit Sent-Sync
-- ✅ Phase I.1: Customizable Reply Styles (4 Stile)
-- ✅ Phase I.2: Account-Specific Signatures
-- ✅ Phase X: Trusted Senders + UrgencyBooster (Account-Based)
-- ✅ Phase X.2: Dedizierte Whitelist-Seite (/whitelist)
-- ✅ Phase X.3: Account-Level AI-Fetch-Control (enable_ai_analysis_on_fetch)
-- ✅ Phase Y: KI-gestützte Priorisierung (spaCy NLP + Ensemble Learning)
-- ✅ Phase 22: Email-Anonymisierung mit spaCy (DSGVO-konform)
-- ✅ Phase 22.1: On-the-fly Anonymisierung bei Reply-Generierung
-- ✅ Confidence Tracking: ai_confidence & optimize_confidence
-- ✅ Reply Optimization: Provider/Model Selection, Optimized Prompts für Small LLMs
+**v2.0 Highlights:**
+- ✅ Multi-User mit vollständiger User-Isolation
+- ✅ PostgreSQL statt SQLite (skalierbar)
+- ✅ Celery Task Queue (asynchrone Verarbeitung)
+- ✅ Blueprint-basierte Modularisierung (10 Blueprints)
+- ✅ Zero-Knowledge Encryption (DEK/KEK Pattern)
+- ✅ Mandatory 2FA für alle Accounts
 
 ---
 
 ## ⚠️ Haftungsausschluss / Disclaimer (AI-Generated Code)
 
-> **🚧 WORK IN PROGRESS**: Dieses Projekt befindet sich in aktiver Entwicklung. Features werden kontinuierlich hinzugefügt, verbessert und getestet. Für produktive Nutzung bitte eigene Tests durchführen und regelmäßig Updates prüfen.
+> **🚧 WORK IN PROGRESS**: Dieses Projekt befindet sich in Entwicklung. Neue Features werden noch hinzugefügt, bestehende getestet und verbessert. Für produktive Nutzung bitte eigene Tests durchführen und regelmäßig Updates prüfen (requirments).
 
 ### 🇩🇪 Deutsch
 
@@ -97,7 +83,7 @@ Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher
 
 **Notice: AI-generated code (Active Development)**
 
-> **🚧 WORK IN PROGRESS**: This project is under active development. Features are continuously being added, improved, and tested. For production use, please conduct your own testing and check for updates regularly.
+> **🚧 WORK IN PROGRESS**: This project is under active development. New features are being added, while others are testet and improved. For production use, please conduct your own testing and check for updates regularly.
 
 This repository was created with multiple AI systems. So far, the codebase has been generated **entirely by AI** — not a single line was written manually by a human. All development work was performed in **Microsoft Visual Studio Code (VS Code)** with GitHub Copilot as primary developer.
 
@@ -272,97 +258,83 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
 
 ## 🏗️ Architektur
 
-```
-mail-helper/
-├── src/
-│   ├── 00_main.py              # Entry Point / CLI + Cron-Orchestrierung
-│   ├── 01_web_app.py           # Flask Web-Dashboard + Auth + API Routes
-│   ├── 02_models.py            # SQLAlchemy DB-Modelle + Soft-Delete
-│   ├── 03_ai_client.py         # KI-Client (Ollama, OpenAI, Anthropic, Mistral)
-│   ├── 04_sanitizer.py         # Datenschutz-Level 1-3
-│   ├── 05_scoring.py           # 3×3-Matrix + Farben
-│   ├── 05_embedding_api.py     # Embedding-Client für Semantic Search
-│   ├── 06_mail_fetcher.py      # IMAP-Client mit UID/Folder/Flags
+> **v2.0 Multi-User Edition** – Blueprint-basierte Flask-Architektur mit PostgreSQL + Celery
 
+```
+KI-Mail-Helper/
+├── src/
+│   ├── __init__.py             # Package Init
+│   ├── app_factory.py          # Flask Application Factory
+│   ├── celery_app.py           # Celery Worker Configuration
+│   ├── 00_env_validator.py     # Environment Validation
+│   ├── 02_models.py            # SQLAlchemy Models (23 Tabellen)
+│   ├── 03_ai_client.py         # Multi-Provider AI Client
+│   ├── 05_embedding_api.py     # Embedding API (Semantic Search)
+│   ├── 06_mail_fetcher.py      # IMAP Client (UID/Folder/Flags)
 │   ├── 07_auth.py              # Auth + Master-Key + 2FA
 │   ├── 08_encryption.py        # Zero-Knowledge AES-256-GCM
-│   ├── 10_google_oauth.py      # Gmail OAuth2 API Fetcher
-│   ├── 12_processing.py        # Email-Verarbeitungs-Workflow
-│   ├── 14_background_jobs.py   # Job Queue für Hintergrund-Verarbeitung
-│   ├── 15_provider_utils.py    # Dynamic Provider/Model Discovery
-│   ├── 16_imap_flags.py        # IMAP Flag Management (Read/Unread/Flagged)
-│   ├── 16_mail_sync.py         # Multi-Folder Sync Coordinator
-│   ├── 19_smtp_sender.py       # SMTP Versand + Sent-Sync (Phase H)
-│   ├── auto_rules_engine.py    # Auto-Rules Engine (Phase G.2)
-│   ├── reply_generator.py      # AI Reply Draft Generator (Phase G.1)
-│   ├── semantic_search.py      # Vector-basierte Suche (Phase F1)
-│   ├── thread_api.py           # Thread-View API
-│   ├── thread_service.py       # Thread-Grouping Logic
-│   ├── services/
-│   │   ├── tag_manager.py      # Tag CRUD + Assignment Logic
-│   │   └── sender_patterns.py  # Sender Pattern Learning
-│   └── ...
-├── templates/                  # HTML-Templates (20+)
-│   ├── dashboard.html          # 3×3 Matrix + Ampel-View
-│   ├── list_view.html          # List + Filters
-│   ├── threads_view.html       # Conversation View (Phase E)
-│   ├── email_detail.html       # Detail + Reply + Tags
-│   ├── tags.html               # Tag Management UI
-│   ├── rules_management.html   # Auto-Rules UI (Phase G.2)
-│   └── ...
-├── tests/                      # Unit Tests (pytest)
-│   ├── test_ai_client.py
-│   ├── test_mail_fetcher.py
-│   ├── test_sanitizer.py
-│   ├── test_thread_id_calculation.py
-│   └── ...
-├── scripts/                    # Utility & Maintenance Scripts (siehe README.md)
-│   ├── reset_base_pass.py      # Base-Pass Analysis Reset
-│   ├── reset_all_emails.py     # Hard-Delete Emails
-│   ├── backup_database.sh      # Automated WAL-aware Backups
-│   ├── verify_wal_mode.py      # SQLite WAL-Check
-│   └── ... (17 aktive Scripts)
-├── migrations/                 # Alembic DB-Migrationen (24+ Versionen)
-│   ├── versions/
-│   │   ├── ph10_email_tags.py
-│   │   ├── ph13c_p5_fetch_filters.py
-│   │   ├── ph14a_rfc_unique_key_uidvalidity.py
-│   │   ├── phE_thread_context.py
-│   │   ├── phF1_semantic_search.py
-│   │   ├── phG2_auto_rules.py
+│   ├── 12_processing.py        # Email Processing Pipeline
+│   ├── 19_smtp_sender.py       # SMTP + Sent-Sync
+│   ├── auto_rules_engine.py    # Auto-Rules Engine
+│   ├── reply_generator.py      # AI Reply Generator
+│   ├── semantic_search.py      # Vector Search
+│   ├── blueprints/             # Flask Blueprints (10 Module)
+│   │   ├── __init__.py
+│   │   ├── auth.py             # Login, Register, 2FA
+│   │   ├── accounts.py         # Mail-Account CRUD
+│   │   ├── emails.py           # Email Views
+│   │   ├── api.py              # REST API
+│   │   ├── dashboard.py        # Main Dashboard
+│   │   ├── tags.py             # Tag Management
+│   │   ├── rules.py            # Auto-Rules
+│   │   ├── settings.py         # User Settings
+│   │   └── threads.py          # Thread View
+│   ├── tasks/                  # Celery Tasks
+│   │   ├── mail_sync_tasks.py  # Email Sync (async)
+│   │   ├── rule_execution_tasks.py
 │   │   └── ...
-├── config/                     # Konfigurationsdateien
-│   ├── mail-helper.service     # Systemd Service (Web-App)
-│   ├── mail-helper-processor.service
-│   ├── mail-helper-processor.timer    # Cron Timer (15 min)
-│   ├── gunicorn.conf.py        # Gunicorn WSGI Config
-│   ├── fail2ban-filter.conf    # Fail2Ban Filter Rules
-│   ├── fail2ban-jail.conf      # Fail2Ban Jail Config
-│   └── logrotate.conf          # Log Rotation Config
+│   ├── services/               # Business Logic
+│   │   ├── tag_manager.py
+│   │   ├── sender_patterns.py
+│   │   ├── mail_sync.py
+│   │   └── ...
+│   └── helpers/                # Utilities
+├── templates/                  # Jinja2 Templates (25+)
+├── migrations/                 # Alembic (PostgreSQL)
+│   └── versions/
+│       └── 55a17d1115b6_postgresql_initial_schema_baseline.py
+├── config/                     # Production Configs
+│   ├── mail-helper.service     # Systemd (Gunicorn)
+│   ├── mail-helper-celery-worker.service
+│   ├── mail-helper-celery-beat.service
+│   ├── gunicorn.conf.py
+│   ├── fail2ban-*.conf
+│   └── logrotate.conf
 ├── docs/                       # Dokumentation
-│   ├── INSTALLATION.md         # Komplette Installationsanleitung
-│   ├── DEPLOYMENT.md           # Production Deployment Guide
-│   ├── MAINTENANCE.md          # Maintenance & Helper-Skripte
-│   ├── SECURITY.md             # Security Model & Threat Analysis
-│   ├── OAUTH_AND_IMAP_SETUP.md # OAuth & IMAP Konfiguration
-│   ├── TESTING_GUIDE.md        # Kompletter Testing-Workflow
-│   ├── ZERO_KNOWLEDGE_COMPLETE.md  # Zero-Knowledge Implementierung
+│   ├── INSTALLATION.md         # Setup Guide
+│   ├── ARCHITEKTUR.md          # System Architecture
+│   ├── SECURITY.md             # Security Model
+│   ├── BENUTZERHANDBUCH.md     # User Manual
 │   └── CHANGELOG.md            # Version History
-├── doc/                        # Feature-Dokumentation
-│   ├── erledigt/               # Abgeschlossene Phasen + Changelogs
-│   ├── offen/                  # Geplante Features
-│   ├── backlog/                # Zurückgestellte Features
-│   ├── fetch-filters/          # Fetch-Filter Docs
-│   ├── imap/                   # IMAP-Strategie & Troubleshooting
-│   └── ...
-├── config/                     # Konfigurationsdateien
-│   ├── fail2ban-filter.conf    # Fail2Ban Filter Rules
-│   ├── fail2ban-jail.conf      # Fail2Ban Jail Config
-│   └── logrotate.conf          # Log Rotation Config
-├── emails.db                   # SQLite Datenbank (WAL-Mode)
-├── .env                        # Konfiguration (API-Keys, Secrets)
-└── README.md                   # Dieses Dokument
+├── scripts/                    # Utility Scripts
+├── tests/                      # pytest Tests
+├── .env.example                # Environment Template
+├── alembic.ini                 # Alembic Config
+├── requirements.txt            # Dependencies
+└── README.md                   # This file
 ```
+
+### Tech Stack
+
+| Komponente | Technologie |
+|------------|-------------|
+| **Backend** | Flask 3.0 + Blueprints |
+| **Database** | PostgreSQL 17 |
+| **Cache/Queue** | Redis 8 |
+| **Task Queue** | Celery 5.6 |
+| **WSGI** | Gunicorn |
+| **AI** | Ollama / OpenAI / Anthropic / Mistral |
+| **Encryption** | AES-256-GCM (DEK/KEK) |
 
 ---
 
@@ -1028,17 +1000,30 @@ Wenig dringend     🟢 Score 2-3       |  🟢 Score 3-4    |  🟡 Score 5
 
 ## 🛠️ Entwicklung
 
-### Projektphasen
-1. ✅ Phase 0: Projektstruktur
-2. ✅ Phase 1: Single-User MVP + Ollama
-3. ✅ Phase 2: Multi-User + 2FA + OAuth
-4. ✅ Phase 3: Encryption (Master-Key + AES-256-GCM)
-5. ✅ Phase 4: Schema-Redesign + Bug-Fixes + Alembic
-6. ✅ Phase 5: Two-Pass Optimization Architecture
-7. ✅ Phase 6: Dynamic Provider-Dropdowns + Multi-AI Support
-8. ⏳ Phase 7: Advanced Features (Labels, Custom Prompts, Performance-Tuning)
+### 🗺️ Roadmap
+
+**Geplante Features:**
+
+| Priorität | Feature | Beschreibung |
+|-----------|---------|--------------|
+| 🔴 High | **Kalendereintrag-Erkennung** | Automatische Erkennung von Terminen, Deadlines in Emails |
+| 🔴 High | **Todo-Listen-Extraktion** | Aufgaben aus Emails extrahieren und als Todo markieren |
+| 🟡 Medium | **Presidio Integration** | Microsoft Presidio für erweiterte PII-Erkennung |
+| 🟡 Medium | **Attachment-Handling** | Anhänge anzeigen, herunterladen, durchsuchen |
+| 🟡 Medium | **Email-Vorlagen** | Wiederverwendbare Templates für häufige Antworten |
+| 🟢 Low | **CalDAV/CardDAV Sync** | Kalender- und Kontakte-Integration |
+| 🟢 Low | **Mobile PWA** | Progressive Web App für Mobilgeräte |
+| 🟢 Low | **Webhook-Integration** | Benachrichtigungen an externe Dienste |
+| 🟢 Low | **Admin-Dashboard** | Benutzer-Verwaltung für Admins |
+
+**Langfristig:**
+- 📊 Analytics Dashboard (Email-Statistiken, Antwortzeiten)
+- 🔗 JIRA/GitHub Issue-Erstellung aus Emails
+- 🌍 Mehrsprachige AI-Analyse
+- 📱 Native Mobile Apps (iOS/Android)
 
 ### Testing
+
 ```bash
 # Alle Tests
 python3 -m pytest tests/ -v
@@ -1193,11 +1178,12 @@ ollama pull mistral  # 4GB, schneller
 
 | Status | Details |
 |--------|---------|
-| **Development** | Active - Core features complete |
-| **Tested Platforms** | Linux (Debian 12), WSL2, macOS |
-| **Python Version** | 3.11+ |
-| **Production Ready** | ⚠️ Beta - single-user tested, please report bugs |
-| **Multi-User** | 🟡 Supported, not fully tested |
+| **Version** | 2.0.0 (Multi-User Edition) |
+| **Development** | Active - Major refactoring complete |
+| **Architecture** | Flask Blueprints + PostgreSQL + Celery |
+| **Tested Platforms** | Linux (Debian 12), Ubuntu 24.04 |
+| **Python Version** | 3.11+ (empfohlen: 3.12) |
+| **Production Ready** | ✅ Multi-User tested |
 | **License** | AGPL-3.0 |
 
 ---

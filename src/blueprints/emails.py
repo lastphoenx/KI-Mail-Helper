@@ -858,6 +858,37 @@ def render_email_html(raw_email_id: int):
                 )
                 return "Decryption failed", 500
 
+            # Inline-Attachments (CID-Bilder) entschlüsseln und ersetzen
+            inline_attachments = {}
+            if processed.raw_email.encrypted_inline_attachments:
+                try:
+                    import json
+                    decrypted_attachments = encryption.EncryptionManager.decrypt_data(
+                        processed.raw_email.encrypted_inline_attachments, master_key
+                    )
+                    inline_attachments = json.loads(decrypted_attachments)
+                except Exception as e:
+                    logger.warning(
+                        f"render_email_html: Inline-Attachments Entschlüsselung fehlgeschlagen: {e}"
+                    )
+            
+            # CID-URLs durch data: URLs ersetzen
+            if inline_attachments:
+                import re
+                def replace_cid(match):
+                    cid = match.group(1)
+                    if cid in inline_attachments:
+                        att = inline_attachments[cid]
+                        return f'src="data:{att["mime_type"]};base64,{att["data"]}"'
+                    return match.group(0)  # Unverändert wenn CID nicht gefunden
+                
+                # Pattern: src="cid:..." oder src='cid:...'
+                decrypted_body = re.sub(
+                    r'src=["\']cid:([^"\']+)["\']',
+                    replace_cid,
+                    decrypted_body
+                )
+
             # Marker für after_request Hook: Überschreibe Headers nicht (MUSS VOR make_response!)
             g.skip_security_headers = True
 
