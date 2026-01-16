@@ -31,6 +31,14 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - **145 API-Routes** – RESTful API-Design
 - **Separation of Concerns** – Klare Trennung nach Funktionalität
 
+#### Email-Rendering
+- **Inline-Attachments (CID-Bilder)** – Automatische Konvertierung von `cid:` URLs zu `data:` URLs
+  - Content-ID Bilder-Extraktion beim Mail-Fetch
+  - AES-256-GCM Verschlüsselung (`encrypted_inline_attachments`)
+  - Robustes Regex-Pattern (case-insensitive, Newline-tolerant)
+  - CSP-Header angepasst: `img-src https: data:`
+  - Größenlimit: 2 MB total, 500 KB pro Attachment
+
 ### Geändert
 - **Datenbank-Layer** – SQLAlchemy 2.0 mit PostgreSQL-Dialekt
 - **Session-Management** – Server-Side Sessions mit Redis

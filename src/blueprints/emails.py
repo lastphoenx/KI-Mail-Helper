@@ -875,18 +875,25 @@ def render_email_html(raw_email_id: int):
             # CID-URLs durch data: URLs ersetzen
             if inline_attachments:
                 import re
+                import urllib.parse
+                
                 def replace_cid(match):
-                    cid = match.group(1)
+                    cid_raw = match.group(1)
+                    # URL-Decode für Fälle wie cid:uuid%40domain.com
+                    cid = urllib.parse.unquote(cid_raw)
                     if cid in inline_attachments:
                         att = inline_attachments[cid]
                         return f'src="data:{att["mime_type"]};base64,{att["data"]}"'
                     return match.group(0)  # Unverändert wenn CID nicht gefunden
                 
-                # Pattern: src="cid:..." oder src='cid:...'
+                # Robustes Pattern: Case-insensitive, mit/ohne Quotes, Whitespace/Newline tolerant
+                # Matched: src="cid:...", src='cid:...', SRC="cid:...", src = "cid:..."
+                # Auch: src\n="cid:..." (Newline zwischen src und =)
                 decrypted_body = re.sub(
-                    r'src=["\']cid:([^"\']+)["\']',
+                    r'src[\s\n]*=[\s\n]*["\']cid:([^"\']+)["\']',
                     replace_cid,
-                    decrypted_body
+                    decrypted_body,
+                    flags=re.IGNORECASE
                 )
 
             # Marker für after_request Hook: Überschreibe Headers nicht (MUSS VOR make_response!)

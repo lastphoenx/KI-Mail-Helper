@@ -136,11 +136,53 @@ Email → spaCy NLP (80%) → Detektoren → Ensemble Combiner → Score
    b. Neue Emails abrufen (UID-basiert)
    c. Für jede Email:
       - Verschlüsselung (Subject, Body, Sender, etc.)
+      - Inline-Attachments extrahieren (CID-Bilder)
       - AI-Analyse (wenn aktiviert)
       - Embedding-Generierung
       - In PostgreSQL speichern
 4. Task-Status → Redis → Frontend-Polling
 5. UI aktualisiert sich
+```
+
+### Inline-Attachments (CID-Bilder)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     EMAIL FETCH (Mail Fetcher)                   │
+│                                                                  │
+│  MIME Email ──parse──▶ Inline Parts (Content-ID Header)         │
+│                            │                                     │
+│                            ▼                                     │
+│  Für jedes CID-Attachment (image/*, max 500KB):                 │
+│    • Content-ID extrahieren (z.B. "image001@example.com")       │
+│    • Base64-Encoding des Binärbilds                             │
+│    • MIME-Type beibehalten                                      │
+│                            │                                     │
+│                            ▼                                     │
+│  JSON Dict: {"cid": {"mime_type": "...", "data": "base64..."}}  │
+│                            │                                     │
+│                            ▼                                     │
+│  AES-256-GCM Verschlüsselung → encrypted_inline_attachments     │
+│                                                                  │
+│  Größenlimits: Max 2 MB total, 500 KB pro Attachment            │
+└─────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     EMAIL RENDER (Blueprint)                     │
+│                                                                  │
+│  encrypted_inline_attachments ──DEK──▶ JSON Dict                │
+│                                           │                      │
+│                                           ▼                      │
+│  HTML Body durchsuchen nach: src="cid:image001@example.com"     │
+│                                           │                      │
+│                                           ▼                      │
+│  Regex-Replace: cid:... → data:image/png;base64,...             │
+│  (Case-insensitive, Whitespace-tolerant, URL-decoded)           │
+│                                           │                      │
+│                                           ▼                      │
+│  Gerendertes HTML mit eingebetteten Bildern (CSP: data:)        │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Zero-Knowledge Verschlüsselung
