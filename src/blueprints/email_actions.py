@@ -225,18 +225,78 @@ def mark_undone(raw_email_id):
 @email_actions_bp.route("/email/<int:raw_email_id>/reprocess", methods=["POST"])
 @login_required
 def reprocess_email(raw_email_id):
-    """Reprocessed eine fehlgeschlagene Email"""
+    """Reprocessed eine Email - ASYNC via Celery"""
+    import os
     models = _get_models()
-    encryption = _get_encryption()
-    ai_client = _get_ai_client()
-    sanitizer = _get_sanitizer()
-    scoring = _get_scoring()
+    
+    # Check: Celery Mode?
+    use_celery = os.environ.get("USE_CELERY", "false").lower() == "true"
     
     with get_db_session() as db:
         try:
             user = get_current_user_model(db)
             if not user:
                 return jsonify({"error": "Nicht authentifiziert"}), 401
+
+            # Quick Ownership-Check (kein AI-Call hier!)
+            raw_email = db.query(models.RawEmail).filter_by(
+                id=raw_email_id,
+                user_id=user.id
+            ).filter(models.RawEmail.deleted_at == None).first()
+            
+            if not raw_email:
+                return jsonify({"error": "Email nicht gefunden"}), 404
+            
+            # Master-Key prüfen
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Session abgelaufen. Bitte neu einloggen."}), 401
+
+            # ═══════════════════════════════════════════════════════════════
+            # CELERY PATH (NEW) - Async Processing
+            # ═══════════════════════════════════════════════════════════════
+            if use_celery:
+                import importlib
+                from src.tasks.email_processing_tasks import reprocess_email_base
+                auth = importlib.import_module(".07_auth", "src")
+                ServiceTokenManager = auth.ServiceTokenManager
+                
+                try:
+                    # Phase 2 Security: ServiceToken erstellen
+                    _, service_token = ServiceTokenManager.create_token(
+                        user_id=user.id,
+                        master_key=master_key,
+                        session=db,
+                        days=1  # Reprocess-Token nur 1 Tag gültig
+                    )
+                    
+                    # Task starten (ASYNC!)
+                    task = reprocess_email_base.delay(
+                        user_id=user.id,
+                        raw_email_id=raw_email_id,
+                        service_token_id=service_token.id
+                    )
+                    
+                    logger.info(f"✅ Reprocess Task {task.id} gequeued für Email {raw_email_id}")
+                    
+                    return jsonify({
+                        "status": "queued",
+                        "task_id": task.id,
+                        "task_type": "celery",
+                        "message": "Base-Lauf wird neu generiert..."
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"reprocess_email: Celery-Fehler: {type(e).__name__}: {e}")
+                    return jsonify({"error": "Fehler beim Starten des Reprocess-Tasks"}), 500
+            
+            # ═══════════════════════════════════════════════════════════════
+            # LEGACY PATH (OLD) - Synchronous Processing
+            # ═══════════════════════════════════════════════════════════════
+            encryption = _get_encryption()
+            ai_client = _get_ai_client()
+            sanitizer = _get_sanitizer()
+            scoring = _get_scoring()
 
             email = (
                 db.query(models.ProcessedEmail)
@@ -250,21 +310,12 @@ def reprocess_email(raw_email_id):
             )
 
             if not email:
-                return jsonify({"error": "Email nicht gefunden"}), 404
+                return jsonify({"error": "ProcessedEmail nicht gefunden"}), 404
 
             provider = (user.preferred_ai_provider or "ollama").lower()
             resolved_model = ai_client.resolve_model(provider, user.preferred_ai_model)
             use_cloud = ai_client.provider_requires_cloud(provider)
             sanitize_level = sanitizer.get_sanitization_level(use_cloud)
-
-            raw_email = email.raw_email
-            if not raw_email:
-                return jsonify({"error": "RawEmail nicht gefunden"}), 404
-
-            # Zero-Knowledge: Entschlüssele E-Mail-Daten
-            master_key = session.get("master_key")
-            if not master_key:
-                return jsonify({"error": "Session abgelaufen. Bitte neu einloggen."}), 401
 
             decrypted = decrypt_raw_email(raw_email, master_key)
 
@@ -344,18 +395,78 @@ def reprocess_email(raw_email_id):
 @email_actions_bp.route("/email/<int:raw_email_id>/optimize", methods=["POST"])
 @login_required
 def optimize_email(raw_email_id):
-    """Triggert Optimize-Pass für Email (bessere Kategorisierung mit optimize-Provider)"""
+    """Triggert Optimize-Pass für Email - ASYNC via Celery"""
+    import os
     models = _get_models()
-    encryption = _get_encryption()
-    ai_client = _get_ai_client()
-    sanitizer = _get_sanitizer()
-    scoring = _get_scoring()
+    
+    # Check: Celery Mode?
+    use_celery = os.environ.get("USE_CELERY", "false").lower() == "true"
     
     with get_db_session() as db:
         try:
             user = get_current_user_model(db)
             if not user:
                 return jsonify({"error": "Nicht authentifiziert"}), 401
+
+            # Quick Ownership-Check (kein AI-Call hier!)
+            raw_email = db.query(models.RawEmail).filter_by(
+                id=raw_email_id,
+                user_id=user.id
+            ).filter(models.RawEmail.deleted_at == None).first()
+            
+            if not raw_email:
+                return jsonify({"error": "Email nicht gefunden"}), 404
+            
+            # Master-Key prüfen
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Session abgelaufen. Bitte neu einloggen."}), 401
+
+            # ═══════════════════════════════════════════════════════════════
+            # CELERY PATH (NEW) - Async Processing
+            # ═══════════════════════════════════════════════════════════════
+            if use_celery:
+                import importlib
+                from src.tasks.email_processing_tasks import optimize_email_processing
+                auth = importlib.import_module(".07_auth", "src")
+                ServiceTokenManager = auth.ServiceTokenManager
+                
+                try:
+                    # Phase 2 Security: ServiceToken erstellen
+                    _, service_token = ServiceTokenManager.create_token(
+                        user_id=user.id,
+                        master_key=master_key,
+                        session=db,
+                        days=1  # Optimize-Token nur 1 Tag gültig
+                    )
+                    
+                    # Task starten (ASYNC!)
+                    task = optimize_email_processing.delay(
+                        user_id=user.id,
+                        raw_email_id=raw_email_id,
+                        service_token_id=service_token.id
+                    )
+                    
+                    logger.info(f"✅ Optimize Task {task.id} gequeued für Email {raw_email_id}")
+                    
+                    return jsonify({
+                        "status": "queued",
+                        "task_id": task.id,
+                        "task_type": "celery",
+                        "message": "Optimize-Lauf wird gestartet..."
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"optimize_email: Celery-Fehler: {type(e).__name__}: {e}")
+                    return jsonify({"error": "Fehler beim Starten des Optimize-Tasks"}), 500
+            
+            # ═══════════════════════════════════════════════════════════════
+            # LEGACY PATH (OLD) - Synchronous Processing
+            # ═══════════════════════════════════════════════════════════════
+            encryption = _get_encryption()
+            ai_client = _get_ai_client()
+            sanitizer = _get_sanitizer()
+            scoring = _get_scoring()
 
             email = (
                 db.query(models.ProcessedEmail)
@@ -369,7 +480,7 @@ def optimize_email(raw_email_id):
             )
 
             if not email:
-                return jsonify({"error": "Email nicht gefunden"}), 404
+                return jsonify({"error": "ProcessedEmail nicht gefunden"}), 404
 
             provider_optimize = (user.preferred_ai_provider_optimize or "ollama").lower()
             resolved_model = ai_client.resolve_model(
@@ -377,15 +488,6 @@ def optimize_email(raw_email_id):
             )
             use_cloud = ai_client.provider_requires_cloud(provider_optimize)
             sanitize_level = sanitizer.get_sanitization_level(use_cloud)
-
-            raw_email = email.raw_email
-            if not raw_email:
-                return jsonify({"error": "RawEmail nicht gefunden"}), 404
-
-            # Zero-Knowledge: Entschlüssele E-Mail-Daten
-            master_key = session.get("master_key")
-            if not master_key:
-                return jsonify({"error": "Session abgelaufen. Bitte neu einloggen."}), 401
 
             decrypted = decrypt_raw_email(raw_email, master_key)
 

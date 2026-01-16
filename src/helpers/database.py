@@ -42,10 +42,15 @@ def _get_engine():
             # PostgreSQL/MySQL: Connection pooling for multi-user
             _engine = create_engine(
                 DATABASE_URL,
-                pool_size=20,
-                max_overflow=40,
-                pool_recycle=3600,
-                connect_args={"connect_timeout": 10}
+                pool_size=20,              # Base pool size
+                max_overflow=40,           # Extra connections under load
+                pool_recycle=3600,         # Recycle connections after 1h
+                pool_pre_ping=True,        # Verify connection health before use
+                pool_timeout=30,           # Wait max 30s for connection
+                connect_args={
+                    "connect_timeout": 10,
+                    "options": "-c timezone=utc"  # Enforce UTC
+                }
             )
     return _engine
 
@@ -162,3 +167,19 @@ def get_mail_account(session, account_id: int, user_id: int):
         id=account_id, 
         user_id=user_id  # Security: Ownership Check!
     ).first()
+
+
+def get_session_factory():
+    """Get the SessionLocal factory for context-managed usage.
+    
+    Für Verwendung in Celery Tasks mit Context Manager:
+    
+        SessionFactory = get_session_factory()
+        with SessionFactory() as db:
+            user = db.query(User).first()
+            # ... do work ...
+    
+    Returns:
+        SessionLocal factory (callable, returns sessions)
+    """
+    return _get_session_local()

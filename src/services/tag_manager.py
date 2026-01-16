@@ -724,17 +724,28 @@ class TagManager:
         if not tags:
             return []
         
-        # Text-Embedding holen
-        text_embedding = TagEmbeddingCache.get_tag_embedding(text[:512], user_id)
-        if text_embedding is None:
-            logger.warning("Konnte kein Embedding für Text generieren")
+        # Text-Embedding holen - nutze Embedding-API direkt für beliebigen Text
+        try:
+            embedding_api = import_module(".05_embedding_api", "src")
+            client = embedding_api.get_embedding_client()
+            if not client:
+                logger.warning("Kein Embedding-Client verfügbar")
+                return []
+            text_embedding = client.get_embedding(text[:512])
+            if text_embedding is None:
+                logger.warning("Konnte kein Embedding für Text generieren")
+                return []
+            text_embedding = np.array(text_embedding, dtype=np.float32)
+        except Exception as e:
+            logger.warning(f"Text-Embedding Fehler: {e}")
             return []
         
         # Ähnlichkeiten berechnen
         similarities: List[Tuple[models.EmailTag, float]] = []
         
         for tag in tags:
-            tag_embedding = TagEmbeddingCache.get_tag_embedding(tag.name, user_id)
+            # WICHTIG: Tag-Objekt übergeben, nicht String!
+            tag_embedding = TagEmbeddingCache.get_tag_embedding(tag, db)
             if tag_embedding is None:
                 continue
                 
