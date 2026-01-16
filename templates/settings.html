@@ -584,7 +584,7 @@ function getAnalysisModal() {
 // Siehe: doc/offen/REFACTORING_JOB_MODAL_TRACKING.md
 let currentActiveJobId = null;
 
-function pollCeleryTaskStatus(taskId, accountName, btn, originalLabel, attempt = 0, startTime = Date.now()) {
+function pollCeleryTaskStatus(taskId, accountName, btn, originalLabel, attempt = 0, startTime = Date.now(), emailStartTime = null, lastEmailIndex = null) {
     // Task-Ownership Management (wie pollJobStatus)
     if (attempt === 0) {
         if (currentActiveJobId && currentActiveJobId !== taskId) {
@@ -601,6 +601,8 @@ function pollCeleryTaskStatus(taskId, accountName, btn, originalLabel, attempt =
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
     const modal = getAnalysisModal();
     if (attempt === 0) modal.show();
+    
+    const perEmailTimeout = 600;  // 10 Minuten pro E-Mail
     
     fetch(`/tasks/${taskId}`, {cache: 'no-store'})
         .then(r => {
@@ -683,14 +685,30 @@ function pollCeleryTaskStatus(taskId, accountName, btn, originalLabel, attempt =
             }
             // 2️⃣ Email Processing Phase: Zeige current_email_index/total_emails
             else if (status.current_email_index && status.total_emails) {
-                const progress = Math.min(95, (status.current_email_index / status.total_emails) * 100);
+                const currentIdx = status.current_email_index;
+                
+                // Timer-Logik: Reset wenn neue E-Mail begonnen wird
+                if (lastEmailIndex !== null && currentIdx > lastEmailIndex) {
+                    emailStartTime = Date.now();
+                }
+                if (emailStartTime === null) {
+                    emailStartTime = Date.now();
+                }
+                
+                const emailElapsed = Math.floor((Date.now() - emailStartTime) / 1000);
+                const emailRemaining = perEmailTimeout - emailElapsed;
+                
+                const progress = Math.min(95, (currentIdx / status.total_emails) * 100);
                 document.getElementById('progressBar').style.width = progress + '%';
                 document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
-                document.getElementById('emailCount').textContent = `${status.current_email_index}/${status.total_emails}`;
+                document.getElementById('emailCount').textContent = `${currentIdx}/${status.total_emails}`;
                 
                 const subjectDisplay = status.current_subject ? ` - ${status.current_subject}` : '';
-                document.getElementById('progressText').textContent = `${accountName}: Mail ${status.current_email_index}/${status.total_emails}${subjectDisplay}`;
-                document.getElementById('remainingTime').textContent = '—';
+                document.getElementById('progressText').textContent = `${accountName}: Mail ${currentIdx}/${status.total_emails}${subjectDisplay}`;
+                document.getElementById('remainingTime').textContent = emailRemaining > 0 ? '~' + formatTime(emailRemaining) : 'abgelaufen!';
+                
+                // Update lastEmailIndex für nächsten Poll
+                lastEmailIndex = currentIdx;
             }
             // 3️⃣ Fallback: Zeige generischen Status
             else {
@@ -700,13 +718,13 @@ function pollCeleryTaskStatus(taskId, accountName, btn, originalLabel, attempt =
             }
             
             // Poll weiter
-            setTimeout(() => pollCeleryTaskStatus(taskId, accountName, btn, originalLabel, attempt + 1, startTime), 3000);
+            setTimeout(() => pollCeleryTaskStatus(taskId, accountName, btn, originalLabel, attempt + 1, startTime, emailStartTime, lastEmailIndex), 3000);
         })
         .catch(err => {
             console.error('Task polling error:', err);
             // Bei Fehler: Poll weiter (3 Versuche)
             if (attempt < 3) {
-                setTimeout(() => pollCeleryTaskStatus(taskId, accountName, btn, originalLabel, attempt + 1, startTime), 5000);
+                setTimeout(() => pollCeleryTaskStatus(taskId, accountName, btn, originalLabel, attempt + 1, startTime, emailStartTime, lastEmailIndex), 5000);
             } else {
                 document.getElementById('progressText').textContent = `❌ ${accountName}: Polling-Fehler`;
                 if (btn) {

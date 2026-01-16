@@ -771,6 +771,13 @@ class MailFetcher:
                 if msg_bytes:
                     msg = email.message_from_bytes(msg_bytes)
                     body = self._extract_body(msg)
+                    # DEBUG: Log body extraction result
+                    if not body or body == 'N/A':
+                        logger.warning(f"⚠️ BODY LEER für UID {mail_id}: msg_bytes={len(msg_bytes) if msg_bytes else 0}, content_type={msg.get_content_type() if msg else 'N/A'}, is_multipart={msg.is_multipart() if msg else 'N/A'}")
+                else:
+                    logger.warning(f"⚠️ RFC822 LEER für UID {mail_id}")
+            else:
+                logger.warning(f"⚠️ FETCH FEHLGESCHLAGEN für UID {mail_id}: body_data={body_data}")
             
             # Phase E Bug-Fix: Parse complete envelope (in_reply_to, references, etc.)
             # _parse_envelope() extrahiert ALLE Header auf einmal (effizienter!)
@@ -840,8 +847,13 @@ class MailFetcher:
         return " ".join(result)
 
     def _extract_body(self, msg) -> str:
-        """Extrahiert Text-Body aus E-Mail"""
+        """Extrahiert Text-Body aus E-Mail
+        
+        Priorität: text/plain > text/html
+        Viele moderne Emails haben NUR text/html (Newsletter, formatierte Mails).
+        """
         body = ""
+        html_body = ""  # Fallback wenn kein text/plain
 
         if msg.is_multipart():
             for part in msg.walk():
@@ -854,6 +866,19 @@ class MailFetcher:
                         body += payload.decode(charset, errors="ignore")
                     except Exception as e:
                         logger.debug(f"Failed to decode text/plain payload: {e}")
+                elif content_type == "text/html" and not html_body:
+                    # HTML als Fallback speichern (nur wenn noch kein HTML)
+                    try:
+                        payload = part.get_payload(decode=True)
+                        charset = part.get_content_charset() or "utf-8"
+                        html_body = payload.decode(charset, errors="ignore")
+                    except Exception as e:
+                        logger.debug(f"Failed to decode text/html payload: {e}")
+            
+            # Wenn kein text/plain gefunden, nutze HTML
+            if not body and html_body:
+                body = html_body
+                logger.debug("Using text/html as fallback (no text/plain found)")
         else:
             try:
                 payload = msg.get_payload(decode=True)
@@ -865,7 +890,11 @@ class MailFetcher:
                 )
                 body = str(msg.get_payload())
 
-        return body.strip()
+        body = body.strip()
+        if not body:
+            logger.warning(f"⚠️ EMPTY BODY EXTRACTED: is_multipart={msg.is_multipart()}, content_type={msg.get_content_type()}, payload_len={len(str(msg.get_payload())) if msg.get_payload() else 0}")
+        
+        return body
 
     def _check_attachments_in_bodystructure(self, bodystructure) -> bool:
         """Prüft ob BODYSTRUCTURE Attachments enthält (IMAPClient)"""

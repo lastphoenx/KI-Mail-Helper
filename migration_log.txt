@@ -1,153 +1,0 @@
-======================================================================
-SQLite → PostgreSQL Migration
-======================================================================
-Source: sqlite:///emails.db
-Target: postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper
-Dry-Run: False
-
-📊 Berechne Source-Checksums...
-   Tabellen: 23
-   Total Rows: 6116
-
-🔄 Migriere alembic_version (1 rows)...
-  alembic_version:   0%|          | 0/1 [00:00<?, ?it/s]  alembic_version: 100%|██████████| 1/1 [00:00<00:00, 451.92it/s]
-✅ alembic_version: 1 rows migrated, 0 errors
-🔄 Migriere users (1 rows)...
-  users:   0%|          | 0/1 [00:00<?, ?it/s]  users: 100%|██████████| 1/1 [00:00<00:00, 242.61it/s]
-✅ users: 1 rows migrated, 0 errors
-🔄 Migriere mail_accounts (2 rows)...
-  mail_accounts:   0%|          | 0/2 [00:00<?, ?it/s]  mail_accounts: 100%|██████████| 2/2 [00:00<00:00, 221.48it/s]
-✅ mail_accounts: 2 rows migrated, 0 errors
-🔄 Migriere raw_emails (70 rows)...
-  raw_emails:   0%|          | 0/70 [00:00<?, ?it/s]  raw_emails:  51%|█████▏    | 36/70 [00:00<00:00, 354.27it/s]  raw_emails: 100%|██████████| 70/70 [00:00<00:00, 366.56it/s]
-✅ raw_emails: 70 rows migrated, 0 errors
-🔄 Migriere processed_emails (70 rows)...
-  processed_emails:   0%|          | 0/70 [00:00<?, ?it/s]  processed_emails:  64%|██████▍   | 45/70 [00:00<00:00, 446.90it/s]  processed_emails: 100%|██████████| 70/70 [00:00<00:00, 438.25it/s]
-✅ processed_emails: 70 rows migrated, 0 errors
-🔄 Migriere sender_patterns (35 rows)...
-  sender_patterns:   0%|          | 0/35 [00:00<?, ?it/s]  sender_patterns: 100%|██████████| 35/35 [00:00<00:00, 743.89it/s]
-✅ sender_patterns: 35 rows migrated, 0 errors
-🔄 Migriere auto_rules (1 rows)...
-  auto_rules:   0%|          | 0/1 [00:00<?, ?it/s]  auto_rules: 100%|██████████| 1/1 [00:00<00:00, 130.95it/s]
-✅ auto_rules: 1 rows migrated, 0 errors
-🔄 Migriere email_tags (16 rows)...
-  email_tags:   0%|          | 0/16 [00:00<?, ?it/s]  email_tags: 100%|██████████| 16/16 [00:00<00:00, 695.91it/s]
-✅ email_tags: 16 rows migrated, 0 errors
-🔄 Migriere mail_server_state (5785 rows)...
-  mail_server_state:   0%|          | 0/5785 [00:00<?, ?it/s]  mail_server_state:   1%|▏         | 77/5785 [00:00<00:07, 761.79it/s]  mail_server_state:   3%|▎         | 154/5785 [00:00<00:07, 762.17it/s]  mail_server_state:   4%|▍         | 231/5785 [00:00<00:07, 747.23it/s]  mail_server_state:   5%|▌         | 306/5785 [00:00<00:07, 707.53it/s]  mail_server_state:   7%|▋         | 378/5785 [00:00<00:07, 700.38it/s]  mail_server_state:   8%|▊         | 449/5785 [00:00<00:07, 673.10it/s]  mail_server_state:   9%|▉         | 517/5785 [00:00<00:07, 667.68it/s]  mail_server_state:  10%|█         | 593/5785 [00:00<00:07, 694.65it/s]  mail_server_state:  11%|█▏        | 663/5785 [00:00<00:07, 680.93it/s]  mail_server_state:  13%|█▎        | 737/5785 [00:01<00:07, 696.34it/s]  mail_server_state:  14%|█▍        | 807/5785 [00:01<00:07, 690.56it/s]  mail_server_state:  15%|█▌        | 884/5785 [00:01<00:06, 711.95it/s]  mail_server_state:  17%|█▋        | 957/5785 [00:01<00:06, 715.35it/s]  mail_server_state:  18%|█▊        | 1029/5785 [00:01<00:06, 696.85it/s]  mail_server_state:  19%|█▉        | 1099/5785 [00:01<00:06, 697.59it/s]  mail_server_state:  20%|██        | 1169/5785 [00:01<00:07, 620.40it/s]  mail_server_state:  21%|██▏       | 1233/5785 [00:01<00:07, 598.50it/s]  mail_server_state:  23%|██▎       | 1306/5785 [00:01<00:07, 631.20it/s]  mail_server_state:  24%|██▎       | 1371/5785 [00:02<00:07, 598.59it/s]  mail_server_state:  25%|██▍       | 1432/5785 [00:02<00:07, 592.03it/s]  mail_server_state:  26%|██▌       | 1506/5785 [00:02<00:06, 631.62it/s]  mail_server_state:  27%|██▋       | 1573/5785 [00:02<00:06, 640.55it/s]  mail_server_state:  28%|██▊       | 1638/5785 [00:02<00:06, 610.81it/s]  mail_server_state:  29%|██▉       | 1700/5785 [00:02<00:06, 592.24it/s]  mail_server_state:  31%|███       | 1770/5785 [00:02<00:06, 620.97it/s]  mail_server_state:  32%|███▏      | 1844/5785 [00:02<00:06, 652.95it/s]  mail_server_state:  33%|███▎      | 1910/5785 [00:02<00:06, 623.36it/s]  mail_server_state:  34%|███▍      | 1985/5785 [00:03<00:05, 657.79it/s]  mail_server_state:  36%|███▌      | 2065/5785 [00:03<00:05, 697.85it/s]  mail_server_state:  37%|███▋      | 2156/5785 [00:03<00:04, 758.36it/s]  mail_server_state:  39%|███▉      | 2242/5785 [00:03<00:04, 787.86it/s]  mail_server_state:  40%|████      | 2325/5785 [00:03<00:04, 798.63it/s]  mail_server_state:  42%|████▏     | 2419/5785 [00:03<00:04, 838.51it/s]  mail_server_state:  43%|████▎     | 2505/5785 [00:03<00:03, 844.16it/s]  mail_server_state:  45%|████▍     | 2592/5785 [00:03<00:03, 849.55it/s]  mail_server_state:  46%|████▋     | 2680/5785 [00:03<00:03, 858.47it/s]  mail_server_state:  48%|████▊     | 2771/5785 [00:03<00:03, 871.31it/s]  mail_server_state:  50%|████▉     | 2871/5785 [00:04<00:03, 909.39it/s]  mail_server_state:  51%|█████▏    | 2971/5785 [00:04<00:03, 936.44it/s]  mail_server_state:  53%|█████▎    | 3085/5785 [00:04<00:02, 996.03it/s]  mail_server_state:  55%|█████▌    | 3203/5785 [00:04<00:02, 1049.07it/s]  mail_server_state:  57%|█████▋    | 3311/5785 [00:04<00:02, 1054.24it/s]  mail_server_state:  59%|█████▉    | 3424/5785 [00:04<00:02, 1074.04it/s]  mail_server_state:  61%|██████    | 3532/5785 [00:04<00:02, 981.41it/s]   mail_server_state:  63%|██████▎   | 3632/5785 [00:04<00:02, 948.35it/s]  mail_server_state:  64%|██████▍   | 3729/5785 [00:04<00:02, 923.31it/s]  mail_server_state:  66%|██████▌   | 3828/5785 [00:04<00:02, 941.18it/s]  mail_server_state:  68%|██████▊   | 3923/5785 [00:05<00:01, 935.28it/s]  mail_server_state:  70%|██████▉   | 4036/5785 [00:05<00:01, 990.44it/s]  mail_server_state:  72%|███████▏  | 4150/5785 [00:05<00:01, 1033.28it/s]  mail_server_state:  74%|███████▎  | 4257/5785 [00:05<00:01, 1042.80it/s]  mail_server_state:  76%|███████▌  | 4368/5785 [00:05<00:01, 1062.46it/s]  mail_server_state:  77%|███████▋  | 4475/5785 [00:05<00:01, 1024.23it/s]  mail_server_state:  79%|███████▉  | 4578/5785 [00:05<00:01, 1007.69it/s]  mail_server_state:  81%|████████  | 4680/5785 [00:05<00:01, 973.10it/s]   mail_server_state:  83%|████████▎ | 4778/5785 [00:05<00:01, 971.25it/s]  mail_server_state:  84%|████████▍ | 4883/5785 [00:06<00:00, 990.20it/s]  mail_server_state:  86%|████████▌ | 4987/5785 [00:06<00:00, 1002.14it/s]  mail_server_state:  88%|████████▊ | 5091/5785 [00:06<00:00, 1010.76it/s]  mail_server_state:  90%|████████▉ | 5201/5785 [00:06<00:00, 1033.42it/s]  mail_server_state:  92%|█████████▏| 5305/5785 [00:06<00:00, 1030.61it/s]  mail_server_state:  94%|█████████▎| 5409/5785 [00:06<00:00, 837.05it/s]   mail_server_state:  95%|█████████▌| 5499/5785 [00:06<00:00, 824.04it/s]  mail_server_state:  97%|█████████▋| 5586/5785 [00:06<00:00, 772.39it/s]  mail_server_state:  98%|█████████▊| 5670/5785 [00:06<00:00, 788.54it/s]  mail_server_state:  99%|█████████▉| 5752/5785 [00:07<00:00, 787.53it/s]  mail_server_state: 100%|██████████| 5785/5785 [00:07<00:00, 812.93it/s]
-✅ mail_server_state: 5785 rows migrated, 0 errors
-📭 tag_suggestion_queue: Keine Daten
-📭 email_folders: Keine Daten
-🔄 Migriere email_tag_assignments (26 rows)...
-  email_tag_assignments:   0%|          | 0/26 [00:00<?, ?it/s]  email_tag_assignments: 100%|██████████| 26/26 [00:00<00:00, 646.21it/s]
-✅ email_tag_assignments: 26 rows migrated, 0 errors
-🔄 Migriere invited_emails (1 rows)...
-  invited_emails:   0%|          | 0/1 [00:00<?, ?it/s]  invited_emails: 100%|██████████| 1/1 [00:00<00:00, 288.98it/s]
-✅ invited_emails: 1 rows migrated, 0 errors
-🔄 Migriere recovery_codes (10 rows)...
-  recovery_codes:   0%|          | 0/10 [00:00<?, ?it/s]  recovery_codes: 100%|██████████| 10/10 [00:00<00:00, 589.39it/s]
-✅ recovery_codes: 10 rows migrated, 0 errors
-🔄 Migriere reply_style_settings (3 rows)...
-  reply_style_settings:   0%|          | 0/3 [00:00<?, ?it/s]  reply_style_settings: 100%|██████████| 3/3 [00:00<00:00, 466.09it/s]
-✅ reply_style_settings: 3 rows migrated, 0 errors
-🔄 Migriere rule_execution_logs (15 rows)...
-  rule_execution_logs:   0%|          | 0/15 [00:00<?, ?it/s]  rule_execution_logs: 100%|██████████| 15/15 [00:00<00:00, 659.03it/s]
-✅ rule_execution_logs: 15 rows migrated, 0 errors
-🔄 Migriere service_tokens (56 rows)...
-  service_tokens:   0%|          | 0/56 [00:00<?, ?it/s]  service_tokens: 100%|██████████| 56/56 [00:00<00:00, 934.97it/s]
-✅ service_tokens: 56 rows migrated, 0 errors
-🔄 Migriere spacy_keyword_sets (12 rows)...
-  spacy_keyword_sets:   0%|          | 0/12 [00:00<?, ?it/s]  spacy_keyword_sets:   0%|          | 0/12 [00:00<?, ?it/s]
-Traceback (most recent call last):
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
-    self.dialect.do_execute(
-    ~~~~~~~~~~~~~~~~~~~~~~~^
-        cursor, str_statement, effective_parameters, context
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
-    cursor.execute(statement, parameters)
-    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
-psycopg2.errors.UndefinedColumn: column "keyword_set_name" of relation "spacy_keyword_sets" does not exist
-LINE 1: ...ts, is_active, is_custom, created_at, updated_at, keyword_se...
-                                                             ^
-
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/scripts/migrate_sqlite_to_postgresql.py", line 241, in <module>
-    main()
-    ~~~~^^
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/scripts/migrate_sqlite_to_postgresql.py", line 211, in main
-    migrated = migrate_table(source_engine, target_engine, table_name, args.dry_run)
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/scripts/migrate_sqlite_to_postgresql.py", line 119, in migrate_table
-    target_session.execute(table.insert().values(**row_dict))
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2351, in execute
-    return self._execute_internal(
-           ~~~~~~~~~~~~~~~~~~~~~~^
-        statement,
-        ^^^^^^^^^^
-    ...<4 lines>...
-        _add_event=_add_event,
-        ^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2258, in _execute_internal
-    result = conn.execute(
-        statement, params or {}, execution_options=execution_options
-    )
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
-    return meth(
-        self,
-        distilled_parameters,
-        execution_options or NO_OPTIONS,
-    )
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py", line 527, in _execute_on_connection
-    return connection._execute_clauseelement(
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
-        self, distilled_params, execution_options
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
-    ret = self._execute_context(
-        dialect,
-    ...<8 lines>...
-        cache_hit=cache_hit,
-    )
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
-    return self._exec_single_context(
-           ~~~~~~~~~~~~~~~~~~~~~~~~~^
-        dialect, context, statement, parameters
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
-    self._handle_dbapi_exception(
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
-        e, str_statement, effective_parameters, cursor, context
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2363, in _handle_dbapi_exception
-    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
-    self.dialect.do_execute(
-    ~~~~~~~~~~~~~~~~~~~~~~~^
-        cursor, str_statement, effective_parameters, context
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/home/thomas/projects/KI-Mail-Helper-Dev/venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
-    cursor.execute(statement, parameters)
-    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
-sqlalchemy.exc.ProgrammingError: (psycopg2.errors.UndefinedColumn) column "keyword_set_name" of relation "spacy_keyword_sets" does not exist
-LINE 1: ...ts, is_active, is_custom, created_at, updated_at, keyword_se...
-                                                             ^
-
-[SQL: INSERT INTO spacy_keyword_sets (id, user_id, account_id, set_type, keywords_json, points_per_match, max_points, is_active, is_custom, created_at, updated_at, keyword_set_name, last_modified) VALUES (%(id)s, %(user_id)s, %(account_id)s, %(set_type)s, %(keywords_json)s, %(points_per_match)s, %(max_points)s, %(is_active)s, %(is_custom)s, %(created_at)s, %(updated_at)s, %(keyword_set_name)s, %(last_modified)s)]
-[parameters: {'id': 1, 'user_id': 1, 'account_id': 1, 'set_type': 'imperative_verbs', 'keywords_json': '["pr\\u00fcfen", "freigeben", "best\\u00e4tigen", "unterschreiben", "genehmigen", "autorisieren", "entscheiden", "antworten", "erg\\u00e4nzen", "korrigieren"]', 'points_per_match': 2, 'max_points': 4, 'is_active': True, 'is_custom': False, 'created_at': datetime.datetime(2026, 1, 8, 14, 20, 53, 78505), 'updated_at': datetime.datetime(2026, 1, 8, 14, 20, 53, 78512), 'keyword_set_name': 'default', 'last_modified': None}]
-(Background on this error at: https://sqlalche.me/e/20/f405)

@@ -628,146 +628,146 @@ def email_detail(raw_email_id):
             if not user:
                 return redirect(url_for("auth.login"))
 
-        processed = (
-            db.query(models.ProcessedEmail)
-            .join(models.RawEmail)
-            .filter(
-                models.RawEmail.id == raw_email_id,
-                models.RawEmail.user_id == user.id,
-                models.RawEmail.deleted_at == None,
-                models.ProcessedEmail.deleted_at == None,
+            processed = (
+                db.query(models.ProcessedEmail)
+                .join(models.RawEmail)
+                .filter(
+                    models.RawEmail.id == raw_email_id,
+                    models.RawEmail.user_id == user.id,
+                    models.RawEmail.deleted_at == None,
+                    models.ProcessedEmail.deleted_at == None,
+                )
+                .first()
             )
-            .first()
-        )
 
-        if not processed:
-            return redirect(url_for("emails.list_view"))
+            if not processed:
+                return redirect(url_for("emails.list_view"))
 
-        raw = processed.raw_email
-        priority_label = scoring.get_priority_label(processed.score)
+            raw = processed.raw_email
+            priority_label = scoring.get_priority_label(processed.score)
 
-        # Zero-Knowledge: Entschlüssele E-Mail für Anzeige
-        master_key = session.get("master_key")
-        decrypted_subject = ""
-        decrypted_sender = ""
-        decrypted_to = ""
-        decrypted_cc = ""
-        decrypted_bcc = ""
-        decrypted_body = ""
-        decrypted_summary_de = ""
-        decrypted_text_de = ""
-        decrypted_tags = ""
-        decrypted_subject_sanitized = ""  # Phase 22
-        decrypted_body_sanitized = ""     # Phase 22
+            # Zero-Knowledge: Entschlüssele E-Mail für Anzeige
+            master_key = session.get("master_key")
+            decrypted_subject = ""
+            decrypted_sender = ""
+            decrypted_to = ""
+            decrypted_cc = ""
+            decrypted_bcc = ""
+            decrypted_body = ""
+            decrypted_summary_de = ""
+            decrypted_text_de = ""
+            decrypted_tags = ""
+            decrypted_subject_sanitized = ""  # Phase 22
+            decrypted_body_sanitized = ""     # Phase 22
 
-        if master_key:
-            # RawEmail entschlüsseln (mit individuellen try-except pro Feld!)
-            try:
-                decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
-                    raw.encrypted_subject or "", master_key
-                )
-            except Exception as e:
-                logger.warning(f"Subject decryption failed for email {raw.id}: {e}")
-                decrypted_subject = "(Entschlüsselung fehlgeschlagen)"
-            
-            try:
-                decrypted_sender = encryption.EmailDataManager.decrypt_email_sender(
-                    raw.encrypted_sender or "", master_key
-                )
-            except Exception as e:
-                logger.warning(f"Sender decryption failed for email {raw.id}: {e}")
-                decrypted_sender = "Unbekannt"
-            
-            # To/Cc/Bcc sind JSON: [{"name": "...", "email": "..."}]
-            try:
-                to_encrypted = raw.encrypted_to or ""
-                if to_encrypted:
-                    to_decrypted = encryption.EmailDataManager.decrypt_email_sender(to_encrypted, master_key)
-                    if to_decrypted:
-                        to_list = json.loads(to_decrypted)
-                        decrypted_to = ", ".join([f"{item.get('name', '')} <{item.get('email', '')}>" if item.get('name') else item.get('email', '') for item in to_list])
-            except Exception as e:
-                logger.warning(f"To decryption/parsing failed for email {raw.id}: {e}")
-            
-            try:
-                cc_encrypted = raw.encrypted_cc or ""
-                if cc_encrypted:
-                    cc_decrypted = encryption.EmailDataManager.decrypt_email_sender(cc_encrypted, master_key)
-                    if cc_decrypted:
-                        cc_list = json.loads(cc_decrypted)
-                        decrypted_cc = ", ".join([f"{item.get('name', '')} <{item.get('email', '')}>" if item.get('name') else item.get('email', '') for item in cc_list])
-            except Exception as e:
-                logger.warning(f"Cc decryption/parsing failed for email {raw.id}: {e}")
-            
-            try:
-                bcc_encrypted = raw.encrypted_bcc or ""
-                if bcc_encrypted:
-                    bcc_decrypted = encryption.EmailDataManager.decrypt_email_sender(bcc_encrypted, master_key)
-                    if bcc_decrypted:
-                        bcc_list = json.loads(bcc_decrypted)
-                        decrypted_bcc = ", ".join([f"{item.get('name', '')} <{item.get('email', '')}>" if item.get('name') else item.get('email', '') for item in bcc_list])
-            except Exception as e:
-                logger.warning(f"Bcc decryption/parsing failed for email {raw.id}: {e}")
-            
-            try:
-                decrypted_body = encryption.EmailDataManager.decrypt_email_body(
-                    raw.encrypted_body or "", master_key
-                )
-            except Exception as e:
-                logger.warning(f"Body decryption failed for email {raw.id}: {e}")
-                decrypted_body = "(Entschlüsselung fehlgeschlagen)"
-
-            # ProcessedEmail entschlüsseln
-            try:
-                decrypted_summary_de = encryption.EmailDataManager.decrypt_summary(
-                    processed.encrypted_summary_de or "", master_key
-                )
-            except Exception as e:
-                logger.warning(f"Summary decryption failed for email {processed.id}: {e}")
-                
-            try:
-                decrypted_text_de = encryption.EmailDataManager.decrypt_summary(
-                    processed.encrypted_text_de or "", master_key
-                )
-            except Exception as e:
-                logger.warning(f"Text decryption failed for email {processed.id}: {e}")
-                
-            try:
-                decrypted_tags = encryption.EmailDataManager.decrypt_summary(
-                    processed.encrypted_tags or "", master_key
-                )
-            except Exception as e:
-                logger.warning(f"Tags decryption failed for email {processed.id}: {e}")
-            
-            # Phase 22: Anonymisierte Version entschlüsseln (wenn vorhanden)
-            try:
-                if raw.encrypted_subject_sanitized:
-                    decrypted_subject_sanitized = encryption.EmailDataManager.decrypt_email_subject(
-                        raw.encrypted_subject_sanitized, master_key
+            if master_key:
+                # RawEmail entschlüsseln (mit individuellen try-except pro Feld!)
+                try:
+                    decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
+                        raw.encrypted_subject or "", master_key
                     )
-            except Exception as e:
-                logger.warning(f"Sanitized subject decryption failed for email {raw.id}: {e}")
+                except Exception as e:
+                    logger.warning(f"Subject decryption failed for email {raw.id}: {e}")
+                    decrypted_subject = "(Entschlüsselung fehlgeschlagen)"
             
-            try:
-                if raw.encrypted_body_sanitized:
-                    decrypted_body_sanitized = encryption.EmailDataManager.decrypt_email_body(
-                        raw.encrypted_body_sanitized, master_key
+                try:
+                    decrypted_sender = encryption.EmailDataManager.decrypt_email_sender(
+                        raw.encrypted_sender or "", master_key
                     )
-            except Exception as e:
-                logger.warning(f"Sanitized body decryption failed for email {raw.id}: {e}")
+                except Exception as e:
+                    logger.warning(f"Sender decryption failed for email {raw.id}: {e}")
+                    decrypted_sender = "Unbekannt"
+            
+                # To/Cc/Bcc sind JSON: [{"name": "...", "email": "..."}]
+                try:
+                    to_encrypted = raw.encrypted_to or ""
+                    if to_encrypted:
+                        to_decrypted = encryption.EmailDataManager.decrypt_email_sender(to_encrypted, master_key)
+                        if to_decrypted:
+                            to_list = json.loads(to_decrypted)
+                            decrypted_to = ", ".join([f"{item.get('name', '')} <{item.get('email', '')}>" if item.get('name') else item.get('email', '') for item in to_list])
+                except Exception as e:
+                    logger.warning(f"To decryption/parsing failed for email {raw.id}: {e}")
+            
+                try:
+                    cc_encrypted = raw.encrypted_cc or ""
+                    if cc_encrypted:
+                        cc_decrypted = encryption.EmailDataManager.decrypt_email_sender(cc_encrypted, master_key)
+                        if cc_decrypted:
+                            cc_list = json.loads(cc_decrypted)
+                            decrypted_cc = ", ".join([f"{item.get('name', '')} <{item.get('email', '')}>" if item.get('name') else item.get('email', '') for item in cc_list])
+                except Exception as e:
+                    logger.warning(f"Cc decryption/parsing failed for email {raw.id}: {e}")
+            
+                try:
+                    bcc_encrypted = raw.encrypted_bcc or ""
+                    if bcc_encrypted:
+                        bcc_decrypted = encryption.EmailDataManager.decrypt_email_sender(bcc_encrypted, master_key)
+                        if bcc_decrypted:
+                            bcc_list = json.loads(bcc_decrypted)
+                            decrypted_bcc = ", ".join([f"{item.get('name', '')} <{item.get('email', '')}>" if item.get('name') else item.get('email', '') for item in bcc_list])
+                except Exception as e:
+                    logger.warning(f"Bcc decryption/parsing failed for email {raw.id}: {e}")
+            
+                try:
+                    decrypted_body = encryption.EmailDataManager.decrypt_email_body(
+                        raw.encrypted_body or "", master_key
+                    )
+                except Exception as e:
+                    logger.warning(f"Body decryption failed for email {raw.id}: {e}")
+                    decrypted_body = "(Entschlüsselung fehlgeschlagen)"
 
-        # Phase 10: Lade Email-Tags
-        email_tags = []
-        all_user_tags = []
-        tag_manager_mod = _get_tag_manager()
-        if tag_manager_mod:
-            try:
-                email_tags = tag_manager_mod.TagManager.get_email_tags(
-                    db, processed.id, user.id  # processed.id für Tag-Zuordnung
-                )
-                all_user_tags = tag_manager_mod.TagManager.get_user_tags(db, user.id)
-            except Exception as e:
-                logger.warning(f"TagManager konnte Tags nicht laden: {e}")
+                # ProcessedEmail entschlüsseln
+                try:
+                    decrypted_summary_de = encryption.EmailDataManager.decrypt_summary(
+                        processed.encrypted_summary_de or "", master_key
+                    )
+                except Exception as e:
+                    logger.warning(f"Summary decryption failed for email {processed.id}: {e}")
+                
+                try:
+                    decrypted_text_de = encryption.EmailDataManager.decrypt_summary(
+                        processed.encrypted_text_de or "", master_key
+                    )
+                except Exception as e:
+                    logger.warning(f"Text decryption failed for email {processed.id}: {e}")
+                
+                try:
+                    decrypted_tags = encryption.EmailDataManager.decrypt_summary(
+                        processed.encrypted_tags or "", master_key
+                    )
+                except Exception as e:
+                    logger.warning(f"Tags decryption failed for email {processed.id}: {e}")
+            
+                # Phase 22: Anonymisierte Version entschlüsseln (wenn vorhanden)
+                try:
+                    if raw.encrypted_subject_sanitized:
+                        decrypted_subject_sanitized = encryption.EmailDataManager.decrypt_email_subject(
+                            raw.encrypted_subject_sanitized, master_key
+                        )
+                except Exception as e:
+                    logger.warning(f"Sanitized subject decryption failed for email {raw.id}: {e}")
+            
+                try:
+                    if raw.encrypted_body_sanitized:
+                        decrypted_body_sanitized = encryption.EmailDataManager.decrypt_email_body(
+                            raw.encrypted_body_sanitized, master_key
+                        )
+                except Exception as e:
+                    logger.warning(f"Sanitized body decryption failed for email {raw.id}: {e}")
+
+            # Phase 10: Lade Email-Tags
+            email_tags = []
+            all_user_tags = []
+            tag_manager_mod = _get_tag_manager()
+            if tag_manager_mod:
+                try:
+                    email_tags = tag_manager_mod.TagManager.get_email_tags(
+                        db, processed.id, user.id  # processed.id für Tag-Zuordnung
+                    )
+                    all_user_tags = tag_manager_mod.TagManager.get_user_tags(db, user.id)
+                except Exception as e:
+                    logger.warning(f"TagManager konnte Tags nicht laden: {e}")
 
         return render_template(
             "email_detail.html",

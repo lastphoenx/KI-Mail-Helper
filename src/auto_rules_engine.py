@@ -565,43 +565,53 @@ class AutoRulesEngine:
                     logger.error(f"Mark as flagged failed: {flag_err}")
             
             # Action: Apply Tag (lokal in DB)
+            # WICHTIG: email_tag_assignments.email_id referenziert processed_emails.id, NICHT raw_emails.id!
             if 'apply_tag' in actions:
                 tag_name = actions['apply_tag']
                 try:
-                    # Finde oder erstelle Tag
-                    tag = self.db.query(EmailTag).filter_by(
-                        user_id=self.user_id,
-                        name=tag_name
+                    # Erst ProcessedEmail finden - ohne diese kein Tag-Assignment möglich
+                    processed_email = self.db.query(ProcessedEmail).filter_by(
+                        raw_email_id=raw_email.id
                     ).first()
                     
-                    if not tag:
-                        # Tag erstellen mit optionaler Farbe aus actions
-                        tag_color = actions.get('tag_color', '#6366F1')  # Default-Farbe
-                        tag = EmailTag(
-                            user_id=self.user_id,
-                            name=tag_name,
-                            color=tag_color
-                        )
-                        self.db.add(tag)
-                        self.db.flush()
-                        logger.info(f"📝 Created new tag '{tag_name}' with color {tag_color}")
-                    
-                    # Prüfe ob Tag bereits zugewiesen
-                    existing = self.db.query(EmailTagAssignment).filter_by(
-                        email_id=raw_email.id,
-                        tag_id=tag.id
-                    ).first()
-                    
-                    if not existing:
-                        assignment = EmailTagAssignment(
-                            email_id=raw_email.id,
-                            tag_id=tag.id
-                        )
-                        self.db.add(assignment)
-                        executed.append(f"apply_tag:{tag_name}")
-                        logger.info(f"🏷️  Applied tag '{tag_name}' to email {raw_email.id}")
+                    if not processed_email:
+                        logger.warning(f"⚠️ Kann Tag '{tag_name}' nicht zuweisen - ProcessedEmail für raw_email {raw_email.id} existiert noch nicht")
+                        executed.append(f"apply_tag:{tag_name} [SKIPPED - no ProcessedEmail]")
                     else:
-                        executed.append(f"apply_tag:{tag_name} [ALREADY_EXISTS]")
+                        # Finde oder erstelle Tag
+                        tag = self.db.query(EmailTag).filter_by(
+                            user_id=self.user_id,
+                            name=tag_name
+                        ).first()
+                        
+                        if not tag:
+                            # Tag erstellen mit optionaler Farbe aus actions
+                            tag_color = actions.get('tag_color', '#6366F1')  # Default-Farbe
+                            tag = EmailTag(
+                                user_id=self.user_id,
+                                name=tag_name,
+                                color=tag_color
+                            )
+                            self.db.add(tag)
+                            self.db.flush()
+                            logger.info(f"📝 Created new tag '{tag_name}' with color {tag_color}")
+                        
+                        # Prüfe ob Tag bereits zugewiesen (nutze processed_email.id!)
+                        existing = self.db.query(EmailTagAssignment).filter_by(
+                            email_id=processed_email.id,
+                            tag_id=tag.id
+                        ).first()
+                        
+                        if not existing:
+                            assignment = EmailTagAssignment(
+                                email_id=processed_email.id,
+                                tag_id=tag.id
+                            )
+                            self.db.add(assignment)
+                            executed.append(f"apply_tag:{tag_name}")
+                            logger.info(f"🏷️  Applied tag '{tag_name}' to email {raw_email.id} (processed_id={processed_email.id})")
+                        else:
+                            executed.append(f"apply_tag:{tag_name} [ALREADY_EXISTS]")
                         
                 except Exception as tag_err:
                     logger.error(f"Apply tag failed: {tag_err}")
