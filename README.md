@@ -28,6 +28,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **Account-Level AI-Fetch-Control** – Separate AI-Analyse und UrgencyBooster Toggles pro Account
 - **Semantische Suche** – Embeddings für "finde ähnliche Emails"
 - **Tag-System** – Manuell + KI-Vorschläge basierend auf gelernten Mustern
+- **Email-Inline-Bilder (CID)** – Automatische Anzeige von Inline-Attachments ohne externe Requests
 - **IMAP & Gmail OAuth** – Funktioniert mit GMX, Gmail, Outlook, etc.
 - **SMTP Versand** – Antworten & neue Emails mit Sent-Ordner-Sync
 - **Thread-View** – Konversations-basierte Ansicht mit Context

@@ -82,23 +82,74 @@ Nach der 2FA-Aktivierung erhältst du 10 Einmal-Codes. **Speichere diese sicher 
 2. Klicke auf **"Neuen Account hinzufügen"**
 3. Fülle das Formular aus:
 
-**Für IMAP (GMX, Web.de, etc.):**
+#### IMAP-Setup (Alle Provider)
 
-| Feld | Beispiel (GMX) |
-|------|----------------|
-| Name | GMX Postfach |
+**GMX:**
+
+| Feld | Wert |
+|------|------|
 | IMAP-Server | imap.gmx.net |
-| Port | 993 |
-| Verschlüsselung | SSL |
-| Benutzername | deine@email.de |
-| Passwort | Dein Email-Passwort |
+| IMAP-Port | 993 |
+| IMAP-Verschl. | SSL |
+| SMTP-Server | smtp.gmx.net |
+| SMTP-Port | 587 |
+| SMTP-Verschl. | STARTTLS |
+| Benutzername | deine@gmx.de |
+| Passwort | Dein GMX-Passwort |
 
-**Für Gmail (OAuth):**
-1. Wähle **"Google OAuth"** als Methode
-2. Klicke auf **"Mit Google verbinden"**
-3. Melde dich bei Google an
+**Outlook / Hotmail:**
+
+| Feld | Wert |
+|------|------|
+| IMAP-Server | outlook.office365.com |
+| IMAP-Port | 993 |
+| SMTP-Server | smtp.office365.com |
+| SMTP-Port | 587 |
+| Benutzername | deine@outlook.com |
+| Passwort | Dein Outlook-Passwort |
+
+**Gmail (mit App-Passwort):**
+
+1. Aktiviere 2-Faktor-Authentifizierung auf [myaccount.google.com](https://myaccount.google.com/security)
+2. Gehe zu **Sicherheit** → **App-Passwörter**
+3. Wähle **Mail** und **Windows Computer**
+4. Google generiert ein 16-stelliges Passwort → **Kopieren**
+
+| Feld | Wert |
+|------|------|
+| IMAP-Server | imap.gmail.com |
+| IMAP-Port | 993 |
+| SMTP-Server | smtp.gmail.com |
+| SMTP-Port | 587 |
+| Benutzername | deine@gmail.com |
+| Passwort | 16-stelliges App-Passwort |
+
+#### Google OAuth (empfohlen für Gmail)
+
+OAuth ist sicherer als App-Passwörter und ermöglicht automatische Token-Erneuerung:
+
+1. **Google Cloud Console einrichten:**
+   - Gehe zu [Google Cloud Console](https://console.cloud.google.com)
+   - Erstelle ein Projekt: "Mail Helper"
+   - Aktiviere die **Gmail API**
+   - Gehe zu **Anmeldedaten** → **OAuth-Zustimmungsbildschirm** (Extern)
+   - Erstelle **OAuth-2.0-Client-ID** (Webapplikation)
+   - Redirect-URI hinzufügen: `https://dein-server:5000/settings/mail-account/google/callback`
+
+2. **In Mail Helper:**
+   - Wähle **"Google OAuth"** als Methode
+   - Gib deine **Client-ID** und **Client-Secret** ein
+   - Klicke auf **"Weiter zu Google Anmeldung"**
+   - Nach erfolgreicher Anmeldung wird dein Gmail-Konto automatisch hinzugefügt
 
 > 💡 **Tipp:** Bei Gmail empfehlen wir OAuth – kein App-Passwort nötig und sicherer.
+
+#### Verbindung testen
+
+Nach dem Speichern:
+1. Gehe zu **Einstellungen** → Mail-Accounts-Tabelle
+2. Klicke **"🔌 Verbindung testen"**
+3. Bei Erfolg siehst du ✅ mit Anzahl verfügbarer Mails
 
 ---
 

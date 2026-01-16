@@ -255,6 +255,50 @@ psql -U mail_helper -h localhost -d mail_helper -c "\dt"
 
 ---
 
+## 7a. SQLite → PostgreSQL Migration (Optional)
+
+> ⚠️ **Nur relevant** wenn du von einer älteren SQLite-Installation (v1.x) migrierst. Bei Neuinstallation überspringe diesen Abschnitt.
+
+### Voraussetzungen
+
+- Bestehende SQLite-Datenbank (`emails.db` oder `ki_mail_helper.db`)
+- PostgreSQL bereits eingerichtet (Abschnitt 2)
+- Migrationen ausgeführt (`alembic upgrade head`)
+
+### Dry-Run (empfohlen)
+
+```bash
+source venv/bin/activate
+
+# Nur prüfen, was migriert würde (keine Daten geschrieben)
+python scripts/migrate_sqlite_to_postgresql.py \
+  --source sqlite:///emails.db \
+  --target "postgresql://mail_helper:DEIN_PASSWORT@localhost:5432/mail_helper" \
+  --dry-run
+```
+
+### Echte Migration
+
+```bash
+# ⚠️ Backup vorher erstellen!
+python scripts/migrate_sqlite_to_postgresql.py \
+  --source sqlite:///emails.db \
+  --target "postgresql://mail_helper:DEIN_PASSWORT@localhost:5432/mail_helper"
+```
+
+### Nach der Migration
+
+```bash
+# Verifizieren
+psql -U mail_helper -h localhost -d mail_helper -c "SELECT COUNT(*) FROM users;"
+psql -U mail_helper -h localhost -d mail_helper -c "SELECT COUNT(*) FROM raw_emails;"
+
+# Alte SQLite-Datei archivieren (nicht löschen!)
+mv emails.db emails.db.backup-$(date +%Y%m%d)
+```
+
+---
+
 ## 8. App starten (Development)
 
 ### Terminal 1: Flask App

@@ -5,6 +5,8 @@ damit beim nächsten Abrufen alles neu abgerufen und verarbeitet wird.
 
 User-Account und Mail-Account-Daten bleiben erhalten!
 
+⚠️  WICHTIG: Nutzt DATABASE_URL aus .env (PostgreSQL oder SQLite)
+
 Verwendung:
   python3 scripts/reset_all_emails.py --list       # Übersicht aller User und Accounts
   python3 scripts/reset_all_emails.py              # Alle Emails
@@ -20,16 +22,40 @@ Vorsicht: Worker sollte während des Löschens NICHT laufen!
 
 import sys
 import os
-import importlib
 import argparse
 
+# Projekt-Root zu sys.path hinzufügen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# .env laden
+from dotenv import load_dotenv
+from pathlib import Path
+project_root = Path(__file__).parent.parent
+load_dotenv(project_root / ".env.local", override=True)
+load_dotenv(project_root / ".env", override=False)
+
+# Database Setup (nutzt DATABASE_URL aus Environment)
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+import importlib
+
 models = importlib.import_module('.02_models', 'src')
+
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{project_root / 'emails.db'}")
+USE_POSTGRESQL = DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://")
+
+if USE_POSTGRESQL:
+    print(f"🐘 PostgreSQL Mode: {DATABASE_URL.split('@')[1] if '@' in DATABASE_URL else DATABASE_URL}")
+    engine = create_engine(DATABASE_URL, connect_args={"connect_timeout": 10})
+else:
+    print(f"📦 SQLite Mode: {DATABASE_URL}")
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+Session = sessionmaker(bind=engine)
 
 
 def list_users_accounts():
     """Zeigt eine Übersicht aller User und deren Mail-Accounts mit Email-Statistiken"""
-    engine, Session = models.init_db("emails.db")
     session = Session()
     
     try:
@@ -98,7 +124,6 @@ def clean_sanitization_data(email_ids=None, account_id=None, user_id=None, force
         user_id: Nur für diesen User
         force: Ohne Bestätigung
     """
-    engine, Session = models.init_db("emails.db")
     session = Session()
     
     try:
@@ -175,8 +200,6 @@ def reset_all_emails(account_id=None, user_id=None, email_ids=None, force=False,
                     If False, SOFT DELETE (deleted_at = NOW, keeps audit trail)
                     Default: False (soft-delete)
     """
-    
-    engine, Session = models.init_db("emails.db")
     session = Session()
     
     try:
@@ -200,6 +223,13 @@ def reset_all_emails(account_id=None, user_id=None, email_ids=None, force=False,
             print(f"ℹ️  Keine E-Mails gefunden für {scope_desc}")
             return True
         
+        # Aktive vs soft-deleted unterscheiden
+        active_count = session.query(models.RawEmail).filter(
+            models.RawEmail.id.in_(raw_ids),
+            models.RawEmail.deleted_at.is_(None)
+        ).count()
+        soft_deleted_count = len(raw_ids) - active_count
+        
         # ProcessedEmails zählen (die zu diesen RawEmails gehören)
         processed_count = session.query(models.ProcessedEmail).filter(
             models.ProcessedEmail.raw_email_id.in_(raw_ids)
@@ -213,7 +243,10 @@ def reset_all_emails(account_id=None, user_id=None, email_ids=None, force=False,
             return True
         
         print(f"⚠️  Werden gelöscht:")
-        print(f"   📧 {raw_count} RawEmail-Einträge (abgerufene E-Mails)")
+        if soft_deleted_count > 0:
+            print(f"   📧 {raw_count} RawEmail-Einträge ({active_count} aktiv + {soft_deleted_count} soft-deleted)")
+        else:
+            print(f"   📧 {raw_count} RawEmail-Einträge (abgerufene E-Mails)")
         print(f"   🤖 {processed_count} ProcessedEmail-Einträge (KI-Analysen)")
         print(f"   📊 Gesamt: {total} Einträge ({scope_desc})")
         print()

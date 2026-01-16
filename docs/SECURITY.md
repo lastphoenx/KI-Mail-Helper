@@ -68,6 +68,7 @@ KI-Mail-Helper implementiert eine **Zero-Knowledge-Architektur**, bei der der Se
 - `encrypted_message_id`, `encrypted_in_reply_to`, `encrypted_references`
 - `encrypted_subject_sanitized`, `encrypted_body_sanitized`
 - `encrypted_entity_map`
+- `encrypted_inline_attachments` – Base64-encoded CID-Bilder als JSON
 
 **ProcessedEmail:**
 - `encrypted_summary`, `encrypted_translation`, `encrypted_zusammenfassung`

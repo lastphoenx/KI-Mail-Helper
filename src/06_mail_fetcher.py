@@ -908,6 +908,11 @@ class MailFetcher:
         CID (Content-ID) wird in HTML als src="cid:uuid@domain" referenziert.
         Diese Funktion extrahiert die Bilder und gibt sie als Dict zurück.
         
+        Limits:
+            - Max 2 MB Gesamtgröße pro E-Mail
+            - Max 500 KB pro einzelnes Attachment
+            - Nur Bilder (image/*)
+        
         Returns:
             Dict mit Content-ID als Key: {
                 "uuid@domain": {
@@ -917,6 +922,9 @@ class MailFetcher:
             }
         """
         inline_attachments = {}
+        total_size = 0
+        MAX_TOTAL_SIZE = 2 * 1024 * 1024  # 2 MB Gesamtlimit
+        MAX_SINGLE_SIZE = 500 * 1024  # 500 KB pro Attachment
         
         if not msg.is_multipart():
             return inline_attachments
@@ -935,6 +943,21 @@ class MailFetcher:
                     
                     payload = part.get_payload(decode=True)
                     if payload:
+                        payload_size = len(payload)
+                        
+                        # Size-Limits prüfen
+                        if payload_size > MAX_SINGLE_SIZE:
+                            logger.warning(
+                                f"Inline attachment {cid} too large ({payload_size} bytes), skipping (limit: {MAX_SINGLE_SIZE})"
+                            )
+                            continue
+                            
+                        if total_size + payload_size > MAX_TOTAL_SIZE:
+                            logger.warning(
+                                f"Total inline attachments size exceeded ({total_size + payload_size} bytes), skipping remaining"
+                            )
+                            break
+                        
                         import base64
                         base64_data = base64.b64encode(payload).decode("ascii")
                         
@@ -942,9 +965,13 @@ class MailFetcher:
                             "mime_type": content_type,
                             "data": base64_data
                         }
-                        logger.debug(f"Extracted inline attachment: cid={cid}, type={content_type}, size={len(payload)}")
+                        total_size += payload_size
+                        logger.debug(f"Extracted inline attachment: cid={cid}, type={content_type}, size={payload_size}")
                 except Exception as e:
                     logger.warning(f"Failed to extract inline attachment {content_id}: {e}")
+        
+        if total_size > 0:
+            logger.info(f"Extracted {len(inline_attachments)} inline attachments, total size: {total_size} bytes")
         
         return inline_attachments
 
