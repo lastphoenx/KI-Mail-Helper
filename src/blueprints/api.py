@@ -1646,38 +1646,25 @@ def api_tag_suggestions_settings():
                 data = request.get_json() or {}
                 
                 try:
-                    # Speichere Settings in User-Preferences
-                    if hasattr(user, 'preferences') and user.preferences:
-                        prefs = json.loads(user.preferences) if isinstance(user.preferences, str) else user.preferences
-                    else:
-                        prefs = {}
+                    # Speichere Settings direkt in User-Model-Spalten
+                    if "enable_tag_suggestion_queue" in data:
+                        user.enable_tag_suggestion_queue = bool(data["enable_tag_suggestion_queue"])
+                    if "enable_auto_assignment" in data:
+                        user.enable_auto_assignment = bool(data["enable_auto_assignment"])
                     
-                    prefs['tag_suggestions'] = {
-                        'auto_suggest': data.get('auto_suggest', True),
-                        'min_confidence': data.get('min_confidence', 0.5),
-                    }
-                    
-                    user.preferences = json.dumps(prefs)
                     db.commit()
                     
+                    logger.info(f"Tag-suggestion settings updated for user {user.id}: queue={user.enable_tag_suggestion_queue}, auto={user.enable_auto_assignment}")
                     return jsonify({"success": True})
                 except Exception as e:
                     db.rollback()
                     logger.error(f"api_tag_suggestions_settings: Save-Fehler: {e}")
                     return jsonify({"error": "Fehler beim Speichern"}), 500
             
-            # GET: Lade Settings
-            prefs = {}
-            if hasattr(user, 'preferences') and user.preferences:
-                try:
-                    prefs = json.loads(user.preferences) if isinstance(user.preferences, str) else user.preferences
-                except:
-                    pass
-            
-            tag_settings = prefs.get('tag_suggestions', {})
+            # GET: Lade Settings aus User-Model-Spalten
             return jsonify({
-                "auto_suggest": tag_settings.get('auto_suggest', True),
-                "min_confidence": tag_settings.get('min_confidence', 0.5),
+                "enable_tag_suggestion_queue": getattr(user, 'enable_tag_suggestion_queue', False) or False,
+                "enable_auto_assignment": getattr(user, 'enable_auto_assignment', False) or False,
             })
     except Exception as e:
         logger.error(f"api_tag_suggestions_settings: Fehler: {type(e).__name__}: {e}")

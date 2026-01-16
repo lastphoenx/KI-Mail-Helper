@@ -357,6 +357,7 @@ function renderConversation(data) {
             <small class="d-block text-muted mt-1">${escapeHtml(email.subject)}</small>
             <small class="text-muted d-block mt-2">Message-ID: ${escapeHtml(email.message_id)}</small>
             <button class="btn btn-sm btn-link mt-2 view-email-btn" 
+                    data-raw-email-id="${email.id}"
                     data-message-id="${escapeHtml(email.message_id)}"
                     data-subject="${escapeHtml(email.subject)}"
                     data-sender="${escapeHtml(email.sender)}"
@@ -372,6 +373,7 @@ function renderConversation(data) {
     document.querySelectorAll('.view-email-btn').forEach(btn => {
         btn.addEventListener('click', function() {
             viewFullEmail(
+                this.dataset.rawEmailId,
                 this.dataset.messageId,
                 this.dataset.subject,
                 this.dataset.sender,
@@ -383,15 +385,19 @@ function renderConversation(data) {
 
 /**
  * Display full email in modal
+ * @param {string} rawEmailId - Raw email database ID
  * @param {string} messageId - Email message ID
  * @param {string} subject - Email subject
  * @param {string} sender - Email sender
  * @param {string} date - Email date
  * @returns {void}
  */
-function viewFullEmail(messageId, subject, sender, date) {
-    document.getElementById('emailModalTitle').textContent = `From: ${escapeHtml(sender)}`;
-    document.getElementById('emailModalBody').innerHTML = `
+function viewFullEmail(rawEmailId, messageId, subject, sender, date) {
+    const modalTitle = document.getElementById('emailModalTitle');
+    const modalBody = document.getElementById('emailModalBody');
+    
+    modalTitle.textContent = `From: ${escapeHtml(sender)}`;
+    modalBody.innerHTML = `
         <div class="mb-3">
             <strong>Subject:</strong> ${escapeHtml(subject)}<br>
             <strong>From:</strong> ${escapeHtml(sender)}<br>
@@ -399,11 +405,57 @@ function viewFullEmail(messageId, subject, sender, date) {
             <strong>Message-ID:</strong> <code>${escapeHtml(messageId)}</code>
         </div>
         <hr>
-        <div class="bg-light p-3 rounded">
-            <small class="text-muted">Full email body would be displayed here</small>
+        <div class="bg-light p-3 rounded" id="emailBodyContent">
+            <div class="text-center">
+                <div class="spinner-border spinner-border-sm" role="status"></div>
+                <span class="ms-2">Loading email body...</span>
+            </div>
         </div>
     `;
     new bootstrap.Modal(document.getElementById('emailModal')).show();
+    
+    // Fetch the email body from API
+    fetch(`/email/${rawEmailId}`, {
+        method: 'GET',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(response => response.text())
+    .then(html => {
+        // Parse the response and extract body content
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        // Try to find the body in different possible locations
+        const bodyContent = doc.querySelector('#body-content') || 
+                           doc.querySelector('.tab-pane#body') || 
+                           doc.querySelector('[data-body-content]');
+        
+        const bodyContainer = document.getElementById('emailBodyContent');
+        if (bodyContent && bodyContainer) {
+            // Check for iframe or direct content
+            const iframe = bodyContent.querySelector('iframe');
+            if (iframe && iframe.srcdoc) {
+                bodyContainer.innerHTML = `<div class="email-body-wrapper" style="max-height: 400px; overflow-y: auto;">${iframe.srcdoc}</div>`;
+            } else {
+                bodyContainer.innerHTML = `<div class="email-body-wrapper" style="max-height: 400px; overflow-y: auto;">${bodyContent.innerHTML}</div>`;
+            }
+        } else {
+            // Fallback: try to find pre or any text content
+            const preContent = doc.querySelector('pre');
+            if (preContent) {
+                bodyContainer.innerHTML = `<pre class="mb-0" style="max-height: 400px; overflow-y: auto; white-space: pre-wrap;">${escapeHtml(preContent.textContent)}</pre>`;
+            } else {
+                bodyContainer.innerHTML = '<span class="text-muted">Could not load email body</span>';
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error loading email body:', error);
+        const bodyContainer = document.getElementById('emailBodyContent');
+        if (bodyContainer) {
+            bodyContainer.innerHTML = '<span class="text-danger">Error loading email body</span>';
+        }
+    });
 }
 
 /**
