@@ -1,16 +1,16 @@
 ﻿"""
-Gunicorn Configuration für KI-Mail-Helper
+Gunicorn Configuration für KI-Mail-Helper v2.0 (Multi-User Edition)
 Production WSGI Server Setup
 
 Usage:
-    gunicorn -c config/gunicorn.conf.py src.01_web_app:app
+    gunicorn -c config/gunicorn.conf.py "src.app_factory:create_app()"
 """
 
 import multiprocessing
 import os
 
 # Server Socket
-bind = "0.0.0.0:5001"  # HTTPS Port (HTTP Redirector läuft auf 5000)
+bind = "127.0.0.1:5000"  # Bind to localhost (reverse proxy handles external)
 backlog = 2048  # Max pending connections
 
 # Worker Processes
