@@ -961,6 +961,17 @@ class IMAPDiagnostics:
                         algo = cap.split('=')[1]
                         algorithms.append(algo)
             
+            # Helper to flatten nested thread structures (defined once, used throughout)
+            def flatten_thread(thread):
+                """Recursively flatten thread structure to get all UIDs"""
+                uids = []
+                for item in thread:
+                    if isinstance(item, (list, tuple)):
+                        uids.extend(flatten_thread(item))
+                    else:
+                        uids.append(item)
+                return uids
+            
             # Try to get thread results if supported
             thread_results = {}
             if thread_support and algorithms:
@@ -968,17 +979,6 @@ class IMAPDiagnostics:
                     # Use first supported algorithm
                     algo = algorithms[0].lower()
                     threads = client.thread(algorithm=algo, criteria=['ALL'])
-                    
-                    # Helper to flatten nested thread structures
-                    def flatten_thread(thread):
-                        """Recursively flatten thread structure to get all UIDs"""
-                        uids = []
-                        for item in thread:
-                            if isinstance(item, (list, tuple)):
-                                uids.extend(flatten_thread(item))
-                            else:
-                                uids.append(item)
-                        return uids
                     
                     # Calculate statistics (threads can be nested tuples)
                     thread_count = len(threads) if threads else 0
@@ -995,15 +995,6 @@ class IMAPDiagnostics:
                         # Get envelopes for all thread UIDs to extract dates
                         # THREAD returns nested tuples like (1, 2, (3, 4)) for threads with replies
                         # We need to flatten them to get all UIDs
-                        def flatten_thread(thread):
-                            """Recursively flatten thread structure to get all UIDs"""
-                            uids = []
-                            for item in thread:
-                                if isinstance(item, (list, tuple)):
-                                    uids.extend(flatten_thread(item))
-                                else:
-                                    uids.append(item)
-                            return uids
                         
                         all_uids = []
                         for thread in threads:
@@ -1695,8 +1686,22 @@ class IMAPDiagnostics:
                     'message': f'{folder} ist leer auf Server'
                 }
             
-            # Fetch ALLE Details für jede Mail
-            envelope_data = client.fetch(all_msgs, ['ENVELOPE', 'FLAGS', 'INTERNALDATE'])
+            # Fetch ALLE Details für jede Mail (in Batches um Server nicht zu überlasten)
+            envelope_data = {}
+            batch_size = 50  # Fetch in smaller batches
+            for i in range(0, len(all_msgs), batch_size):
+                batch = all_msgs[i:i + batch_size]
+                try:
+                    batch_data = client.fetch(batch, ['ENVELOPE', 'FLAGS', 'INTERNALDATE'])
+                    envelope_data.update(batch_data)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch batch {i//batch_size + 1}: {e}")
+                    # Fallback: fetch only essential data if full fetch fails
+                    try:
+                        batch_data = client.fetch(batch, ['ENVELOPE'])
+                        envelope_data.update(batch_data)
+                    except Exception as e2:
+                        logger.error(f"Critical: Cannot fetch batch at all: {e2}")
             
             imap_mails = {}
             test_mail_uid = None

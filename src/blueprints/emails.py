@@ -349,7 +349,9 @@ def list_view():
 
         # P2-007: Server-Pagination
         page = int(request.args.get('page', 1))
-        per_page = 50
+        # Per-page with allowed values (50, 100, 150)
+        requested_per_page = int(request.args.get('per_page', 50))
+        per_page = requested_per_page if requested_per_page in [50, 100, 150] else 50
         
         # Count total for pagination
         total_count = query.count()
