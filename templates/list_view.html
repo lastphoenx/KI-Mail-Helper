@@ -183,8 +183,50 @@
     </div>
 </div>
 
+<!-- TOP Pagination Info & Per-Page Selection -->
+{% if total_pages >= 1 %}
+<div class="d-flex justify-content-between align-items-center mb-3" id="topPaginationBar">
+    <div class="d-flex align-items-center">
+        <span class="text-muted">
+            <strong>{{ total_count }}</strong> E-Mails insgesamt
+            {% if total_pages > 1 %}
+            &mdash; Seite <strong>{{ page }}</strong> von <strong>{{ total_pages }}</strong>
+            {% endif %}
+        </span>
+    </div>
+    <div class="d-flex align-items-center gap-3">
+        <label class="form-label small mb-0 me-1">Pro Seite:</label>
+        <select class="form-select form-select-sm" style="width: auto;" id="perPageSelect" data-filter="per_page">
+            <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+            <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+            <option value="150" {% if per_page == 150 %}selected{% endif %}>150</option>
+        </select>
+        {% if total_pages > 1 %}
+        <!-- Quick Navigation -->
+        <nav aria-label="Top pagination">
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" href="?page={{ page - 1 }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}" 
+                       {% if page <= 1 %}tabindex="-1" aria-disabled="true"{% endif %}>
+                        &laquo;
+                    </a>
+                </li>
+                <li class="page-item disabled"><span class="page-link">{{ page }}/{{ total_pages }}</span></li>
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="?page={{ page + 1 }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}" 
+                       {% if page >= total_pages %}tabindex="-1" aria-disabled="true"{% endif %}>
+                        &raquo;
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <!-- E-Mail-Liste -->
-<div class="card">
+<div class="card" id="emailListCard">
     <div class="card-header">
         <strong id="emailListCount">{{ mails|length }}</strong> Mails
         {% if sort_by != 'score' or sort_order == 'asc' %}
@@ -293,7 +335,7 @@
         <ul class="pagination pagination-sm mb-0">
             <!-- Previous -->
             <li class="page-item {% if page <= 1 %}disabled{% endif %}">
-                <a class="page-link" href="?page={{ page - 1 }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}" 
+                <a class="page-link" href="?page={{ page - 1 }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}" 
                    {% if page <= 1 %}tabindex="-1" aria-disabled="true"{% endif %}>
                     &laquo; Zurück
                 </a>
@@ -302,7 +344,7 @@
             <!-- First Page -->
             {% if page > 3 %}
             <li class="page-item">
-                <a class="page-link" href="?page=1{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}">1</a>
+                <a class="page-link" href="?page=1{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}">1</a>
             </li>
             {% if page > 4 %}
             <li class="page-item disabled"><span class="page-link">...</span></li>
@@ -312,7 +354,7 @@
             <!-- Pages around current -->
             {% for p in range([page - 2, 1]|max, [page + 2, total_pages]|min + 1) %}
             <li class="page-item {% if p == page %}active{% endif %}">
-                <a class="page-link" href="?page={{ p }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}">{{ p }}</a>
+                <a class="page-link" href="?page={{ p }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}">{{ p }}</a>
             </li>
             {% endfor %}
             
@@ -322,13 +364,13 @@
             <li class="page-item disabled"><span class="page-link">...</span></li>
             {% endif %}
             <li class="page-item">
-                <a class="page-link" href="?page={{ total_pages }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}">{{ total_pages }}</a>
+                <a class="page-link" href="?page={{ total_pages }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}">{{ total_pages }}</a>
             </li>
             {% endif %}
             
             <!-- Next -->
             <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
-                <a class="page-link" href="?page={{ page + 1 }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}" 
+                <a class="page-link" href="?page={{ page + 1 }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}" 
                    {% if page >= total_pages %}tabindex="-1" aria-disabled="true"{% endif %}>
                     Weiter &raquo;
                 </a>
@@ -348,6 +390,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const sortOrderBtn = document.getElementById('sortOrder');
     const accountSelect = document.getElementById('accountSelect');
     const folderSelect = document.getElementById('folderSelect');
+    const perPageSelect = document.getElementById('perPageSelect');
 
     async function updateFolderDropdown(accountId) {
         if (!accountId || !folderSelect) {
@@ -525,10 +568,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const currentOrder = sortOrderBtn?.dataset.order || 'desc';
         params.set('order', currentOrder);
 
-        const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
-        window.history.replaceState({}, '', newUrl);
+        // Per-page selection
+        if (perPageSelect && perPageSelect.value && perPageSelect.value !== '50') {
+            params.set('per_page', perPageSelect.value);
+        }
 
-        applyFiltersViaAjax(params);
+        const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        
+        // Full page reload for reliable filter application
+        window.location.href = newUrl;
     }
 
     function applyFiltersViaAjax(params) {
@@ -548,12 +596,60 @@ document.addEventListener('DOMContentLoaded', function() {
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             
-            const newListHtml = doc.querySelector('.card:last-of-type');
-            const oldListHtml = document.querySelector('.card:last-of-type');
+            // Update email list card
+            const newListHtml = doc.querySelector('#emailListCard');
+            const oldListHtml = document.querySelector('#emailListCard');
             
             if (newListHtml && oldListHtml) {
                 oldListHtml.replaceWith(newListHtml);
                 attachActionFormListeners();
+            }
+
+            // Update TOP pagination info
+            const newTopPagination = doc.querySelector('#topPaginationBar');
+            const oldTopPagination = document.querySelector('#topPaginationBar');
+            if (newTopPagination && oldTopPagination) {
+                oldTopPagination.replaceWith(newTopPagination);
+                // Re-attach perPageSelect listener
+                const newPerPageSelect = document.getElementById('perPageSelect');
+                if (newPerPageSelect) {
+                    newPerPageSelect.addEventListener('change', function() {
+                        const params = new URLSearchParams(window.location.search);
+                        const newPerPage = this.value;
+                        if (newPerPage === '50') {
+                            params.delete('per_page');
+                        } else {
+                            params.set('per_page', newPerPage);
+                        }
+                        params.delete('page');
+                        window.location.href = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+                    });
+                }
+            }
+
+            // Update bottom pagination
+            const newBottomPagination = doc.querySelector('nav[aria-label="Email pagination"]');
+            const oldBottomPagination = document.querySelector('nav[aria-label="Email pagination"]');
+            if (newBottomPagination) {
+                if (oldBottomPagination) {
+                    oldBottomPagination.replaceWith(newBottomPagination);
+                } else {
+                    // Insert after email list if pagination didn't exist before
+                    const listCard = document.querySelector('#emailListCard');
+                    if (listCard) {
+                        listCard.after(newBottomPagination);
+                    }
+                }
+            } else if (oldBottomPagination) {
+                // Remove pagination if no longer needed
+                oldBottomPagination.remove();
+            }
+
+            // Update total count in top bar
+            const newTotalCount = doc.querySelector('#topPaginationBar strong');
+            const oldTotalCount = document.querySelector('#topPaginationBar strong');
+            if (newTotalCount && oldTotalCount) {
+                oldTotalCount.textContent = newTotalCount.textContent;
             }
 
             const emailCount = doc.querySelector('.card-header');
@@ -561,7 +657,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const countMatch = emailCount.textContent.match(/(\d+)\s+Mails/);
                 if (countMatch) {
                     resultCount.textContent = countMatch[1];
-                    const newListCount = doc.querySelector('#emailListCount');
+                    const newListCount = document.querySelector('#emailListCount');
                     if (newListCount) {
                         newListCount.textContent = countMatch[1];
                     }
@@ -643,6 +739,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (sortBySelect) {
         sortBySelect.addEventListener('change', updateFilters);
+    }
+
+    // Per-page selection - triggers full page reload to recalculate pagination
+    if (perPageSelect) {
+        perPageSelect.addEventListener('change', function() {
+            const params = new URLSearchParams(window.location.search);
+            const newPerPage = this.value;
+            if (newPerPage === '50') {
+                params.delete('per_page');
+            } else {
+                params.set('per_page', newPerPage);
+            }
+            // Reset to page 1 when changing per_page
+            params.delete('page');
+            window.location.href = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        });
     }
 
     if (sortOrderBtn) {

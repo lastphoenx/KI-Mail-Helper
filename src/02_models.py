@@ -920,7 +920,7 @@ class RawEmail(Base):
     imap_last_seen_at = Column(DateTime, nullable=True)
 
     # ===== PHASE 12: MUST-HAVE (Threading & Query Optimization) =====
-    message_id = Column(String(255), nullable=True, index=True)
+    message_id = Column(String(512), nullable=True, index=True)  # 512 für Teams/Outlook lange IDs
     encrypted_in_reply_to = Column(Text, nullable=True)
     
     # BUG-003: parent_uid ist String (IMAP-UID), nicht ForeignKey
@@ -981,7 +981,7 @@ class RawEmail(Base):
     # ===== PHASE 24: STABLE IDENTIFIER (für Move-Detection) =====
     # stable_identifier = message_id wenn vorhanden, sonst "hash:<content_hash>"
     # Ermöglicht Move-Detection auch für Mails ohne message_id
-    stable_identifier = Column(String(255), nullable=True, index=True)
+    stable_identifier = Column(String(512), nullable=True, index=True)
     content_hash = Column(String(64), nullable=True, index=True)  # SHA256[:32]
 
     # Relationships

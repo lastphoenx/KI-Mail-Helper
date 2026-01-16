@@ -1,65 +1,178 @@
-﻿# Python Dependencies für Mail Helper
-
-# Web Framework
+aiohappyeyeballs==2.6.1
+aiohttp==3.13.3
+aiosignal==1.4.0
+alembic==1.17.2
+amqp==5.3.1
+annotated-types==0.7.0
+anthropic==0.7.7
+anyio==3.7.1
+astroid==4.0.2
+attrs==25.4.0
+backoff==2.2.1
+bcrypt==4.1.1
+beautifulsoup4==4.14.3
+billiard==4.2.4
+black==24.10.0
+blinker==1.9.0
+blis==1.3.3
+cachelib==0.13.0
+cachetools==6.2.4
+catalogue==2.0.10
+celery==5.6.2
+certifi==2025.11.12
+cffi==2.0.0
+charset-normalizer==3.4.4
+click==8.3.1
+click-didyoumean==0.3.1
+click-plugins==1.1.1.2
+click-repl==0.3.0
+cloudpathlib==0.23.0
+confection==0.1.5
+coverage==7.13.0
+cryptography==44.0.3
+cymem==2.0.13
+de_core_news_md @ https://github.com/explosion/spacy-models/releases/download/de_core_news_md-3.8.0/de_core_news_md-3.8.0-py3-none-any.whl#sha256=b903f59220f1e76dd672acdaa7fa454d6703fe056c5ccd6457820e70874116d0
+de_core_news_sm @ https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl#sha256=fec69fec52b1780f2d269d5af7582a5e28028738bd3190532459aeb473bfa3e7
+Deprecated==1.3.1
+dill==0.4.0
+distro==1.9.0
+docstring_parser==0.17.0
+eval_type_backport==0.3.1
+filelock==3.20.1
+flake8==6.1.0
 Flask==3.0.0
-Flask-Login==0.6.3         # User authentication
-Flask-Session==0.8.0       # Server-side session storage (>= 0.7.0 required for Werkzeug 3.x compatibility)
-Flask-WTF==1.2.1           # CSRF protection (Phase 8d)
-flask-talisman==1.1.0      # HTTPS enforcement + security headers
-# Alternative: fastapi==0.104.1
-# Alternative: uvicorn==0.24.0
-
-# Datenbank
-SQLAlchemy==2.0.45
-
-# Multi-User Infrastructure (PostgreSQL + Redis + Celery)
-psycopg2-binary==2.9.9     # PostgreSQL adapter for SQLAlchemy
-celery[redis]==5.3.4       # Async task queue with Redis broker
-redis==5.0.0               # Redis client for sessions/cache/broker
-alembic==1.13.0            # Database migrations
-flower==2.0.1              # Celery monitoring UI (optional)
-
-# KI & LLM
-ollama==0.6.1              # Ollama Python client (latest)
-openai==1.3.7              # Optional: OpenAI API
-anthropic==0.7.7           # Optional: Claude API
-mistralai==0.0.8           # Optional: Mistral API
-
-# Security & Authentication
-cryptography==44.0.3       # AES-256 encryption (Phase 3) - Security update
-bcrypt==4.1.1              # Password hashing
-pyotp==2.9.0               # TOTP 2FA (Google Authenticator)
-qrcode==7.4.2              # QR-Code generation for 2FA
-zxcvbn==4.4.28             # Password strength estimation (Phase 8c)
-pyOpenSSL==25.0.0          # HTTPS support - Updated for cryptography 44.x compatibility
-
-# NLP & Text Processing (optional für bessere Pseudonymisierung)
-# spacy==3.7.2
-# de-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.7.0/de_core_news_sm-3.7.0-py3-none-any.whl
-
-# Phase 22: Email Anonymization (Pseudonymisierung)
-spacy>=3.7.0,<4.0.0
-# SpaCy-Modell muss separat installiert werden:
-#   python -m spacy download de_core_news_md
-# Oder direkt via pip:
-de-core-news-md @ https://github.com/explosion/spacy-models/releases/download/de_core_news_md-3.8.0/de_core_news_md-3.8.0-py3-none-any.whl
-
-# Utils
-python-dotenv==1.0.0       # .env-Datei Support
-requests==2.32.5           # HTTP-Requests - Security update
-imapclient==3.0.1          # IMAP email fetching (Phase 11.5)
-
-# HTML to Text Conversion (für Email-Body Verarbeitung)
-beautifulsoup4==4.12.3     # HTML parsing
-html2text==2024.2.26       # HTML to Markdown/Text
-inscriptis==2.5.0          # High-quality HTML to Text
-
-# Testing
+Flask-Limiter==3.5.0
+Flask-Login==0.6.3
+Flask-Session==0.8.0
+flask-talisman==1.1.0
+Flask-WTF==1.2.1
+flower==2.0.1
+frozenlist==1.8.0
+fsspec==2025.12.0
+google-api-core==2.28.1
+google-api-python-client==2.104.0
+google-auth==2.45.0
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.0
+googleapis-common-protos==1.72.0
+greenlet==3.3.0
+gunicorn==23.0.0
+h11==0.16.0
+hf-xet==1.2.0
+html2text==2025.4.15
+httpcore==1.0.9
+httplib2==0.31.0
+httpx==0.28.1
+huggingface_hub==1.2.3
+humanize==4.15.0
+idna==3.11
+IMAPClient==3.0.1
+importlib_metadata==8.7.1
+iniconfig==2.3.0
+inscriptis==2.7.0
+invoke==2.2.1
+isort==7.0.0
+itsdangerous==2.2.0
+Jinja2==3.1.6
+jiter==0.12.0
+joblib==1.5.3
+kombu==5.6.2
+librt==0.7.5
+limits==5.6.0
+lxml==5.4.0
+Mako==1.3.10
+markdown-it-py==4.0.0
+MarkupSafe==3.0.3
+mccabe==0.7.0
+mdurl==0.1.2
+mistralai==0.0.8
+msgspec==0.20.0
+multidict==6.7.0
+murmurhash==1.0.15
+mypy==1.19.1
+mypy_extensions==1.1.0
+numpy==2.4.1
+oauthlib==3.3.1
+ollama==0.6.1
+openai==1.3.7
+opentelemetry-api==1.38.0
+opentelemetry-exporter-otlp-proto-common==1.38.0
+opentelemetry-exporter-otlp-proto-http==1.38.0
+opentelemetry-proto==1.38.0
+opentelemetry-sdk==1.38.0
+opentelemetry-semantic-conventions==0.59b0
+ordered-set==4.1.0
+orjson==3.11.5
+packaging==25.0
+pandas==2.3.3
+pathspec==0.12.1
+platformdirs==4.5.1
+pluggy==1.6.0
+preshed==3.0.12
+prometheus_client==0.24.1
+prompt_toolkit==3.0.52
+propcache==0.4.1
+proto-plus==1.27.0
+protobuf==6.33.2
+psycopg2-binary==2.9.11
+pyasn1==0.6.1
+pyasn1_modules==0.4.2
+pycodestyle==2.11.1
+pycparser==2.23
+pydantic==2.12.5
+pydantic_core==2.41.5
+pyflakes==3.1.0
+Pygments==2.19.2
+pylint==4.0.4
+pyOpenSSL==25.0.0
+pyotp==2.9.0
+pyparsing==3.3.1
+pypng==0.20220715.0
 pytest==7.4.3
 pytest-cov==4.1.0
-
-# Dev Tools (optional)
-black==24.10.0             # Code Formatter - Security update
-flake8==6.1.0              # Linter
-Flask-Limiter==3.5.0
-gunicorn==23.0.0           # Production WSGI server - Security update
+python-dateutil==2.9.0.post0
+python-dotenv==1.0.0
+pytz==2025.2
+PyYAML==6.0.3
+qrcode==7.4.2
+redis==6.4.0
+requests==2.32.5
+requests-oauthlib==2.0.0
+rich==13.9.4
+rsa==4.9.1
+scikit-learn==1.8.0
+scipy==1.16.3
+setuptools==80.9.0
+shellingham==1.5.4
+six==1.17.0
+smart_open==7.5.0
+sniffio==1.3.1
+soupsieve==2.8.1
+spacy==3.8.11
+spacy-legacy==3.0.12
+spacy-loggers==1.0.5
+SQLAlchemy==2.0.45
+srsly==2.5.2
+thinc==8.3.10
+threadpoolctl==3.6.0
+tokenizers==0.22.1
+tomlkit==0.13.3
+tornado==6.5.4
+tqdm==4.67.1
+typer-slim==0.20.1
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+tzdata==2025.3
+tzlocal==5.3.1
+uritemplate==4.2.0
+urllib3==2.6.3
+vine==5.1.0
+wasabi==1.1.3
+wcwidth==0.2.14
+weasel==0.4.3
+Werkzeug==3.1.5
+wrapt==2.0.1
+WTForms==3.2.1
+yarl==1.22.0
+zipp==3.23.0
+zxcvbn==4.4.28

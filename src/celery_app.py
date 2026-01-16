@@ -32,10 +32,15 @@ VERWENDUNG:
 """
 
 import os
+from pathlib import Path
 from celery import Celery
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env.local first (priority), then .env (fallback)
+# Gleiche Logik wie in app_factory.py
+project_root = Path(__file__).parent.parent
+load_dotenv(project_root / ".env.local", override=True)
+load_dotenv(project_root / ".env", override=False)
 
 celery_app = Celery(
     "mail_helper",

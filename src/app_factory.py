@@ -1,8 +1,14 @@
 # src/app_factory.py
 """Flask Application Factory for Blueprint-based architecture."""
 
+import os
+from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
+
+# Load .env.local first (priority), then .env (fallback)
+project_root = Path(__file__).parent.parent
+load_dotenv(project_root / ".env.local", override=True)
+load_dotenv(project_root / ".env", override=False)
 
 from flask import Flask, render_template, request, g, session, flash, redirect, url_for, jsonify
 from flask_login import LoginManager, current_user, logout_user

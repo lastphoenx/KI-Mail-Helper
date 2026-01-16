@@ -1,0 +1,39 @@
+﻿[Unit]
+Description=KI-Mail-Helper Celery Worker
+After=network.target postgresql.service redis-server.service
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=thomas
+Group=thomas
+WorkingDirectory=/home/thomas/projects/KI-Mail-Helper-Dev
+Environment="PATH=/home/thomas/projects/KI-Mail-Helper-Dev/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/home/thomas/projects/KI-Mail-Helper-Dev/.env.local
+
+# Celery Worker mit Pool=prefork (für Multi-Core)
+ExecStart=/home/thomas/projects/KI-Mail-Helper-Dev/venv/bin/celery \
+    -A src.celery_app worker \
+    --loglevel=info \
+    --logfile=/var/log/mail-helper/celery-worker.log \
+    --pidfile=/var/run/mail-helper/celery-worker.pid \
+    --concurrency=4 \
+    --pool=prefork \
+    --max-tasks-per-child=100
+
+# Graceful Shutdown
+Restart=always
+RestartSec=10s
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Security Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource Limits (für 0-20 User ausreichend)
+MemoryMax=2G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target
