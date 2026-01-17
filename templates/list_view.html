@@ -257,6 +257,9 @@
                         <a href="/email/{{ email.raw_email_id }}" class="text-decoration-none">
                             {{ email._decrypted_subject|default("(ohne Betreff)") }}
                         </a>
+                        {% if raw and raw.attachments|length > 0 %}
+                        <span class="text-muted ms-2" title="{{ raw.attachments|length }} Anhang{% if raw.attachments|length > 1 %}e{% endif %}">📎 {{ raw.attachments|length }}</span>
+                        {% endif %}
                     </h6>
                     <small class="text-muted">
                         Von: {{ email._decrypted_sender|default("Unbekannt") }}
