@@ -98,6 +98,7 @@ archive/
 REORGANIZATION_REPORT.md
 AUDIT_REPORT.md
 Instruction_&_goal.md
+HYBRID_SCORE_LEARNING.md
 
 # Internal Development Documentation (privat, nicht für GitHub)
 doc/development/               # Privat: Instruction_&_goal.md, Reorganization-Notizen
