@@ -855,36 +855,46 @@ class MailFetcher:
     def _extract_body(self, msg) -> str:
         """Extrahiert Text-Body aus E-Mail
         
-        Priorität: text/plain > text/html
-        Viele moderne Emails haben NUR text/html (Newsletter, formatierte Mails).
+        Priorität: text/html > text/plain
+        
+        WICHTIG: HTML wird bevorzugt, weil:
+        1. Outlook/Exchange erzeugen oft text/plain als eine lange Zeile
+        2. HTML enthält die eigentliche Formatierung (Zeilenumbrüche, Listen, etc.)
+        3. Der render_email_html Endpoint rendert HTML korrekt im iframe
+        4. Für AI-Analyse wird HTML später via inscriptis zu Plaintext konvertiert
         """
         body = ""
-        html_body = ""  # Fallback wenn kein text/plain
+        html_body = ""
+        plain_body = ""  # Fallback wenn kein HTML
 
         if msg.is_multipart():
             for part in msg.walk():
                 content_type = part.get_content_type()
 
-                if content_type == "text/plain":
-                    try:
-                        payload = part.get_payload(decode=True)
-                        charset = part.get_content_charset() or "utf-8"
-                        body += payload.decode(charset, errors="ignore")
-                    except Exception as e:
-                        logger.debug(f"Failed to decode text/plain payload: {e}")
-                elif content_type == "text/html" and not html_body:
-                    # HTML als Fallback speichern (nur wenn noch kein HTML)
+                if content_type == "text/html" and not html_body:
+                    # HTML bevorzugen (enthält Formatierung)
                     try:
                         payload = part.get_payload(decode=True)
                         charset = part.get_content_charset() or "utf-8"
                         html_body = payload.decode(charset, errors="ignore")
                     except Exception as e:
                         logger.debug(f"Failed to decode text/html payload: {e}")
+                elif content_type == "text/plain" and not plain_body:
+                    # Plaintext als Fallback speichern
+                    try:
+                        payload = part.get_payload(decode=True)
+                        charset = part.get_content_charset() or "utf-8"
+                        plain_body = payload.decode(charset, errors="ignore")
+                    except Exception as e:
+                        logger.debug(f"Failed to decode text/plain payload: {e}")
             
-            # Wenn kein text/plain gefunden, nutze HTML
-            if not body and html_body:
+            # HTML bevorzugen, Plaintext als Fallback
+            if html_body:
                 body = html_body
-                logger.debug("Using text/html as fallback (no text/plain found)")
+                logger.debug("Using text/html (preferred for display)")
+            elif plain_body:
+                body = plain_body
+                logger.debug("Using text/plain as fallback (no text/html found)")
         else:
             try:
                 payload = msg.get_payload(decode=True)

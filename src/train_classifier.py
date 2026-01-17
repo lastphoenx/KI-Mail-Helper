@@ -147,8 +147,12 @@ class OnlineLearner:
             logger.warning(f"Unbekannter Korrekturtyp: {correction_type}")
             return False
         
+        # Memory-Optimierung: Body auf 5000 Zeichen begrenzen (konsistent mit predict)
+        MAX_EMBEDDING_CHARS = 5000
+        truncated_body = body[:MAX_EMBEDDING_CHARS] if body else ""
+        
         # Embedding generieren
-        embedding = self.ollama_client._get_embedding(f"{subject}\n{body}")
+        embedding = self.ollama_client._get_embedding(f"{subject}\n{truncated_body}")
         if not embedding:
             logger.warning("Embedding-Generierung fehlgeschlagen")
             return False
@@ -215,7 +219,11 @@ class OnlineLearner:
         if not hasattr(clf, 'classes_') or clf.classes_ is None:
             return None
         
-        embedding = self.ollama_client._get_embedding(f"{subject}\n{body}")
+        # Memory-Optimierung: Body auf 5000 Zeichen begrenzen
+        # (Erste 5k chars enthalten relevante Infos für Dringlichkeit/Wichtigkeit)
+        MAX_EMBEDDING_CHARS = 5000
+        truncated_body = body[:MAX_EMBEDDING_CHARS] if body else ""
+        embedding = self.ollama_client._get_embedding(f"{subject}\n{truncated_body}")
         if not embedding:
             return None
         
@@ -292,13 +300,17 @@ class MLTrainer:
         labels_spam = []
 
         failed_count = 0
+        MAX_EMBEDDING_CHARS = 5000  # Memory-Optimierung
         for email in query:
             try:
                 raw = email.raw_email
                 subject = raw.subject or ""
                 body = raw.body or ""
+                
+                # Body kürzen für konsistente Embeddings
+                truncated_body = body[:MAX_EMBEDDING_CHARS] if body else ""
 
-                embedding = self.ollama_client._get_embedding(f"{subject}\n{body}")
+                embedding = self.ollama_client._get_embedding(f"{subject}\n{truncated_body}")
                 if not embedding:
                     failed_count += 1
                     continue

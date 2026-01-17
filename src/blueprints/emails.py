@@ -656,6 +656,7 @@ def email_detail(raw_email_id):
             decrypted_cc = ""
             decrypted_bcc = ""
             decrypted_body = ""
+            decrypted_body_plaintext = ""  # Plaintext-Version für Raw Content Tab
             decrypted_summary_de = ""
             decrypted_text_de = ""
             decrypted_tags = ""
@@ -718,6 +719,19 @@ def email_detail(raw_email_id):
                 except Exception as e:
                     logger.warning(f"Body decryption failed for email {raw.id}: {e}")
                     decrypted_body = "(Entschlüsselung fehlgeschlagen)"
+
+                # Generiere Plaintext-Version für Raw Content Tab (via inscriptis)
+                decrypted_body_plaintext = decrypted_body  # Default: same as body
+                try:
+                    if '<' in decrypted_body:  # Nur konvertieren wenn HTML
+                        from inscriptis import get_text
+                        from inscriptis.model.config import ParserConfig
+                        decrypted_body_plaintext = get_text(
+                            decrypted_body, 
+                            ParserConfig(display_links=True)
+                        )
+                except Exception as e:
+                    logger.debug(f"inscriptis conversion failed for email {raw.id}: {e}")
 
                 # ProcessedEmail entschlüsseln
                 try:
@@ -783,6 +797,7 @@ def email_detail(raw_email_id):
             decrypted_cc=decrypted_cc,
             decrypted_bcc=decrypted_bcc,
             decrypted_body=decrypted_body,
+            decrypted_body_plaintext=decrypted_body_plaintext,  # Plaintext für Raw Content Tab
             decrypted_summary_de=decrypted_summary_de,
             decrypted_text_de=decrypted_text_de,
             decrypted_tags=decrypted_tags,
@@ -895,6 +910,46 @@ def render_email_html(raw_email_id: int):
                     decrypted_body,
                     flags=re.IGNORECASE
                 )
+
+            # ============================================================
+            # Fallback zu Plaintext NUR bei wirklich kaputter Struktur
+            # ============================================================
+            # WICHTIG: HTML direkt rendern ist IMMER besser (wie Outlook)
+            # Nur bei WIRKLICH kaputtem HTML (extrem selten) zu Plaintext wechseln
+            import re
+            use_plaintext = False
+            plaintext_reason = ""
+            
+            # Prüfe ob es überhaupt HTML ist (reiner Plaintext → wrap in <pre>)
+            if '<' not in decrypted_body:
+                use_plaintext = True
+                plaintext_reason = "No HTML tags found (plain text)"
+            
+            # Prüfe auf problematische CSS die alles in eine Zeile zwingen
+            # (sehr selten, nur bei kaputten Email-Clients)
+            elif 'white-space:nowrap' in decrypted_body.replace(' ', ''):
+                # Nur wenn BODY/HTML-Tag white-space:nowrap hat (nicht inline elements)
+                if re.search(r'<(body|html)[^>]*style[^>]*white-space:\s*nowrap', decrypted_body, re.IGNORECASE):
+                    use_plaintext = True
+                    plaintext_reason = "Body has white-space: nowrap"
+            
+            # Fallback zu Plaintext via inscriptis wenn nötig
+            if use_plaintext:
+                try:
+                    from inscriptis import get_text
+                    from inscriptis.model.config import ParserConfig
+                    
+                    # Konvertiere HTML zu gut strukturiertem Plaintext
+                    plaintext_body = get_text(decrypted_body, ParserConfig(display_links=True))
+                    
+                    # Wrap Plaintext in HTML mit korrektem Styling
+                    decrypted_body = f'<pre style="white-space: pre-wrap; word-wrap: break-word; font-family: inherit; margin: 0; line-height: 1.6;">{plaintext_body}</pre>'
+                    
+                    logger.info(f"📄 render_email_html: Fallback zu Plaintext ({plaintext_reason})")
+                except ImportError:
+                    logger.warning("inscriptis not installed, keeping original HTML")
+                except Exception as e:
+                    logger.warning(f"inscriptis conversion failed: {e}, keeping original HTML")
 
             # Marker für after_request Hook: Überschreibe Headers nicht (MUSS VOR make_response!)
             g.skip_security_headers = True

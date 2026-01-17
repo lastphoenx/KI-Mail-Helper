@@ -1,4 +1,4 @@
-﻿"""
+"""
 Phase Y2: Hybrid Pipeline
 Kombiniert 8 Detektoren + Ensemble Learning für finale Scores.
 """
@@ -6,6 +6,28 @@ Kombiniert 8 Detektoren + Ensemble Learning für finale Scores.
 import spacy
 from typing import Dict, Tuple
 from sqlalchemy.orm import Session
+import logging
+
+logger = logging.getLogger(__name__)
+
+# 🔴 KRITISCH: Global spaCy Cache - verhindert 150MB reload pro Email!
+_spacy_nlp_cache = None
+
+def _get_cached_spacy_model(model_name: str = "de_core_news_md"):
+    """Gibt gecachtes spaCy Modell zurück (kein Reload pro Email)."""
+    global _spacy_nlp_cache
+    if _spacy_nlp_cache is None:
+        try:
+            _spacy_nlp_cache = spacy.load(model_name)
+            logger.info(f"✅ spaCy Model gecacht: {model_name} (~150MB)")
+        except OSError:
+            logger.warning(f"⚠️ {model_name} nicht verfügbar, versuche sm...")
+            try:
+                _spacy_nlp_cache = spacy.load("de_core_news_sm")
+            except OSError:
+                logger.error("❌ Kein spaCy Modell verfügbar!")
+                raise
+    return _spacy_nlp_cache
 
 from src.services.spacy_detectors import (
     ImperativeDetector,
@@ -25,7 +47,7 @@ class HybridPipeline:
     Phase Y Hybrid Pipeline: spaCy NLP + Keywords + Ensemble Learning.
     
     Workflow:
-    1. Lade spaCy Modell (de_core_news_md)
+    1. Lade spaCy Modell (de_core_news_md) - CACHED!
     2. Initialisiere 8 Detektoren
     3. Analysiere Email mit allen Detektoren
     4. Kombiniere Ergebnisse zu spaCy-Scores
@@ -48,8 +70,8 @@ class HybridPipeline:
         self.db = db_session
         self.sgd_classifier = sgd_classifier
 
-        # spaCy Modell laden (cached)
-        self.nlp = spacy.load("de_core_news_md")
+        # spaCy Modell laden (GLOBAL CACHED - verhindert 150MB reload!)
+        self.nlp = _get_cached_spacy_model("de_core_news_md")
 
         # Config Manager
         self.config_manager = SpacyConfigManager(db_session)
@@ -87,8 +109,30 @@ class HybridPipeline:
                 "final_method": "ensemble"  # "spacy_only" oder "ensemble"
             }
         """
+        # Memory-Optimierung: HTML zu Plain Text konvertieren falls nötig
+        # und Body auf 10.000 Zeichen begrenzen
+        MAX_ANALYSIS_CHARS = 10000
+        processed_body = body
+        
+        # HTML erkennen und konvertieren
+        if processed_body and ('<html' in processed_body.lower() or '<body' in processed_body.lower() or '<div' in processed_body.lower()):
+            try:
+                from inscriptis import get_text
+                from inscriptis.model.config import ParserConfig
+                config = ParserConfig(display_links=False, display_images=False)
+                processed_body = get_text(processed_body, config)
+            except ImportError:
+                # Fallback: Regex HTML-Cleanup
+                import re
+                processed_body = re.sub(r'<[^>]+>', ' ', processed_body)
+                processed_body = re.sub(r'\s+', ' ', processed_body).strip()
+        
+        # Body kürzen
+        if processed_body and len(processed_body) > MAX_ANALYSIS_CHARS:
+            processed_body = processed_body[:MAX_ANALYSIS_CHARS]
+        
         # Volltext für NLP-Analyse
-        full_text = f"{subject}\n\n{body}"
+        full_text = f"{subject}\n\n{processed_body}"
 
         # Account-Config laden
         config = self.config_manager.load_account_config(account_id)
@@ -116,8 +160,8 @@ class HybridPipeline:
             "contract_terms": 2,
             "financial_words": 2,
             "meeting_terms": 1,
-            "question_words": -2,  # Senkt Urgency
-            "negation_terms": -2,  # Senkt Urgency
+            "question_words": -2,
+            "negation_terms": -2,
         }
 
         keyword_result = self.keyword_detector.analyze(
@@ -292,6 +336,6 @@ class HybridPipeline:
         return {
             "spacy_model": self.nlp.meta["name"],
             "spacy_version": self.nlp.meta["version"],
-            "detectors_count": 7,  # 7 spaCy + 1 VIP + 1 Internal/External
+            "detectors_count": 7,
             "config_cache_size": len(self.config_manager._cache),
         }

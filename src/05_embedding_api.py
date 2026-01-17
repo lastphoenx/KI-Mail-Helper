@@ -85,7 +85,11 @@ class OllamaEmbeddingClient(EmbeddingClient):
         try:
             response = requests.post(
                 self.embeddings_url,
-                json={"model": self.model, "prompt": text.strip()},
+                json={
+                    "model": self.model,
+                    "prompt": text.strip(),
+                    "keep_alive": "30m"  # Modell 30 Min im RAM halten
+                },
                 timeout=30
             )
             
