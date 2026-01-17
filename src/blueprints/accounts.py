@@ -135,7 +135,7 @@ def settings():
         if not user:
             return redirect(url_for("auth.login"))
 
-        mail_accounts = db.query(models.MailAccount).filter_by(user_id=user.id).all()
+        mail_accounts = db.query(models.MailAccount).filter_by(user_id=user.id).order_by(models.MailAccount.id).all()
 
         master_key = session.get("master_key")
         if master_key:

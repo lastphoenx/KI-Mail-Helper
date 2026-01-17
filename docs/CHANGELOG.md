@@ -30,6 +30,11 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 #### Race-Condition Fix
 - **Duplicate Key Error** – Robuste Behandlung in 12_processing.py mit Session-Rollback
 
+#### UX-Verbesserungen
+- **Filter-Persistenz** – "Zurück zur Liste" Button behält Filter (Account, Ordner, etc.)
+- **Reset-Button** – "🔄 Reset" in Listenansicht setzt alle Filter zurück
+- **Account-Sortierung** – Mail-Accounts werden jetzt konsistent nach ID sortiert
+
 ### Geändert
 - **inscriptis-Library** – Für HTML→Plain Text Konvertierung (statt html2text)
 
