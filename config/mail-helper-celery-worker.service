@@ -12,6 +12,7 @@ Environment="PATH=/home/thomas/projects/KI-Mail-Helper-Dev/venv/bin:/usr/local/b
 EnvironmentFile=/home/thomas/projects/KI-Mail-Helper-Dev/.env.local
 
 # Celery Worker mit Pool=prefork (für Multi-Core)
+# Concurrency=4 mit spaCy Global Cache (deine Optimierung!)
 ExecStart=/home/thomas/projects/KI-Mail-Helper-Dev/venv/bin/celery \
     -A src.celery_app worker \
     --loglevel=info \
@@ -19,7 +20,8 @@ ExecStart=/home/thomas/projects/KI-Mail-Helper-Dev/venv/bin/celery \
     --pidfile=/var/run/mail-helper/celery-worker.pid \
     --concurrency=4 \
     --pool=prefork \
-    --max-tasks-per-child=100
+    --max-tasks-per-child=50 \
+    --max-memory-per-child=1500000
 
 # Graceful Shutdown
 Restart=always
@@ -32,7 +34,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 
 # Resource Limits (für 0-20 User ausreichend)
-MemoryMax=2G
+# 6GB erlaubt 4 Worker × 1.5GB, mit Puffer für Peaks
+MemoryMax=6G
 CPUQuota=200%
 
 [Install]

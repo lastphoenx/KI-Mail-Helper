@@ -513,6 +513,22 @@ def process_pending_raw_emails(
                     sanitized_body = None
             
             # ===== ANALYSE-MODUS AUSFÜHREN =====
+            
+            # Memory-Optimierung: HTML zu Plain Text konvertieren VOR Analyse
+            # (Reduziert 36k HTML auf ~6k Plain Text → -80% Memory)
+            analysis_body = clean_body
+            if clean_body and ('<html' in clean_body.lower() or '<body' in clean_body.lower() or '<div' in clean_body.lower()):
+                try:
+                    from inscriptis import get_text
+                    from inscriptis.model.config import ParserConfig
+                    config = ParserConfig(display_links=False, display_images=False)
+                    analysis_body = get_text(clean_body, config)
+                    logger.info(f"✅ HTML→Plain für Analyse: {len(clean_body)} → {len(analysis_body)} chars")
+                except ImportError:
+                    import re
+                    analysis_body = re.sub(r'<[^>]+>', ' ', clean_body)
+                    analysis_body = re.sub(r'\s+', ' ', analysis_body).strip()
+            
             if effective_mode == "none":
                 logger.info("⏭️  Keine Analyse (alle Toggles aus)")
                 ai_result = None
@@ -522,7 +538,7 @@ def process_pending_raw_emails(
                 logger.info("⚡ Urgency Booster auf Original-Daten")
                 ai_result = active_ai.analyze_email(
                     subject=decrypted_subject or "",
-                    body=clean_body,
+                    body=analysis_body,  # ← Jetzt Plain Text statt HTML!
                     sender=decrypted_sender or "",
                     language="de",
                     context=context_str if context_str else None,
@@ -537,7 +553,7 @@ def process_pending_raw_emails(
                 logger.info("🤖 LLM auf Original-Daten")
                 ai_result = active_ai.analyze_email(
                     subject=decrypted_subject or "",
-                    body=clean_body,
+                    body=analysis_body,  # ← Jetzt Plain Text statt HTML!
                     sender=decrypted_sender or "",
                     language="de",
                     context=context_str if context_str else None,
@@ -570,7 +586,7 @@ def process_pending_raw_emails(
                     logger.warning("⚠️ AI-Anon gewählt, aber keine anonymisierten Daten → Fallback auf Original")
                     ai_result = active_ai.analyze_email(
                         subject=decrypted_subject or "",
-                        body=clean_body,
+                        body=analysis_body,  # ← Konsistent: Plain Text statt HTML
                         sender=decrypted_sender or "",
                         language="de",
                         context=context_str if context_str else None,
@@ -777,10 +793,19 @@ def process_pending_raw_emails(
                 try:
                     session.flush()
                 except Exception as flush_err:
-                    if "UniqueViolation" in str(type(flush_err).__name__) or "duplicate key" in str(flush_err):
+                    err_str = str(flush_err).lower()
+                    err_type = str(type(flush_err).__name__)
+                    # Erkenne alle Varianten von Duplicate-Key-Errors
+                    if ("uniqueviolation" in err_type.lower() or 
+                        "integrityerror" in err_type.lower() or
+                        "duplicate key" in err_str or 
+                        "unique constraint" in err_str or
+                        "already exists" in err_str):
                         logger.info(f"⏭️  RawEmail {raw_email.id} wurde parallel verarbeitet – überspringe")
                         session.rollback()
                         continue
+                    # Unbekannter Fehler - rollback und re-raise
+                    session.rollback()
                     raise
                 
                 # Phase 10: Auto-assign suggested_tags from AI
@@ -945,8 +970,13 @@ def process_pending_raw_emails(
             session.rollback()
             logger.warning("⚠️  Mail bereits verarbeitet (IntegrityError)")
         except Exception as e:
-            session.rollback()
-            logger.error(f"❌ Fehler bei Verarbeitung: {e}")
+            # 🐛 KRITISCH: Rollback bei JEDEM Fehler, sonst bleibt Session in ungültigem Zustand
+            # und nachfolgende Emails schlagen mit "transaction has been rolled back" fehl
+            try:
+                session.rollback()
+            except Exception:
+                pass  # Rollback kann selbst fehlschlagen wenn Session schon invalid
+            logger.error(f"❌ Fehler bei Email-Verarbeitung (ID {raw_email.id}): {e}")
 
     # Alle Emails wurden einzeln committed (Per-Email Commit Pattern)
     logger.info(f"✅ Verarbeitung abgeschlossen: {processed_count} Mails erfolgreich verarbeitet")

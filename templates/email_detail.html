@@ -205,7 +205,7 @@
                                 📋 Kopieren
                             </button>
                         </div>
-                        <pre><code id="rawHtmlCode" class="language-html">{{ decrypted_body|default('Kein Original verfügbar') }}</code></pre>
+                        <pre style="max-height: 600px; overflow-y: auto; overflow-x: auto; background: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; border-radius: 4px;"><code id="rawHtmlCode" class="language-html" style="white-space: pre-wrap; word-wrap: break-word; line-height: 1.5; font-size: 12px;">{{ decrypted_body|default('Kein Original verfügbar')|e }}</code></pre>
                     </div>
                 </div>
                 
@@ -224,7 +224,7 @@
                                 📋 Kopieren
                             </button>
                         </div>
-                        <pre><code id="rawContentCode" style="max-height: 600px; overflow-y: auto; background: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; white-space: pre-wrap;">{{ decrypted_body|default('Kein Content verfügbar') }}</code></pre>
+                        <pre style="max-height: 600px; overflow-y: auto; overflow-x: auto; background: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; border-radius: 4px;"><code id="rawContentCode" style="white-space: pre-wrap; word-wrap: break-word; line-height: 1.5; font-size: 12px;">{{ decrypted_body_plaintext|default('Kein Content verfügbar')|e }}</code></pre>
                     </div>
                 </div>
                 
