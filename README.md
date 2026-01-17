@@ -29,6 +29,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **Semantische Suche** – Embeddings für "finde ähnliche Emails"
 - **Tag-System** – Manuell + KI-Vorschläge basierend auf gelernten Mustern
 - **Email-Inline-Bilder (CID)** – Automatische Anzeige von Inline-Attachments ohne externe Requests
+- **Klassische Anhänge** – PDF, Word, Excel, Bilder verschlüsselt speichern & herunterladen (≤25MB)
 - **IMAP & Gmail OAuth** – Funktioniert mit GMX, Gmail, Outlook, etc.
 - **SMTP Versand** – Antworten & neue Emails mit Sent-Ordner-Sync
 - **Thread-View** – Konversations-basierte Ansicht mit Context
@@ -39,7 +40,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## Status
 
-**Version:** 2.0.0 (Multi-User Edition)  
+**Version:** 2.0.1  
 **Development:** Aktiv  
 **Architecture:** Flask Blueprints + PostgreSQL + Celery  
 **Stability:** Production-ready  
@@ -1010,7 +1011,7 @@ Wenig dringend     🟢 Score 2-3       |  🟢 Score 3-4    |  🟡 Score 5
 | 🔴 High | **Kalendereintrag-Erkennung** | Automatische Erkennung von Terminen, Deadlines in Emails |
 | 🔴 High | **Todo-Listen-Extraktion** | Aufgaben aus Emails extrahieren und als Todo markieren |
 | 🟡 Medium | **Presidio Integration** | Microsoft Presidio für erweiterte PII-Erkennung |
-| 🟡 Medium | **Attachment-Handling** | Anhänge anzeigen, herunterladen, durchsuchen |
+| ✅ Done | **Attachment-Handling** | Anhänge anzeigen, herunterladen (PDF, Word, Excel, Bilder ≤25MB) |
 | 🟡 Medium | **Email-Vorlagen** | Wiederverwendbare Templates für häufige Antworten |
 | 🟢 Low | **CalDAV/CardDAV Sync** | Kalender- und Kontakte-Integration |
 | 🟢 Low | **Mobile PWA** | Progressive Web App für Mobilgeräte |

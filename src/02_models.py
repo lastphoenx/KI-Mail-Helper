@@ -995,6 +995,9 @@ class RawEmail(Base):
     processed = relationship(
         "ProcessedEmail", back_populates="raw_email", uselist=False
     )
+    attachments = relationship(
+        "EmailAttachment", back_populates="raw_email", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         # Phase 14a: RFC-konformer Unique Key (RFC 3501 / RFC 9051)
@@ -1023,6 +1026,59 @@ class RawEmail(Base):
 
     def __repr__(self):
         return f"<RawEmail(id={self.id}, user={self.user_id}, imap_uid={self.imap_uid})>"
+
+
+class EmailAttachment(Base):
+    """Klassische E-Mail-Anhänge (PDF, Word, Excel, Bilder, etc.)
+    
+    Speichert Anhänge verschlüsselt in der DB (Zero-Knowledge).
+    Für große Dateien (>25MB) kann optional S3 verwendet werden.
+    """
+    
+    __tablename__ = "email_attachments"
+    
+    id = Column(Integer, primary_key=True)
+    raw_email_id = Column(Integer, ForeignKey("raw_emails.id", ondelete="CASCADE"), nullable=False)
+    
+    # Datei-Metadaten (unverschlüsselt für Suche/Anzeige)
+    filename = Column(String(255), nullable=False)  # "rechnung.pdf"
+    mime_type = Column(String(100), nullable=False)  # "application/pdf"
+    size = Column(Integer, nullable=False)  # Bytes (unverschlüsselte Größe)
+    content_id = Column(String(255), nullable=True)  # Falls inline (cid:...)
+    
+    # Verschlüsselter Inhalt (base64)
+    encrypted_data = Column(Text, nullable=True)  # Für Dateien < 25MB
+    
+    # Optional: S3 für große Dateien
+    s3_bucket = Column(String(100), nullable=True)
+    s3_key = Column(String(512), nullable=True)
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    
+    # Relationship
+    raw_email = relationship("RawEmail", back_populates="attachments")
+    
+    __table_args__ = (
+        Index("ix_email_attachments_raw_email_id", "raw_email_id"),
+    )
+    
+    @property
+    def size_human(self) -> str:
+        """Menschenlesbare Dateigröße"""
+        if self.size < 1024:
+            return f"{self.size} B"
+        elif self.size < 1024 * 1024:
+            return f"{self.size / 1024:.1f} KB"
+        else:
+            return f"{self.size / (1024 * 1024):.1f} MB"
+    
+    @property
+    def is_inline(self) -> bool:
+        """True wenn Inline-Attachment (CID-Bild)"""
+        return self.content_id is not None
+    
+    def __repr__(self):
+        return f"<EmailAttachment(id={self.id}, filename={self.filename}, size={self.size_human})>"
 
 
 class ProcessedEmail(Base):

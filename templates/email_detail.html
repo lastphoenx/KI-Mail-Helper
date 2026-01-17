@@ -283,6 +283,33 @@
             </div>
         </div>
         
+        <!-- Klassische Anhänge -->
+        {% if attachments %}
+        <div class="mb-4">
+            <h5>📎 Anhänge ({{ attachments|length }})</h5>
+            <div class="list-group">
+                {% for att in attachments %}
+                {% if not att.is_inline %}
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>{{ att.filename }}</strong>
+                        <br>
+                        <small class="text-muted">
+                            {{ att.mime_type }} • {{ att.size_human }}
+                        </small>
+                    </div>
+                    <a href="{{ url_for('emails.download_attachment', raw_email_id=email.raw_email_id, attachment_id=att.id) }}" 
+                       class="btn btn-sm btn-primary"
+                       title="Herunterladen">
+                        ⬇️ Download
+                    </a>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        
         <!-- IMAP-Flags Status -->
         <div class="mb-4">
             <h5>🚩 IMAP-Flags</h5>

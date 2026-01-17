@@ -6,6 +6,35 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
+## [2.0.1] - 2026-01-17
+
+### 🛠️ Bugfixes & Stabilität
+
+#### Celery Worker OOM-Fixes
+- **Memory-Limits optimiert** – `MemoryMax=6G`, `concurrency=4`, `max-tasks-per-child=50`
+- **Ollama Keep-Alive** – `keep_alive="30m"` verhindert wiederholtes Modell-Laden
+- **spaCy Global-Caching** – Modell wird nur einmal pro Worker geladen
+
+#### Email-Rendering verbessert
+- **HTML-Body-Präferenz** – E-Mails werden jetzt wie in Outlook mit HTML-Körper angezeigt
+- **4 Render-Tabs** – Gerendert, Raw HTML, Raw Content (Plain Text), Anonymisiert
+- **Intelligenter Fallback** – Nur bei defektem HTML (nowrap-Body) wird Plaintext verwendet
+
+#### Klassische E-Mail-Anhänge
+- **EmailAttachment-Model** – Neue DB-Tabelle für PDF, Word, Excel, Bilder
+- **Zero-Knowledge Verschlüsselung** – Anhänge mit AES-256-GCM verschlüsselt
+- **Download-Endpoint** – `/email/<id>/download-attachment/<att_id>`
+- **UI-Integration** – 📎-Icon in Listenansicht, Anhänge-Sektion in Detailansicht
+- **Größenlimits** – Max 25 MB pro Datei, 100 MB pro E-Mail
+
+#### Race-Condition Fix
+- **Duplicate Key Error** – Robuste Behandlung in 12_processing.py mit Session-Rollback
+
+### Geändert
+- **inscriptis-Library** – Für HTML→Plain Text Konvertierung (statt html2text)
+
+---
+
 ## [2.0.0] - 2026-01-16
 
 ### 🚀 Major Release: Multi-User Edition

@@ -785,6 +785,20 @@ def email_detail(raw_email_id):
                 except Exception as e:
                     logger.warning(f"TagManager konnte Tags nicht laden: {e}")
 
+            # Klassische Anhänge laden (Metadaten, nicht entschlüsselt)
+            attachments_info = []
+            if raw.attachments:
+                for att in raw.attachments:
+                    # Nur Metadaten, nicht die Daten selbst (Download via separatem Endpoint)
+                    attachments_info.append({
+                        'id': att.id,
+                        'filename': att.filename,
+                        'mime_type': att.mime_type,
+                        'size': att.size,
+                        'size_human': att.size_human,
+                        'is_inline': att.is_inline,
+                    })
+
         return render_template(
             "email_detail.html",
             user=user,
@@ -806,6 +820,7 @@ def email_detail(raw_email_id):
             priority_label=priority_label,
             email_tags=email_tags,
             all_user_tags=all_user_tags,
+            attachments=attachments_info,  # Klassische Anhänge
         )
     except Exception as e:
         logger.error(f"email_detail: Fehler bei Email {raw_email_id}: {type(e).__name__}: {e}")
@@ -994,4 +1009,91 @@ def render_email_html(raw_email_id: int):
             f"render_email_html: Unerwarteter Fehler für Email {raw_email_id}: "
             f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
         )
+        return "Internal Server Error", 500
+
+
+# =============================================================================
+# Route 6: /email/<id>/download-attachment/<att_id> - Anhang herunterladen
+# =============================================================================
+@emails_bp.route("/email/<int:raw_email_id>/download-attachment/<int:attachment_id>")
+@login_required
+def download_attachment(raw_email_id: int, attachment_id: int):
+    """Download eines verschlüsselten Anhangs
+    
+    Zero-Knowledge: Anhang wird im Browser entschlüsselt und als Download gesendet.
+    """
+    import io
+    import base64
+    from flask import send_file
+    
+    models = _get_models()
+    encryption = _get_encryption()
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return "Unauthorized", 403
+            
+            # Prüfe ob Email dem User gehört
+            raw = (
+                db.query(models.RawEmail)
+                .filter(
+                    models.RawEmail.id == raw_email_id,
+                    models.RawEmail.user_id == user.id,
+                    models.RawEmail.deleted_at == None,
+                )
+                .first()
+            )
+            
+            if not raw:
+                logger.warning(f"download_attachment: Email {raw_email_id} not found for user {user.id}")
+                return "Not found", 404
+            
+            # Hole Anhang
+            attachment = (
+                db.query(models.EmailAttachment)
+                .filter(
+                    models.EmailAttachment.id == attachment_id,
+                    models.EmailAttachment.raw_email_id == raw_email_id,
+                )
+                .first()
+            )
+            
+            if not attachment:
+                logger.warning(f"download_attachment: Attachment {attachment_id} not found")
+                return "Attachment not found", 404
+            
+            # Zero-Knowledge: Entschlüssele Anhang
+            master_key = session.get("master_key")
+            if not master_key:
+                logger.error("download_attachment: master_key missing in session")
+                return "Session expired", 401
+            
+            if not attachment.encrypted_data:
+                logger.error(f"download_attachment: No encrypted_data for attachment {attachment_id}")
+                return "Attachment data missing", 500
+            
+            try:
+                # Entschlüssele base64-encoded Daten
+                decrypted_b64 = encryption.EncryptionManager.decrypt_data(
+                    attachment.encrypted_data, master_key
+                )
+                decrypted_bytes = base64.b64decode(decrypted_b64)
+            except Exception as e:
+                logger.error(f"download_attachment: Decryption failed: {e}")
+                return "Decryption failed", 500
+            
+            logger.info(f"📥 Download: {attachment.filename} ({attachment.size_human}) for user {user.id}")
+            
+            # Return als Download
+            return send_file(
+                io.BytesIO(decrypted_bytes),
+                mimetype=attachment.mime_type,
+                as_attachment=True,
+                download_name=attachment.filename
+            )
+    
+    except Exception as e:
+        logger.error(f"download_attachment: Unexpected error: {type(e).__name__}: {e}")
         return "Internal Server Error", 500

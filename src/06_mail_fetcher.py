@@ -800,8 +800,12 @@ class MailFetcher:
                 
                 # Extrahiere Inline-Attachments (CID-Bilder)
                 inline_attachments = self._extract_inline_attachments(msg)
+                
+                # Extrahiere klassische Anhänge (PDF, Word, etc.)
+                classic_attachments = self._extract_classic_attachments(msg)
             else:
                 inline_attachments = {}
+                classic_attachments = []
             
             # Phase 13C: Decode IMAP UTF-7 folder names to UTF-8
             folder_utf8 = decode_imap_folder_name(folder)
@@ -823,6 +827,7 @@ class MailFetcher:
                 "thread_id": None,  # Wird später von _calculate_thread_ids() gesetzt
                 "parent_uid": None,  # Wird später von _calculate_thread_ids() gesetzt
                 "inline_attachments": inline_attachments,  # CID-Bilder
+                "attachments": classic_attachments,  # Klassische Anhänge (PDF, Word, etc.)
                 **flags_dict,  # Boolean flags (imap_is_seen, imap_is_flagged, etc.)
             }
             
@@ -984,6 +989,106 @@ class MailFetcher:
             logger.info(f"Extracted {len(inline_attachments)} inline attachments, total size: {total_size} bytes")
         
         return inline_attachments
+
+    def _extract_classic_attachments(self, msg) -> List[Dict[str, any]]:
+        """Extrahiert klassische Anhänge (PDF, Word, Excel, Bilder, etc.)
+        
+        Unterschied zu Inline-Attachments:
+        - Inline: Hat Content-ID (cid:...), wird im HTML-Body referenziert
+        - Klassisch: Hat Content-Disposition: attachment, wird als separate Datei angehängt
+        
+        Limits:
+            - Max 25 MB pro Datei (darüber → S3 in Phase 2)
+            - Max 100 MB Gesamtgröße pro E-Mail
+        
+        Returns:
+            Liste von Dicts: [
+                {
+                    "filename": "rechnung.pdf",
+                    "mime_type": "application/pdf",
+                    "size": 12345,
+                    "data": "base64-encoded-data",
+                    "content_id": None  # oder cid für inline
+                },
+                ...
+            ]
+        """
+        attachments = []
+        total_size = 0
+        MAX_TOTAL_SIZE = 100 * 1024 * 1024  # 100 MB Gesamtlimit
+        MAX_SINGLE_SIZE = 25 * 1024 * 1024  # 25 MB pro Datei
+        
+        if not msg.is_multipart():
+            return attachments
+        
+        import base64
+        
+        for part in msg.walk():
+            # Prüfe Content-Disposition
+            content_disposition = part.get_content_disposition()
+            content_id = part.get("Content-ID")
+            content_type = part.get_content_type()
+            filename = part.get_filename()
+            
+            # Klassischer Anhang: Hat Disposition "attachment" ODER hat Dateinamen aber keine CID
+            is_attachment = (
+                content_disposition == "attachment" or
+                (filename and not content_id and content_type not in ["text/plain", "text/html"])
+            )
+            
+            if not is_attachment:
+                continue
+            
+            if not filename:
+                # Generiere Dateinamen aus Content-Type
+                ext = content_type.split("/")[-1] if "/" in content_type else "bin"
+                filename = f"attachment.{ext}"
+            
+            try:
+                payload = part.get_payload(decode=True)
+                if not payload:
+                    continue
+                
+                payload_size = len(payload)
+                
+                # Size-Limits prüfen
+                if payload_size > MAX_SINGLE_SIZE:
+                    logger.warning(
+                        f"Attachment '{filename}' too large ({payload_size / (1024*1024):.1f} MB), "
+                        f"skipping (limit: {MAX_SINGLE_SIZE / (1024*1024):.0f} MB)"
+                    )
+                    # TODO: S3 Upload für große Dateien
+                    continue
+                
+                if total_size + payload_size > MAX_TOTAL_SIZE:
+                    logger.warning(
+                        f"Total attachments size exceeded ({(total_size + payload_size) / (1024*1024):.1f} MB), "
+                        f"skipping remaining"
+                    )
+                    break
+                
+                base64_data = base64.b64encode(payload).decode("ascii")
+                
+                attachments.append({
+                    "filename": filename,
+                    "mime_type": content_type,
+                    "size": payload_size,
+                    "data": base64_data,
+                    "content_id": content_id.strip("<>") if content_id else None
+                })
+                total_size += payload_size
+                logger.debug(f"Extracted attachment: {filename} ({payload_size} bytes, {content_type})")
+                
+            except Exception as e:
+                logger.warning(f"Failed to extract attachment '{filename}': {e}")
+        
+        if attachments:
+            logger.info(
+                f"📎 Extracted {len(attachments)} attachments, "
+                f"total size: {total_size / 1024:.1f} KB"
+            )
+        
+        return attachments
 
     def _check_attachments_in_bodystructure(self, bodystructure) -> bool:
         """Prüft ob BODYSTRUCTURE Attachments enthält (IMAPClient)"""

@@ -656,7 +656,33 @@ def _persist_raw_emails(
         
         try:
             session.add(raw_email)
-            session.flush()
+            session.flush()  # Flush um raw_email.id zu bekommen
+            
+            # Klassische Anhänge speichern (verschlüsselt)
+            classic_attachments = raw_email_data.get("attachments", [])
+            if classic_attachments:
+                for att_data in classic_attachments:
+                    try:
+                        # Verschlüssele Anhang-Daten (base64)
+                        encrypted_att_data = encryption.EncryptionManager.encrypt_data(
+                            att_data["data"], master_key
+                        )
+                        
+                        attachment = models.EmailAttachment(
+                            raw_email_id=raw_email.id,
+                            filename=att_data["filename"],
+                            mime_type=att_data["mime_type"],
+                            size=att_data["size"],
+                            content_id=att_data.get("content_id"),
+                            encrypted_data=encrypted_att_data,
+                        )
+                        session.add(attachment)
+                    except Exception as att_err:
+                        logger.warning(f"⚠️ Anhang '{att_data.get('filename')}' nicht gespeichert: {att_err}")
+                
+                session.flush()
+                logger.debug(f"📎 {len(classic_attachments)} Anhänge für Email {raw_email.id} gespeichert")
+            
             saved += 1
         except Exception as e:
             session.rollback()
