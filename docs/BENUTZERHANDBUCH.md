@@ -32,6 +32,7 @@ KI-Mail-Helper ist ein selbst-gehosteter Email-Organizer mit Multi-User-Support,
 |---------|--------------|
 | **🎯 3×3 Prioritäts-Matrix** | Automatische Bewertung nach Dringlichkeit × Wichtigkeit |
 | **🧠 KI-Priorisierung** | spaCy NLP (80%) + Keywords (20%) + Ensemble Learning |
+| **🎓 Personal Classifier** | Individuelles ML-Modell aus deinen Korrekturen |
 | **🛡️ Email-Anonymisierung** | spaCy PII-Entfernung vor Cloud-AI (DSGVO-konform) |
 | **🔍 Semantische Suche** | Finde Emails nach Bedeutung, nicht nur Keywords |
 | **✉️ KI-Antworten + Versand** | Generierte Antwort-Entwürfe direkt per SMTP senden |
@@ -321,6 +322,28 @@ Die KI-Priorisierung nutzt eine **Hybrid-Pipeline**:
 - **80% spaCy NLP** – Linguistische Analyse
 - **20% Keywords** – 80 strategische Begriffe
 - **Ensemble Learning** – Lernt aus deinen Korrekturen
+
+### Personal Classifier (Hybrid Score-Learning)
+
+Das System lernt aus deinen Korrekturen und erstellt ein **persönliches ML-Modell**:
+
+| Modell | Beschreibung |
+|--------|---------------|
+| **Global Classifier** | Trainiert auf alle User-Korrekturen |
+| **Personal Classifier** | Dein individuelles Modell |
+
+**So funktioniert es:**
+1. Du korrigierst eine Email-Bewertung (Dringlichkeit/Wichtigkeit/Spam)
+2. Das System sammelt deine Korrekturen (min. 5 Stück)
+3. Ein persönlicher Classifier wird im Hintergrund trainiert
+4. Bei neuen Emails nutzt das System dein persönliches Modell
+
+**Einstellung aktivieren:**
+1. Gehe zu **⚙️ Einstellungen**
+2. Aktiviere **"Persönlichen Classifier bevorzugen"**
+3. Das System nutzt dann dein Modell, sobald genug Daten vorhanden sind
+
+> 💡 Bei wenigen Korrekturen fällt das System automatisch auf den Global Classifier zurück.
 
 ### VIP-Absender
 

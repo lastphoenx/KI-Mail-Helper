@@ -617,13 +617,40 @@ def correct_email(raw_email_id: int):
 
             logger.info(f"✅ Mail {raw_email_id} korrigiert durch User {user.id}")
 
+            # Hybrid Score-Learning: Async Training triggern
+            # Throttling erfolgt im Task selbst (min 5 Korrekturen + 5 Min)
+            try:
+                from src.tasks.training_tasks import train_personal_classifier, CLASSIFIER_TYPES
+                
+                # Trigger für alle korrigierten Felder
+                triggered_types = []
+                if data.get("dringlichkeit") is not None:
+                    train_personal_classifier.delay(user.id, "dringlichkeit")
+                    triggered_types.append("dringlichkeit")
+                if data.get("wichtigkeit") is not None:
+                    train_personal_classifier.delay(user.id, "wichtigkeit")
+                    triggered_types.append("wichtigkeit")
+                if data.get("spam_flag") is not None:
+                    train_personal_classifier.delay(user.id, "spam")
+                    triggered_types.append("spam")
+                if data.get("kategorie") is not None:
+                    train_personal_classifier.delay(user.id, "kategorie")
+                    triggered_types.append("kategorie")
+                
+                if triggered_types:
+                    logger.debug(f"🎓 Training getriggert für User {user.id}: {triggered_types}")
+            except Exception as e:
+                # Training-Fehler sollte Korrektur nicht blockieren
+                logger.warning(f"⚠️ Training-Trigger fehlgeschlagen (non-blocking): {e}")
+
             return jsonify(
                 {
                     "status": "success",
-                    "message": "Korrektur gespeichert! Diese wird beim nächsten Training berücksichtigt.",
+                    "message": "Korrektur gespeichert! Training wird im Hintergrund gestartet.",
                     "correction_count": db.query(models.ProcessedEmail)
                     .filter(models.ProcessedEmail.user_override_dringlichkeit != None)
                     .count(),
+                    "training_triggered": True,
                 }
             )
 

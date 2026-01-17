@@ -6,6 +6,45 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
+## [2.1.0] - 2026-01-17 (Unreleased)
+
+### 🧠 Hybrid Score-Learning (Personal Classifier)
+
+#### Neue Features
+- **Personal Classifier System** – Individuelles ML-Modell pro Benutzer
+  - 4 Classifier-Typen: Dringlichkeit, Wichtigkeit, Spam, Kategorie
+  - SGDClassifier mit StandardScaler für konsistente Feature-Skalierung
+  - Automatisches Training aus User-Korrekturen (min. 5 Samples)
+- **Global/Personal Fallback** – Robuste Hierarchie
+  - Personal Classifier verfügbar → nutze Personal
+  - Sonst → Fallback auf Global Classifier
+  - Benutzer-Präferenz über `prefer_personal_classifier` Toggle
+- **Async Training Pipeline** – Celery-basiertes Training
+  - Redis-Lock verhindert parallele Training-Jobs
+  - Throttling: Max 1 Training alle 5 Minuten pro Classifier
+  - Atomic Writes: temp-Datei → os.rename() für Konsistenz
+- **TTL-Caching** – 5-Minuten Cache für Classifier/Scaler
+  - Thread-safe mit Lock-Protection
+  - Negative-Caching mit `_NOT_FOUND` Sentinel
+  - `invalidate_classifier_cache()` für Cache-Flush
+- **Accuracy-Tracking** – LOO oder 5-Fold CV
+  - `ClassifierMetadata` Tabelle mit accuracy_score, training_samples, etc.
+  - Circuit-Breaker ready: Accuracy < 50% → Fallback auf Global
+- **Auto-Training Trigger** – Training startet automatisch nach User-Korrekturen
+- **User-Deletion Cleanup** – Event-Listener löscht Personal Classifier bei User-Löschung
+
+#### Neue Dateien
+- `src/services/personal_classifier_service.py` – Caching, Loading, Prediction
+- `src/tasks/training_tasks.py` – Celery Training Task
+- `migrations/versions/07f565a456dd_add_classifier_metadata_table.py` – DB-Migration
+
+#### Datenbank-Änderungen
+- **Neue Tabelle**: `classifier_metadata` (user_id, classifier_type, accuracy_score, etc.)
+- **User-Feld**: `prefer_personal_classifier` (Boolean, default=False)
+- **ProcessedEmail-Feld**: `used_model_source` ('global', 'personal', 'ai_only')
+
+---
+
 ## [2.0.1] - 2026-01-17
 
 ### 🛠️ Bugfixes & Stabilität
