@@ -535,6 +535,37 @@ def list_view():
         )
         available_folders = sorted([f for (f,) in available_folders_query.all()])
 
+        # Speichere aktuelle Filter-URL in Session (für "Zurück zur Liste" Button)
+        filter_params = []
+        if filter_account_id:
+            filter_params.append(f"mail_account={filter_account_id}")
+        if filter_folder:
+            filter_params.append(f"folder={filter_folder}")
+        if filter_seen:
+            filter_params.append(f"seen={filter_seen}")
+        if filter_flagged:
+            filter_params.append(f"flagged={filter_flagged}")
+        if filter_attachments:
+            filter_params.append(f"attach={filter_attachments}")
+        if search_term:
+            filter_params.append(f"search={search_term}")
+        if filter_tag_ids:
+            filter_params.append(f"tags={','.join(map(str, filter_tag_ids))}")
+        if filter_date_from:
+            filter_params.append(f"date_from={filter_date_from}")
+        if filter_date_to:
+            filter_params.append(f"date_to={filter_date_to}")
+        if page and page > 1:
+            filter_params.append(f"page={page}")
+        if per_page != 50:
+            filter_params.append(f"per_page={per_page}")
+        if sort_by and sort_by != 'score':
+            filter_params.append(f"sort={sort_by}")
+        if sort_order and sort_order != 'desc':
+            filter_params.append(f"order={sort_order}")
+        
+        session['last_list_filter_url'] = "/list?" + "&".join(filter_params) if filter_params else "/list"
+
         return render_template(
             "list_view.html",
             user=user,
@@ -799,6 +830,9 @@ def email_detail(raw_email_id):
                         'is_inline': att.is_inline,
                     })
 
+            # Filter-URL aus Session für "Zurück zur Liste" Button
+            back_url = session.get('last_list_filter_url', '/list')
+
         return render_template(
             "email_detail.html",
             user=user,
@@ -821,6 +855,7 @@ def email_detail(raw_email_id):
             email_tags=email_tags,
             all_user_tags=all_user_tags,
             attachments=attachments_info,  # Klassische Anhänge
+            back_url=back_url,  # Filter-persistente URL für Zurück-Button
         )
     except Exception as e:
         logger.error(f"email_detail: Fehler bei Email {raw_email_id}: {type(e).__name__}: {e}")
