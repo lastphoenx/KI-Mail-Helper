@@ -285,6 +285,38 @@ Auto-Rules führen automatisch Aktionen aus, wenn eine Email Bedingungen erfüll
 4. Definiere Aktionen (z.B. "Tag 'Newsletter' zuweisen")
 5. Speichern
 
+### Regeltabelle – Übersicht
+
+Die Regeltabelle zeigt alle deine Regeln mit folgenden Spalten:
+
+| Spalte | Beschreibung |
+|--------|--------------|
+| **Status** | Klickbarer Toggle-Button: **Aktiv** (grün) oder **Inaktiv** (grau). Klicke zum Umschalten. |
+| **Name** | Name der Regel |
+| **Learning** | Toggle für Hybrid Score-Learning: **🎓 Aktiv** (violett) oder **Inaktiv** (grau). Wenn aktiv, lernt das System aus den Aktionen dieser Regel. |
+| **Priorität** | Ausführungsreihenfolge (1 = höchste Priorität) |
+| **Bedingungen** | Anzahl der definierten Bedingungen |
+| **Aktionen** | Anzahl der definierten Aktionen |
+| **Ausgeführt** | Zähler: Wie oft wurde diese Regel angewendet |
+| **Buttons** | Aktions-Buttons für die Regel |
+
+### Aktions-Buttons
+
+| Button | Kürzel | Beschreibung |
+|--------|--------|--------------|
+| 🧪 **T** | Testen | Testet die Regel gegen vorhandene Emails (ohne Ausführung) |
+| ✏️ **B** | Bearbeiten | Öffnet den Editor zum Ändern der Regel |
+| 🗑️ **L** | Löschen | Löscht die Regel (mit Bestätigung) |
+
+### Learning pro Regel
+
+Du kannst für jede Regel individuell festlegen, ob sie zum Hybrid Score-Learning beitragen soll:
+
+- **🎓 Aktiv (violett)** – Die Regel trägt zum Training des Classifiers bei
+- **Inaktiv (grau)** – Die Regel wird nur ausgeführt, ohne zum Learning beizutragen
+
+**Anwendungsfall:** Deaktiviere Learning für Regeln, die Ausnahmen behandeln oder spezielle Fälle abdecken, die nicht ins allgemeine Modell einfließen sollen.
+
 ### Verfügbare Aktionen
 
 - 📁 In Ordner verschieben

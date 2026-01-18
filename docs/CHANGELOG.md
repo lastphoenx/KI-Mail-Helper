@@ -6,7 +6,27 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
-## [2.1.0] - 2026-01-17 (Unreleased)
+## [2.1.0] - 2026-01-18 (Unreleased)
+
+### ⚡ Auto-Rules UI-Verbesserungen
+
+#### Neue Features
+- **Learning pro Regel** – Learning kann jetzt auf Regel-Ebene aktiviert/deaktiviert werden
+  - Neuer Toggle-Button in der Regeltabelle (🎓 Aktiv / Inaktiv)
+  - Klickbar wie der Status-Toggle
+  - API-Unterstützung: GET/POST/PUT mit `enable_learning` Feld
+- **Verbesserte Regeltabelle** – Übersichtlichere Darstellung
+  - **Status-Toggle** – Klickbarer Button mit Hover-Effekt (grün "Aktiv" / grau "Inaktiv")
+  - **Learning-Spalte** – Separate Spalte mit violettem Toggle-Button
+  - **Aktions-Buttons** – Icons mit Beschriftung: 🧪 T (Testen), ✏️ B (Bearbeiten), 🗑️ L (Löschen)
+  - **Einheitliche Badge-Größen** – Alle Badges (Status, Priorität, Learning) gleich groß
+  - **Vertikale Ausrichtung** – Alle Tabellenzellen oben ausgerichtet
+
+#### Geänderte Dateien
+- `src/blueprints/api.py` – `enable_learning` zu GET/POST/PUT API hinzugefügt
+- `templates/rules_management.html` – Neue Tabellenspalte, CSS und JavaScript
+
+---
 
 ### 🧠 Hybrid Score-Learning (Personal Classifier)
 

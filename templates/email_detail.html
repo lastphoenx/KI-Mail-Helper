@@ -578,6 +578,16 @@
                             {% endif %}
                         </td>
                     </tr>
+                    <tr>
+                        <td><strong>🎯 Korrigierter Score:</strong></td>
+                        <td>
+                            {% if email.score is not none %}
+                            <span class="badge priority-{{ email.farbe }} fs-5">{{ email.score }}</span>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                    </tr>
                     {% endif %}
                     {% if email.user_override_kategorie %}
                     <tr>

@@ -509,10 +509,14 @@ class TagManager:
             db.flush()  # Sofort prüfen, nicht erst bei commit()
             db.commit()
             
-            # Phase F.2 Learning: Update learned_embedding nach jeder Zuweisung!
-            TagManager.update_learned_embedding(db, tag_id, user_id)
+            # Phase F.2 Learning: Update learned_embedding NUR bei manuellen Zuweisungen!
+            # auto_assigned=True (von Auto-Rules ohne enable_learning) soll Learning nicht beeinflussen
+            if not auto_assigned:
+                TagManager.update_learned_embedding(db, tag_id, user_id)
+                logger.debug(f"✅ Tag {tag_id} zugewiesen + Learning aktualisiert")
+            else:
+                logger.debug(f"✅ Tag {tag_id} zugewiesen (auto_assigned, kein Learning-Update)")
             
-            logger.debug(f"✅ Tag {tag_id} erfolgreich zu Email {email_id} zugewiesen")
             return True
             
         except IntegrityError:

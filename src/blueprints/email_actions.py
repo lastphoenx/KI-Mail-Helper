@@ -601,47 +601,81 @@ def correct_email(raw_email_id: int):
                 return jsonify({"error": "Email nicht gefunden"}), 404
 
             data = request.get_json() or {}
-
-            email.user_override_dringlichkeit = data.get("dringlichkeit")
-            email.user_override_wichtigkeit = data.get("wichtigkeit")
-            email.user_override_kategorie = data.get("kategorie")
-            email.user_override_spam_flag = data.get("spam_flag")
+            
+            # ===== Prüfe welche Werte sich WIRKLICH geändert haben =====
+            # Nur echte Änderungen zählen als Korrektur (für Training)
+            changed_fields = []
+            
+            new_d = data.get("dringlichkeit")
+            if new_d is not None and new_d != email.user_override_dringlichkeit:
+                email.user_override_dringlichkeit = new_d
+                changed_fields.append("dringlichkeit")
+            
+            new_w = data.get("wichtigkeit")
+            if new_w is not None and new_w != email.user_override_wichtigkeit:
+                email.user_override_wichtigkeit = new_w
+                changed_fields.append("wichtigkeit")
+            
+            new_k = data.get("kategorie")
+            if new_k is not None and new_k != email.user_override_kategorie:
+                email.user_override_kategorie = new_k
+                changed_fields.append("kategorie")
+            
+            new_spam = data.get("spam_flag")
+            if new_spam is not None and new_spam != email.user_override_spam_flag:
+                email.user_override_spam_flag = new_spam
+                changed_fields.append("spam")
+            
+            # Tags und Note immer überschreiben (kein Training-Trigger)
             email.user_override_tags = (
                 ",".join(data.get("tags", [])) if data.get("tags") else None
             )
             email.encrypted_correction_note = data.get("note")
-            email.correction_timestamp = datetime.now(UTC)
-            email.updated_at = datetime.now(UTC)
+            
+            # Nur bei echten Änderungen: Timestamps aktualisieren
+            if changed_fields:
+                email.correction_timestamp = datetime.now(UTC)
+                email.updated_at = datetime.now(UTC)
+                logger.debug(f"📝 Echte Korrekturen: {changed_fields}")
+            
+            # Score neu berechnen wenn D oder W korrigiert wurde
+            if "dringlichkeit" in changed_fields or "wichtigkeit" in changed_fields:
+                import importlib
+                scoring = importlib.import_module("src.05_scoring")
+                
+                # Effektive Werte: Override wenn vorhanden, sonst Original
+                eff_d = email.user_override_dringlichkeit if email.user_override_dringlichkeit is not None else email.dringlichkeit
+                eff_w = email.user_override_wichtigkeit if email.user_override_wichtigkeit is not None else email.wichtigkeit
+                
+                if eff_d is not None and eff_w is not None:
+                    new_score = scoring.calculate_score(eff_d, eff_w)
+                    new_matrix = scoring.get_matrix_position(eff_d, eff_w)
+                    new_color = scoring.get_color(new_score)
+                    
+                    email.score = new_score
+                    email.matrix_x = new_matrix[0]
+                    email.matrix_y = new_matrix[1]
+                    email.farbe = new_color
+                    logger.debug(f"📊 Score aktualisiert: {new_score} (D={eff_d}, W={eff_w})")
 
             db.commit()
 
-            logger.info(f"✅ Mail {raw_email_id} korrigiert durch User {user.id}")
+            logger.info(f"✅ Mail {raw_email_id} korrigiert durch User {user.id}: {changed_fields if changed_fields else 'keine Änderungen'}")
 
             # Hybrid Score-Learning: Async Training triggern
-            # Throttling erfolgt im Task selbst (min 5 Korrekturen + 5 Min)
-            try:
-                from src.tasks.training_tasks import train_personal_classifier, CLASSIFIER_TYPES
-                
-                # Trigger für alle korrigierten Felder
-                triggered_types = []
-                if data.get("dringlichkeit") is not None:
-                    train_personal_classifier.delay(user.id, "dringlichkeit")
-                    triggered_types.append("dringlichkeit")
-                if data.get("wichtigkeit") is not None:
-                    train_personal_classifier.delay(user.id, "wichtigkeit")
-                    triggered_types.append("wichtigkeit")
-                if data.get("spam_flag") is not None:
-                    train_personal_classifier.delay(user.id, "spam")
-                    triggered_types.append("spam")
-                if data.get("kategorie") is not None:
-                    train_personal_classifier.delay(user.id, "kategorie")
-                    triggered_types.append("kategorie")
-                
-                if triggered_types:
-                    logger.debug(f"🎓 Training getriggert für User {user.id}: {triggered_types}")
-            except Exception as e:
-                # Training-Fehler sollte Korrektur nicht blockieren
-                logger.warning(f"⚠️ Training-Trigger fehlgeschlagen (non-blocking): {e}")
+            # NUR bei echten Änderungen! Throttling erfolgt zusätzlich im Task.
+            if changed_fields:
+                try:
+                    from src.tasks.training_tasks import train_personal_classifier
+                    
+                    # Trigger NUR für geänderte Felder
+                    for field in changed_fields:
+                        train_personal_classifier.delay(user.id, field)
+                    
+                    logger.debug(f"🎓 Training getriggert für User {user.id}: {changed_fields}")
+                except Exception as e:
+                    # Training-Fehler sollte Korrektur nicht blockieren
+                    logger.warning(f"⚠️ Training-Trigger fehlgeschlagen (non-blocking): {e}")
 
             return jsonify(
                 {

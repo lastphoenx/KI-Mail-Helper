@@ -1403,6 +1403,11 @@ class AutoRule(Base):
     # - stop_processing: false (stoppt weitere Regeln falls true)
     actions_json = Column(Text, nullable=False, default='{}')
     
+    # Learning-Einstellung
+    # Wenn True: Tag-Zuweisungen durch diese Regel werden als Lernbeispiele verwendet
+    # Default: False (sicher, keine Verschmutzung des Tag-Learnings)
+    enable_learning = Column(Boolean, default=False, nullable=False)
+    
     # Statistiken
     times_triggered = Column(Integer, default=0, nullable=False)
     last_triggered_at = Column(DateTime, nullable=True)

@@ -181,9 +181,15 @@ def _should_trigger_training(
         classifier_type=classifier_type
     ).first()
     
+    # DEBUG: Log was gefunden wurde
+    logger.info(f"🔍 [Throttle Check] user={user_id}, type={classifier_type}, metadata={metadata}")
+    
     # Kein Metadata = noch nie trainiert → Training erlaubt
     if not metadata:
+        logger.info(f"✅ [Throttle Check] Keine Metadata → first_training erlaubt")
         return (True, "first_training")
+    
+    logger.info(f"📋 [Throttle Check] Metadata gefunden: error_count={metadata.error_count}, last_trained={metadata.last_trained_at}")
     
     # Circuit-Breaker Check
     if metadata.error_count >= MAX_ERROR_COUNT:
@@ -201,14 +207,17 @@ def _should_trigger_training(
     if not override_field:
         return (False, f"unknown_classifier_type: {classifier_type}")
     
-    query = db.query(models.ProcessedEmail).filter(
-        models.ProcessedEmail.user_id == user_id,
+    # ProcessedEmail hat kein user_id - muss über RawEmail joinen
+    query = db.query(models.ProcessedEmail).join(
+        models.RawEmail, models.ProcessedEmail.raw_email_id == models.RawEmail.id
+    ).filter(
+        models.RawEmail.user_id == user_id,
         getattr(models.ProcessedEmail, override_field) != None
     )
     
     if metadata.last_trained_at:
         query = query.filter(
-            models.ProcessedEmail.correction_timestamp > metadata.last_trained_at
+            getattr(models.ProcessedEmail, 'correction_timestamp') > metadata.last_trained_at
         )
     
     new_corrections = query.count()
@@ -263,8 +272,11 @@ def _get_training_data(
         raise ValueError(f"Unbekannter classifier_type: {classifier_type}")
     
     # Query: Alle ProcessedEmails mit Override für diesen User
-    query = db.query(models.ProcessedEmail).filter(
-        models.ProcessedEmail.user_id == user_id,
+    # ProcessedEmail hat kein user_id - muss über RawEmail joinen
+    query = db.query(models.ProcessedEmail).join(
+        models.RawEmail, models.ProcessedEmail.raw_email_id == models.RawEmail.id
+    ).filter(
+        models.RawEmail.user_id == user_id,
         getattr(models.ProcessedEmail, override_field) != None
     ).all()
     
@@ -570,7 +582,13 @@ def _increment_error_count(
                 f"deaktiviert nach {metadata.error_count} Fehlern"
             )
     
-    db.commit()
+    try:
+        db.commit()
+    except Exception as e:
+        logger.error(f"❌ Commit failed for {user_id}/{classifier_type}: {e}")
+        db.rollback()
+        raise
+    
     return metadata.error_count
 
 
@@ -792,6 +810,7 @@ def train_personal_classifier(
         # =================================================================
         # ERROR HANDLING: Circuit-Breaker + Retry
         # =================================================================
+        db.rollback()
         error_count = _increment_error_count(user_id, classifier_type, db, models)
         
         logger.error(
