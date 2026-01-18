@@ -803,9 +803,13 @@ class MailFetcher:
                 
                 # Extrahiere klassische Anhänge (PDF, Word, etc.)
                 classic_attachments = self._extract_classic_attachments(msg)
+                
+                # Phase 25: Extrahiere Kalenderdaten (Termineinladungen)
+                calendar_data = self._extract_calendar_data(msg)
             else:
                 inline_attachments = {}
                 classic_attachments = []
+                calendar_data = None
             
             # Phase 13C: Decode IMAP UTF-7 folder names to UTF-8
             folder_utf8 = decode_imap_folder_name(folder)
@@ -828,6 +832,9 @@ class MailFetcher:
                 "parent_uid": None,  # Wird später von _calculate_thread_ids() gesetzt
                 "inline_attachments": inline_attachments,  # CID-Bilder
                 "attachments": classic_attachments,  # Klassische Anhänge (PDF, Word, etc.)
+                # Phase 25: Kalenderdaten
+                "is_calendar_invite": calendar_data is not None,
+                "calendar_data": calendar_data,
                 **flags_dict,  # Boolean flags (imap_is_seen, imap_is_flagged, etc.)
             }
             
@@ -916,6 +923,249 @@ class MailFetcher:
             logger.warning(f"⚠️ EMPTY BODY EXTRACTED: is_multipart={msg.is_multipart()}, content_type={msg.get_content_type()}, payload_len={len(str(msg.get_payload())) if msg.get_payload() else 0}")
         
         return body
+
+    def _extract_calendar_data(self, msg) -> Optional[Dict]:
+        """Extrahiert Kalenderdaten aus text/calendar MIME Part
+        
+        Erkennt Termineinladungen (METHOD:REQUEST), Absagen (METHOD:CANCEL),
+        Zusagen (METHOD:REPLY), etc.
+        
+        Returns:
+            Dict mit Event-Details oder None wenn keine Kalender-Daten:
+            {
+                "method": "REQUEST",  # REQUEST, REPLY, CANCEL, COUNTER
+                "uid": "event-uid@example.com",
+                "summary": "Meeting Titel",
+                "description": "Details...",
+                "dtstart": "2026-01-20T14:00:00+01:00",
+                "dtend": "2026-01-20T15:00:00+01:00",
+                "location": "Konferenzraum 3",
+                "organizer": {"name": "Max Muster", "email": "max@example.com"},
+                "attendees": [{"name": "...", "email": "...", "partstat": "NEEDS-ACTION"}],
+                "status": "CONFIRMED",
+                "sequence": 0,
+                "raw_ics": "BEGIN:VCALENDAR..."
+            }
+        """
+        calendar_part = None
+        
+        if msg.is_multipart():
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                if content_type == "text/calendar":
+                    calendar_part = part
+                    break
+        elif msg.get_content_type() == "text/calendar":
+            calendar_part = msg
+        
+        if not calendar_part:
+            return None
+        
+        try:
+            payload = calendar_part.get_payload(decode=True)
+            charset = calendar_part.get_content_charset() or "utf-8"
+            ics_content = payload.decode(charset, errors="ignore")
+            
+            if not ics_content or "BEGIN:VCALENDAR" not in ics_content:
+                return None
+            
+            # Parse iCalendar Content
+            calendar_data = self._parse_icalendar(ics_content)
+            if calendar_data:
+                calendar_data["raw_ics"] = ics_content
+                logger.info(f"📅 Kalendereinladung erkannt: {calendar_data.get('method', 'UNKNOWN')} - {calendar_data.get('summary', 'Kein Titel')}")
+            
+            return calendar_data
+            
+        except Exception as e:
+            logger.warning(f"Failed to parse calendar data: {e}")
+            return None
+
+    def _parse_icalendar(self, ics_content: str) -> Optional[Dict]:
+        """Parst iCalendar-Inhalt und extrahiert Event-Details
+        
+        Einfacher Parser ohne externe Bibliothek (icalendar optional).
+        Extrahiert die wichtigsten Felder für Anzeige.
+        """
+        result = {
+            "method": None,
+            "uid": None,
+            "summary": None,
+            "description": None,
+            "dtstart": None,
+            "dtend": None,
+            "location": None,
+            "organizer": None,
+            "attendees": [],
+            "status": None,
+            "sequence": 0,
+        }
+        
+        # Versuche icalendar Library (falls installiert)
+        try:
+            from icalendar import Calendar
+            cal = Calendar.from_ical(ics_content)
+            
+            # METHOD aus VCALENDAR
+            result["method"] = str(cal.get("METHOD", "")).upper() or None
+            
+            # Erstes VEVENT finden
+            for component in cal.walk():
+                if component.name == "VEVENT":
+                    result["uid"] = str(component.get("UID", ""))
+                    result["summary"] = str(component.get("SUMMARY", ""))
+                    result["description"] = str(component.get("DESCRIPTION", ""))
+                    result["location"] = str(component.get("LOCATION", ""))
+                    result["status"] = str(component.get("STATUS", ""))
+                    result["sequence"] = int(component.get("SEQUENCE", 0))
+                    
+                    # Datum/Zeit
+                    dtstart = component.get("DTSTART")
+                    if dtstart:
+                        dt = dtstart.dt
+                        result["dtstart"] = dt.isoformat() if hasattr(dt, 'isoformat') else str(dt)
+                    
+                    dtend = component.get("DTEND")
+                    if dtend:
+                        dt = dtend.dt
+                        result["dtend"] = dt.isoformat() if hasattr(dt, 'isoformat') else str(dt)
+                    
+                    # Organizer
+                    organizer = component.get("ORGANIZER")
+                    if organizer:
+                        org_email = str(organizer).replace("mailto:", "").replace("MAILTO:", "")
+                        org_name = organizer.params.get("CN", "") if hasattr(organizer, 'params') else ""
+                        result["organizer"] = {"name": org_name, "email": org_email}
+                    
+                    # Attendees
+                    for attendee in component.get("ATTENDEE", []):
+                        if attendee:
+                            att_email = str(attendee).replace("mailto:", "").replace("MAILTO:", "")
+                            att_name = attendee.params.get("CN", "") if hasattr(attendee, 'params') else ""
+                            partstat = attendee.params.get("PARTSTAT", "NEEDS-ACTION") if hasattr(attendee, 'params') else "NEEDS-ACTION"
+                            result["attendees"].append({
+                                "name": att_name,
+                                "email": att_email,
+                                "partstat": partstat
+                            })
+                    
+                    break  # Nur erstes Event
+            
+            return result
+            
+        except ImportError:
+            # Fallback: Simple Regex Parser
+            logger.debug("icalendar library not installed, using regex fallback")
+            return self._parse_icalendar_regex(ics_content)
+        except Exception as e:
+            logger.warning(f"icalendar parsing failed, using regex fallback: {e}")
+            return self._parse_icalendar_regex(ics_content)
+
+    def _parse_icalendar_regex(self, ics_content: str) -> Optional[Dict]:
+        """Fallback-Parser mit Regex für iCalendar
+        
+        Wird verwendet wenn icalendar Library nicht installiert ist.
+        """
+        result = {
+            "method": None,
+            "uid": None,
+            "summary": None,
+            "description": None,
+            "dtstart": None,
+            "dtend": None,
+            "location": None,
+            "organizer": None,
+            "attendees": [],
+            "status": None,
+            "sequence": 0,
+        }
+        
+        # Simple line-based parsing
+        lines = ics_content.replace("\r\n ", "").replace("\r\n\t", "").split("\r\n")
+        if len(lines) <= 1:
+            lines = ics_content.replace("\n ", "").replace("\n\t", "").split("\n")
+        
+        in_vevent = False
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            if line == "BEGIN:VEVENT":
+                in_vevent = True
+                continue
+            if line == "END:VEVENT":
+                in_vevent = False
+                continue
+            
+            # Property:Value parsing
+            if ":" in line:
+                prop_part, value = line.split(":", 1)
+                prop = prop_part.split(";")[0].upper()
+                
+                if prop == "METHOD":
+                    result["method"] = value.upper()
+                elif in_vevent:
+                    if prop == "UID":
+                        result["uid"] = value
+                    elif prop == "SUMMARY":
+                        result["summary"] = value
+                    elif prop == "DESCRIPTION":
+                        result["description"] = value[:500]  # Limit
+                    elif prop == "LOCATION":
+                        result["location"] = value
+                    elif prop == "STATUS":
+                        result["status"] = value
+                    elif prop == "SEQUENCE":
+                        try:
+                            result["sequence"] = int(value)
+                        except ValueError:
+                            pass
+                    elif prop == "DTSTART":
+                        result["dtstart"] = self._parse_ical_datetime(value)
+                    elif prop == "DTEND":
+                        result["dtend"] = self._parse_ical_datetime(value)
+                    elif prop == "ORGANIZER":
+                        email = value.replace("mailto:", "").replace("MAILTO:", "")
+                        # CN aus prop_part extrahieren
+                        cn_match = re.search(r'CN=([^;:]+)', prop_part, re.IGNORECASE)
+                        name = cn_match.group(1).strip('"') if cn_match else ""
+                        result["organizer"] = {"name": name, "email": email}
+                    elif prop == "ATTENDEE":
+                        email = value.replace("mailto:", "").replace("MAILTO:", "")
+                        cn_match = re.search(r'CN=([^;:]+)', prop_part, re.IGNORECASE)
+                        name = cn_match.group(1).strip('"') if cn_match else ""
+                        partstat_match = re.search(r'PARTSTAT=([^;:]+)', prop_part, re.IGNORECASE)
+                        partstat = partstat_match.group(1) if partstat_match else "NEEDS-ACTION"
+                        result["attendees"].append({
+                            "name": name,
+                            "email": email,
+                            "partstat": partstat
+                        })
+        
+        return result if result["uid"] or result["summary"] else None
+
+    def _parse_ical_datetime(self, value: str) -> Optional[str]:
+        """Parst iCalendar Datum/Zeit-Werte zu ISO-Format"""
+        try:
+            # Entferne TZID Parameter falls vorhanden
+            if ":" in value:
+                value = value.split(":")[-1]
+            
+            # Format: YYYYMMDDTHHMMSS oder YYYYMMDDTHHMMSSZ
+            value = value.strip()
+            
+            if len(value) == 8:  # YYYYMMDD (ganztägig)
+                return f"{value[:4]}-{value[4:6]}-{value[6:8]}"
+            elif len(value) >= 15:  # YYYYMMDDTHHMMSS
+                base = f"{value[:4]}-{value[4:6]}-{value[6:8]}T{value[9:11]}:{value[11:13]}:{value[13:15]}"
+                if value.endswith("Z"):
+                    base += "Z"
+                return base
+            return value
+        except Exception:
+            return value
 
     def _extract_inline_attachments(self, msg) -> Dict[str, Dict[str, str]]:
         """Extrahiert Inline-Attachments (CID-Bilder) aus E-Mail

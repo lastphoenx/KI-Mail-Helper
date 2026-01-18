@@ -126,3 +126,7 @@ src/tasks/mail_sync_tasks_COMPLETE.py
 # Internal dev docs (not for public repo)
 docs/DEPLOYMENT_CHECKLIST.md
 docs/HYBRID_MONITORING_LOGGING.md
+docs/PRESIDIO_MIGRATION_KONZEPT.md
+docs/PRESIDIO_FEATURE_MATRIX.md
+docs/DEEP_REVIEW_PRESIDIO_MIGRATION.md
+docs/PRESIDIO_DEEP_REVIEW.md

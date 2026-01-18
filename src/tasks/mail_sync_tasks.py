@@ -617,6 +617,15 @@ def _persist_raw_emails(
                 json.dumps(inline_attachments), master_key
             )
 
+        # Phase 25: Kalenderdaten verschlüsseln
+        encrypted_calendar_data = None
+        calendar_data = raw_email_data.get("calendar_data")
+        if calendar_data:
+            import json
+            encrypted_calendar_data = encryption.EncryptionManager.encrypt_data(
+                json.dumps(calendar_data, ensure_ascii=False), master_key
+            )
+
         raw_email = models.RawEmail(
             user_id=user.id,
             mail_account_id=account.id,
@@ -652,6 +661,10 @@ def _persist_raw_emails(
             email_embedding=embedding_bytes,
             embedding_model=embedding_model,
             embedding_generated_at=embedding_generated_at,
+            # Phase 25: Kalendereinladungen
+            is_calendar_invite=raw_email_data.get("is_calendar_invite", False),
+            calendar_method=calendar_data.get("method") if calendar_data else None,
+            encrypted_calendar_data=encrypted_calendar_data,
         )
         
         try:

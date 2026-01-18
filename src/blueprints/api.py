@@ -516,7 +516,7 @@ def api_remove_tag_from_email(raw_email_id, tag_id):
 def api_reject_tag_for_email(raw_email_id, tag_id):
     """Lehnt Tag-Vorschlag für Email ab (Negative Example für ML)"""
     models = _get_models()
-    tag_manager = _get_tag_manager()
+    tag_manager_mod = importlib.import_module("src.services.tag_manager", "src")
     
     try:
         with get_db_session() as db:
@@ -537,11 +537,11 @@ def api_reject_tag_for_email(raw_email_id, tag_id):
                 return jsonify({"error": "Tag nicht gefunden"}), 404
             
             try:
-                # Verwende TagManager für konsistentes Negative Example
-                success = tag_manager.reject_tag(db, processed.id, tag_id, user.id)
+                # Verwende add_negative_example für konsistentes Negative Example
+                success = tag_manager_mod.add_negative_example(db, tag_id, processed.id, "ui")
                 
                 if success:
-                    db.commit()
+                    # add_negative_example macht bereits commit
                     logger.info(f"Tag {tag_id} als Negative Example für Email {processed.id} markiert")
                 
                 return jsonify({"success": True})

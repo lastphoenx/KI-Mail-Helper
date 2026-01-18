@@ -212,6 +212,25 @@ Die semantische Suche findet Emails nach **Bedeutung**, nicht nur nach Keywords.
 
 ## 5. Email-Detailansicht
 
+### Kalender-Erkennung
+
+Wenn eine Email eine **Kalender-Einladung** enthält (iCalendar/iMIP), wird automatisch eine farbcodierte Karte angezeigt:
+
+| Farbe | Typ | Bedeutung |
+|-------|-----|-----------|
+| 📅 **Blau** | REQUEST | Termineinladung |
+| ✅ **Grün** | REPLY | Terminantwort (Zusage/Absage) |
+| ❌ **Rot** | CANCEL | Terminabsage |
+
+**Angezeigte Informationen:**
+- Titel des Termins
+- Datum und Uhrzeit (Start/Ende)
+- Ort (falls vorhanden)
+- Organisator
+- Teilnehmer mit Status (Akzeptiert/Abgelehnt/Ausstehend)
+
+> 💡 **Tipp:** In der Listenansicht kannst du mit dem **📅 Termine**-Dropdown nach Kalender-Emails filtern.
+
 ### KI-Analyse
 
 | Feld | Beschreibung |
