@@ -23,6 +23,7 @@
 13. [PostgreSQL Direktzugriff](#13-postgresql-direktzugriff)
 14. [Debugging & Logs](#14-debugging--logs)
 15. [Schnellreferenz](#15-schnellreferenz)
+16. [Hybrid Classifier / Machine Learning Administration](#16-hybrid-classifier--machine-learning-administration)
 
 ---
 
@@ -419,6 +420,55 @@ python scripts/manage_learning.py --tag=5 --reset
 # Ohne Bestätigung
 python scripts/manage_learning.py --user=1 --reset --force
 ```
+
+#### Tag-Learning direkt via SQL (Praxis-Beispiele)
+
+Wenn `manage_learning.py` nicht ausreicht, können Tag-Zuweisungen und Embeddings 
+direkt in der Datenbank korrigiert werden:
+
+```bash
+# 1. Tag suchen (z.B. alle Tags mit "IT" im Namen)
+sudo -u postgres psql -d mail_helper -c \
+  "SELECT id, name, user_id FROM email_tags WHERE name ILIKE '%IT%';"
+
+# 2. Tag-Zuweisungen für bestimmten Account löschen
+#    Nützlich wenn Auto-Rules falsche Tags gesetzt haben
+sudo -u postgres psql -d mail_helper -c "
+DELETE FROM email_tag_assignments 
+WHERE tag_id = 41  -- ← Tag-ID anpassen
+AND email_id IN (
+    SELECT pe.id FROM processed_emails pe
+    JOIN raw_emails re ON pe.raw_email_id = re.id
+    WHERE re.mail_account_id = 2  -- ← Account-ID anpassen
+);
+"
+
+# 3. Learned Embedding zurücksetzen ("falsches Wissen" löschen)
+#    Das Tag vergisst alle gelernten Muster und startet von Null
+sudo -u postgres psql -d mail_helper -c "
+UPDATE email_tags 
+SET learned_embedding = NULL, 
+    embedding_updated_at = NULL,
+    negative_embedding = NULL,
+    negative_updated_at = NULL,
+    negative_count = 0
+WHERE id = 41;  -- ← Tag-ID anpassen
+"
+
+# 4. Alle Tag-Zuweisungen für einen Tag anzeigen (mit Account-Info)
+sudo -u postgres psql -d mail_helper -c "
+SELECT eta.id, re.mail_account_id, eta.auto_assigned, eta.assigned_at
+FROM email_tag_assignments eta
+JOIN processed_emails pe ON eta.email_id = pe.id
+JOIN raw_emails re ON pe.raw_email_id = re.id
+WHERE eta.tag_id = 41
+ORDER BY eta.assigned_at DESC
+LIMIT 20;
+"
+```
+
+> **Tipp:** `auto_assigned = true` bedeutet, dass die Zuweisung von einer Auto-Rule 
+> oder dem Similarity-Matching stammt, nicht vom User manuell.
 
 #### Score-Learning (Global)
 
@@ -909,6 +959,127 @@ rm -rf .flask_sessions/*
 # Alembic "Target database is not up to date"
 alembic upgrade head
 ```
+
+---
+
+## 16. Hybrid Classifier / Machine Learning Administration
+
+Das Hybrid Score-Learning System trainiert persönliche Classifier basierend auf 
+Benutzerkorrekturen. Hier die wichtigsten Verwaltungsbefehle:
+
+### Circuit Breaker zurücksetzen
+
+Wenn das Training durch zu viele Fehler blockiert ist (`circuit_breaker_open`):
+
+```bash
+# Circuit Breaker für alle User zurücksetzen
+sudo -u postgres psql -d mail_helper -c \
+  "UPDATE classifier_metadata SET error_count = 0, is_active = true;"
+
+# Nur für einen bestimmten User (z.B. user_id=1)
+sudo -u postgres psql -d mail_helper -c \
+  "UPDATE classifier_metadata SET error_count = 0, is_active = true WHERE user_id = 1;"
+
+# Status prüfen
+sudo -u postgres psql -d mail_helper -c \
+  "SELECT user_id, classifier_type, error_count, is_active, last_trained_at 
+   FROM classifier_metadata ORDER BY user_id, classifier_type;"
+```
+
+### Classifier-Metadaten anzeigen
+
+```bash
+# Alle Classifier-Metadaten
+sudo -u postgres psql -d mail_helper -c \
+  "SELECT * FROM classifier_metadata ORDER BY user_id;"
+
+# Trainierte Modelle mit Accuracy
+sudo -u postgres psql -d mail_helper -c \
+  "SELECT user_id, classifier_type, model_version, samples_count, accuracy, last_trained_at 
+   FROM classifier_metadata WHERE last_trained_at IS NOT NULL;"
+```
+
+### Training manuell triggern
+
+```bash
+# Force-Training für einen User (via Python)
+cd /home/thomas/projects/KI-Mail-Helper-Dev
+source venv/bin/activate
+python3 -c "
+from src.celery_app import celery_app
+from src.tasks.training_tasks import train_personal_classifier
+
+# Force-Training für user_id=1, alle Classifier-Typen
+for ctype in ['dringlichkeit', 'wichtigkeit', 'spam', 'kategorie']:
+    result = train_personal_classifier.delay(user_id=1, classifier_type=ctype, force=True)
+    print(f'{ctype}: Task {result.id} submitted')
+"
+```
+
+### Celery Worker Administration
+
+```bash
+# Worker Status prüfen
+sudo systemctl status mail-helper-celery-worker
+
+# Worker neustarten (nach Code-Änderungen!)
+sudo systemctl restart mail-helper-celery-worker
+
+# Worker stoppen
+sudo systemctl stop mail-helper-celery-worker
+
+# Worker starten
+sudo systemctl start mail-helper-celery-worker
+
+# Live-Logs während Training beobachten
+tail -f /var/log/mail-helper/celery-worker.log
+
+# Nur Training-relevante Logs
+tail -f /var/log/mail-helper/celery-worker.log | grep -E "Training|Throttle|Circuit|error_count"
+```
+
+### Gespeicherte Modelle verwalten
+
+```bash
+# Modell-Verzeichnis anzeigen
+ls -la /home/thomas/projects/KI-Mail-Helper-Dev/ml_models/
+
+# Modelle für User 1
+ls -la /home/thomas/projects/KI-Mail-Helper-Dev/ml_models/user_1/
+
+# Modell löschen (erzwingt Neutraining)
+rm /home/thomas/projects/KI-Mail-Helper-Dev/ml_models/user_1/dringlichkeit_v*.pkl
+
+# Alle Modelle löschen (Vorsicht!)
+rm -rf /home/thomas/projects/KI-Mail-Helper-Dev/ml_models/user_*/
+```
+
+### Korrekturen prüfen
+
+```bash
+# Anzahl Korrekturen pro User anzeigen
+sudo -u postgres psql -d mail_helper -c "
+  SELECT re.user_id, 
+         COUNT(CASE WHEN pe.user_override_dringlichkeit IS NOT NULL THEN 1 END) as dringlichkeit,
+         COUNT(CASE WHEN pe.user_override_wichtigkeit IS NOT NULL THEN 1 END) as wichtigkeit,
+         COUNT(CASE WHEN pe.user_override_spam IS NOT NULL THEN 1 END) as spam,
+         COUNT(CASE WHEN pe.user_override_kategorie IS NOT NULL THEN 1 END) as kategorie
+  FROM processed_emails pe
+  JOIN raw_emails re ON pe.raw_email_id = re.id
+  GROUP BY re.user_id
+  ORDER BY re.user_id;
+"
+```
+
+### Häufige Training-Probleme
+
+| Problem | Ursache | Lösung |
+|---------|---------|--------|
+| `circuit_breaker_open (errors=3)` | 3+ Trainingsfehler | Circuit Breaker zurücksetzen (s.o.) |
+| `throttle_samples (only X new corrections)` | Weniger als 5 Korrekturen | Normal - Training startet ab 5 Korrekturen |
+| `insufficient_samples` | Zu wenig Samples pro Klasse | Mehr Korrekturen machen (min. 2 pro Klasse) |
+| `throttle_time` | Zu oft trainiert | Warten (min. 5 Min zwischen Trainings) |
+| Worker reagiert nicht | Alter Code im Cache | `sudo systemctl restart mail-helper-celery-worker` |
 
 ---
 

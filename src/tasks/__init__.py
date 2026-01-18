@@ -71,6 +71,10 @@ from src.tasks.reply_generation_tasks import (
     generate_reply_draft,
 )
 
+from src.tasks.training_tasks import (
+    train_personal_classifier,
+)
+
 __all__ = [
     "sync_user_emails",
     "sync_all_accounts",
@@ -84,4 +88,5 @@ __all__ = [
     "reprocess_email_base",
     "optimize_email_processing",
     "generate_reply_draft",
+    "train_personal_classifier",
 ]

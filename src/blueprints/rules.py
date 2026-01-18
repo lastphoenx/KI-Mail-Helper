@@ -111,6 +111,7 @@ def api_get_rules():
                         "priority": rule.priority,
                         "conditions": rule.conditions,
                         "actions": rule.actions,
+                        "enable_learning": rule.enable_learning,
                         "times_triggered": rule.times_triggered,
                         "last_triggered_at": rule.last_triggered_at.isoformat() if rule.last_triggered_at else None,
                         "created_at": rule.created_at.isoformat() if rule.created_at else None
@@ -165,7 +166,8 @@ def api_create_rule():
                 priority=data.get("priority", 100),
                 is_active=data.get("is_active", True),
                 conditions=conditions,
-                actions=actions
+                actions=actions,
+                enable_learning=data.get("enable_learning", False)
             )
             
             db.add(rule)
@@ -183,7 +185,8 @@ def api_create_rule():
                         "is_active": rule.is_active,
                         "priority": rule.priority,
                         "conditions": rule.conditions,
-                        "actions": rule.actions
+                        "actions": rule.actions,
+                        "enable_learning": rule.enable_learning
                     }
                 }), 201
             except Exception as e:
@@ -237,6 +240,8 @@ def api_update_rule(rule_id):
                 rule.conditions = data["conditions"]
             if "actions" in data:
                 rule.actions = data["actions"]
+            if "enable_learning" in data:
+                rule.enable_learning = bool(data["enable_learning"])
             
             try:
                 db.commit()
@@ -251,7 +256,8 @@ def api_update_rule(rule_id):
                         "is_active": rule.is_active,
                         "priority": rule.priority,
                         "conditions": rule.conditions,
-                        "actions": rule.actions
+                        "actions": rule.actions,
+                        "enable_learning": rule.enable_learning
                     }
                 }), 200
             except Exception as e:
