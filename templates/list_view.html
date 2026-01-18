@@ -245,6 +245,7 @@
         <li class="list-group-item">
             <div class="row align-items-center">
                 <div class="col-md-1 text-center">
+                    {# Score-Anzeige: Immer email.score verwenden (wird bei Korrektur aktualisiert) #}
                     {% if email.optimization_status == 'done' and email.optimize_score is not none and email.optimization_completed_at and email.processed_at and email.optimization_completed_at > email.processed_at %}
                     <span class="badge priority-{{ email.optimize_farbe }} fs-5">
                         {{ email.optimize_score }}

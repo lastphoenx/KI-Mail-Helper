@@ -2617,6 +2617,7 @@ def api_get_rules():
                         "priority": r.priority,
                         "conditions": r.conditions,
                         "actions": r.actions,
+                        "enable_learning": r.enable_learning if hasattr(r, 'enable_learning') else False,
                         "times_triggered": r.times_triggered if hasattr(r, 'times_triggered') else 0,
                         "last_triggered_at": r.last_triggered_at.isoformat() if hasattr(r, 'last_triggered_at') and r.last_triggered_at else None,
                         "created_at": r.created_at.isoformat() if r.created_at else None
@@ -2666,7 +2667,8 @@ def api_create_rule():
                 priority=data.get("priority", 100),
                 is_active=data.get("is_active", True),
                 conditions=conditions,
-                actions=actions
+                actions=actions,
+                enable_learning=data.get("enable_learning", False)
             )
             
             db.add(rule)
@@ -2683,6 +2685,7 @@ def api_create_rule():
                 "priority": rule.priority,
                 "conditions": rule.conditions,
                 "actions": rule.actions,
+                "enable_learning": rule.enable_learning,
                 "created_at": rule.created_at.isoformat() if rule.created_at else None
             }), 201
     except Exception as e:
@@ -2732,6 +2735,8 @@ def api_update_rule(rule_id):
                 rule.conditions = data["conditions"]
             if "actions" in data:
                 rule.actions = data["actions"]
+            if "enable_learning" in data:
+                rule.enable_learning = bool(data["enable_learning"])
             
             db.commit()
             db.refresh(rule)
@@ -2746,6 +2751,7 @@ def api_update_rule(rule_id):
                 "priority": rule.priority,
                 "conditions": rule.conditions,
                 "actions": rule.actions,
+                "enable_learning": rule.enable_learning if hasattr(rule, 'enable_learning') else False,
                 "updated_at": rule.updated_at.isoformat() if rule.updated_at else None
             })
     except Exception as e:

@@ -36,6 +36,9 @@ from sqlalchemy.orm import Session
 models = importlib.import_module(".02_models", "src")
 encryption = importlib.import_module(".08_encryption", "src")
 
+# Services
+from src.services.tag_manager import TagManager
+
 AutoRule = models.AutoRule
 RawEmail = models.RawEmail
 ProcessedEmail = models.ProcessedEmail
@@ -578,7 +581,10 @@ class AutoRulesEngine:
                         logger.warning(f"⚠️ Kann Tag '{tag_name}' nicht zuweisen - ProcessedEmail für raw_email {raw_email.id} existiert noch nicht")
                         executed.append(f"apply_tag:{tag_name} [SKIPPED - no ProcessedEmail]")
                     else:
-                        # Finde oder erstelle Tag
+                        # Prüfe ob Regel enable_learning aktiviert hat
+                        should_learn = getattr(rule, 'enable_learning', False) if rule else False
+                        
+                        # Tag finden oder erstellen via TagManager
                         tag = self.db.query(EmailTag).filter_by(
                             user_id=self.user_id,
                             name=tag_name
@@ -587,31 +593,42 @@ class AutoRulesEngine:
                         if not tag:
                             # Tag erstellen mit optionaler Farbe aus actions
                             tag_color = actions.get('tag_color', '#6366F1')  # Default-Farbe
-                            tag = EmailTag(
-                                user_id=self.user_id,
-                                name=tag_name,
-                                color=tag_color
-                            )
-                            self.db.add(tag)
-                            self.db.flush()
-                            logger.info(f"📝 Created new tag '{tag_name}' with color {tag_color}")
+                            try:
+                                tag = TagManager.create_tag(
+                                    db=self.db,
+                                    user_id=self.user_id,
+                                    name=tag_name[:50],  # Max 50 Zeichen
+                                    color=tag_color if tag_color.startswith('#') and len(tag_color) == 7 else '#6366F1'
+                                )
+                                logger.info(f"📝 Created new tag '{tag_name}' with color {tag_color}")
+                            except ValueError as e:
+                                # Tag existiert vielleicht schon (Race Condition) - nochmal holen
+                                tag = self.db.query(EmailTag).filter_by(
+                                    user_id=self.user_id,
+                                    name=tag_name
+                                ).first()
+                                if not tag:
+                                    logger.error(f"❌ Tag-Erstellung fehlgeschlagen: '{tag_name}': {e}")
+                                    executed.append(f"apply_tag:{tag_name} [CREATE_FAILED]")
+                                    tag = None  # Explizit auf None setzen
                         
-                        # Prüfe ob Tag bereits zugewiesen (nutze processed_email.id!)
-                        existing = self.db.query(EmailTagAssignment).filter_by(
-                            email_id=processed_email.id,
-                            tag_id=tag.id
-                        ).first()
-                        
-                        if not existing:
-                            assignment = EmailTagAssignment(
+                        # Tag zuweisen via TagManager (nur wenn tag erfolgreich gefunden/erstellt)
+                        if tag:
+                            # auto_assigned=True → kein Learning
+                            # auto_assigned=False → Learning aktiv (wenn enable_learning=True in Regel)
+                            success = TagManager.assign_tag(
+                                db=self.db,
                                 email_id=processed_email.id,
-                                tag_id=tag.id
+                                tag_id=tag.id,
+                                user_id=self.user_id,
+                                auto_assigned=not should_learn
                             )
-                            self.db.add(assignment)
-                            executed.append(f"apply_tag:{tag_name}")
-                            logger.info(f"🏷️  Applied tag '{tag_name}' to email {raw_email.id} (processed_id={processed_email.id})")
-                        else:
-                            executed.append(f"apply_tag:{tag_name} [ALREADY_EXISTS]")
+                            
+                            if success:
+                                executed.append(f"apply_tag:{tag_name}")
+                                logger.info(f"🏷️  Applied tag '{tag_name}' to email {raw_email.id} (processed_id={processed_email.id}, learning={'ON' if should_learn else 'OFF'})")
+                            else:
+                                executed.append(f"apply_tag:{tag_name} [ALREADY_EXISTS]")
                         
                 except Exception as tag_err:
                     logger.error(f"Apply tag failed: {tag_err}")
