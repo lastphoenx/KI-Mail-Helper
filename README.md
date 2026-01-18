@@ -39,6 +39,9 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **Thread-View** – Konversations-basierte Ansicht mit Context
 - **Fetch-Filter** – Account-spezifisch: Ordner, Datum, UNSEEN, Delta-Sync
 - **Multi-Account Dashboard** – Filter Dashboard nach spezifischem Email-Account
+- **Kalender-Erkennung** – Automatische Erkennung von iCalendar-Einladungen (REQUEST/REPLY/CANCEL)
+  - Farbcodierte Kalender-Karte in Detailansicht (blau/grün/rot)
+  - Filter-Dropdown und Badges in Listenansicht
 
 ---
 

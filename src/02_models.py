@@ -1041,6 +1041,14 @@ class RawEmail(Base):
     stable_identifier = Column(String(512), nullable=True, index=True)
     content_hash = Column(String(64), nullable=True, index=True)  # SHA256[:32]
 
+    # ===== PHASE 25: CALENDAR INVITES =====
+    # Erkennung von Termineinladungen (text/calendar MIME Part)
+    is_calendar_invite = Column(Boolean, default=False, nullable=True, index=True)
+    # REQUEST=Einladung, REPLY=Antwort, CANCEL=Absage (unverschlüsselt für Filter/Anzeige)
+    calendar_method = Column(String(20), nullable=True)
+    # JSON mit Event-Details: {method, uid, summary, dtstart, dtend, location, organizer, attendees[], status}
+    encrypted_calendar_data = Column(Text, nullable=True)
+
     # Relationships
     user = relationship("User", back_populates="raw_emails")
     mail_account = relationship("MailAccount", back_populates="raw_emails")

@@ -317,6 +317,16 @@ def fetch_and_process(
                             encrypted_references = encryption.EncryptionManager.encrypt_data(
                                 raw_email_data.get("references") or "", user_master_key
                             ) if raw_email_data.get("references") else None
+                            
+                            # Phase 25: Verschlüssele Kalenderdaten als JSON
+                            calendar_data = raw_email_data.get("calendar_data")
+                            encrypted_calendar_data = None
+                            if calendar_data:
+                                import json
+                                calendar_json = json.dumps(calendar_data, ensure_ascii=False)
+                                encrypted_calendar_data = encryption.EncryptionManager.encrypt_data(
+                                    calendar_json, user_master_key
+                                )
 
                             raw_email = models.RawEmail(
                                 user_id=user.id,
@@ -348,6 +358,10 @@ def fetch_and_process(
                                 imap_is_flagged=raw_email_data.get("imap_is_flagged"),
                                 imap_is_deleted=raw_email_data.get("imap_is_deleted"),
                                 imap_is_draft=raw_email_data.get("imap_is_draft"),
+                                # Phase 25: Kalendereinladungen
+                                is_calendar_invite=raw_email_data.get("is_calendar_invite", False),
+                                calendar_method=calendar_data.get("method") if calendar_data else None,
+                                encrypted_calendar_data=encrypted_calendar_data,
                             )
                             session.add(raw_email)
                             saved_count += 1

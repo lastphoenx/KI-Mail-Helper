@@ -263,6 +263,7 @@ def list_view():
         filter_seen = (request.args.get("seen") or "").lower()
         filter_flagged = (request.args.get("flagged") or "").lower()
         filter_attachments = (request.args.get("attach") or "").lower()
+        filter_calendar = (request.args.get("calendar") or "").lower()  # Phase 25
 
         # Datums-Filter
         filter_date_from = request.args.get("date_from") or None
@@ -320,6 +321,12 @@ def list_view():
             query = query.filter(models.RawEmail.has_attachments == True)
         elif filter_attachments == "false":
             query = query.filter(models.RawEmail.has_attachments == False)
+
+        # Phase 25: Kalender-Filter
+        if filter_calendar == "true":
+            query = query.filter(models.RawEmail.is_calendar_invite == True)
+        elif filter_calendar == "false":
+            query = query.filter((models.RawEmail.is_calendar_invite == False) | (models.RawEmail.is_calendar_invite == None))
 
         # Phase 13: Datums-Filter
         if filter_date_from:
@@ -547,6 +554,8 @@ def list_view():
             filter_params.append(f"flagged={filter_flagged}")
         if filter_attachments:
             filter_params.append(f"attach={filter_attachments}")
+        if filter_calendar:
+            filter_params.append(f"calendar={filter_calendar}")
         if search_term:
             filter_params.append(f"search={search_term}")
         if filter_tag_ids:
@@ -584,6 +593,7 @@ def list_view():
             filter_seen=filter_seen,
             filter_flagged=filter_flagged,
             filter_attachments=filter_attachments,
+            filter_calendar=filter_calendar,  # Phase 25
             filter_date_from=filter_date_from,
             filter_date_to=filter_date_to,
             sort_by=sort_by,
@@ -830,6 +840,18 @@ def email_detail(raw_email_id):
                         'is_inline': att.is_inline,
                     })
 
+            # Phase 25: Kalenderdaten entschlüsseln für Termineinladungen
+            calendar_data = None
+            if raw.is_calendar_invite and raw.encrypted_calendar_data and master_key:
+                try:
+                    decrypted_calendar_json = encryption.EncryptionManager.decrypt_data(
+                        raw.encrypted_calendar_data, master_key
+                    )
+                    if decrypted_calendar_json:
+                        calendar_data = json.loads(decrypted_calendar_json)
+                except Exception as e:
+                    logger.warning(f"Calendar data decryption failed for email {raw.id}: {e}")
+
             # Filter-URL aus Session für "Zurück zur Liste" Button
             back_url = session.get('last_list_filter_url', '/list')
 
@@ -855,6 +877,7 @@ def email_detail(raw_email_id):
             email_tags=email_tags,
             all_user_tags=all_user_tags,
             attachments=attachments_info,  # Klassische Anhänge
+            calendar_data=calendar_data,  # Phase 25: Termineinladungen
             back_url=back_url,  # Filter-persistente URL für Zurück-Button
         )
     except Exception as e:
