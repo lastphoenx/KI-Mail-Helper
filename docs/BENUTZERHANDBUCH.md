@@ -32,6 +32,7 @@ KI-Mail-Helper ist ein selbst-gehosteter Email-Organizer mit Multi-User-Support,
 |---------|--------------|
 | **🎯 3×3 Prioritäts-Matrix** | Automatische Bewertung nach Dringlichkeit × Wichtigkeit |
 | **🧠 KI-Priorisierung** | spaCy NLP (80%) + Keywords (20%) + Ensemble Learning |
+| **🎓 Personal Classifier** | Individuelles ML-Modell aus deinen Korrekturen |
 | **🛡️ Email-Anonymisierung** | spaCy PII-Entfernung vor Cloud-AI (DSGVO-konform) |
 | **🔍 Semantische Suche** | Finde Emails nach Bedeutung, nicht nur Keywords |
 | **✉️ KI-Antworten + Versand** | Generierte Antwort-Entwürfe direkt per SMTP senden |
@@ -211,6 +212,25 @@ Die semantische Suche findet Emails nach **Bedeutung**, nicht nur nach Keywords.
 
 ## 5. Email-Detailansicht
 
+### Kalender-Erkennung
+
+Wenn eine Email eine **Kalender-Einladung** enthält (iCalendar/iMIP), wird automatisch eine farbcodierte Karte angezeigt:
+
+| Farbe | Typ | Bedeutung |
+|-------|-----|-----------|
+| 📅 **Blau** | REQUEST | Termineinladung |
+| ✅ **Grün** | REPLY | Terminantwort (Zusage/Absage) |
+| ❌ **Rot** | CANCEL | Terminabsage |
+
+**Angezeigte Informationen:**
+- Titel des Termins
+- Datum und Uhrzeit (Start/Ende)
+- Ort (falls vorhanden)
+- Organisator
+- Teilnehmer mit Status (Akzeptiert/Abgelehnt/Ausstehend)
+
+> 💡 **Tipp:** In der Listenansicht kannst du mit dem **📅 Termine**-Dropdown nach Kalender-Emails filtern.
+
 ### KI-Analyse
 
 | Feld | Beschreibung |
@@ -284,6 +304,38 @@ Auto-Rules führen automatisch Aktionen aus, wenn eine Email Bedingungen erfüll
 4. Definiere Aktionen (z.B. "Tag 'Newsletter' zuweisen")
 5. Speichern
 
+### Regeltabelle – Übersicht
+
+Die Regeltabelle zeigt alle deine Regeln mit folgenden Spalten:
+
+| Spalte | Beschreibung |
+|--------|--------------|
+| **Status** | Klickbarer Toggle-Button: **Aktiv** (grün) oder **Inaktiv** (grau). Klicke zum Umschalten. |
+| **Name** | Name der Regel |
+| **Learning** | Toggle für Hybrid Score-Learning: **🎓 Aktiv** (violett) oder **Inaktiv** (grau). Wenn aktiv, lernt das System aus den Aktionen dieser Regel. |
+| **Priorität** | Ausführungsreihenfolge (1 = höchste Priorität) |
+| **Bedingungen** | Anzahl der definierten Bedingungen |
+| **Aktionen** | Anzahl der definierten Aktionen |
+| **Ausgeführt** | Zähler: Wie oft wurde diese Regel angewendet |
+| **Buttons** | Aktions-Buttons für die Regel |
+
+### Aktions-Buttons
+
+| Button | Kürzel | Beschreibung |
+|--------|--------|--------------|
+| 🧪 **T** | Testen | Testet die Regel gegen vorhandene Emails (ohne Ausführung) |
+| ✏️ **B** | Bearbeiten | Öffnet den Editor zum Ändern der Regel |
+| 🗑️ **L** | Löschen | Löscht die Regel (mit Bestätigung) |
+
+### Learning pro Regel
+
+Du kannst für jede Regel individuell festlegen, ob sie zum Hybrid Score-Learning beitragen soll:
+
+- **🎓 Aktiv (violett)** – Die Regel trägt zum Training des Classifiers bei
+- **Inaktiv (grau)** – Die Regel wird nur ausgeführt, ohne zum Learning beizutragen
+
+**Anwendungsfall:** Deaktiviere Learning für Regeln, die Ausnahmen behandeln oder spezielle Fälle abdecken, die nicht ins allgemeine Modell einfließen sollen.
+
 ### Verfügbare Aktionen
 
 - 📁 In Ordner verschieben
@@ -321,6 +373,28 @@ Die KI-Priorisierung nutzt eine **Hybrid-Pipeline**:
 - **80% spaCy NLP** – Linguistische Analyse
 - **20% Keywords** – 80 strategische Begriffe
 - **Ensemble Learning** – Lernt aus deinen Korrekturen
+
+### Personal Classifier (Hybrid Score-Learning)
+
+Das System lernt aus deinen Korrekturen und erstellt ein **persönliches ML-Modell**:
+
+| Modell | Beschreibung |
+|--------|---------------|
+| **Global Classifier** | Trainiert auf alle User-Korrekturen |
+| **Personal Classifier** | Dein individuelles Modell |
+
+**So funktioniert es:**
+1. Du korrigierst eine Email-Bewertung (Dringlichkeit/Wichtigkeit/Spam)
+2. Das System sammelt deine Korrekturen (min. 5 Stück)
+3. Ein persönlicher Classifier wird im Hintergrund trainiert
+4. Bei neuen Emails nutzt das System dein persönliches Modell
+
+**Einstellung aktivieren:**
+1. Gehe zu **⚙️ Einstellungen**
+2. Aktiviere **"Persönlichen Classifier bevorzugen"**
+3. Das System nutzt dann dein Modell, sobald genug Daten vorhanden sind
+
+> 💡 Bei wenigen Korrekturen fällt das System automatisch auf den Global Classifier zurück.
 
 ### VIP-Absender
 

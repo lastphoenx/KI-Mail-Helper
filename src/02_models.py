@@ -19,6 +19,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     UniqueConstraint,
+    CheckConstraint,
     Index,
     LargeBinary,
     event,
@@ -350,6 +351,10 @@ class User(Base):
     urgency_booster_enabled = Column(Boolean, default=True, nullable=False)
     """Aktiviert Entity-basierte Klassifikation für Trusted Senders"""
 
+    # Hybrid Score-Learning: Classifier-Präferenz
+    prefer_personal_classifier = Column(Boolean, default=False, nullable=False)
+    """Wenn True: Nutze persönliches ML-Modell statt globalem für Vorhersagen"""
+
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
@@ -495,6 +500,53 @@ class User(Base):
     def __repr__(self):
         # Security: Mask sensitive data in logs
         return f"<User(id={self.id}, username='***')>"
+
+
+# =============================================================================
+# USER DELETION CLEANUP: Personal Classifier Files löschen
+# =============================================================================
+
+def _cleanup_personal_classifiers_on_delete(mapper, connection, target):
+    """SQLAlchemy Event: Löscht Personal-Classifier-Dateien wenn User gelöscht wird.
+    
+    Wird VOR dem DELETE ausgeführt (before_delete), damit CASCADE noch funktioniert.
+    
+    Args:
+        mapper: SQLAlchemy Mapper (nicht verwendet)
+        connection: DB-Connection (nicht verwendet)
+        target: User-Objekt das gelöscht wird
+    """
+    import shutil
+    from pathlib import Path
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Lazy Import um Circular Imports zu vermeiden
+        from src.services.personal_classifier_service import (
+            get_classifier_dir,
+            invalidate_classifier_cache
+        )
+        
+        user_dir = get_classifier_dir() / "per_user" / f"user_{target.id}"
+        
+        if user_dir.exists():
+            shutil.rmtree(user_dir)
+            logger.info(f"🗑️ Personal classifiers gelöscht: user_{target.id}")
+        
+        # Cache invalidieren (für alle Classifier-Typen dieses Users)
+        deleted_count = invalidate_classifier_cache(user_id=target.id)
+        if deleted_count > 0:
+            logger.debug(f"💾 Cache invalidiert: {deleted_count} Einträge für user_{target.id}")
+            
+    except Exception as e:
+        # Fehler beim Cleanup sollte User-Löschung nicht blockieren
+        logger.warning(f"⚠️ Cleanup für user_{target.id} fehlgeschlagen (non-blocking): {e}")
+
+
+# Event Listener registrieren (wird beim Import von 02_models.py ausgeführt)
+event.listen(User, 'before_delete', _cleanup_personal_classifiers_on_delete)
 
 
 class MailAccount(Base):
@@ -989,6 +1041,14 @@ class RawEmail(Base):
     stable_identifier = Column(String(512), nullable=True, index=True)
     content_hash = Column(String(64), nullable=True, index=True)  # SHA256[:32]
 
+    # ===== PHASE 25: CALENDAR INVITES =====
+    # Erkennung von Termineinladungen (text/calendar MIME Part)
+    is_calendar_invite = Column(Boolean, default=False, nullable=True, index=True)
+    # REQUEST=Einladung, REPLY=Antwort, CANCEL=Absage (unverschlüsselt für Filter/Anzeige)
+    calendar_method = Column(String(20), nullable=True)
+    # JSON mit Event-Details: {method, uid, summary, dtstart, dtend, location, organizer, attendees[], status}
+    encrypted_calendar_data = Column(Text, nullable=True)
+
     # Relationships
     user = relationship("User", back_populates="raw_emails")
     mail_account = relationship("MailAccount", back_populates="raw_emails")
@@ -1182,6 +1242,10 @@ class ProcessedEmail(Base):
     was_seen_at_processing = Column(Boolean, nullable=True)
     was_answered_at_processing = Column(Boolean, nullable=True)
 
+    # Hybrid Score-Learning: Welches Modell wurde für Prediction genutzt?
+    used_model_source = Column(String(20), default='global', nullable=False)
+    """'global' = Globales Modell, 'personal' = Per-User Modell"""
+
     # Relationships
     raw_email = relationship("RawEmail", back_populates="processed")
     tag_assignments = relationship(
@@ -1346,6 +1410,11 @@ class AutoRule(Base):
     # - delete: true (VORSICHT!)
     # - stop_processing: false (stoppt weitere Regeln falls true)
     actions_json = Column(Text, nullable=False, default='{}')
+    
+    # Learning-Einstellung
+    # Wenn True: Tag-Zuweisungen durch diese Regel werden als Lernbeispiele verwendet
+    # Default: False (sicher, keine Verschmutzung des Tag-Learnings)
+    enable_learning = Column(Boolean, default=False, nullable=False)
     
     # Statistiken
     times_triggered = Column(Integer, default=0, nullable=False)
@@ -1714,6 +1783,67 @@ class RuleExecutionLog(Base):
     def __repr__(self):
         status = "✅" if self.success else "❌"
         return f"<RuleExecutionLog({status} rule_id={self.rule_id} action={self.action_type})>"
+
+
+class ClassifierMetadata(Base):
+    """
+    Hybrid Score-Learning: Metadata für trainierte Klassifikatoren.
+    
+    Trackt Trainings-Status, Accuracy und Fehler für:
+    - Globale Modelle (user_id = NULL)
+    - Per-User Modelle (user_id = User ID)
+    
+    Classifier-Typen: dringlichkeit, wichtigkeit, spam, kategorie
+    """
+    __tablename__ = "classifier_metadata"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, 
+        ForeignKey("users.id", ondelete="CASCADE"), 
+        nullable=True,
+        index=True
+    )  # NULL für global, sonst User ID
+    classifier_type = Column(String(50), nullable=False)
+    # Werte: "dringlichkeit", "wichtigkeit", "spam", "kategorie"
+    
+    model_version = Column(Integer, default=1, nullable=False)
+    training_samples = Column(Integer, default=0, nullable=False)
+    # Wie viele Samples für Training genutzt
+    
+    last_trained_at = Column(DateTime, nullable=True)
+    accuracy_score = Column(Float, nullable=True)
+    # Optional: Validierungs-Score (0.0-1.0)
+    
+    error_count = Column(Integer, default=0, nullable=False)
+    # Circuit-Breaker: Zählt Load-Fehler, bei >=3 kein Re-Training
+    
+    is_active = Column(Boolean, default=True, nullable=False)
+    # False = Modell deaktiviert (zu viele Fehler oder manuell)
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = Column(
+        DateTime, 
+        default=lambda: datetime.now(UTC), 
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False
+    )
+
+    # Relationships
+    user = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'classifier_type', name='uq_classifier_metadata'),
+        CheckConstraint(
+            "classifier_type IN ('dringlichkeit', 'wichtigkeit', 'spam', 'kategorie')",
+            name='ck_classifier_type_valid'
+        ),
+        Index('idx_classifier_metadata_user_type', 'user_id', 'classifier_type'),
+    )
+
+    def __repr__(self):
+        source = f"user_{self.user_id}" if self.user_id else "global"
+        return f"<ClassifierMetadata({source}/{self.classifier_type} v{self.model_version} samples={self.training_samples})>"
 
 
 if __name__ == "__main__":

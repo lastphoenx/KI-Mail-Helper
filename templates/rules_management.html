@@ -21,6 +21,40 @@ select#rule-tag-value option,
 select#rule-ai-tag-value option {
     padding: 4px 8px;
 }
+
+/* Status-Button klickbar aussehen lassen */
+.btn-toggle-status {
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    vertical-align: top;
+}
+.btn-toggle-status:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+/* Learning-Button klickbar */
+.btn-toggle-learning {
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.btn-toggle-learning:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+/* Aktions-Buttons gleiche Höhe */
+.btn-group .btn {
+    min-height: 38px;
+    display: inline-flex;
+    align-items: flex-start;
+    justify-content: center;
+}
+
+/* Tabellenzeilen oben ausrichten */
+.table tbody td {
+    vertical-align: top;
+}
 </style>
 {% endblock %}
 
@@ -58,8 +92,9 @@ select#rule-ai-tag-value option {
                     <table class="table table-hover">
                         <thead>
                             <tr>
-                                <th width="30">Status</th>
+                                <th width="80">Status</th>
                                 <th>Name</th>
+                                <th>Learning</th>
                                 <th>Priorität</th>
                                 <th>Bedingungen</th>
                                 <th>Aktionen</th>
@@ -71,55 +106,77 @@ select#rule-ai-tag-value option {
                             {% for rule in rules %}
                             <tr data-rule-id="{{ rule.id }}">
                                 <td>
-                                    {% if rule.is_active %}
-                                        <span class="badge bg-success" title="Aktiv">✓</span>
-                                    {% else %}
-                                        <span class="badge bg-secondary" title="Inaktiv">-</span>
-                                    {% endif %}
+                                    <button class="btn btn-toggle-status p-0 border-0" 
+                                            data-rule-id="{{ rule.id }}"
+                                            data-current-status="{{ 'active' if rule.is_active else 'inactive' }}"
+                                            title="Klicken zum {{ 'Deaktivieren' if rule.is_active else 'Aktivieren' }}">
+                                        {% if rule.is_active %}
+                                            <span class="badge bg-success fs-6 px-3 py-2">✓ Aktiv</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary fs-6 px-3 py-2">Inaktiv</span>
+                                        {% endif %}
+                                    </button>
                                 </td>
                                 <td>
-                                    <strong>{{ rule.name }}</strong>
+                                    <strong style="line-height: 36px;">{{ rule.name }}</strong>
                                     {% if rule.description %}
                                         <br><small class="text-muted">{{ rule.description }}</small>
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <span class="badge bg-info">{{ rule.priority }}</span>
+                                    <button class="btn btn-toggle-learning p-0 border-0" 
+                                            data-rule-id="{{ rule.id }}"
+                                            data-current-learning="{{ 'enabled' if rule.enable_learning else 'disabled' }}"
+                                            title="Klicken zum {{ 'Deaktivieren' if rule.enable_learning else 'Aktivieren' }} des Learnings">
+                                        {% if rule.enable_learning %}
+                                            <span class="badge fs-6 px-3 py-2" style="background-color: #6f42c1;">🎓 Aktiv</span>
+                                        {% else %}
+                                            <span class="badge fs-6 px-3 py-2 bg-secondary">🎓 Inaktiv</span>
+                                        {% endif %}
+                                    </button>
                                 </td>
                                 <td>
-                                    <small class="text-muted">
+                                    <span class="badge bg-info fs-6 px-3 py-2">{{ rule.priority }}</span>
+                                </td>
+                                <td>
+                                    <small class="text-muted" style="line-height: 36px;">
                                         {{ rule.conditions|length }} Bedingung(en)
                                     </small>
                                 </td>
                                 <td>
-                                    <small class="text-muted">
+                                    <small class="text-muted" style="line-height: 36px;">
                                         {{ rule.actions|length }} Aktion(en)
                                     </small>
                                 </td>
                                 <td>
-                                    <small>
+                                    <small style="line-height: 36px;">
                                         {{ rule.times_triggered }}x
-                                        {% if rule.last_triggered_at %}
-                                            <br><span class="text-muted">{{ rule.last_triggered_at.strftime('%d.%m.%Y %H:%M') }}</span>
-                                        {% endif %}
                                     </small>
+                                    {% if rule.description and rule.last_triggered_at %}
+                                        <br><span class="text-muted"><small>{{ rule.last_triggered_at.strftime('%d.%m.%Y %H:%M') }}</small></span>
+                                    {% elif rule.last_triggered_at %}
+                                        <br><span class="text-muted"><small>{{ rule.last_triggered_at.strftime('%d.%m.%Y %H:%M') }}</small></span>
+                                    {% endif %}
                                 </td>
                                 <td>
-                                    <div class="btn-group btn-group-sm" role="group">
-                                        <button class="btn btn-outline-primary btn-test-rule" 
+                                    <div class="btn-group" role="group" style="display: flex; align-items: flex-start;">
+                                        <button class="btn btn-outline-primary btn-test-rule px-3" 
                                                 data-rule-id="{{ rule.id }}"
-                                                title="Testen">
-                                            <i class="bi bi-play"></i>
+                                                title="Testen"
+                                                style="min-height: 36px;">
+                                            <i class="bi bi-play"></i> T
                                         </button>
-                                        <button class="btn btn-outline-secondary btn-edit-rule" 
+                                        <button class="btn btn-outline-secondary btn-edit-rule px-3" 
                                                 data-rule-id="{{ rule.id }}"
-                                                title="Bearbeiten">
-                                            <i class="bi bi-pencil"></i>
+                                                title="Bearbeiten"
+                                                style="min-height: 36px;">
+                                            <i class="bi bi-pencil"></i> B
                                         </button>
-                                        <button class="btn btn-outline-danger btn-delete-rule" 
+                                        <button class="btn btn-outline-danger btn-delete-rule px-3" 
                                                 data-rule-id="{{ rule.id }}"
-                                                title="Löschen">
-                                            <i class="bi bi-trash"></i>
+                                                title="Löschen"
+                                                style="min-height: 36px;">
+                                            <i class="bi bi-trash"></i> L
                                         </button>
                                     </div>
                                 </td>
@@ -352,6 +409,16 @@ select#rule-ai-tag-value option {
                         <small class="text-muted">Tags von Ihrer Tag-Verwaltung. Neues Tag? → Erst in Tag-Verwaltung erstellen</small>
                     </div>
                     
+                    <div class="form-check mb-3 ms-3" id="enable-learning-container" style="display: none;">
+                        <input class="form-check-input" type="checkbox" id="rule-enable-learning">
+                        <label class="form-check-label" for="rule-enable-learning">
+                            Zugewiesene Mails als Lernbeispiele verwenden
+                        </label>
+                        <small class="form-text text-muted d-block ms-4">
+                            ⚠️ Verbessert Tag-Vorschläge für ähnliche Mails, kann aber bei falschen Regeln das Learning verschlechtern
+                        </small>
+                    </div>
+                    
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" id="rule-stop-processing">
                         <label class="form-check-label" for="rule-stop-processing">
@@ -476,6 +543,22 @@ const RulesManager = {
         console.log('✅ Tag-Dropdowns befüllt:', selects.filter(s => s).length, 'Selects');
     },
     
+    toggleLearningOption() {
+        // Learning-Option nur anzeigen wenn Tag-Aktion gewählt ist
+        const tagSelect = document.getElementById('rule-apply-tag');
+        const learningContainer = document.getElementById('enable-learning-container');
+        
+        if (tagSelect && learningContainer) {
+            const hasTag = tagSelect.value && tagSelect.value.trim() !== '';
+            learningContainer.style.display = hasTag ? 'block' : 'none';
+            
+            // Reset checkbox wenn kein Tag
+            if (!hasTag) {
+                document.getElementById('rule-enable-learning').checked = false;
+            }
+        }
+    },
+    
     bindEvents() {
         // Create Rule
         document.getElementById('btn-create-rule')?.addEventListener('click', () => this.openRuleEditor());
@@ -488,6 +571,9 @@ const RulesManager = {
         
         // Save Rule
         document.getElementById('btn-save-rule')?.addEventListener('click', () => this.saveRule());
+        
+        // Tag-Dropdown: Toggle Learning-Option
+        document.getElementById('rule-apply-tag')?.addEventListener('change', () => this.toggleLearningOption());
         
         // Apply Rules
         document.getElementById('btn-apply-rules')?.addEventListener('click', () => this.applyRules());
@@ -511,6 +597,26 @@ const RulesManager = {
             btn.addEventListener('click', (e) => {
                 const ruleId = e.target.closest('button').dataset.ruleId;
                 this.deleteRule(ruleId);
+            });
+        });
+        
+        // Toggle Status buttons (Aktivieren/Deaktivieren)
+        document.querySelectorAll('.btn-toggle-status').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                const ruleId = button.dataset.ruleId;
+                const currentStatus = button.dataset.currentStatus;
+                this.toggleStatus(ruleId, currentStatus);
+            });
+        });
+        
+        // Toggle Learning buttons
+        document.querySelectorAll('.btn-toggle-learning').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                const ruleId = button.dataset.ruleId;
+                const currentLearning = button.dataset.currentLearning;
+                this.toggleLearning(ruleId, currentLearning);
             });
         });
     },
@@ -635,11 +741,21 @@ const RulesManager = {
             document.getElementById('rule-mark-flagged').checked = actions.mark_as_flagged || false;
             document.getElementById('rule-apply-tag').value = actions.apply_tag || '';
             document.getElementById('rule-stop-processing').checked = actions.stop_processing || false;
+            
+            console.log('🏷️ apply_tag gesetzt auf:', actions.apply_tag);
+            console.log('🏷️ Select-Wert ist jetzt:', document.getElementById('rule-apply-tag').value);
+            
+            // Enable Learning: ERST Tag prüfen (zeigt Container), DANN Checkbox setzen
+            RulesManager.toggleLearningOption();
+            console.log('🔍 Container display:', document.getElementById('enable-learning-container').style.display);
+            document.getElementById('rule-enable-learning').checked = ruleData.enable_learning || false;
+            console.log('📚 enable_learning geladen:', ruleData.enable_learning, '→ checkbox:', document.getElementById('rule-enable-learning').checked);
         } else {
             // Create mode - reset form
             document.getElementById('form-rule-editor').reset();
             document.getElementById('rule-id').value = '';
             document.getElementById('rule-is-active').checked = true;
+            document.getElementById('enable-learning-container').style.display = 'none';
         }
         
         modal.show();
@@ -742,14 +858,20 @@ const RulesManager = {
             actions.stop_processing = true;
         }
         
+        const enableLearning = document.getElementById('rule-enable-learning').checked;
+        console.log('📚 enable_learning wird gespeichert:', enableLearning);
+        
         const ruleData = {
             name: document.getElementById('rule-name').value.trim(),
             description: document.getElementById('rule-description').value.trim(),
             priority: parseInt(document.getElementById('rule-priority').value),
             is_active: document.getElementById('rule-is-active').checked,
             conditions: conditions,
-            actions: actions
+            actions: actions,
+            enable_learning: enableLearning
         };
+        
+        console.log('📤 Sende ruleData:', JSON.stringify(ruleData, null, 2));
         
         try {
             const url = isEdit ? `/api/rules/${ruleId}` : '/api/rules';
@@ -809,6 +931,88 @@ const RulesManager = {
         } catch (error) {
             console.error('Delete rule failed:', error);
             alert('Fehler beim Löschen');
+        }
+    },
+    
+    async toggleStatus(ruleId, currentStatus) {
+        const newStatus = currentStatus === 'active' ? false : true;
+        
+        try {
+            const response = await fetch(`/api/rules/${ruleId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content
+                },
+                body: JSON.stringify({ is_active: newStatus })
+            });
+            
+            if (response.ok) {
+                // UI aktualisieren ohne Reload
+                const btn = document.querySelector(`button.btn-toggle-status[data-rule-id="${ruleId}"]`);
+                if (btn) {
+                    const badge = btn.querySelector('.badge');
+                    if (newStatus) {
+                        badge.className = 'badge bg-success fs-6 px-3 py-2';
+                        badge.textContent = '✓ Aktiv';
+                        btn.dataset.currentStatus = 'active';
+                        btn.title = 'Klicken zum Deaktivieren';
+                    } else {
+                        badge.className = 'badge bg-secondary fs-6 px-3 py-2';
+                        badge.textContent = 'Inaktiv';
+                        btn.dataset.currentStatus = 'inactive';
+                        btn.title = 'Klicken zum Aktivieren';
+                    }
+                }
+            } else {
+                const error = await response.json();
+                alert('Fehler: ' + (error.error || 'Unbekannter Fehler'));
+            }
+        } catch (error) {
+            console.error('Toggle status failed:', error);
+            alert('Fehler beim Ändern des Status');
+        }
+    },
+    
+    async toggleLearning(ruleId, currentLearning) {
+        const newLearning = currentLearning === 'enabled' ? false : true;
+        
+        try {
+            const response = await fetch(`/api/rules/${ruleId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content
+                },
+                body: JSON.stringify({ enable_learning: newLearning })
+            });
+            
+            if (response.ok) {
+                // UI aktualisieren ohne Reload
+                const btn = document.querySelector(`button.btn-toggle-learning[data-rule-id="${ruleId}"]`);
+                if (btn) {
+                    const badge = btn.querySelector('.badge');
+                    if (newLearning) {
+                        badge.className = 'badge fs-6 px-3 py-2';
+                        badge.style.backgroundColor = '#6f42c1';
+                        badge.textContent = '🎓 Aktiv';
+                        btn.dataset.currentLearning = 'enabled';
+                        btn.title = 'Klicken zum Deaktivieren des Learnings';
+                    } else {
+                        badge.className = 'badge fs-6 px-3 py-2 bg-secondary';
+                        badge.style.backgroundColor = '';
+                        badge.textContent = '🎓 Inaktiv';
+                        btn.dataset.currentLearning = 'disabled';
+                        btn.title = 'Klicken zum Aktivieren des Learnings';
+                    }
+                }
+            } else {
+                const error = await response.json();
+                alert('Fehler: ' + (error.error || 'Unbekannter Fehler'));
+            }
+        } catch (error) {
+            console.error('Toggle learning failed:', error);
+            alert('Fehler beim Ändern des Learning-Status');
         }
     },
     

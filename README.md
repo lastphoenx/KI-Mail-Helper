@@ -19,8 +19,12 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **Provider/Model Selection** – Dynamische Auswahl in Reply Modal (Ollama, OpenAI, Anthropic, Mistral)
 - **Dynamic Temperature Support** – Automatische Erkennung für o1/o3/gpt-5 Modelle
 - **Confidence Tracking** – Transparenz über AI-Analyse-Qualität (0.65-0.9 für Hybrid Booster)
+- **Hybrid Score-Learning** – Global + Personal Classifier pro Benutzer
+  - Global Classifier: Trainiert auf alle User-Korrekturen
+  - Personal Classifier: Individuelles Modell mit TTL-Caching
+  - Fallback-Hierarchie: Personal → Global → AI-Only
 - **Online-Learning System** – SGD-Classifier lernt aus User-Korrekturen (4 Classifier: D/W/Spam/Kategorie)
-- **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (14 Bedingungen)
+- **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (14 Bedingungen, Learning pro Regel)
 - **Customizable Reply Styles** – Anrede, Grussformel, Signatur & Instructions pro Stil + Account-spezifisch
 - **Account-Specific Signatures** – Individuelle Signaturen pro Mail-Account (Geschäft/Privat/Uni)
 - **Trusted Senders + UrgencyBooster** – Account-basierte Whitelist mit Urgency-Override (Global + Per-Account)
@@ -35,6 +39,9 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **Thread-View** – Konversations-basierte Ansicht mit Context
 - **Fetch-Filter** – Account-spezifisch: Ordner, Datum, UNSEEN, Delta-Sync
 - **Multi-Account Dashboard** – Filter Dashboard nach spezifischem Email-Account
+- **Kalender-Erkennung** – Automatische Erkennung von iCalendar-Einladungen (REQUEST/REPLY/CANCEL)
+  - Farbcodierte Kalender-Karte in Detailansicht (blau/grün/rot)
+  - Filter-Dropdown und Badges in Listenansicht
 
 ---
 
@@ -70,6 +77,7 @@ Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher
 - 🛡️ **Email-Anonymisierung:** spaCy PII-Entfernung (3 Levels: Regex, Light, Full) vor Cloud-AI-Übertragung
 - 📊 **Confidence Tracking:** Transparenz über AI-Analyse-Qualität mit ai_confidence/optimize_confidence
 - 🤖 **Core System:** Zero-Knowledge Encryption, 3×3 Prioritäts-Matrix, Multi-Provider AI
+- 🧠 **Hybrid Score-Learning:** Global + Personal Classifier mit TTL-Caching, Fallback-Hierarchie und Auto-Training
 - 🧠 **Online-Learning:** SGD-Classifier mit inkrementellem Training aus User-Korrekturen (D/W/Spam/Kategorie)
 - 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
 - 📥 **Fetch:** IMAP/Gmail OAuth mit account-spezifischen Filtern (Ordner, Datum, UNSEEN)
@@ -94,6 +102,7 @@ This repository was created with multiple AI systems. So far, the codebase has b
 - 🛡️ **Email Anonymization:** spaCy PII removal (3 levels: Regex, Light, Full) before Cloud-AI transmission
 - 📊 **Confidence Tracking:** Transparency in AI analysis quality with ai_confidence/optimize_confidence
 - 🤖 **Core System:** Zero-Knowledge Encryption, 3×3 Priority Matrix, Multi-Provider AI
+- 🧠 **Hybrid Score-Learning:** Global + Personal classifiers with TTL caching, fallback hierarchy and auto-training
 - 🧠 **Online-Learning:** SGD classifiers with incremental training from user corrections (D/W/Spam/Category)
 - 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
 - 📥 **Fetch:** IMAP/Gmail OAuth with account-specific filters (folders, date, UNSEEN)

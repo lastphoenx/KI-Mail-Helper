@@ -98,7 +98,10 @@ archive/
 REORGANIZATION_REPORT.md
 AUDIT_REPORT.md
 Instruction_&_goal.md
-HYBRID_SCORE_LEARNING.md
+
+# Hybrid Score Learning (Development-Dokumentation, nicht für GitHub)
+docs/HYBRID_SCORE_LEARNING.md
+docs/SESSION_REFERENCES.md
 
 # Internal Development Documentation (privat, nicht für GitHub)
 doc/development/               # Privat: Instruction_&_goal.md, Reorganization-Notizen
@@ -119,3 +122,11 @@ emails.db.fresh_clone_EMPTY
 flask_session/
 projects.lnk
 src/tasks/mail_sync_tasks_COMPLETE.py
+
+# Internal dev docs (not for public repo)
+docs/DEPLOYMENT_CHECKLIST.md
+docs/HYBRID_MONITORING_LOGGING.md
+docs/PRESIDIO_MIGRATION_KONZEPT.md
+docs/PRESIDIO_FEATURE_MATRIX.md
+docs/DEEP_REVIEW_PRESIDIO_MIGRATION.md
+docs/PRESIDIO_DEEP_REVIEW.md

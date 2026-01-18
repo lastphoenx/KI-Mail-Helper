@@ -6,6 +6,100 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
+## [2.1.0] - 2026-01-18 (Unreleased)
+
+### 📅 Kalender-Erkennung (Phase 25)
+
+#### Neue Features
+- **Automatische Kalender-Erkennung** – Erkennt iCalendar-Einladungen (iMIP/RFC 6047) beim Email-Abruf
+  - Unterstützte Methoden: REQUEST (Einladung), REPLY (Zu-/Absage), CANCEL (Absage)
+  - Erkennung von Datum, Uhrzeit, Ort, Organisator und Teilnehmern
+- **Prominente Kalender-Karte** – Farbcodierte Anzeige in der Email-Detailansicht
+  - 📅 Blau für Termineinladungen (REQUEST)
+  - ✅ Grün für Terminantworten (REPLY/ACCEPTED)
+  - ❌ Rot für Terminabsagen (CANCEL/DECLINED)
+- **Kalender-Filter in Listenansicht** – Dropdown "📅 Termine" zum Filtern
+  - Alle anzeigen, Nur Termine, Keine Termine
+- **Kalender-Badges** – Farbige Badges vor dem Betreff in der Liste
+  - Unterschiedliche Farben je nach Methode (REQUEST/REPLY/CANCEL)
+- **Robuster iCalendar-Parser** – `icalendar`-Bibliothek mit Regex-Fallback
+
+#### Neue Felder (Datenbank)
+- `is_calendar_invite` (Boolean, indexed) – Schneller Filter
+- `calendar_method` (String) – REQUEST/REPLY/CANCEL für Badges ohne Entschlüsselung
+- `encrypted_calendar_data` (Text) – Verschlüsselte Kalenderdetails (JSON)
+
+#### Geänderte Dateien
+- `src/02_models.py` – Neue Spalten in RawEmail
+- `src/06_mail_fetcher.py` – `_extract_calendar_data()`, `_parse_icalendar()`, `_parse_icalendar_regex()`
+- `src/tasks/mail_sync_tasks.py` – Kalender-Felder in `_persist_raw_emails()`
+- `src/blueprints/emails.py` – Kalender-Filter und Entschlüsselung
+- `templates/email_detail.html` – Kalender-Karte mit Farbcodierung
+- `templates/list_view.html` – Filter-Dropdown und Badges
+
+#### Migrationen
+- `b2c3d4e5f6g7_add_calendar_invite_fields.py` – `is_calendar_invite`, `encrypted_calendar_data`
+- `c3d4e5f6g7h8_add_calendar_method_field.py` – `calendar_method`
+
+---
+
+### ⚡ Auto-Rules UI-Verbesserungen
+
+#### Neue Features
+- **Learning pro Regel** – Learning kann jetzt auf Regel-Ebene aktiviert/deaktiviert werden
+  - Neuer Toggle-Button in der Regeltabelle (🎓 Aktiv / Inaktiv)
+  - Klickbar wie der Status-Toggle
+  - API-Unterstützung: GET/POST/PUT mit `enable_learning` Feld
+- **Verbesserte Regeltabelle** – Übersichtlichere Darstellung
+  - **Status-Toggle** – Klickbarer Button mit Hover-Effekt (grün "Aktiv" / grau "Inaktiv")
+  - **Learning-Spalte** – Separate Spalte mit violettem Toggle-Button
+  - **Aktions-Buttons** – Icons mit Beschriftung: 🧪 T (Testen), ✏️ B (Bearbeiten), 🗑️ L (Löschen)
+  - **Einheitliche Badge-Größen** – Alle Badges (Status, Priorität, Learning) gleich groß
+  - **Vertikale Ausrichtung** – Alle Tabellenzellen oben ausgerichtet
+
+#### Geänderte Dateien
+- `src/blueprints/api.py` – `enable_learning` zu GET/POST/PUT API hinzugefügt
+- `templates/rules_management.html` – Neue Tabellenspalte, CSS und JavaScript
+
+---
+
+### 🧠 Hybrid Score-Learning (Personal Classifier)
+
+#### Neue Features
+- **Personal Classifier System** – Individuelles ML-Modell pro Benutzer
+  - 4 Classifier-Typen: Dringlichkeit, Wichtigkeit, Spam, Kategorie
+  - SGDClassifier mit StandardScaler für konsistente Feature-Skalierung
+  - Automatisches Training aus User-Korrekturen (min. 5 Samples)
+- **Global/Personal Fallback** – Robuste Hierarchie
+  - Personal Classifier verfügbar → nutze Personal
+  - Sonst → Fallback auf Global Classifier
+  - Benutzer-Präferenz über `prefer_personal_classifier` Toggle
+- **Async Training Pipeline** – Celery-basiertes Training
+  - Redis-Lock verhindert parallele Training-Jobs
+  - Throttling: Max 1 Training alle 5 Minuten pro Classifier
+  - Atomic Writes: temp-Datei → os.rename() für Konsistenz
+- **TTL-Caching** – 5-Minuten Cache für Classifier/Scaler
+  - Thread-safe mit Lock-Protection
+  - Negative-Caching mit `_NOT_FOUND` Sentinel
+  - `invalidate_classifier_cache()` für Cache-Flush
+- **Accuracy-Tracking** – LOO oder 5-Fold CV
+  - `ClassifierMetadata` Tabelle mit accuracy_score, training_samples, etc.
+  - Circuit-Breaker ready: Accuracy < 50% → Fallback auf Global
+- **Auto-Training Trigger** – Training startet automatisch nach User-Korrekturen
+- **User-Deletion Cleanup** – Event-Listener löscht Personal Classifier bei User-Löschung
+
+#### Neue Dateien
+- `src/services/personal_classifier_service.py` – Caching, Loading, Prediction
+- `src/tasks/training_tasks.py` – Celery Training Task
+- `migrations/versions/07f565a456dd_add_classifier_metadata_table.py` – DB-Migration
+
+#### Datenbank-Änderungen
+- **Neue Tabelle**: `classifier_metadata` (user_id, classifier_type, accuracy_score, etc.)
+- **User-Feld**: `prefer_personal_classifier` (Boolean, default=False)
+- **ProcessedEmail-Feld**: `used_model_source` ('global', 'personal', 'ai_only')
+
+---
+
 ## [2.0.1] - 2026-01-17
 
 ### 🛠️ Bugfixes & Stabilität

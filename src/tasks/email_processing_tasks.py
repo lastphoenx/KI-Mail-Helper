@@ -20,6 +20,7 @@ from celery.exceptions import Reject
 
 from src.celery_app import celery_app
 from src.helpers.database import get_session_factory
+from src.services.personal_classifier_service import enhance_with_personal_predictions
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,22 @@ def reprocess_email_base(
                 language="de"
             )
             
+            # 7b. Hybrid Score-Learning: Erweitere mit Personal Classifier Predictions
+            try:
+                result, used_model_source = enhance_with_personal_predictions(
+                    user_id=user_id,
+                    raw_email=raw_email,
+                    result=result,
+                    db_session=db
+                )
+                logger.debug(
+                    f"🎯 Personal Classifier: source={used_model_source}, "
+                    f"dring={result.get('dringlichkeit')}, wichtig={result.get('wichtigkeit')}"
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Personal Classifier fehlgeschlagen, nutze AI-only: {e}")
+                used_model_source = "global"  # Fallback bei Fehler
+            
             # Progress-Update
             self.update_state(
                 state='PROGRESS',
@@ -237,6 +254,12 @@ def reprocess_email_base(
             processed.rebase_at = datetime.now(UTC)
             processed.updated_at = datetime.now(UTC)
             processed.optimization_status = models.OptimizationStatus.PENDING.value
+            
+            # Hybrid Score-Learning: Speichere welches Modell genutzt wurde
+            if used_model_source in ("personal", "global"):
+                processed.used_model_source = used_model_source
+            else:
+                processed.used_model_source = "global"  # Default für ai_only
             
             db.commit()
             
