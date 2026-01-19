@@ -42,7 +42,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATABASE_PATH}")
 
 # Feature-Flags für Multi-User Migration
 USE_POSTGRESQL = DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://")
-USE_LEGACY_JOBS = os.getenv("USE_LEGACY_JOBS", "true").lower() == "true"
+# Default: Celery (Redis-basiert) - Legacy Job Queue mit USE_LEGACY_JOBS=true
+USE_LEGACY_JOBS = os.getenv("USE_LEGACY_JOBS", "false").lower() == "true"
 
 if USE_POSTGRESQL:
     logger.info("🐘 PostgreSQL Mode aktiviert")

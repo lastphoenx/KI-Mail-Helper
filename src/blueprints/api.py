@@ -30,19 +30,20 @@ TAG-SUGGESTIONS:
     20. /tag-suggestions/batch-reject (POST) - api_batch_reject_suggestions
     21. /tag-suggestions/batch-approve (POST) - api_batch_approve_suggestions
     22. /tag-suggestions/settings (GET,POST) - api_tag_suggestions_settings
+    23. /classifier-preferences (GET,POST) - api_classifier_preferences
 
 KI-PRIO (Hybrid AI-Pipeline Configuration):
-    23. /ki-prio/vip-senders (GET) - api_get_vip_senders
-    24. /ki-prio/vip-senders (POST) - api_add_vip_sender
-    25. /ki-prio/vip-senders/<id> (PUT) - api_update_vip_sender
-    26. /ki-prio/vip-senders/<id> (DELETE) - api_delete_vip_sender
-    27. /ki-prio/keyword-sets (GET) - api_get_keyword_sets
-    28. /ki-prio/keyword-sets (POST) - api_save_keyword_sets
-    29. /ki-prio/scoring-config (GET) - api_get_scoring_config
-    30. /ki-prio/scoring-config (POST) - api_save_scoring_config
-    31. /ki-prio/user-domains (GET) - api_get_user_domains
-    32. /ki-prio/user-domains (POST) - api_add_user_domain
-    33. /ki-prio/user-domains/<id> (DELETE) - api_delete_user_domain
+    24. /ki-prio/vip-senders (GET) - api_get_vip_senders
+    25. /ki-prio/vip-senders (POST) - api_add_vip_sender
+    26. /ki-prio/vip-senders/<id> (PUT) - api_update_vip_sender
+    27. /ki-prio/vip-senders/<id> (DELETE) - api_delete_vip_sender
+    28. /ki-prio/keyword-sets (GET) - api_get_keyword_sets
+    29. /ki-prio/keyword-sets (POST) - api_save_keyword_sets
+    30. /ki-prio/scoring-config (GET) - api_get_scoring_config
+    31. /ki-prio/scoring-config (POST) - api_save_scoring_config
+    32. /ki-prio/user-domains (GET) - api_get_user_domains
+    33. /ki-prio/user-domains (POST) - api_add_user_domain
+    34. /ki-prio/user-domains/<id> (DELETE) - api_delete_user_domain
 
 SEARCH & EMBEDDINGS:
     34. /search/semantic (GET) - api_semantic_search
@@ -1668,6 +1669,51 @@ def api_tag_suggestions_settings():
             })
     except Exception as e:
         logger.error(f"api_tag_suggestions_settings: Fehler: {type(e).__name__}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@api_bp.route("/classifier-preferences", methods=["GET", "POST"])
+@login_required
+def api_classifier_preferences():
+    """Classifier-Präferenzen: Personal vs. Global ML-Modell.
+    
+    GET: Gibt aktuelle Präferenz zurück
+    POST: Speichert neue Präferenz {"prefer_personal_classifier": bool}
+    """
+    models = _get_models()
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({"error": "Unauthorized"}), 401
+            
+            if request.method == "POST":
+                data = request.get_json() or {}
+                
+                try:
+                    if "prefer_personal_classifier" in data:
+                        user.prefer_personal_classifier = bool(data["prefer_personal_classifier"])
+                        db.commit()
+                        
+                        logger.info(
+                            f"Classifier preference updated for user {user.id}: "
+                            f"prefer_personal={user.prefer_personal_classifier}"
+                        )
+                        return jsonify({"success": True})
+                    else:
+                        return jsonify({"error": "prefer_personal_classifier required"}), 400
+                except Exception as e:
+                    db.rollback()
+                    logger.error(f"api_classifier_preferences: Save-Fehler: {e}")
+                    return jsonify({"error": "Fehler beim Speichern"}), 500
+            
+            # GET: Lade Präferenz aus User-Model
+            return jsonify({
+                "prefer_personal_classifier": getattr(user, 'prefer_personal_classifier', False) or False
+            })
+    except Exception as e:
+        logger.error(f"api_classifier_preferences: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
 

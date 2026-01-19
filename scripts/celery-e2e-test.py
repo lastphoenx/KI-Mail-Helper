@@ -35,7 +35,7 @@ print("")
 print("📋 Pre-Flight Checks...")
 
 # 1. Check USE_LEGACY_JOBS
-use_legacy = os.getenv("USE_LEGACY_JOBS", "true").lower()
+use_legacy = os.getenv("USE_LEGACY_JOBS", "false").lower()
 if use_legacy == "true":
     print("   ⚠️  USE_LEGACY_JOBS=true detected!")
     print("   ⚠️  Dieser Test benötigt Celery-Mode!")

@@ -18,7 +18,9 @@ load_dotenv()
 # ============================================================================
 # BLUEPRINT-SCHALTER
 # ============================================================================
-USE_BLUEPRINTS = os.getenv("USE_BLUEPRINTS", "0") == "1"
+# Default: Blueprint-Architektur (modular, wartbar)
+# Fallback: USE_BLUEPRINTS=0 für Legacy 01_web_app.py
+USE_BLUEPRINTS = os.getenv("USE_BLUEPRINTS", "1") == "1"
 
 import argparse
 import sys

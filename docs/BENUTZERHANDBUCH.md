@@ -391,8 +391,9 @@ Das System lernt aus deinen Korrekturen und erstellt ein **persönliches ML-Mode
 
 **Einstellung aktivieren:**
 1. Gehe zu **⚙️ Einstellungen**
-2. Aktiviere **"Persönlichen Classifier bevorzugen"**
-3. Das System nutzt dann dein Modell, sobald genug Daten vorhanden sind
+2. Scrolle zur Sektion **🧠 Machine Learning – Training & Feedback-Loop**
+3. Aktiviere den Toggle **"🧠 Persönlich trainierte Modelle bevorzugen"**
+4. Das System nutzt dann dein Modell, sobald genug Daten vorhanden sind
 
 > 💡 Bei wenigen Korrekturen fällt das System automatisch auf den Global Classifier zurück.
 

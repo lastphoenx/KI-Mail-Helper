@@ -6,6 +6,38 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
+## [2.1.0] - 2026-01-19 (Unreleased)
+
+### 🏛️ Architektur-Defaults geändert
+
+#### Blueprint-Architektur als Standard
+- **USE_BLUEPRINTS=1** – Blueprint-Architektur ist jetzt Standard (war: Legacy 01_web_app.py)
+- **USE_LEGACY_JOBS=false** – Celery ist jetzt Standard (war: Thread-basierte Job Queue)
+- Legacy-Modus weiterhin verfügbar mit `USE_BLUEPRINTS=0 USE_LEGACY_JOBS=true`
+
+#### Geänderte Dateien
+- `src/00_main.py` – Default von `"0"` auf `"1"` geändert
+- `src/app_factory.py` – Default von `"true"` auf `"false"` geändert
+
+---
+
+### 🧠 Personal Classifier UI-Toggle
+
+#### Neue Features
+- **UI-Toggle in Settings** – "Persönlich trainierte Modelle bevorzugen"
+  - Platzierung: Machine Learning Card, nach Training-Stats, vor dem Training-Button
+  - Speichert `prefer_personal_classifier` Präferenz in DB
+  - Toast-Feedback bei Änderung
+- **API-Endpoint** – `GET/POST /api/classifier-preferences`
+  - Konsistent mit bestehenden Settings-APIs
+  - CSRF-Protected
+
+#### Geänderte Dateien
+- `src/blueprints/api.py` – Neuer Endpoint `api_classifier_preferences()`
+- `templates/settings.html` – Toggle, JavaScript, showToast-Funktion
+
+---
+
 ## [2.1.0] - 2026-01-18 (Unreleased)
 
 ### 📅 Kalender-Erkennung (Phase 25)

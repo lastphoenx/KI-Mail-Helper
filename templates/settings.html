@@ -155,6 +155,19 @@
                                 <small>Letzte Korrektur: <strong id="lastCorrectionDate">--</strong></small>
                             </div>
                         </div>
+                        <div class="col-12">
+                            <hr class="my-3 opacity-25">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="preferPersonalClassifier">
+                                <label class="form-check-label" for="preferPersonalClassifier">
+                                    🧠 Persönlich trainierte Modelle bevorzugen
+                                </label>
+                            </div>
+                            <small class="text-muted d-block mt-1">
+                                Nutzt dein ML-Modell für Dringlichkeit, Wichtigkeit, Spam & Kategorien.
+                                Falls nicht trainiert → automatischer Fallback zu globalem Modell.
+                            </small>
+                        </div>
                         <div class="col-12 d-flex justify-content-end gap-2">
                             <button id="retrainBtn" class="btn btn-primary">
                                 🚀 Neue Modelle trainieren
@@ -1169,6 +1182,18 @@ async function updateModels(pass) {
     }
 }
 
+// Toast-Funktion für Feedback-Meldungen
+function showToast(message, type = 'info') {
+    const alertClass = type === 'success' ? 'alert-success' : 
+                       type === 'error' ? 'alert-danger' : 'alert-info';
+    const toast = document.createElement('div');
+    toast.className = `alert ${alertClass} position-fixed`;
+    toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 250px;';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
 async function loadTrainingStats() {
     try {
         const response = await fetch('/api/training-stats');
@@ -1219,6 +1244,51 @@ async function loadTrainingStats() {
     } catch (err) {
         console.error('Error loading training stats:', err);
     }
+}
+
+async function loadClassifierPreferences() {
+    try {
+        const response = await fetch('/api/classifier-preferences');
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        const checkbox = document.getElementById('preferPersonalClassifier');
+        if (checkbox) {
+            checkbox.checked = data.prefer_personal_classifier || false;
+        }
+    } catch (err) {
+        console.error('Error loading classifier preferences:', err);
+    }
+}
+
+function initClassifierPreferenceToggle() {
+    const checkbox = document.getElementById('preferPersonalClassifier');
+    if (!checkbox) return;
+    
+    checkbox.addEventListener('change', async (e) => {
+        try {
+            const response = await fetch('/api/classifier-preferences', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                },
+                body: JSON.stringify({prefer_personal_classifier: e.target.checked})
+            });
+            
+            if (response.ok) {
+                const status = e.target.checked ? 'aktiviert' : 'deaktiviert';
+                showToast(`Persönliche Classifier ${status}`, 'success');
+            } else {
+                showToast('Fehler beim Speichern', 'error');
+                e.target.checked = !e.target.checked; // Revert
+            }
+        } catch (err) {
+            console.error('Error saving classifier preference:', err);
+            showToast('Fehler beim Speichern', 'error');
+            e.target.checked = !e.target.checked; // Revert
+        }
+    });
 }
 
 async function triggerRetraining() {
@@ -1461,6 +1531,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     initializeProviders();
     loadTrainingStats();
+    loadClassifierPreferences();
+    initClassifierPreferenceToggle();
     
     // CSP-compliant event listeners (no inline handlers) - 3 Settings!
     const providerEmbeddingSelect = document.getElementById('aiProviderSelectEmbedding');
