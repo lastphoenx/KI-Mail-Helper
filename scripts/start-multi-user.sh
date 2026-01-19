@@ -70,8 +70,6 @@ echo ""
 # WICHTIG: .env.local wird von dotenv automatisch geladen!
 # Wir setzen nur explizit die kritischen Variablen
 source venv/bin/activate
-export USE_BLUEPRINTS=1
-export USE_LEGACY_JOBS=false
 export FLASK_RUN_PORT=5003
 
 exec python3 -m src.00_main --serve --https --port 5003
