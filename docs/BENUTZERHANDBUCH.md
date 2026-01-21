@@ -1,6 +1,6 @@
 ﻿# 📧 KI-Mail-Helper – Benutzerhandbuch
 
-**Version:** 2.0.0 (Multi-User Edition)  
+**Version:** 2.2.0 (Multi-User Edition)  
 **Stand:** Januar 2026
 
 ---
@@ -16,9 +16,10 @@
 7. [Auto-Rules](#7-auto-rules)
 8. [Antwort-Stile](#8-antwort-stile)
 9. [KI-Priorisierung](#9-ki-priorisierung)
-10. [Einstellungen](#11-einstellungen)
-11. [Sicherheit & Datenschutz](#12-sicherheit--datenschutz)
-12. [Fehlerbehebung](#13-fehlerbehebung)
+10. [KI-Übersetzer](#10-ki-übersetzer)
+11. [Einstellungen](#11-einstellungen)
+12. [Sicherheit & Datenschutz](#12-sicherheit--datenschutz)
+13. [Fehlerbehebung](#13-fehlerbehebung)
 
 ---
 
@@ -413,7 +414,94 @@ Wenn du Cloud-AI nutzt, kannst du PII automatisch entfernen:
 
 ---
 
-## 10. Einstellungen
+## 10. KI-Übersetzer
+
+Der **KI-Übersetzer** ist ein eigenständiges Tool zur Übersetzung von Texten mit automatischer Spracherkennung.
+
+### Zugang
+
+- **URL:** `/translator` oder über die Navigation "🌍 Übersetzer"
+- **Voraussetzung:** Angemeldeter Benutzer
+
+### Spracherkennung
+
+Die automatische Spracherkennung nutzt **fastText** (Facebook AI) mit dem Modell `lid.176.bin`:
+
+- ✅ **176 Sprachen** werden erkannt
+- ✅ **Sehr schnell** – rein lokal, keine API-Aufrufe
+- ✅ **Genau** – zeigt Konfidenz-Prozentsatz
+
+**Verwendung:**
+1. Text in das Eingabefeld einfügen
+2. Klick auf **"🔍 Sprache erkennen"**
+3. Quellsprache wird automatisch gesetzt
+
+### Übersetzungs-Engines
+
+| Engine | Beschreibung | Vorteile |
+|--------|--------------|----------|
+| **☁️ Cloud (LLM)** | OpenAI, Anthropic, Mistral | Höchste Qualität, alle Sprachpaare |
+| **🏠 Lokal (Opus-MT)** | Helsinki-NLP Modelle | Kostenlos, offline, datenschutzfreundlich |
+
+### Cloud-Übersetzung (LLM)
+
+Nutzt deine konfigurierten KI-Provider für hochwertige Übersetzungen:
+
+**Verfügbare Provider:**
+- **OpenAI:** gpt-4o-mini, gpt-4o, gpt-4-turbo
+- **Anthropic:** claude-sonnet-4-20250514, claude-3-5-haiku-20241022
+- **Mistral:** mistral-large-latest, mistral-small-latest
+
+**Vorteile:**
+- 🌐 Alle Sprachkombinationen möglich
+- 🎯 Kontextbewusste Übersetzungen
+- 📝 Erhält Formatierung und Stil
+
+### Lokale Übersetzung (Opus-MT)
+
+Nutzt **Helsinki-NLP/opus-mt** Modelle von Hugging Face:
+
+**Funktionsweise:**
+1. Modell wird beim ersten Aufruf heruntergeladen (~300 MB pro Sprachpaar)
+2. Modell bleibt im RAM gecached für schnelle Folge-Übersetzungen
+3. Läuft vollständig offline nach Download
+
+**Unterstützte Sprachen:**
+- Englisch, Deutsch, Französisch, Spanisch, Italienisch
+- Portugiesisch, Niederländisch, Russisch, Chinesisch, Japanisch
+- Polnisch, Türkisch, Arabisch, Hindi und mehr
+
+**Hinweis:** Nicht alle Sprachpaare haben direkte Modelle. Bei fehlenden Paaren erscheint eine Fehlermeldung.
+
+### Benutzeroberfläche
+
+```
+┌────────────────────────────────────────────────────────┐
+│  Engine: [☁️ Cloud (LLM) ▼] [🏠 Lokal (Opus-MT) ▼]     │
+├────────────────────────────────────────────────────────┤
+│  Provider: [OpenAI ▼]    Modell: [gpt-4o-mini ▼]       │
+├────────────────────────────────────────────────────────┤
+│  Quellsprache: [🔍 Auto] [de ▼]  Zielsprache: [en ▼]   │
+├────────────────────────────────────────────────────────┤
+│  ┌──────────────────┐   ┌──────────────────┐           │
+│  │ Quelltext        │ → │ Übersetzung      │           │
+│  │                  │   │                  │           │
+│  └──────────────────┘   └──────────────────┘           │
+├────────────────────────────────────────────────────────┤
+│  [🔍 Sprache erkennen]              [🌍 Übersetzen]    │
+└────────────────────────────────────────────────────────┘
+```
+
+### Tipps
+
+- **Lange Texte:** Cloud-LLMs haben Token-Limits, teile sehr lange Texte auf
+- **Fachbegriffe:** Cloud-LLMs verstehen Kontext besser als Opus-MT
+- **Datenschutz:** Nutze Opus-MT für sensible Texte – bleibt lokal
+- **Geschwindigkeit:** Opus-MT ist nach dem ersten Laden sehr schnell
+
+---
+
+## 11. Einstellungen
 
 ### Mail-Accounts
 
@@ -441,7 +529,7 @@ Wenn du Cloud-AI nutzt, kannst du PII automatisch entfernen:
 
 ---
 
-## 11. Sicherheit & Datenschutz
+## 12. Sicherheit & Datenschutz
 
 ### Zero-Knowledge-Architektur
 
@@ -459,7 +547,7 @@ Wenn du Cloud-AI nutzt, kannst du PII automatisch entfernen:
 
 ---
 
-## 12. Fehlerbehebung
+## 13. Fehlerbehebung
 
 ### "Emails werden nicht abgerufen"
 

@@ -12,6 +12,10 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **3×3 Prioritäts-Matrix** – Dringlichkeit × Wichtigkeit mit Farbcodierung + Account-Filter
 - **KI-gestützte Priorisierung** – spaCy NLP (80%) + Keywords (20%) + Ensemble Learning
 - **Multi-Provider AI** – Lokale Modelle (Ollama) oder Cloud (Claude, OpenAI, Mistral)
+- **🌍 KI-Übersetzer** – Standalone Translation Tool
+  - Spracherkennung: fastText (176 Sprachen, lokal)
+  - Cloud-Übersetzung: OpenAI/Anthropic/Mistral
+  - Lokale Übersetzung: Opus-MT (Helsinki-NLP, offline)
 - **Email-Anonymisierung** – spaCy PII-Entfernung (DSGVO-konform) vor Cloud-AI-Übertragung
   - 3 Levels: Regex (EMAIL, PHONE, IBAN, URL), Light (+ PER), Full (+ ORG, GPE, LOC)
   - On-the-fly Anonymisierung: Automatisch beim Reply-Generieren wenn keine anonymisierte Version existiert
@@ -48,7 +52,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## Status
 
-**Version:** 2.0.1  
+**Version:** 2.2.0  
 **Development:** Aktiv  
 **Architecture:** Flask Blueprints + PostgreSQL + Celery  
 **Stability:** Production-ready  

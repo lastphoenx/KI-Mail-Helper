@@ -6,6 +6,48 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
+## [2.2.0] - 2026-01-21 (Unreleased)
+
+### 🌍 KI-Übersetzer (Translator Feature)
+
+#### Neue Features
+- **Standalone Translator Tool** – Erreichbar unter `/translator`
+  - Automatische Spracherkennung via fastText (176 Sprachen)
+  - Cloud-Übersetzung via OpenAI/Anthropic/Mistral
+  - Lokale Übersetzung via Opus-MT (Helsinki-NLP)
+- **fastText Integration**
+  - Facebook's lid.176.bin Modell (126 MB)
+  - Erkennt 176 Sprachen mit Confidence-Score
+  - Lazy-Loading für schnellen App-Start
+- **Opus-MT Integration (lokal)**
+  - Helsinki-NLP/opus-mt-{src}-{tgt} Modelle
+  - ~300MB pro Sprachpaar, gecached in ~/.cache/huggingface
+  - Keine API-Kosten, läuft komplett offline
+- **UI Features**
+  - Engine-Toggle: Cloud-KI vs. Opus-MT (lokal)
+  - Provider/Model-Auswahl für Cloud (kuratierte Liste)
+  - Echtzeit-Spracherkennung beim Tippen
+  - Zielsprachen-Buttons (DE, EN, FR, IT, ES, PT, NL, PL)
+  - Copy-to-Clipboard für Übersetzung
+
+#### Neue Dateien
+- `src/services/translator_service.py` – TranslatorService mit fastText + Opus-MT
+- `src/blueprints/translator.py` – API Endpoints für Übersetzung
+- `templates/translator.html` – Translator UI
+- `models/lid.176.bin` – fastText Language Detection Modell
+
+#### Neue Dependencies
+- `fasttext-wheel==0.9.2` – Language Detection (manuell gepatcht für GCC 13+)
+- `transformers==4.57.6` – Hugging Face Transformers für Opus-MT
+- `sentencepiece==0.2.1` – Tokenizer für MarianMT
+- `torch` (CPU) – PyTorch Backend für Transformers
+
+#### Geänderte Dateien
+- `src/app_factory.py` – translator_bp registriert
+- `templates/base.html` – "🌍 Übersetzer" im Navigationsmenü
+
+---
+
 ## [2.1.0] - 2026-01-19 (Unreleased)
 
 ### 🏛️ Architektur-Defaults geändert
