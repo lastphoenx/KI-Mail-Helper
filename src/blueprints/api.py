@@ -687,8 +687,8 @@ def api_generate_reply(raw_email_id):
     models = _get_models()
     encryption = _get_encryption()
     
-    # Check: Celery Mode?
-    use_celery = os.environ.get("USE_CELERY", "false").lower() == "true"
+    # Check: Celery Mode? (USE_LEGACY_JOBS=false bedeutet Celery)
+    use_celery = os.environ.get("USE_LEGACY_JOBS", "false").lower() == "false"
     
     try:
         with get_db_session() as db:
@@ -989,8 +989,8 @@ def api_reprocess_email(raw_email_id):
     models = _get_models()
     encryption = _get_encryption()
     
-    # Check: Celery Mode?
-    use_celery = os.environ.get("USE_CELERY", "false").lower() == "true"
+    # Check: Celery Mode? (USE_LEGACY_JOBS=false bedeutet Celery)
+    use_celery = os.environ.get("USE_LEGACY_JOBS", "false").lower() == "false"
     
     try:
         with get_db_session() as db:

@@ -761,7 +761,8 @@ def sync_user_emails(self, user_id: int, account_id: int, service_token_id: int,
         mail_sync_v2 = importlib.import_module(".services.mail_sync_v2", "src")
         processing_mod = importlib.import_module(".12_processing", "src")
         ai_client_mod = importlib.import_module(".03_ai_client", "src")
-        sanitizer_mod = importlib.import_module(".04_sanitizer", "src")
+        # HINWEIS: 04_sanitizer entfernt - Sanitization-Level wird jetzt inline berechnet
+        # Die eigentliche Anonymisierung erfolgt in 12_processing.py mit content_sanitizer.py (spaCy NER)
         
         # ═══════════════════════════════════════════════════════════════
         # SCHRITT 1: State mit Server synchronisieren (DELETE + INSERT pro Ordner)
@@ -893,9 +894,9 @@ def sync_user_emails(self, user_id: int, account_id: int, service_token_id: int,
         
         provider = user.preferred_ai_provider or "ollama"
         model = ai_client_mod.resolve_model(provider, user.preferred_ai_model)
-        sanitize_level = sanitizer_mod.get_sanitization_level(
-            ai_client_mod.provider_requires_cloud(provider)
-        )
+        # Level-Logik inline: Cloud-Provider brauchen volle Anonymisierung (Level 3), lokal Level 2
+        is_cloud_provider = ai_client_mod.provider_requires_cloud(provider)
+        sanitize_level = 3 if is_cloud_provider else 2
         ai_instance = ai_client_mod.build_client(provider, model=model)
         
         logger.info(f"🤖 AI-Verarbeitung mit {provider}/{model}")

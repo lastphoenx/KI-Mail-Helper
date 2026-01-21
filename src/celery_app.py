@@ -57,8 +57,8 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     task_reject_on_worker_lost=True,
-    task_time_limit=30 * 60,
-    task_soft_time_limit=25 * 60,
+    task_time_limit=15 * 60,      # 15 Minuten Hard-Limit
+    task_soft_time_limit=12 * 60,  # 12 Minuten Soft-Limit (für lokale LLMs)
     worker_prefetch_multiplier=1,
 )
 

@@ -14,7 +14,7 @@ import logging
 from datetime import datetime, UTC
 from typing import Any, Dict, Optional
 
-from celery.exceptions import Reject
+from celery.exceptions import Reject, SoftTimeLimitExceeded
 
 from src.celery_app import celery_app
 from src.helpers.database import get_session_factory
@@ -64,8 +64,8 @@ def _get_dek_from_service_token(service_token_id: int, user_id: int, db) -> str:
     name="tasks.reply_generation.generate_reply_draft",
     max_retries=3,
     default_retry_delay=60,
-    time_limit=90,       # 90 Sekunden hard limit
-    soft_time_limit=60,  # 60 Sekunden soft limit
+    time_limit=300,       # 5 Minuten hard limit (lokale LLMs können langsam sein)
+    soft_time_limit=240,  # 4 Minuten soft limit
     acks_late=True,
     reject_on_worker_lost=True
 )
@@ -188,62 +188,25 @@ def generate_reply_draft(
             )
             
             if use_anonymization:
-                # Nutze sanitized Content wenn verfügbar
-                if raw_email.encrypted_subject_sanitized and raw_email.encrypted_body_sanitized:
-                    try:
-                        content_for_ai_subject = encryption.EmailDataManager.decrypt_email_subject(
-                            raw_email.encrypted_subject_sanitized, master_key
-                        )
-                        content_for_ai_body = encryption.EmailDataManager.decrypt_email_body(
-                            raw_email.encrypted_body_sanitized, master_key
-                        )
-                        was_anonymized = True
-                        sender_for_ai = "[ABSENDER]"
-                        
-                        if raw_email.encrypted_entity_map:
-                            try:
-                                entity_map_json = encryption.EncryptionManager.decrypt_data(
-                                    raw_email.encrypted_entity_map, master_key
-                                )
-                                entity_map = json.loads(entity_map_json)
-                                logger.debug(f"✅ Entity-Map geladen: {len(entity_map.get('reverse', {}))} Mappings")
-                            except Exception as em_err:
-                                logger.warning(f"⚠️ Entity-Map Entschlüsselung fehlgeschlagen: {em_err}")
-                    except Exception as decrypt_err:
-                        logger.warning(f"Sanitized content decryption failed: {decrypt_err}")
-                else:
-                    # On-the-fly Anonymisierung
-                    try:
-                        from src.services.content_sanitizer import ContentSanitizer
-                        sanitizer = ContentSanitizer()
-                        result = sanitizer.sanitize_with_roles(
-                            subject=decrypted_subject,
-                            body=decrypted_body,
-                            sender=decrypted_sender,
-                            recipient=user.username,
-                            level=2
-                        )
-                        content_for_ai_subject = result.subject
-                        content_for_ai_body = result.body
-                        sender_for_ai = "[ABSENDER]"
-                        entity_map = result.entity_map.to_dict()
-                        was_anonymized = True
-                        
-                        # Speichere in DB
-                        raw_email.encrypted_subject_sanitized = encryption.EmailDataManager.encrypt_email_subject(
-                            result.subject, master_key
-                        )
-                        raw_email.encrypted_body_sanitized = encryption.EmailDataManager.encrypt_email_body(
-                            result.body, master_key
-                        )
-                        raw_email.sanitization_entities_count = result.entities_found
-                        raw_email.encrypted_entity_map = encryption.EncryptionManager.encrypt_data(
-                            json.dumps(entity_map), master_key
-                        )
-                        db.commit()
-                    except Exception as anon_err:
-                        logger.error(f"On-the-fly anonymization failed: {anon_err}")
-                        db.rollback()
+                from src.services.sanitization_helper import get_or_create_sanitized_content
+                san_result = get_or_create_sanitized_content(
+                    raw_email=raw_email,
+                    master_key=master_key,
+                    db_session=db,
+                    level=2,
+                    with_roles=True,
+                    sender=decrypted_sender,
+                    recipient=user.username,
+                    original_subject=decrypted_subject,
+                    original_body=decrypted_body,
+                    logger_prefix="Reply"
+                )
+                content_for_ai_subject = san_result.subject
+                content_for_ai_body = san_result.body
+                was_anonymized = san_result.was_anonymized
+                entity_map = san_result.entity_map
+                if was_anonymized:
+                    sender_for_ai = "[ABSENDER]"
             
             # Progress-Update
             self.update_state(
@@ -304,6 +267,19 @@ def generate_reply_draft(
             
     except Reject:
         raise  # Permanent error
+    
+    except SoftTimeLimitExceeded:
+        # Timeout - sauber ans Frontend melden, kein Retry
+        logger.error(
+            f"⏱️ [Task {self.request.id}] Reply Timeout nach {240}s - "
+            f"LLM zu langsam?"
+        )
+        # Update task state für Frontend
+        self.update_state(
+            state='FAILURE',
+            meta={'error': 'Zeitüberschreitung - Antwort-Generierung dauerte zu lange.'}
+        )
+        return {"status": "failed", "error": "Timeout - Antwort-Generierung zu langsam"}
         
     except Exception as exc:
         logger.error(
