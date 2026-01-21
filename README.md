@@ -2,7 +2,7 @@
 
 **Lokaler KI-Mail-Assistent mit Zero-Knowledge-Architektur**
 
-Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschlüsselung kombiniert. Der Server sieht niemals Klartext-Daten – Entschlüsselung erfolgt ausschließlich im Browser mit deinem Passwort.
+Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschlüsselung kombiniert. Der Server sieht niemals Klartext-Daten – Entschlüsselung erfolgt ausschließlich im Browser mit deinem Passwort. Das ist für mich auch primär ein Projekt um Erfahrungen mit KI zusammeln und um Potentiale zu entdecken und erschliessen - insbesondere auch um leichtgewichtige Lokale Lösungen auszuarbeiten.
 
 ---
 
