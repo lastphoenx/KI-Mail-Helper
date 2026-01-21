@@ -289,6 +289,7 @@ def create_app(config_name="production"):
         tags_bp, api_bp, rules_bp, training_bp, admin_bp
     )
     from .thread_api import thread_api
+    from .blueprints.translator import translator_bp
     
     app.register_blueprint(auth_bp)
     app.register_blueprint(emails_bp)
@@ -300,6 +301,7 @@ def create_app(config_name="production"):
     app.register_blueprint(training_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(thread_api)
+    app.register_blueprint(translator_bp)
     
     # Context Processors für Templates (aus 01_web_app.py Zeile 160-162)
     @app.context_processor
