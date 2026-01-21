@@ -877,6 +877,8 @@ function reprocessEmail(emailId) {
     document.getElementById('progressText').textContent = 'Reprocessing: Email wird neu verarbeitet...';
     document.getElementById('statusMessage').style.display = 'none';
     document.getElementById('closeAnalysisBtn').style.display = 'none';
+    document.getElementById('remainingTime').textContent = '—';
+    document.getElementById('elapsedTime').textContent = '0s';
     
     // Timer für elapsed time
     const startTime = Date.now();
@@ -887,10 +889,15 @@ function reprocessEmail(emailId) {
     
     let progress = 0;
     const progressInterval = setInterval(() => {
-        progress = Math.min(90, progress + Math.random() * 30);
+        progress = Math.min(30, progress + Math.random() * 10);
         document.getElementById('progressBar').style.width = progress + '%';
         document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
-    }, 200);
+    }, 300);
+    
+    // Timeout-Countdown
+    let llmStartTime = null;
+    const TIMEOUT_SECONDS = 600;  // 10 Minuten für lokale LLMs
+    let timeoutInterval = null;
     
     fetch(`/email/${emailId}/reprocess`, {
         method: 'POST',
@@ -901,6 +908,134 @@ function reprocessEmail(emailId) {
     })
     .then(response => response.json())
     .then(data => {
+        // ═══════════════════════════════════════════════════════════════
+        // CELERY PATH: Task gequeued → Poll for status
+        // ═══════════════════════════════════════════════════════════════
+        if (data.task_type === 'celery' && data.task_id) {
+            clearInterval(progressInterval);
+            console.log(`🚀 Celery Reprocess Task gestartet: ${data.task_id}`);
+            document.getElementById('progressText').textContent = 'Reprocess-Task gestartet...';
+            
+            // Poll task status
+            const pollTask = async (taskId, attempt = 0) => {
+                try {
+                    const statusResp = await fetch(`/tasks/${taskId}`, {cache: 'no-store'});
+                    const status = await statusResp.json();
+                    
+                    // Progress update from task
+                    if (status.progress) {
+                        document.getElementById('progressBar').style.width = status.progress + '%';
+                        document.getElementById('progressPercent').textContent = Math.floor(status.progress) + '%';
+                    }
+                    if (status.message) {
+                        document.getElementById('progressText').textContent = status.message;
+                    }
+                    
+                    // LLM-Call gestartet: Timeout-Countdown starten
+                    if (status.phase === 'llm_call' && !llmStartTime) {
+                        llmStartTime = Date.now();
+                        console.log('🤖 LLM-Call gestartet, Timeout-Countdown beginnt');
+                        timeoutInterval = setInterval(() => {
+                            const elapsed = Math.floor((Date.now() - llmStartTime) / 1000);
+                            const remaining = TIMEOUT_SECONDS - elapsed;
+                            if (remaining > 0) {
+                                const mins = Math.floor(remaining / 60);
+                                const secs = remaining % 60;
+                                document.getElementById('remainingTime').textContent = 
+                                    mins > 0 ? `~${mins}m ${secs}s` : `${secs}s`;
+                            } else {
+                                document.getElementById('remainingTime').textContent = '⏱️ Timeout!';
+                            }
+                        }, 1000);
+                    }
+                    
+                    if (status.state === 'SUCCESS' || status.status === 'completed') {
+                        clearInterval(timerInterval);
+                        if (timeoutInterval) clearInterval(timeoutInterval);
+                        document.getElementById('remainingTime').textContent = '✓';
+                        document.getElementById('progressBar').style.width = '100%';
+                        document.getElementById('progressPercent').textContent = '100%';
+                        const result = status.result || {};
+                        document.getElementById('progressText').textContent = 'Reprocess abgeschlossen!';
+                        document.getElementById('statusMessage').style.display = 'block';
+                        document.getElementById('statusMessage').className = 'alert alert-success';
+                        
+                        // Anonymisierungs-Info für UI
+                        let anonInfo = '';
+                        if (result.was_anonymized) {
+                            anonInfo = `<br><small class="text-muted">🛡️ Anonymisiert (${result.entities_anonymized || 0} Entities) für ${result.provider_used}</small>`;
+                        } else if (result.is_cloud_provider === false) {
+                            anonInfo = `<br><small class="text-muted">🏠 Lokale AI (${result.provider_used}) - keine Anonymisierung nötig</small>`;
+                        }
+                        
+                        document.getElementById('statusMessage').innerHTML = `✓ Kategorie: <strong>${result.kategorie_aktion || 'undefined'}</strong> | Score: ${result.score}${anonInfo}`;
+                        const closeBtn = document.getElementById('closeAnalysisBtn');
+                        closeBtn.style.display = 'block';
+                        closeBtn.onclick = () => { modal.hide(); location.reload(); };
+                        btn.disabled = false;
+                        btn.textContent = '🔄 Neu analysieren';
+                        if (markDoneBtn) markDoneBtn.disabled = false;
+                        if (optimizeBtn) optimizeBtn.disabled = false;
+                        return;
+                    }
+                    
+                    if (status.state === 'FAILURE' || status.status === 'failed') {
+                        clearInterval(timerInterval);
+                        if (timeoutInterval) clearInterval(timeoutInterval);
+                        document.getElementById('remainingTime').textContent = '—';
+                        document.getElementById('progressBar').classList.add('bg-danger');
+                        document.getElementById('progressText').textContent = 'Fehler';
+                        document.getElementById('statusMessage').style.display = 'block';
+                        document.getElementById('statusMessage').className = 'alert alert-danger';
+                        document.getElementById('statusMessage').textContent = status.error || 'Reprocess fehlgeschlagen';
+                        const closeBtn = document.getElementById('closeAnalysisBtn');
+                        closeBtn.style.display = 'block';
+                        closeBtn.onclick = () => { modal.hide(); };
+                        btn.disabled = false;
+                        btn.textContent = '🔄 Neu analysieren';
+                        if (markDoneBtn) markDoneBtn.disabled = false;
+                        if (optimizeBtn) optimizeBtn.disabled = false;
+                        return;
+                    }
+                    
+                    // Weiter pollen (max 180 Versuche = 6 Minuten)
+                    if (attempt < 180) {
+                        setTimeout(() => pollTask(taskId, attempt + 1), 2000);
+                    } else {
+                        clearInterval(timerInterval);
+                        if (timeoutInterval) clearInterval(timeoutInterval);
+                        modal.hide();
+                        alert('⚠️ Task läuft noch im Hintergrund. Seite neu laden.');
+                        btn.disabled = false;
+                        btn.textContent = '🔄 Neu analysieren';
+                        if (markDoneBtn) markDoneBtn.disabled = false;
+                        if (optimizeBtn) optimizeBtn.disabled = false;
+                    }
+                } catch (err) {
+                    console.error('Poll error:', err);
+                    if (attempt < 5) {
+                        setTimeout(() => pollTask(taskId, attempt + 1), 3000);
+                    } else {
+                        clearInterval(timerInterval);
+                        if (timeoutInterval) clearInterval(timeoutInterval);
+                        modal.hide();
+                        alert('❌ Polling-Fehler');
+                        btn.disabled = false;
+                        btn.textContent = '🔄 Neu analysieren';
+                        if (markDoneBtn) markDoneBtn.disabled = false;
+                        if (optimizeBtn) optimizeBtn.disabled = false;
+                    }
+                }
+            };
+            
+            // Start polling
+            setTimeout(() => pollTask(data.task_id), 1000);
+            return;
+        }
+        
+        // ═══════════════════════════════════════════════════════════════
+        // LEGACY PATH: Sync response (falls noch verwendet)
+        // ═══════════════════════════════════════════════════════════════
         clearInterval(progressInterval);
         clearInterval(timerInterval);
         document.getElementById('progressBar').style.width = '100%';
@@ -914,7 +1049,7 @@ function reprocessEmail(emailId) {
             closeBtn.style.display = 'block';
             closeBtn.onclick = () => {
                 modal.hide();
-                location.reload();  // Seite neu laden um aktualisierte Daten zu zeigen
+                location.reload();
             };
         } else {
             document.getElementById('progressBar').classList.add('bg-danger');
@@ -926,6 +1061,10 @@ function reprocessEmail(emailId) {
             closeBtn.style.display = 'block';
             closeBtn.onclick = () => { modal.hide(); };
         }
+        btn.disabled = false;
+        btn.textContent = '🔄 Neu analysieren';
+        if (markDoneBtn) markDoneBtn.disabled = false;
+        if (optimizeBtn) optimizeBtn.disabled = false;
     })
     .catch(error => {
         clearInterval(progressInterval);
@@ -938,6 +1077,10 @@ function reprocessEmail(emailId) {
         const closeBtn = document.getElementById('closeAnalysisBtn');
         closeBtn.style.display = 'block';
         closeBtn.onclick = () => { modal.hide(); };
+        btn.disabled = false;
+        btn.textContent = '🔄 Neu analysieren';
+        if (markDoneBtn) markDoneBtn.disabled = false;
+        if (optimizeBtn) optimizeBtn.disabled = false;
     });
 }
 
@@ -982,6 +1125,8 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('progressBar').style.width = '0%';
         document.getElementById('progressPercent').textContent = '0%';
         document.getElementById('progressText').textContent = 'Optimize-Pass läuft...';
+        document.getElementById('remainingTime').textContent = '—';  // Warten auf LLM-Start
+        document.getElementById('elapsedTime').textContent = '0s';
         
         // Timer für elapsed time
         const startTime = Date.now();
@@ -1013,6 +1158,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 clearInterval(progressInterval);
                 console.log(`🚀 Celery Optimize Task gestartet: ${data.task_id}`);
                 document.getElementById('progressText').textContent = 'Optimize-Task gestartet...';
+                document.getElementById('remainingTime').textContent = '—';  // Warten auf LLM-Start
+                
+                // Timeout-Countdown erst nach LLM-Start
+                let llmStartTime = null;
+                const TIMEOUT_SECONDS = 600;  // 10 Minuten für lokale LLMs
+                let timeoutInterval = null;
                 
                 // Poll task status
                 const pollTask = async (taskId, attempt = 0) => {
@@ -1029,15 +1180,44 @@ document.addEventListener('DOMContentLoaded', function() {
                             document.getElementById('progressText').textContent = status.message;
                         }
                         
+                        // LLM-Call gestartet: Timeout-Countdown starten
+                        if (status.phase === 'llm_call' && !llmStartTime) {
+                            llmStartTime = Date.now();
+                            console.log('🤖 LLM-Call gestartet, Timeout-Countdown beginnt');
+                            timeoutInterval = setInterval(() => {
+                                const elapsed = Math.floor((Date.now() - llmStartTime) / 1000);
+                                const remaining = TIMEOUT_SECONDS - elapsed;
+                                if (remaining > 0) {
+                                    const mins = Math.floor(remaining / 60);
+                                    const secs = remaining % 60;
+                                    document.getElementById('remainingTime').textContent = 
+                                        mins > 0 ? `~${mins}m ${secs}s` : `${secs}s`;
+                                } else {
+                                    document.getElementById('remainingTime').textContent = '⏱️ Timeout!';
+                                }
+                            }, 1000);
+                        }
+                        
                         if (status.state === 'SUCCESS' || status.status === 'completed') {
                             clearInterval(timerInterval);
+                            if (timeoutInterval) clearInterval(timeoutInterval);
+                            document.getElementById('remainingTime').textContent = '✓';
                             document.getElementById('progressBar').style.width = '100%';
                             document.getElementById('progressPercent').textContent = '100%';
                             const result = status.result || {};
                             document.getElementById('progressText').textContent = 'Optimize-Pass abgeschlossen!';
                             document.getElementById('statusMessage').style.display = 'block';
                             document.getElementById('statusMessage').className = 'alert alert-success';
-                            document.getElementById('statusMessage').innerHTML = `✓ Neue Kategorie: <strong>${result.kategorie_aktion || 'undefined'}</strong>`;
+                            
+                            // Anonymisierungs-Info für UI
+                            let anonInfo = '';
+                            if (result.was_anonymized) {
+                                anonInfo = `<br><small class="text-muted">🛡️ Anonymisiert (${result.entities_anonymized || 0} Entities) für ${result.provider_used}</small>`;
+                            } else if (result.is_cloud_provider === false) {
+                                anonInfo = `<br><small class="text-muted">🏠 Lokale AI (${result.provider_used}) - keine Anonymisierung nötig</small>`;
+                            }
+                            
+                            document.getElementById('statusMessage').innerHTML = `✓ Neue Kategorie: <strong>${result.kategorie_aktion || 'undefined'}</strong>${anonInfo}`;
                             const closeBtn = document.getElementById('closeAnalysisBtn');
                             closeBtn.style.display = 'block';
                             closeBtn.onclick = () => { modal.hide(); location.reload(); };
@@ -1048,6 +1228,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         if (status.state === 'FAILURE' || status.status === 'failed') {
                             clearInterval(timerInterval);
+                            if (timeoutInterval) clearInterval(timeoutInterval);
+                            document.getElementById('remainingTime').textContent = '—';
                             document.getElementById('progressBar').classList.add('bg-danger');
                             document.getElementById('progressText').textContent = 'Fehler';
                             document.getElementById('statusMessage').style.display = 'block';
@@ -1061,11 +1243,12 @@ document.addEventListener('DOMContentLoaded', function() {
                             return;
                         }
                         
-                        // Weiter pollen (max 90 Versuche = 3 Minuten)
-                        if (attempt < 90) {
+                        // Weiter pollen (max 180 Versuche = 6 Minuten)
+                        if (attempt < 180) {
                             setTimeout(() => pollTask(taskId, attempt + 1), 2000);
                         } else {
                             clearInterval(timerInterval);
+                            if (timeoutInterval) clearInterval(timeoutInterval);
                             modal.hide();
                             alert('⚠️ Task läuft noch im Hintergrund. Seite neu laden.');
                             btn.disabled = false;
@@ -1286,9 +1469,19 @@ document.addEventListener('DOMContentLoaded', function() {
                                 setTimeout(() => {
                                     progressModal.hide();
                                     const result = status.result || {};
+                                    
+                                    // Anonymisierungs-Info für Benutzer
+                                    let anonInfo = '';
+                                    if (result.was_anonymized) {
+                                        anonInfo = `\n🛡️ Anonymisiert (${result.entities_anonymized || 0} Entities) für ${result.provider_used}`;
+                                    } else if (result.is_cloud_provider === false) {
+                                        anonInfo = `\n🏠 Lokale AI (${result.provider_used}) - keine Anonymisierung nötig`;
+                                    }
+                                    
                                     alert('✅ Email erfolgreich neu verarbeitet!\n\n' +
-                                          `Model: ${result.model || 'unbekannt'}\n` +
-                                          `Score: ${result.score !== undefined ? result.score : 'n/a'}`);
+                                          `Model: ${result.model_used || 'unbekannt'}\n` +
+                                          `Score: ${result.score !== undefined ? result.score : 'n/a'}` +
+                                          anonInfo);
                                     location.reload();
                                 }, 500);
                                 return;
@@ -1306,8 +1499,8 @@ document.addEventListener('DOMContentLoaded', function() {
                                 return;
                             }
                             
-                            // Weiter pollen (max 120 Versuche = 4 Minuten)
-                            if (attempt < 120) {
+                            // Weiter pollen (max 300 Versuche = 10 Minuten)
+                            if (attempt < 300) {
                                 setTimeout(() => pollTask(taskId, attempt + 1), 2000);
                             } else {
                                 progressModal.hide();
@@ -2532,7 +2725,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('replyLoading').innerHTML = '<div class="spinner-border spinner-border-sm"></div> Generiere Antwort-Entwurf...';
                 
                     if (data.was_anonymized) {
-                        providerInfo.innerHTML += ' 🔒';
+                        providerInfo.innerHTML += ' <span class="badge bg-success" title="Daten wurden vor dem Senden an Cloud-AI anonymisiert">🛡️ Anonymisiert</span>';
+                    } else {
+                        providerInfo.innerHTML += ' <span class="badge bg-secondary" title="Lokale AI - keine Anonymisierung nötig">🏠 Lokal</span>';
                     }
                     providerInfo.style.display = 'inline';
                 }

@@ -437,6 +437,13 @@ def process_pending_raw_emails(
             effective_mode = "llm_original"  # default
             should_anonymize = False  # Anonymisierung ist unabhängig vom Analyse-Modus
             
+            # 🛡️ KRITISCH: Cloud-Provider MÜSSEN immer anonymisierte Daten erhalten!
+            # Unabhängig von Account-Einstellungen (GDPR/Datenschutz)
+            is_cloud_provider = ai_provider in ["openai", "anthropic", "google"]
+            if is_cloud_provider:
+                should_anonymize = True
+                logger.info(f"🛡️ Cloud-Provider '{ai_provider}' erkannt → Anonymisierung erzwungen")
+            
             try:
                 models_mod = importlib.import_module(".02_models", "src")
                 account = session.query(models_mod.MailAccount).filter_by(id=raw_email.mail_account_id).first()
@@ -448,10 +455,12 @@ def process_pending_raw_emails(
                     # Effektiven Modus berechnen
                     effective_mode = account.effective_ai_mode
                     
-                    # Anonymisierung ist unabhängig (läuft parallel)
-                    should_anonymize = account.anonymize_with_spacy
+                    # Account-Setting kann Anonymisierung zusätzlich aktivieren (z.B. für lokale AI)
+                    # ABER: Cloud-Provider überschreibt IMMER (bereits oben gesetzt)
+                    if not is_cloud_provider:
+                        should_anonymize = account.anonymize_with_spacy
                     
-                    logger.info(f"📧 Account '{account.name}': mode={effective_mode}, anonymize={should_anonymize}")
+                    logger.info(f"📧 Account '{account.name}': mode={effective_mode}, anonymize={should_anonymize}, cloud={is_cloud_provider}")
             except Exception as e:
                 logger.debug(f"Failed to fetch account settings: {e}")
             
@@ -535,6 +544,9 @@ def process_pending_raw_emails(
                 
             elif effective_mode == "spacy_booster":
                 # Booster nutzt IMMER Original-Daten (lokal = sicher, beste Ergebnisse)
+                # HINWEIS: Booster ist konzeptionell NUR für lokale spaCy gedacht, nicht Cloud
+                if is_cloud_provider:
+                    logger.warning("⚠️ spacy_booster mit Cloud-Provider - ungewöhnliche Konfiguration, nutze lokale Booster-Logik")
                 logger.info("⚡ Urgency Booster auf Original-Daten")
                 ai_result = active_ai.analyze_email(
                     subject=decrypted_subject or "",
@@ -549,19 +561,41 @@ def process_pending_raw_emails(
                 )
                 
             elif effective_mode == "llm_original":
-                # AI nutzt Original-Daten (keine Anonymisierung)
-                logger.info("🤖 LLM auf Original-Daten")
-                ai_result = active_ai.analyze_email(
-                    subject=decrypted_subject or "",
-                    body=analysis_body,  # ← Jetzt Plain Text statt HTML!
-                    sender=decrypted_sender or "",
-                    language="de",
-                    context=context_str if context_str else None,
-                    user_id=raw_email.user_id,
-                    account_id=raw_email.mail_account_id,
-                    db=session,
-                    user_enabled_booster=False
-                )
+                # AI nutzt Original-Daten (keine Anonymisierung) - NUR für lokale AI!
+                # 🛡️ KRITISCH: Cloud-Provider MÜSSEN anonymisierte Daten nutzen!
+                if is_cloud_provider and sanitized_subject and sanitized_body:
+                    logger.info("🛡️ LLM auf anonymisierte Daten (Cloud-Provider erzwingt Anonymisierung)")
+                    ai_result = active_ai.analyze_email(
+                        subject=sanitized_subject,
+                        body=sanitized_body,
+                        sender="[SENDER]",  # Auch Sender pseudonymisieren
+                        language="de",
+                        context=context_str if context_str else None,
+                        user_id=raw_email.user_id,
+                        account_id=raw_email.mail_account_id,
+                        db=session,
+                        user_enabled_booster=False
+                    )
+                    if ai_result:
+                        ai_result["_used_anonymized"] = True
+                elif is_cloud_provider:
+                    # Cloud-Provider aber keine Anonymisierung verfügbar → FEHLER, nicht senden!
+                    logger.error("❌ Cloud-Provider ohne anonymisierte Daten - Analyse übersprungen (Datenschutz)")
+                    ai_result = None
+                else:
+                    # Lokale AI: Original-Daten sind sicher
+                    logger.info("🤖 LLM auf Original-Daten (lokale AI)")
+                    ai_result = active_ai.analyze_email(
+                        subject=decrypted_subject or "",
+                        body=analysis_body,  # ← Jetzt Plain Text statt HTML!
+                        sender=decrypted_sender or "",
+                        language="de",
+                        context=context_str if context_str else None,
+                        user_id=raw_email.user_id,
+                        account_id=raw_email.mail_account_id,
+                        db=session,
+                        user_enabled_booster=False
+                    )
                 
             elif effective_mode == "llm_anon":
                 # AI nutzt anonymisierte Daten (Datenschutz für Cloud-LLMs)
@@ -582,19 +616,24 @@ def process_pending_raw_emails(
                     if ai_result:
                         ai_result["_used_anonymized"] = True
                 else:
-                    # Fallback: Anonymisierung fehlgeschlagen oder nicht aktiviert
-                    logger.warning("⚠️ AI-Anon gewählt, aber keine anonymisierten Daten → Fallback auf Original")
-                    ai_result = active_ai.analyze_email(
-                        subject=decrypted_subject or "",
-                        body=analysis_body,  # ← Konsistent: Plain Text statt HTML
-                        sender=decrypted_sender or "",
-                        language="de",
-                        context=context_str if context_str else None,
-                        user_id=raw_email.user_id,
-                        account_id=raw_email.mail_account_id,
-                        db=session,
-                        user_enabled_booster=False
-                    )
+                    # 🛡️ KRITISCH: Cloud-Provider ohne Anonymisierung → NICHT auf Original fallen!
+                    if is_cloud_provider:
+                        logger.error("❌ AI-Anon gewählt + Cloud-Provider, aber keine anonymisierten Daten → Analyse übersprungen (Datenschutz)")
+                        ai_result = None
+                    else:
+                        # Lokale AI: Fallback auf Original ist sicher
+                        logger.warning("⚠️ AI-Anon gewählt, aber keine anonymisierten Daten → Fallback auf Original (lokale AI)")
+                        ai_result = active_ai.analyze_email(
+                            subject=decrypted_subject or "",
+                            body=analysis_body,  # ← Konsistent: Plain Text statt HTML
+                            sender=decrypted_sender or "",
+                            language="de",
+                            context=context_str if context_str else None,
+                            user_id=raw_email.user_id,
+                            account_id=raw_email.mail_account_id,
+                            db=session,
+                            user_enabled_booster=False
+                        )
             
             else:
                 logger.warning(f"⚠️ Unbekannter effective_mode: {effective_mode}, Fallback auf keine Analyse")

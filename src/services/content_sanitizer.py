@@ -184,6 +184,9 @@ class ContentSanitizer:
         'sein', 'Sein', 'seine', 'Seine',
         'mein', 'Mein', 'meine', 'Meine',
         
+        # Anreden (NICHT als Namen erkennen!)
+        'Herr', 'Frau', 'Dr', 'Prof', 'Herrn',
+        
         # Grußformeln - KOMPLETT
         'Lieber', 'Liebe', 'Lieben', 'Liebes',
         'Herzliche', 'Herzlicher', 'Herzlichen', 'Herzlich',
@@ -762,10 +765,41 @@ class ContentSanitizer:
                 counts["URL"] = counts.get("URL", 0) + 1
         body = re.sub(p_url, lambda m: em.get_placeholder(m.group()) or m.group(), body)
         
+        # 7b. Deutsche Geschäftsnummern (HRB, UST-ID, Steuernummer)
+        # HRB/HRA: Handelsregister (HRB 12345, HRA 1234)
+        p_hrb = r'\b(HR[AB])\s*(\d{3,6})\b'
+        for m in re.finditer(p_hrb, body, re.IGNORECASE):
+            full = m.group(0)
+            if full not in em.forward:
+                em.add(full, "BUSINESS_ID")
+                counts["BUSINESS_ID"] = counts.get("BUSINESS_ID", 0) + 1
+        body = re.sub(p_hrb, lambda m: em.get_placeholder(m.group(0)) or m.group(0), body, flags=re.IGNORECASE)
+        
+        # UST-ID / VAT-ID: DE123456789, ATU12345678, CHE-123.456.789
+        p_ust = r'\b(?:UST[-\s]?ID[:\s]*|VAT[-\s]?ID[:\s]*|UID[:\s]*)?([A-Z]{2}[A-Z0-9]?[-\.\s]?\d{2,3}[-\.\s]?\d{3}[-\.\s]?\d{3,4})\b'
+        for m in re.finditer(p_ust, body, re.IGNORECASE):
+            full = m.group(0).strip()
+            # Nur wenn es wie eine echte UST-ID aussieht (mind. 9 Ziffern/Buchstaben nach Ländercode)
+            inner = m.group(1) if m.group(1) else m.group(0)
+            if len(re.sub(r'[\s\-\.]', '', inner)) >= 9 and full not in em.forward:
+                em.add(full, "BUSINESS_ID")
+                counts["BUSINESS_ID"] = counts.get("BUSINESS_ID", 0) + 1
+        body = re.sub(p_ust, lambda m: em.get_placeholder(m.group(0).strip()) or m.group(0) if len(re.sub(r'[\s\-\.]', '', m.group(1) if m.group(1) else m.group(0))) >= 9 else m.group(0), body, flags=re.IGNORECASE)
+        
+        # Deutsche Steuernummer: 12/345/67890 oder 123/456/78901
+        p_steuernr = r'\b(\d{2,3}/\d{3}/\d{4,5})\b'
+        for m in re.finditer(p_steuernr, body):
+            if m.group(0) not in em.forward:
+                em.add(m.group(0), "BUSINESS_ID")
+                counts["BUSINESS_ID"] = counts.get("BUSINESS_ID", 0) + 1
+        body = re.sub(p_steuernr, lambda m: em.get_placeholder(m.group(0)) or m.group(0), body)
+        
         # 8. Namen nach Grußformeln (Begrüßung + Verabschiedung)
-        # Begrüßungen: "Lieber Max", "Hallo Maria", "Sali Peter"
-        gruss_prefixes = r'(?:Lieber|Liebe|Liebes|Hallo|Hi|Hey|Sali|Salü|Ciao|Servus|Moin|Guten\s+Tag|Guten\s+Morgen|Guten\s+Abend|Sehr\s+geehrte[r]?(?:\s+(?:Herr|Frau))?)'
-        p_gruss_start = gruss_prefixes + r'\s+([A-ZÄÖÜ][a-zäöüß]+)'
+        # Begrüßungen: "Lieber Max", "Hallo Maria", "Sali Peter", "Hallo Frau Weber"
+        # Pattern erlaubt optionale Anrede (Herr/Frau/Dr./Prof.) zwischen Gruß und Name
+        gruss_prefixes = r'(?:Lieber|Liebe|Liebes|Hallo|Hi|Hey|Sali|Salü|Ciao|Servus|Moin|Guten\s+Tag|Guten\s+Morgen|Guten\s+Abend|Sehr\s+geehrte[r]?)'
+        anrede_optional = r'(?:\s+(?:Herr|Frau|Dr\.?|Prof\.?))?'
+        p_gruss_start = gruss_prefixes + anrede_optional + r'\s+([A-ZÄÖÜ][a-zäöüß]+)'
         
         for m in re.finditer(p_gruss_start, body):
             name = m.group(1)
@@ -786,6 +820,16 @@ class ContentSanitizer:
                 counts["PERSON"] = counts.get("PERSON", 0) + 1
         
         body = re.sub(p_gruss_end, lambda m: m.group(0)[:-len(m.group(1))] + (em.get_placeholder(m.group(1)) or m.group(1)) if m.group(1) not in self.SPACY_BLACKLIST else m.group(0), body)
+        
+        # 9. Firmennamen mit typischen Suffixen (GmbH, AG, SE, etc.)
+        # Matcht "1&1 Mail & Media GmbH", "Müller AG", "SAP SE", etc.
+        p_company = r'\b((?:[A-ZÄÖÜ][a-zäöüß]*\.?\s*(?:&\s*)?)+\s*(?:GmbH|AG|SE|KG|OHG|e\.?K\.?|Ltd\.?|Inc\.?|Co\.?|Holding))\b'
+        for m in re.finditer(p_company, body):
+            company = m.group(1).strip()
+            if len(company) > 5 and company not in em.forward:  # Mindestlänge
+                em.add(company, "ORG")
+                counts["ORG"] = counts.get("ORG", 0) + 1
+        body = re.sub(p_company, lambda m: em.get_placeholder(m.group(1).strip()) or m.group(0) if len(m.group(1).strip()) > 5 else m.group(0), body)
         
         return subject, body, counts
     

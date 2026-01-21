@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 # Lazy imports
 _models = None
 _encryption = None
+_ai_client = None
+_sanitizer = None
+_scoring = None
 _mail_fetcher_mod = None
 _mail_sync = None
 
@@ -49,6 +52,27 @@ def _get_encryption():
     return _encryption
 
 
+def _get_ai_client():
+    global _ai_client
+    if _ai_client is None:
+        _ai_client = importlib.import_module(".03_ai_client", "src")
+    return _ai_client
+
+
+def _get_sanitizer():
+    global _sanitizer
+    if _sanitizer is None:
+        _sanitizer = importlib.import_module(".04_sanitizer", "src")
+    return _sanitizer
+
+
+def _get_scoring():
+    global _scoring
+    if _scoring is None:
+        _scoring = importlib.import_module(".05_scoring", "src")
+    return _scoring
+
+
 def _get_mail_fetcher_mod():
     global _mail_fetcher_mod
     if _mail_fetcher_mod is None:
@@ -61,6 +85,22 @@ def _get_mail_sync():
     if _mail_sync is None:
         _mail_sync = importlib.import_module(".16_mail_sync", "src")
     return _mail_sync
+
+
+def decrypt_raw_email(raw_email, master_key):
+    """Entschlüsselt RawEmail-Felder für Reprocessing."""
+    encryption = _get_encryption()
+    return {
+        "subject": encryption.EmailDataManager.decrypt_email_subject(
+            raw_email.encrypted_subject or "", master_key
+        ),
+        "sender": encryption.EmailDataManager.decrypt_email_sender(
+            raw_email.encrypted_sender or "", master_key
+        ),
+        "body": encryption.EmailDataManager.decrypt_email_body(
+            raw_email.encrypted_body or "", master_key
+        ),
+    }
 
 
 def _get_imap_fetcher(account, master_key):
@@ -249,8 +289,91 @@ def reprocess_email(raw_email_id):
                 except Exception as e:
                     logger.error(f"reprocess_email: Celery-Fehler: {type(e).__name__}: {e}")
                     return jsonify({"error": "Fehler beim Starten des Reprocess-Tasks"}), 500
+            
+            # ═══════════════════════════════════════════════════════════════
+            # LEGACY PATH (OLD) - Synchronous Processing
+            # ═══════════════════════════════════════════════════════════════
+            encryption = _get_encryption()
+            ai_client = _get_ai_client()
+            sanitizer = _get_sanitizer()
+            scoring = _get_scoring()
 
-            return jsonify({"error": "Synchroner Modus wird nicht mehr unterstützt. Bitte Celery aktivieren."}), 400
+            email = (
+                db.query(models.ProcessedEmail)
+                .join(models.RawEmail)
+                .filter(
+                    models.RawEmail.id == raw_email_id,
+                    models.RawEmail.user_id == user.id,
+                    models.ProcessedEmail.deleted_at == None,
+                )
+                .first()
+            )
+
+            if not email:
+                return jsonify({"error": "ProcessedEmail nicht gefunden"}), 404
+
+            provider = (user.preferred_ai_provider or "ollama").lower()
+            resolved_model = ai_client.resolve_model(provider, user.preferred_ai_model)
+            use_cloud = ai_client.provider_requires_cloud(provider)
+            sanitize_level = sanitizer.get_sanitization_level(use_cloud)
+
+            decrypted = decrypt_raw_email(raw_email, master_key)
+
+            client = ai_client.build_client(provider, model=resolved_model)
+            sanitized_body = sanitizer.sanitize_email(
+                decrypted["body"], level=sanitize_level
+            )
+
+            result = client.analyze_email(
+                subject=decrypted["subject"],
+                body=sanitized_body,
+                language="de"
+            )
+
+            priority = scoring.analyze_priority(
+                result["dringlichkeit"], result["wichtigkeit"]
+            )
+
+            # Zero-Knowledge: Verschlüssele KI-Ergebnisse
+            encrypted_summary = encryption.EmailDataManager.encrypt_summary(
+                result["summary_de"], master_key
+            )
+            encrypted_text = encryption.EmailDataManager.encrypt_summary(
+                result["text_de"], master_key
+            )
+            encrypted_tags = encryption.EmailDataManager.encrypt_summary(
+                ",".join(result.get("tags", [])), master_key
+            )
+
+            email.dringlichkeit = result["dringlichkeit"]
+            email.wichtigkeit = result["wichtigkeit"]
+            email.kategorie_aktion = result["kategorie_aktion"]
+            email.encrypted_tags = encrypted_tags
+            email.spam_flag = result["spam_flag"]
+            email.encrypted_summary_de = encrypted_summary
+            email.encrypted_text_de = encrypted_text
+            email.score = priority["score"]
+            email.matrix_x = priority["matrix_x"]
+            email.matrix_y = priority["matrix_y"]
+            email.farbe = priority["farbe"]
+            email.base_model = resolved_model
+            email.base_provider = provider
+            email.processed_at = datetime.now(UTC)
+            email.rebase_at = datetime.now(UTC)
+            email.updated_at = datetime.now(UTC)
+            email.optimization_status = models.OptimizationStatus.PENDING.value
+
+            db.commit()
+            logger.info(f"✅ Mail {raw_email_id} erneut verarbeitet: Score={email.score}")
+
+            return jsonify(
+                {
+                    "status": "success",
+                    "message": "Email erfolgreich neu verarbeitet",
+                    "score": email.score,
+                    "farbe": email.farbe,
+                }
+            )
 
         except Exception as proc_err:
             db.rollback()
@@ -336,11 +459,106 @@ def optimize_email(raw_email_id):
                 except Exception as e:
                     logger.error(f"optimize_email: Celery-Fehler: {type(e).__name__}: {e}")
                     return jsonify({"error": "Fehler beim Starten des Optimize-Tasks"}), 500
+            
+            # ═══════════════════════════════════════════════════════════════
+            # LEGACY PATH (OLD) - Synchronous Processing
+            # ═══════════════════════════════════════════════════════════════
+            encryption = _get_encryption()
+            ai_client = _get_ai_client()
+            sanitizer = _get_sanitizer()
+            scoring = _get_scoring()
 
-            return jsonify({"error": "Synchroner Modus wird nicht mehr unterstützt. Bitte Celery aktivieren."}), 400
+            email = (
+                db.query(models.ProcessedEmail)
+                .join(models.RawEmail)
+                .filter(
+                    models.RawEmail.id == raw_email_id,
+                    models.RawEmail.user_id == user.id,
+                    models.ProcessedEmail.deleted_at == None,
+                )
+                .first()
+            )
+
+            if not email:
+                return jsonify({"error": "ProcessedEmail nicht gefunden"}), 404
+
+            provider_optimize = (user.preferred_ai_provider_optimize or "ollama").lower()
+            resolved_model = ai_client.resolve_model(
+                provider_optimize, user.preferred_ai_model_optimize
+            )
+            use_cloud = ai_client.provider_requires_cloud(provider_optimize)
+            sanitize_level = sanitizer.get_sanitization_level(use_cloud)
+
+            decrypted = decrypt_raw_email(raw_email, master_key)
+
+            client = ai_client.build_client(provider_optimize, model=resolved_model)
+            logger.info(f"🤖 Optimize-Pass mit {provider_optimize.upper()}/{resolved_model}")
+            sanitized_body = sanitizer.sanitize_email(
+                decrypted["body"], level=sanitize_level
+            )
+
+            result = client.analyze_email(
+                subject=decrypted["subject"],
+                body=sanitized_body,
+                language="de"
+            )
+
+            priority = scoring.analyze_priority(
+                result["dringlichkeit"], result["wichtigkeit"]
+            )
+
+            # Zero-Knowledge: Verschlüssele KI-Ergebnisse
+            encrypted_summary = encryption.EmailDataManager.encrypt_summary(
+                result["summary_de"], master_key
+            )
+            encrypted_text = encryption.EmailDataManager.encrypt_summary(
+                result["text_de"], master_key
+            )
+            encrypted_tags = encryption.EmailDataManager.encrypt_summary(
+                ",".join(result.get("tags", [])), master_key
+            )
+
+            email.optimize_dringlichkeit = result["dringlichkeit"]
+            email.optimize_wichtigkeit = result["wichtigkeit"]
+            email.optimize_kategorie_aktion = result["kategorie_aktion"]
+            email.optimize_encrypted_tags = encrypted_tags
+            email.optimize_spam_flag = result["spam_flag"]
+            email.optimize_encrypted_summary_de = encrypted_summary
+            email.optimize_encrypted_text_de = encrypted_text
+            email.optimize_score = priority["score"]
+            email.optimize_matrix_x = priority["matrix_x"]
+            email.optimize_matrix_y = priority["matrix_y"]
+            email.optimize_farbe = priority["farbe"]
+            email.optimize_confidence = result.get("_phase_y_confidence") if result else None
+            email.optimize_model = resolved_model
+            email.optimize_provider = provider_optimize
+            email.optimization_status = models.OptimizationStatus.DONE.value
+            email.optimization_completed_at = datetime.now(UTC)
+            email.updated_at = datetime.now(UTC)
+
+            db.commit()
+            logger.info(f"✅ Mail {raw_email_id} optimiert: Score={email.optimize_score}")
+
+            return jsonify(
+                {
+                    "status": "success",
+                    "message": "Email erfolgreich optimiert",
+                    "score": email.optimize_score,
+                    "farbe": email.optimize_farbe,
+                    "kategorie_aktion": email.optimize_kategorie_aktion,
+                    "dringlichkeit": email.optimize_dringlichkeit,
+                    "wichtigkeit": email.optimize_wichtigkeit,
+                }
+            )
 
         except Exception as proc_err:
             db.rollback()
+            try:
+                email.optimization_status = models.OptimizationStatus.FAILED.value
+                email.optimization_tried_at = datetime.now(UTC)
+                db.commit()
+            except Exception:
+                pass  # Ignoriere Fehler beim Status-Update
             logger.error(f"❌ Fehler bei Optimize von Email {raw_email_id}: {proc_err}")
             return (
                 jsonify(

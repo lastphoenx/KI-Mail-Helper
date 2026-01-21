@@ -16,13 +16,25 @@ from datetime import datetime, UTC
 from typing import Any, Dict, Optional
 
 from celery import states
-from celery.exceptions import Reject
+from celery.exceptions import Reject, SoftTimeLimitExceeded
 
 from src.celery_app import celery_app
 from src.helpers.database import get_session_factory
 from src.services.personal_classifier_service import enhance_with_personal_predictions
 
 logger = logging.getLogger(__name__)
+
+
+def _get_sanitization_level(use_cloud: bool) -> int:
+    """Bestimmt Anonymisierungs-Level basierend auf Provider.
+    
+    Level 1: Kein Sanitizing (lokale AI)
+    Level 2: Basis-Regex (Email, Phone, IBAN, URL)  
+    Level 3: Voll mit spaCy NER (Namen, Orte, Organisationen) - für Cloud!
+    """
+    if use_cloud:
+        return 3  # Cloud-AI: Volle Anonymisierung mit spaCy NER
+    return 1  # Lokale AI: Keine Anonymisierung nötig
 
 
 # =============================================================================
@@ -80,8 +92,8 @@ def _get_dek_from_service_token(service_token_id: int, user_id: int, db) -> str:
     name="tasks.email_processing.reprocess_email_base",
     max_retries=3,
     default_retry_delay=60,
-    time_limit=120,      # 2 Minuten hard limit
-    soft_time_limit=90,  # 90 Sekunden soft limit
+    time_limit=300,       # 5 Minuten hard limit (lokale LLMs können langsam sein)
+    soft_time_limit=240,  # 4 Minuten soft limit
     acks_late=True,
     reject_on_worker_lost=True
 )
@@ -124,7 +136,6 @@ def reprocess_email_base(
             models = importlib.import_module(".02_models", "src")
             encryption = importlib.import_module(".08_encryption", "src")
             ai_client = importlib.import_module(".03_ai_client", "src")
-            sanitizer = importlib.import_module(".04_sanitizer", "src")
             scoring = importlib.import_module(".05_scoring", "src")
             
             # 1. Phase 2 Security: DEK aus ServiceToken laden
@@ -162,7 +173,7 @@ def reprocess_email_base(
             provider = (user.preferred_ai_provider or "ollama").lower()
             resolved_model = ai_client.resolve_model(provider, user.preferred_ai_model)
             use_cloud = ai_client.provider_requires_cloud(provider)
-            sanitize_level = sanitizer.get_sanitization_level(use_cloud)
+            sanitize_level = _get_sanitization_level(use_cloud)
             
             # Progress-Update
             self.update_state(
@@ -187,9 +198,44 @@ def reprocess_email_base(
                 meta={'progress': 40, 'message': f'AI-Analyse mit {resolved_model}...'}
             )
             
-            # 7. AI-Client und Analyse
+            # 7. AI-Client und Analyse mit ContentSanitizer (spaCy NER für Cloud)
             client = ai_client.build_client(provider, model=resolved_model)
-            sanitized_body = sanitizer.sanitize_email(decrypted_body, level=sanitize_level)
+            sanitized_body = decrypted_body
+            was_anonymized = False
+            entities_count = 0
+            
+            if sanitize_level >= 2:
+                from src.services.sanitization_helper import get_or_create_sanitized_content
+                san_result = get_or_create_sanitized_content(
+                    raw_email=raw_email,
+                    master_key=master_key,
+                    db_session=db,
+                    level=sanitize_level,
+                    original_subject=decrypted_subject,
+                    original_body=decrypted_body,
+                    logger_prefix="Reprocess"
+                )
+                sanitized_body = san_result.body
+                was_anonymized = san_result.was_anonymized
+                entities_count = san_result.entities_count
+                was_cached = san_result.was_cached
+            else:
+                was_cached = False
+            
+            # Progress-Update: LLM-Call beginnt jetzt
+            cache_info = " (Cache)" if was_cached else " (neu)"
+            anon_info = f" | 🛡️ {entities_count} Entities{cache_info}" if was_anonymized else ""
+            self.update_state(
+                state='PROGRESS',
+                meta={
+                    'progress': 50, 
+                    'message': f'🤖 AI-Analyse läuft...{anon_info}', 
+                    'phase': 'llm_call',
+                    'was_anonymized': was_anonymized,
+                    'entities_count': entities_count,
+                    'was_cached': was_cached
+                }
+            )
             
             result = client.analyze_email(
                 subject=decrypted_subject,
@@ -277,11 +323,27 @@ def reprocess_email_base(
                 "dringlichkeit": processed.dringlichkeit,
                 "wichtigkeit": processed.wichtigkeit,
                 "model_used": resolved_model,
-                "provider_used": provider
+                "provider_used": provider,
+                "was_anonymized": was_anonymized,
+                "is_cloud_provider": use_cloud,
+                "entities_anonymized": entities_count
             }
             
     except Reject:
         raise  # Permanent error, don't retry
+    
+    except SoftTimeLimitExceeded:
+        # Timeout - sauber ans Frontend melden, kein Retry
+        logger.error(
+            f"⏱️ [Task {self.request.id}] Reprocess Timeout nach {240}s - "
+            f"lokales LLM zu langsam?"
+        )
+        # Update task state für Frontend
+        self.update_state(
+            state='FAILURE',
+            meta={'error': 'Zeitüberschreitung - AI-Analyse dauerte zu lange. Versuche es mit einem schnelleren Modell.'}
+        )
+        return {"status": "failed", "error": "Timeout - AI zu langsam"}
         
     except Exception as exc:
         logger.error(
@@ -307,9 +369,9 @@ def reprocess_email_base(
     bind=True,
     name="tasks.email_processing.optimize_email_processing",
     max_retries=3,
-    default_retry_delay=120,  # Länger wegen GPT-4 Rate-Limits
-    time_limit=180,           # 3 Minuten max (GPT-4 ist langsamer)
-    soft_time_limit=150,
+    default_retry_delay=120,  # Länger wegen Rate-Limits
+    time_limit=420,            # 7 Minuten hard limit (lokale LLMs + Anonymisierung)
+    soft_time_limit=360,       # 6 Minuten soft limit
     acks_late=True,
     reject_on_worker_lost=True
 )
@@ -349,7 +411,6 @@ def optimize_email_processing(
             models = importlib.import_module(".02_models", "src")
             encryption = importlib.import_module(".08_encryption", "src")
             ai_client = importlib.import_module(".03_ai_client", "src")
-            sanitizer = importlib.import_module(".04_sanitizer", "src")
             scoring = importlib.import_module(".05_scoring", "src")
             
             # 1. Phase 2 Security: DEK aus ServiceToken laden
@@ -390,7 +451,7 @@ def optimize_email_processing(
                 user.preferred_ai_model_optimize
             )
             use_cloud = ai_client.provider_requires_cloud(provider_optimize)
-            sanitize_level = sanitizer.get_sanitization_level(use_cloud)
+            sanitize_level = _get_sanitization_level(use_cloud)
             
             # Progress-Update
             self.update_state(
@@ -407,17 +468,52 @@ def optimize_email_processing(
             )
             
             # Progress-Update
+            anonymize_msg = " + Anonymisierung" if use_cloud else ""
             self.update_state(
                 state='PROGRESS',
                 meta={
                     'progress': 40, 
-                    'message': f'Optimize mit {resolved_model} (kann länger dauern)...'
+                    'message': f'Optimize mit {resolved_model}{anonymize_msg}...'
                 }
             )
             
-            # 7. AI-Client und Analyse (stärkeres Model)
+            # 7. AI-Client und Analyse mit ContentSanitizer (spaCy NER für Cloud)
             client = ai_client.build_client(provider_optimize, model=resolved_model)
-            sanitized_body = sanitizer.sanitize_email(decrypted_body, level=sanitize_level)
+            sanitized_body = decrypted_body
+            was_anonymized = False
+            entities_count = 0
+            was_cached = False
+            
+            if sanitize_level >= 2:
+                from src.services.sanitization_helper import get_or_create_sanitized_content
+                san_result = get_or_create_sanitized_content(
+                    raw_email=raw_email,
+                    master_key=master_key,
+                    db_session=db,
+                    level=sanitize_level,
+                    original_subject=decrypted_subject,
+                    original_body=decrypted_body,
+                    logger_prefix="Optimize"
+                )
+                sanitized_body = san_result.body
+                was_anonymized = san_result.was_anonymized
+                entities_count = san_result.entities_count
+                was_cached = san_result.was_cached
+            
+            # Progress-Update: LLM-Call beginnt jetzt
+            cache_info = " (Cache)" if was_cached else " (neu)"
+            anon_info = f" | 🛡️ {entities_count} Entities{cache_info}" if was_anonymized else ""
+            self.update_state(
+                state='PROGRESS',
+                meta={
+                    'progress': 50, 
+                    'message': f'🤖 Optimize mit {resolved_model}...{anon_info}', 
+                    'phase': 'llm_call',
+                    'was_anonymized': was_anonymized,
+                    'entities_count': entities_count,
+                    'was_cached': was_cached
+                }
+            )
             
             logger.info(f"🤖 Optimize-Pass mit {provider_optimize.upper()}/{resolved_model}")
             
@@ -492,11 +588,40 @@ def optimize_email_processing(
                 "dringlichkeit": processed.optimize_dringlichkeit,
                 "wichtigkeit": processed.optimize_wichtigkeit,
                 "model_used": resolved_model,
-                "provider_used": provider_optimize
+                "provider_used": provider_optimize,
+                "was_anonymized": was_anonymized,
+                "is_cloud_provider": use_cloud,
+                "entities_anonymized": entities_count
             }
             
     except Reject:
         raise  # Permanent error
+    
+    except SoftTimeLimitExceeded:
+        # Timeout - sauber ans Frontend melden, kein Retry
+        logger.error(
+            f"⏱️ [Task {self.request.id}] Optimize Timeout nach {360}s - "
+            f"LLM zu langsam oder Netzwerk-Problem?"
+        )
+        # Update optimization_status auf FAILED
+        try:
+            with SessionFactory() as db:
+                models = importlib.import_module(".02_models", "src")
+                processed = db.query(models.ProcessedEmail).filter_by(
+                    raw_email_id=raw_email_id
+                ).first()
+                if processed:
+                    processed.optimization_status = models.OptimizationStatus.FAILED.value
+                    processed.optimization_tried_at = datetime.now(UTC)
+                    db.commit()
+        except Exception:
+            pass
+        # Update task state für Frontend
+        self.update_state(
+            state='FAILURE',
+            meta={'error': 'Zeitüberschreitung - Optimize dauerte zu lange. Versuche es mit einem schnelleren Modell.'}
+        )
+        return {"status": "failed", "error": "Timeout - Optimize zu langsam"}
         
     except Exception as exc:
         logger.error(
