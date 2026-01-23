@@ -42,8 +42,6 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATABASE_PATH}")
 
 # Feature-Flags für Multi-User Migration
 USE_POSTGRESQL = DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://")
-# Default: Celery (Redis-basiert) - Legacy Job Queue mit USE_LEGACY_JOBS=true
-USE_LEGACY_JOBS = os.getenv("USE_LEGACY_JOBS", "false").lower() == "true"
 
 if USE_POSTGRESQL:
     logger.info("🐘 PostgreSQL Mode aktiviert")
@@ -71,14 +69,8 @@ if not USE_POSTGRESQL:
 
 SessionLocal = sessionmaker(bind=engine)
 
-# Legacy Background Jobs (optional, wenn USE_LEGACY_JOBS=true)
-if USE_LEGACY_JOBS:
-    background_jobs = importlib.import_module(".14_background_jobs", "src")
-    job_queue = background_jobs.BackgroundJobQueue(DATABASE_PATH)
-    logger.info("⚙️  Legacy Job Queue aktiviert (USE_LEGACY_JOBS=true)")
-else:
-    job_queue = None
-    logger.info("🚀 Celery Mode - Legacy Job Queue deaktiviert")
+job_queue = None
+logger.info("🚀 Celery Mode - Legacy Job Queue deaktiviert")
 
 encryption = importlib.import_module(".08_encryption", "src")
 
@@ -128,7 +120,8 @@ def create_app(config_name="production"):
     app.config["SESSION_FILE_DIR"] = session_dir
     
     app.config["SESSION_PERMANENT"] = True
-    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
+    session_lifetime_minutes = int(os.getenv("SESSION_LIFETIME_MINUTES", "60"))
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=session_lifetime_minutes)
     app.config["SESSION_USE_SIGNER"] = False
     app.config["SESSION_KEY_PREFIX"] = "mail_helper_"
     app.config["SESSION_ID_LENGTH"] = 32
@@ -303,7 +296,7 @@ def create_app(config_name="production"):
     app.register_blueprint(thread_api)
     app.register_blueprint(translator_bp)
     
-    # Context Processors für Templates (aus 01_web_app.py Zeile 160-162)
+    # Context Processors für Templates
     @app.context_processor
     def inject_template_globals():
         """Make csrf_token and csp_nonce available in all templates"""

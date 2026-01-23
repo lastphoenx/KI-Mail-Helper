@@ -13,8 +13,6 @@ Routes (10 total):
     9. /api/rules/templates/<name> (POST) - API: Regel aus Template
     10. /rules/execution-log (GET) - Execution Log Page
 
-Extracted from 01_web_app.py lines: 4881-5470
-
 HINWEIS: rules_bp hat KEINEN Prefix. Die /api/rules Routes behalten ihren vollen Pfad!
 """
 
@@ -413,92 +411,29 @@ def api_apply_rules():
             if not master_key:
                 return jsonify({"error": "Master-Key nicht verfügbar"}), 401
             
-            # ═══════════════════════════════════════════════════════════
-            # DUAL-MODE: Celery (Multi-User) vs Legacy
-            # ═══════════════════════════════════════════════════════════
-            use_legacy = os.getenv("USE_LEGACY_JOBS", "false").lower() == "true"
+            # ─────────────────────────────────────────────────────
+            # CELERY MODE: Asynchrone Task-Queue
+            # ─────────────────────────────────────────────────────
+            logger.info("🚀 [CELERY] Applying rules asynchronously")
             
-            if use_legacy:
-                # ─────────────────────────────────────────────────────
-                # LEGACY MODE: Synchrone Ausführung
-                # ─────────────────────────────────────────────────────
-                logger.info("🔧 [LEGACY] Applying rules synchronously")
+            try:
+                import importlib
+                from src.tasks.rule_execution_tasks import (
+                    apply_rules_to_emails,
+                    apply_rules_to_new_emails
+                )
+                auth = importlib.import_module(".07_auth", "src")
+                ServiceTokenManager = auth.ServiceTokenManager
                 
-                try:
-                    from src.auto_rules_engine import AutoRulesEngine
-                    engine = AutoRulesEngine(user.id, master_key, db)
-                    
-                    stats = {
-                        "emails_processed": 0,
-                        "rules_triggered": 0,
-                        "actions_executed": 0,
-                        "errors": 0
-                    }
-                    
-                    if email_ids:
-                        for email_id in email_ids:
-                            try:
-                                results = engine.process_email(email_id, dry_run=False)
-                                
-                                for result in results:
-                                    if result.success:
-                                        stats["rules_triggered"] += 1
-                                        stats["actions_executed"] += len(result.actions_executed)
-                                    else:
-                                        stats["errors"] += 1
-                                
-                                stats["emails_processed"] += 1
-                                
-                            except Exception as e:
-                                logger.error(f"api_apply_rules: Fehler bei E-Mail {email_id}: {type(e).__name__}: {e}")
-                                stats["errors"] += 1
-                    else:
-                        batch_stats = engine.process_new_emails(since_minutes=10080, limit=500)
-                        stats.update(batch_stats)
-                        stats["emails_processed"] = batch_stats.get("emails_checked", 0)
-                    
-                    logger.info(
-                        f"✅ [LEGACY] Auto-Rules angewendet: {stats['emails_processed']} E-Mails, "
-                        f"{stats['rules_triggered']} Regeln ausgelöst"
+                # Phase 2 Security: ServiceToken erstellen (DEK nicht in Redis!)
+                with get_db_session() as token_db:
+                    _, service_token = ServiceTokenManager.create_token(
+                        user_id=user.id,
+                        master_key=master_key,
+                        session=token_db,
+                        days=1  # Rule-Token nur 1 Tag gültig
                     )
-                    
-                    return jsonify({
-                        "success": True,
-                        "stats": stats,
-                        "mode": "legacy"
-                    }), 200
-                    
-                except ImportError as e:
-                    logger.error(f"api_apply_rules: AutoRulesEngine Import-Fehler: {e}")
-                    return jsonify({"error": "Regel-Engine nicht verfügbar"}), 500
-                except Exception as e:
-                    logger.error(f"api_apply_rules: Engine-Fehler: {type(e).__name__}: {e}")
-                    return jsonify({"error": "Fehler beim Anwenden der Regeln"}), 500
-            
-            else:
-                # ─────────────────────────────────────────────────────
-                # CELERY MODE: Asynchrone Task-Queue
-                # ─────────────────────────────────────────────────────
-                logger.info("🚀 [CELERY] Applying rules asynchronously")
-                
-                try:
-                    import importlib
-                    from src.tasks.rule_execution_tasks import (
-                        apply_rules_to_emails,
-                        apply_rules_to_new_emails
-                    )
-                    auth = importlib.import_module(".07_auth", "src")
-                    ServiceTokenManager = auth.ServiceTokenManager
-                    
-                    # Phase 2 Security: ServiceToken erstellen (DEK nicht in Redis!)
-                    with get_db_session() as token_db:
-                        _, service_token = ServiceTokenManager.create_token(
-                            user_id=user.id,
-                            master_key=master_key,
-                            session=token_db,
-                            days=1  # Rule-Token nur 1 Tag gültig
-                        )
-                        service_token_id = service_token.id
+                    service_token_id = service_token.id
                     
                     if email_ids:
                         # Spezifische E-Mails
@@ -538,12 +473,12 @@ def api_apply_rules():
                             "mode": "celery"
                         }), 202  # Accepted
                         
-                except ImportError as e:
-                    logger.error(f"api_apply_rules: Task Import-Fehler: {e}")
-                    return jsonify({"error": "Rule-Tasks nicht verfügbar"}), 500
-                except Exception as e:
-                    logger.error(f"api_apply_rules: Celery-Fehler: {type(e).__name__}: {e}")
-                    return jsonify({"error": "Fehler beim Enqueuen der Rule-Tasks"}), 500
+            except ImportError as e:
+                logger.error(f"api_apply_rules: Task Import-Fehler: {e}")
+                return jsonify({"error": "Rule-Tasks nicht verfügbar"}), 500
+            except Exception as e:
+                logger.error(f"api_apply_rules: Celery-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"error": "Fehler beim Enqueuen der Rule-Tasks"}), 500
                     
     except Exception as e:
         logger.error(f"api_apply_rules: Fehler: {type(e).__name__}: {e}")
@@ -557,13 +492,6 @@ def api_apply_rules():
 @login_required
 def api_rule_task_status(task_id: str):
     """API: Celery Task Status für Rule-Execution abfragen"""
-    import os
-    
-    use_legacy = os.getenv("USE_LEGACY_JOBS", "false").lower() == "true"
-    
-    if use_legacy:
-        return jsonify({"error": "Task-Status nur im Celery-Modus verfügbar"}), 400
-    
     try:
         from src.celery_app import celery_app
         from celery.result import AsyncResult

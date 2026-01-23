@@ -30,12 +30,6 @@ if [ -f ".env.local" ]; then
         FAIL=1
     fi
     
-    if [ "${USE_LEGACY_JOBS:-}" = "false" ]; then
-        echo "   ✅ USE_LEGACY_JOBS=false (Celery aktiv)"
-    else
-        echo "   ⚠️  USE_LEGACY_JOBS nicht false (Legacy noch aktiv)"
-    fi
-    
     if [ -n "${DATABASE_URL:-}" ]; then
         echo "   ✅ DATABASE_URL gesetzt"
     else
@@ -202,7 +196,7 @@ if [ $FAIL -eq 0 ]; then
     echo "🚀 Starte Flask App mit:"
     echo "   cd /home/mailhelper/projects/KI-Mail-Helper-Dev"
     echo "   source venv/bin/activate"
-    echo "   USE_BLUEPRINTS=1 python3 -m src.00_main --serve --https --port 5003"
+    echo "   python3 -m src.00_main --serve --https --port 5003"
     echo ""
     echo "📊 Monitoring:"
     echo "   Flower:  http://localhost:5555"

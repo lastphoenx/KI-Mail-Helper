@@ -9,8 +9,6 @@ Routes (7 total):
     5. /logout (GET) - logout
     6. /settings/2fa/setup (GET, POST) - 2FA setup
     7. /settings/2fa/recovery-codes/regenerate (POST) - regenerate recovery codes
-
-Extracted from 01_web_app.py lines: 647-976, 6497-6581
 """
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
@@ -476,16 +474,32 @@ def verify_2fa():
 @auth_bp.route("/logout")
 @login_required
 def logout():
-    """Logout"""
+    """Logout mit ServiceToken-Cleanup (Security Fix)"""
     username = (
         current_user.user_model.username
         if hasattr(current_user, "user_model")
         else "User"
     )
+    user_id = current_user.user_model.id if hasattr(current_user, "user_model") else None
     ip = request.remote_addr
 
     # Audit Log für Logout
     logger.info(f"SECURITY[LOGOUT]: user={username} ip={ip}")
+
+    # SECURITY FIX: Lösche ALLE aktiven ServiceTokens des Users
+    # Verhindert Token-Leak nach Logout (DEK liegt in Token-DB!)
+    if user_id:
+        try:
+            with get_db_session() as db:
+                deleted_count = db.query(models.ServiceToken).filter_by(
+                    user_id=user_id
+                ).delete()
+                db.commit()
+                if deleted_count > 0:
+                    logger.info(f"SECURITY[LOGOUT]: {deleted_count} ServiceTokens gelöscht für user={username}")
+        except Exception as e:
+            logger.error(f"SECURITY[LOGOUT]: Fehler beim Löschen von ServiceTokens: {e}")
+            # Logout trotzdem fortsetzen
 
     # Zero-Knowledge: Komplette Session löschen (DEK + pending_* + oauth-state etc.)
     session.clear()

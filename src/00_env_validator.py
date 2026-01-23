@@ -143,7 +143,7 @@ class EnvironmentValidator:
         for error in errors:
             print(f"   {error['var']}=<wert>")
         print("\n3. Starte die App neu:")
-        print("   python src/01_web_app.py\n")
+        print("   python3 -m src.00_main --serve\n")
 
         if warnings:
             print("=" * 70)

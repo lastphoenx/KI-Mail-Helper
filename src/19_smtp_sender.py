@@ -794,12 +794,12 @@ class SMTPSender:
         """
         models = importlib.import_module(".02_models", "src")
         encryption = importlib.import_module(".08_encryption", "src")
-        web_app = importlib.import_module(".01_web_app", "src")
+        db_helper = importlib.import_module(".helpers.database", "src")
         
         RawEmail = models.RawEmail
         ProcessedEmail = models.ProcessedEmail
         EncryptionManager = encryption.EncryptionManager
-        SessionLocal = web_app.SessionLocal
+        SessionLocal = db_helper.get_session_factory()
         
         try:
             # Import session factory
@@ -930,10 +930,10 @@ def send_reply_to_email(
         SendResult
     """
     models = importlib.import_module(".02_models", "src")
-    web_app = importlib.import_module(".01_web_app", "src")
+    db_helper = importlib.import_module(".helpers.database", "src")
     
     MailAccount = models.MailAccount
-    SessionLocal = web_app.SessionLocal
+    SessionLocal = db_helper.get_session_factory()
     
     # Mail-Account laden
     # Import session factory

@@ -3,8 +3,6 @@
 
 Routes (1 total):
     1. /retrain (POST) - Trainiert ML-Klassifikatoren
-
-Extracted from 01_web_app.py lines: 2249-2296
 """
 
 from flask import Blueprint, jsonify

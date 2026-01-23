@@ -3,6 +3,22 @@
 {% block title %}E-Mail Liste - Mail Helper{% endblock %}
 
 {% block content %}
+<!-- CSS für erledigte Emails (global) -->
+<style nonce="{{ csp_nonce() }}">
+    /* Erledigte Emails ausgegraut -->
+    li:has(form[action*="/undo"]) {
+        opacity: 0.65;
+        background: linear-gradient(to right, #f8f9fa 0%, #e9ecef 100%) !important;
+    }
+    li:has(form[action*="/undo"]) .email-subject {
+        text-decoration: line-through;
+        color: #6c757d !important;
+    }
+    li:has(form[action*="/undo"]) .badge {
+        opacity: 0.7;
+    }
+</style>
+
 <div class="mb-5 pb-5">
 <h1 class="mb-4">📝 E-Mail Liste</h1>
 
@@ -144,7 +160,7 @@
                         </select>
                     </div>
 
-                    <!-- Status (Done) -->
+<!-- Status (Done) -->
                     <div class="col-md-2">
                         <label class="form-label small mb-1">✓ Bearbeitet</label>
                         <select class="form-select form-select-sm filter-select" data-filter="done">
@@ -337,12 +353,24 @@
                         <button type="submit" class="btn btn-sm btn-success action-btn" data-action="done">✓ Erledigt</button>
                     </form>
                     {% else %}
-                    <span class="badge bg-success">✓ Erledigt</span>
+                    <form method="post" action="/email/{{ email.raw_email_id }}/undo" class="d-inline action-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <button type="submit" class="btn btn-sm btn-outline-success action-btn" data-action="undo" title="Wieder als offen markieren">
+                            ✓ Erledigt
+                        </button>
+                    </form>
                     {% endif %}
+                    <button type="button" class="btn btn-sm btn-outline-warning sync-action-btn" 
+                            data-action="move-trash" data-email-id="{{ email.raw_email_id }}" 
+                            title="In Papierkorb verschieben">🗑️</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger sync-action-btn" 
+                            data-action="delete" data-email-id="{{ email.raw_email_id }}" 
+                            title="Permanent löschen">🗑️ Löschen</button>
                     <a href="/email/{{ email.raw_email_id }}" class="btn btn-sm btn-outline-primary action-btn" data-action="details">Details</a>
                 </div>
             </div>
         </li>
+
         {% else %}
         <li class="list-group-item text-center text-muted py-5">
             Keine E-Mails gefunden
@@ -823,6 +851,74 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     // ===== End Phase F.1 =====
+
+    // ===== Sync Action Buttons (Papierkorb & Permanent Löschen) =====
+    document.querySelectorAll('.sync-action-btn').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            const action = this.dataset.action;
+            const emailId = this.dataset.emailId;
+            
+            let confirmMsg = '';
+            if (action === 'delete') {
+                confirmMsg = '🗑️ Email wirklich PERMANENT LÖSCHEN? Diese Aktion kann nicht rückgängig gemacht werden.';
+            } else if (action === 'move-trash') {
+                confirmMsg = '🗑️ Email in Papierkorb verschieben?';
+            }
+            
+            if (!confirm(confirmMsg)) return;
+            
+            const btn = this;
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '⏳';
+            
+            try {
+                const response = await fetch(`/email/${emailId}/${action}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    },
+                    credentials: 'include'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    // DELETE: Email komplett entfernen
+                    // MOVE-TRASH: Page reload damit Filter korrekt zeigt
+                    if (action === 'delete') {
+                        // Permanent gelöscht → aus Liste entfernen
+                        const listItem = btn.closest('li');
+                        listItem.style.transition = 'opacity 0.3s';
+                        listItem.style.opacity = '0';
+                        setTimeout(() => {
+                            listItem.remove();
+                            // Check if list is empty
+                            const emailList = document.getElementById('emailList');
+                            if (emailList && emailList.querySelectorAll('li').length === 0) {
+                                emailList.innerHTML = '<li class="list-group-item text-center text-muted py-5">Keine E-Mails gefunden</li>';
+                            }
+                        }, 300);
+                    } else if (action === 'move-trash') {
+                        // In Papierkorb → Seite neu laden (zeigt dann in "Gelöscht" Filter)
+                        window.location.reload();
+                    }
+                } else {
+                    alert('❌ ' + (data.error || 'Fehler bei der Aktion'));
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                }
+            } catch (error) {
+                console.error('Sync action error:', error);
+                alert('❌ Netzwerk-Fehler: ' + error.message);
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+    });
+    // ===== End Sync Action Buttons =====
 
     attachActionFormListeners();
 

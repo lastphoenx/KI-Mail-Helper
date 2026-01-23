@@ -1,7 +1,7 @@
 ﻿# src/helpers/responses.py
 """Standardized API response helpers.
 
-Extracted from 01_web_app.py lines 521-565.
+Provides consistent JSON response formatting for all blueprints.
 """
 
 from flask import jsonify

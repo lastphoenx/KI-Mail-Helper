@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <!-- CSP Header wird via Python gesetzt (siehe 01_web_app.py @app.after_request) -->
+    <!-- CSP Header wird via Python gesetzt (siehe src/app_factory.py @app.after_request) -->
     <title>{% block title %}Mail Helper{% endblock %}</title>
     
     <!-- Security Fix (Layer 5): Bootstrap with SRI Hashes -->
@@ -204,6 +204,80 @@
         src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
         integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz"
         crossorigin="anonymous"></script>
+    
+    <!-- Auto-Fetch: Background Mail Fetching -->
+    {% if current_user.is_authenticated and current_user.enable_auto_fetch %}
+    <script nonce="{{ csp_nonce() }}">
+        // Auto-Fetch Configuration
+        const AUTO_FETCH_INTERVAL = 10 * 60 * 1000; // 10 Minuten
+        const AUTO_FETCH_URL = '/api/auto-fetch-mails';
+        
+        let autoFetchIntervalId = null;
+        let lastFetchTime = null;
+        
+        async function triggerAutoFetch() {
+            try {
+                console.log('[Auto-Fetch] Starte Background Mail-Fetch...');
+                const response = await fetch(AUTO_FETCH_URL, {
+                    method: 'GET',
+                    headers: {
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    lastFetchTime = new Date();
+                    console.log(`[Auto-Fetch] ✓ ${data.tasks_queued} Tasks gequeued für ${data.accounts.length} Accounts`);
+                } else {
+                    console.warn('[Auto-Fetch] Fehlgeschlagen:', data.error || 'Unbekannter Fehler');
+                    // Bei 403 (Auto-Fetch deaktiviert) Polling stoppen
+                    if (response.status === 403) {
+                        console.log('[Auto-Fetch] Feature wurde deaktiviert, stoppe Polling');
+                        stopAutoFetch();
+                    }
+                }
+            } catch (error) {
+                console.error('[Auto-Fetch] Fehler:', error);
+            }
+        }
+        
+        function startAutoFetch() {
+            if (autoFetchIntervalId) {
+                console.log('[Auto-Fetch] Bereits aktiv');
+                return;
+            }
+            
+            console.log(`[Auto-Fetch] Aktiviert - Polling alle ${AUTO_FETCH_INTERVAL / 60000} Minuten`);
+            
+            // Erster Fetch nach 30 Sekunden (nicht sofort, damit User sich einloggen kann)
+            setTimeout(triggerAutoFetch, 30000);
+            
+            // Dann alle 10 Minuten
+            autoFetchIntervalId = setInterval(triggerAutoFetch, AUTO_FETCH_INTERVAL);
+        }
+        
+        function stopAutoFetch() {
+            if (autoFetchIntervalId) {
+                clearInterval(autoFetchIntervalId);
+                autoFetchIntervalId = null;
+                console.log('[Auto-Fetch] Gestoppt');
+            }
+        }
+        
+        // Starte Auto-Fetch wenn Seite geladen ist
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', startAutoFetch);
+        } else {
+            startAutoFetch();
+        }
+        
+        // Stoppe Auto-Fetch beim Verlassen der Seite
+        window.addEventListener('beforeunload', stopAutoFetch);
+    </script>
+    {% endif %}
+    
     {% block scripts %}{% endblock %}
 </body>
 </html>

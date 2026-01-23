@@ -34,19 +34,15 @@ print("")
 # ════════════════════════════════════════════════════════════════════════
 print("📋 Pre-Flight Checks...")
 
-# 1. Check USE_LEGACY_JOBS
-use_legacy = os.getenv("USE_LEGACY_JOBS", "false").lower()
-if use_legacy == "true":
-    print("   ⚠️  USE_LEGACY_JOBS=true detected!")
-    print("   ⚠️  Dieser Test benötigt Celery-Mode!")
-    print("")
-    print("   Setze in .env.local: USE_LEGACY_JOBS=false")
-    print("")
-    response = input("   Trotzdem fortfahren? (y/n): ")
-    if response.lower() != 'y':
-        sys.exit(0)
-else:
-    print("   ✅ USE_LEGACY_JOBS=false (Celery aktiv)")
+# 1. Check Redis
+import redis
+try:
+    r = redis.from_url(os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0"))
+    r.ping()
+    print("   ✅ Redis Broker erreichbar")
+except Exception as e:
+    print(f"   ❌ Redis Broker nicht erreichbar: {e}")
+    sys.exit(1)
 
 # 2. Check Worker
 from src.celery_app import celery_app

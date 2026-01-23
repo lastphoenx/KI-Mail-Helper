@@ -839,6 +839,13 @@
                         ✓ Als erledigt markieren
                     </button>
                 </form>
+                {% else %}
+                <form method="post" action="/email/{{ email.raw_email_id }}/undo" id="markUndoneForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <button type="submit" id="markUndoneBtn" class="btn btn-outline-success w-100 mt-3" title="Wieder als offen markieren">
+                        ✓ Erledigt (Klick zum Rückgängig machen)
+                    </button>
+                </form>
                 {% endif %}
             </div>
         </div>

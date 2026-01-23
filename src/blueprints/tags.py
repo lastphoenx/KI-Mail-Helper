@@ -4,8 +4,6 @@
 Routes (2 total):
     1. /tags (GET) - Tag-Management-Seite
     2. /tag-suggestions (GET) - Tag-Vorschläge-Seite
-
-Extracted from 01_web_app.py lines: 2725-2769, 3311-3340
 """
 
 from flask import Blueprint, render_template, redirect, url_for, g, flash

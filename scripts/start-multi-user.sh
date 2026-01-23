@@ -40,19 +40,12 @@ if [ ! -f ".env.local" ]; then
 fi
 
 USE_PG=$(grep "^USE_POSTGRESQL=" .env.local | cut -d'=' -f2)
-USE_LEGACY=$(grep "^USE_LEGACY_JOBS=" .env.local | cut -d'=' -f2)
 
 if [ "$USE_PG" != "true" ]; then
     echo "❌ USE_POSTGRESQL is not 'true' in .env.local!"
     exit 1
 fi
 echo "   ✅ USE_POSTGRESQL=true"
-
-if [ "$USE_LEGACY" != "false" ]; then
-    echo "⚠️  WARNING: USE_LEGACY_JOBS is not 'false' - Legacy-Mode aktiv!"
-else
-    echo "   ✅ USE_LEGACY_JOBS=false"
-fi
 
 # Start Flask
 echo ""

@@ -6,7 +6,51 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
-## [2.2.0] - 2026-01-21 (Unreleased)
+## [2.2.0] - 2026-01-22
+
+### 🧹 Code-Bereinigung & Architektur-Migration
+
+#### Entfernte Legacy-Dateien
+- `src/01_web_app.py` → Vollständig migriert zu Blueprint-Architektur
+- `src/14_background_jobs.py` → Vollständig migriert zu Celery-Tasks (`src/tasks/`)
+- `src/02_models_ph18_trustsender.py` → Obsoletes Model-Fragment entfernt
+- `src/09_migrate_oauth.py` → Migration abgeschlossen, Script nicht mehr benötigt
+- `src/13_migrate_ai_preferences.py` → Migration abgeschlossen
+- `src/16_migrate_user_corrections.py` → Migration abgeschlossen
+- `src/17_migrate_model_tracking.py` → Migration abgeschlossen
+- `src/18_migrate_ml_columns.py` → Migration abgeschlossen
+- `migrations/versions_sqlite_legacy/` → SQLite-Legacy-Support entfernt
+- `src/blueprints/email_actions_legacy.py` → Nicht mehr genutzt
+
+#### Neue Helper-Module
+- `src/helpers/database.py` → Zentrale DB-Session-Verwaltung
+- `src/helpers/responses.py` → Standardisierte API-Responses
+- `src/helpers/validation.py` → Input-Validierung für alle Blueprints
+- `src/helpers/__init__.py` → Helper-Package
+
+#### Breaking Changes
+- ⚠️ **Environment Variables entfernt:**
+  - `USE_LEGACY_JOBS` → Nicht mehr unterstützt
+  - `USE_BLUEPRINTS` → Nicht mehr unterstützt (immer aktiv)
+- ⚠️ **Celery + Redis jetzt erforderlich:**
+  - Alle asynchronen Jobs laufen ausschließlich über Celery
+  - Redis muss als Message Broker verfügbar sein
+  - Siehe: `docs/INSTALLATION.md` für Setup-Anleitung
+
+#### Geänderte Dateien
+- `src/blueprints/api.py` → Batch-Reprocess auf Celery-Task migriert
+- `src/blueprints/rules.py` → Syntax-Fix (Einrückung)
+- `src/thread_api.py` → Import auf `helpers.database` umgestellt
+- `scripts/verify_anonymized_flag.py` → Import auf `helpers.database` umgestellt
+- `README.md` → Referenzen auf `01_web_app.py` entfernt
+- `src/blueprints/*.py` → Header-Kommentare aktualisiert
+- `src/helpers/*.py` → Header-Kommentare aktualisiert
+- `templates/base.html` → Kommentare aktualisiert
+- `src/app_factory.py` → Kommentare aktualisiert
+
+---
+
+## [2.2.0] - 2026-01-21
 
 ### 🌍 KI-Übersetzer (Translator Feature)
 
@@ -53,9 +97,8 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 ### 🏛️ Architektur-Defaults geändert
 
 #### Blueprint-Architektur als Standard
-- **USE_BLUEPRINTS=1** – Blueprint-Architektur ist jetzt Standard (war: Legacy 01_web_app.py)
-- **USE_LEGACY_JOBS=false** – Celery ist jetzt Standard (war: Thread-basierte Job Queue)
-- Legacy-Modus weiterhin verfügbar mit `USE_BLUEPRINTS=0 USE_LEGACY_JOBS=true`
+- **Blueprint-Refactoring** abgeschlossen – Modulare Architektur ist jetzt der einzige Standard
+- **Celery/Redis Queue** – Asynchrone Job-Queue ist jetzt der einzige Standard
 
 #### Geänderte Dateien
 - `src/00_main.py` – Default von `"0"` auf `"1"` geändert

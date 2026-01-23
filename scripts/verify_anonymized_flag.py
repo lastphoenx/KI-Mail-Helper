@@ -16,8 +16,8 @@ from src.services.content_sanitizer import get_sanitizer
 # Import models module properly
 import importlib
 models = importlib.import_module("src.02_models")
-web_app = importlib.import_module("src.01_web_app")
-get_db_session = web_app.get_db_session
+db_helper = importlib.import_module("src.helpers.database")
+get_db_session = db_helper.get_db_session
 
 
 def verify_flag_setting():
@@ -107,25 +107,24 @@ def verify_database_schema():
     print("=" * 60)
     
     try:
-        db = get_db_session()
-        
-        # Check if column exists
-        from sqlalchemy import inspect
-        inspector = inspect(db.bind)
-        columns = [col['name'] for col in inspector.get_columns('processed_emails')]
-        
-        if 'analysis_method' in columns:
-            print("✅ Spalte 'analysis_method' existiert in processed_emails")
-        else:
-            print("❌ FEHLER: Spalte 'analysis_method' NICHT gefunden!")
-            print(f"   Verfügbare Spalten: {', '.join(columns[:10])}...")
-            return False
-        
-        # Try to query an email to see format
-        latest_email = db.query(models.ProcessedEmail)\
-            .filter(models.ProcessedEmail.analysis_method.isnot(None))\
-            .order_by(models.ProcessedEmail.id.desc())\
-            .first()
+        with get_db_session() as db:
+            # Check if column exists
+            from sqlalchemy import inspect
+            inspector = inspect(db.bind)
+            columns = [col['name'] for col in inspector.get_columns('processed_emails')]
+            
+            if 'analysis_method' in columns:
+                print("✅ Spalte 'analysis_method' existiert in processed_emails")
+            else:
+                print("❌ FEHLER: Spalte 'analysis_method' NICHT gefunden!")
+                print(f"   Verfügbare Spalten: {', '.join(columns[:10])}...")
+                return False
+            
+            # Try to query an email to see format
+            latest_email = db.query(models.ProcessedEmail)\
+                .filter(models.ProcessedEmail.analysis_method.isnot(None))\
+                .order_by(models.ProcessedEmail.id.desc())\
+                .first()
         
         if latest_email:
             print(f"✅ Beispiel aus DB gefunden:")

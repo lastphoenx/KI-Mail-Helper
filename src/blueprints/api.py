@@ -1,101 +1,7 @@
 # src/blueprints/api.py
 """API Blueprint - Alle REST-API Endpoints mit /api Prefix.
 
-Routes (67 total) - geordnet nach Funktionsbereich:
-
-EMAILS:
-    1.  /email/<id>/flags (GET) - api_get_email_flags
-    2.  /emails/<id>/tags (GET) - api_get_email_tags
-    3.  /emails/<id>/tag-suggestions (GET) - api_get_email_tag_suggestions
-    4.  /emails/<id>/tags (POST) - api_add_tag_to_email
-    5.  /emails/<id>/tags/<tag_id> (DELETE) - api_remove_tag_from_email
-    6.  /emails/<id>/tags/<tag_id>/reject (POST) - api_reject_tag_for_email
-    7.  /emails/<id>/similar (GET) - api_get_similar_emails
-    8.  /emails/<id>/generate-reply (POST) - api_generate_reply
-    9.  /emails/<id>/check-embedding-compatibility (GET) - api_check_embedding_compat
-    10. /emails/<id>/reprocess (POST) - api_reprocess_email
-
-TAGS:
-    11. /tags (GET) - api_get_tags
-    12. /tags (POST) - api_create_tag
-    13. /tags/<id> (PUT) - api_update_tag
-    14. /tags/<id> (DELETE) - api_delete_tag
-    15. /tags/<id>/negative-examples (GET) - api_get_negative_examples
-
-TAG-SUGGESTIONS:
-    16. /tag-suggestions (GET) - api_get_pending_tag_suggestions
-    17. /tag-suggestions/<id>/approve (POST) - api_approve_tag_suggestion
-    18. /tag-suggestions/<id>/reject (POST) - api_reject_tag_suggestion
-    19. /tag-suggestions/<id>/merge (POST) - api_merge_tag_suggestion
-    20. /tag-suggestions/batch-reject (POST) - api_batch_reject_suggestions
-    21. /tag-suggestions/batch-approve (POST) - api_batch_approve_suggestions
-    22. /tag-suggestions/settings (GET,POST) - api_tag_suggestions_settings
-    23. /classifier-preferences (GET,POST) - api_classifier_preferences
-
-KI-PRIO (Hybrid AI-Pipeline Configuration):
-    24. /ki-prio/vip-senders (GET) - api_get_vip_senders
-    25. /ki-prio/vip-senders (POST) - api_add_vip_sender
-    26. /ki-prio/vip-senders/<id> (PUT) - api_update_vip_sender
-    27. /ki-prio/vip-senders/<id> (DELETE) - api_delete_vip_sender
-    28. /ki-prio/keyword-sets (GET) - api_get_keyword_sets
-    29. /ki-prio/keyword-sets (POST) - api_save_keyword_sets
-    30. /ki-prio/scoring-config (GET) - api_get_scoring_config
-    31. /ki-prio/scoring-config (POST) - api_save_scoring_config
-    32. /ki-prio/user-domains (GET) - api_get_user_domains
-    33. /ki-prio/user-domains (POST) - api_add_user_domain
-    34. /ki-prio/user-domains/<id> (DELETE) - api_delete_user_domain
-
-SEARCH & EMBEDDINGS:
-    34. /search/semantic (GET) - api_semantic_search
-    35. /embeddings/stats (GET) - api_embeddings_stats
-    36. /batch-reprocess-embeddings (POST) - api_batch_reprocess_embeddings
-
-REPLY-STYLES:
-    37. /reply-tones (GET) - api_get_reply_tones
-    38. /reply-styles (GET) - api_get_reply_styles
-    39. /reply-styles/<key> (GET) - api_get_reply_style
-    40. /reply-styles/<key> (PUT) - api_update_reply_style
-    41. /reply-styles/<key> (DELETE) - api_delete_reply_style
-    42. /reply-styles/preview (POST) - api_preview_reply_style
-
-RULES (API-Part):
-    43. /rules (GET) - api_get_rules
-    44. /rules (POST) - api_create_rule
-    45. /rules/<id> (PUT) - api_update_rule
-    46. /rules/<id> (DELETE) - api_delete_rule
-    47. /rules/<id>/test (POST) - api_test_rule
-    48. /rules/apply (POST) - api_apply_rules
-    49. /rules/templates (GET) - api_get_rule_templates
-    50. /rules/templates/<name> (POST) - api_apply_rule_template
-
-ACCOUNTS & MODELS:
-    51. /accounts (GET) - api_get_accounts
-    52. /models/<provider> (GET) - api_get_models
-    53. /available-models/<provider> (GET) - api_available_models
-    54. /available-providers (GET) - api_available_providers
-    55. /training-stats (GET) - api_training_stats
-
-IMAP:
-    56. /imap-diagnostics/<id> (POST) - api_imap_diagnostics
-
-TRUSTED-SENDERS:
-    57. /trusted-senders (GET) - api_get_trusted_senders
-    58. /trusted-senders (POST) - api_add_trusted_sender
-    59. /trusted-senders/<id> (PATCH) - api_update_trusted_sender
-    60. /trusted-senders/<id> (DELETE) - api_delete_trusted_sender
-    61. /trusted-senders/suggestions (GET) - api_get_trusted_sender_suggestions
-    62. /trusted-senders/bulk-add (POST) - api_bulk_add_trusted_senders
-
-URGENCY-BOOSTER:
-    63. /settings/urgency-booster (GET) - api_get_urgency_booster
-    64. /settings/urgency-booster (POST) - api_save_urgency_booster
-    65. /accounts/urgency-booster-settings (GET) - api_get_urgency_booster_settings
-    66. /accounts/<id>/urgency-booster (POST) - api_save_account_urgency_booster
-
-IMAP SCANNER:
-    67. /scan-account-senders/<id> (POST) - api_scan_account_senders
-
-Extracted from 01_web_app.py various sections.
+Routes (67 total) - geordnet nach Funktionsbereich.
 """
 
 from flask import Blueprint, request, jsonify, session, g
@@ -687,9 +593,6 @@ def api_generate_reply(raw_email_id):
     models = _get_models()
     encryption = _get_encryption()
     
-    # Check: Celery Mode? (USE_LEGACY_JOBS=false bedeutet Celery)
-    use_celery = os.environ.get("USE_LEGACY_JOBS", "false").lower() == "false"
-    
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
@@ -713,113 +616,24 @@ def api_generate_reply(raw_email_id):
             if not raw_email:
                 return jsonify({"success": False, "error": "Email nicht gefunden"}), 404
             
-            # Master-Key prüfen
-            master_key = session.get("master_key")
-            if not master_key:
-                return jsonify({"success": False, "error": "Master-Key nicht verfügbar"}), 401
-            
             # ═══════════════════════════════════════════════════════════════
-            # CELERY PATH (NEW) - Async Processing
+            # CELERY PATH (Standard) - Async Processing
             # ═══════════════════════════════════════════════════════════════
-            if use_celery:
-                from src.tasks.reply_generation_tasks import generate_reply_draft
-                auth = importlib.import_module(".07_auth", "src")
-                ServiceTokenManager = auth.ServiceTokenManager
-                
-                try:
-                    # Phase 2 Security: ServiceToken erstellen
-                    _, service_token = ServiceTokenManager.create_token(
-                        user_id=user.id,
-                        master_key=master_key,
-                        session=db,
-                        days=1  # Reply-Token nur 1 Tag gültig
-                    )
-                    
-                    # Provider/Model Selection (hier vorab, da Task sie braucht)
-                    ai_client = _get_ai_client()
-                    if requested_provider and requested_model:
-                        provider = requested_provider.lower()
-                        resolved_model = ai_client.resolve_model(provider, requested_model, kind="optimize")
-                    else:
-                        provider = (getattr(user, 'preferred_ai_provider_optimize', None) or 
-                                   getattr(user, 'preferred_ai_provider', None) or "ollama").lower()
-                        optimize_model = getattr(user, 'preferred_ai_model_optimize', None) or getattr(user, 'preferred_ai_model', None)
-                        resolved_model = ai_client.resolve_model(provider, optimize_model, kind="optimize")
-                    
-                    # Anonymisierungs-Default ermitteln
-                    if use_anonymization is None:
-                        cloud_providers = ["openai", "anthropic", "google"]
-                        use_anonymization = provider in cloud_providers
-                    
-                    # Task starten (ASYNC!)
-                    task = generate_reply_draft.delay(
-                        user_id=user.id,
-                        raw_email_id=raw_email_id,
-                        service_token_id=service_token.id,
-                        tone=tone,
-                        provider=provider,
-                        model=resolved_model,
-                        use_anonymization=use_anonymization
-                    )
-                    
-                    logger.info(f"✅ GenerateReply Task {task.id} gequeued für Email {raw_email_id}")
-                    
-                    return jsonify({
-                        "success": True,
-                        "status": "queued",
-                        "task_id": task.id,
-                        "task_type": "celery",
-                        "message": "Antwort-Entwurf wird generiert..."
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"api_generate_reply: Celery-Fehler: {type(e).__name__}: {e}")
-                    return jsonify({"success": False, "error": "Fehler beim Starten des Reply-Tasks"}), 500
-            
-            # ═══════════════════════════════════════════════════════════════
-            # LEGACY PATH (OLD) - Synchronous Processing
-            # ═══════════════════════════════════════════════════════════════
-            processed = db.query(models.ProcessedEmail).filter(
-                models.ProcessedEmail.raw_email_id == raw_email_id,
-                models.ProcessedEmail.deleted_at == None
-            ).first()
-            
-            if not processed:
-                return jsonify({"success": False, "error": "ProcessedEmail nicht gefunden"}), 404
+            from src.tasks.reply_generation_tasks import generate_reply_draft
+            auth = importlib.import_module(".07_auth", "src")
+            ServiceTokenManager = auth.ServiceTokenManager
             
             try:
-                decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
-                    raw_email.encrypted_subject or "", master_key
-                )
-                decrypted_body = encryption.EmailDataManager.decrypt_email_body(
-                    raw_email.encrypted_body or "", master_key
-                )
-                decrypted_sender = encryption.EmailDataManager.decrypt_email_sender(
-                    raw_email.encrypted_sender or "", master_key
-                )
-            except Exception as e:
-                logger.error(f"Decryption failed for email raw_id={raw_email_id}: {e}")
-                return jsonify({"success": False, "error": "Entschlüsselung fehlgeschlagen"}), 500
-            
-            # Thread-Context für bessere Antworten
-            thread_context = ""
-            try:
-                processing_mod = importlib.import_module(".12_processing", "src")
-                thread_context = processing_mod.build_thread_context(
-                    session=db,
-                    raw_email=raw_email,
+                # Phase 2 Security: ServiceToken erstellen
+                _, service_token = ServiceTokenManager.create_token(
+                    user_id=user.id,
                     master_key=master_key,
-                    max_context_emails=3
+                    session=db,
+                    days=1  # Reply-Token nur 1 Tag gültig
                 )
-            except Exception as ctx_err:
-                logger.warning(f"Thread-Context build failed: {ctx_err}")
-            
-            # Generate Reply
-            try:
-                ai_client = _get_ai_client()
-                reply_generator_mod = importlib.import_module("src.reply_generator")
                 
-                # Provider/Model Selection
+                # Provider/Model Selection (hier vorab, da Task sie braucht)
+                ai_client = _get_ai_client()
                 if requested_provider and requested_model:
                     provider = requested_provider.lower()
                     resolved_model = ai_client.resolve_model(provider, requested_model, kind="optimize")
@@ -829,114 +643,35 @@ def api_generate_reply(raw_email_id):
                     optimize_model = getattr(user, 'preferred_ai_model_optimize', None) or getattr(user, 'preferred_ai_model', None)
                     resolved_model = ai_client.resolve_model(provider, optimize_model, kind="optimize")
                 
-                client = ai_client.build_client(provider, model=resolved_model)
-                
-                # Anonymisierungs-Logik
-                cloud_providers = ["openai", "anthropic", "google"]
-                is_cloud_provider = provider in cloud_providers
-                
+                # Anonymisierungs-Default ermitteln
                 if use_anonymization is None:
-                    use_anonymization = is_cloud_provider
+                    cloud_providers = ["openai", "anthropic", "google"]
+                    use_anonymization = provider in cloud_providers
                 
-                content_for_ai_subject = decrypted_subject
-                content_for_ai_body = decrypted_body
-                sender_for_ai = decrypted_sender
-                entity_map = None
-                was_anonymized = False
-                
-                if use_anonymization:
-                    # Nutze sanitized Content wenn verfügbar
-                    if raw_email.encrypted_subject_sanitized and raw_email.encrypted_body_sanitized:
-                        try:
-                            content_for_ai_subject = encryption.EmailDataManager.decrypt_email_subject(
-                                raw_email.encrypted_subject_sanitized, master_key
-                            )
-                            content_for_ai_body = encryption.EmailDataManager.decrypt_email_body(
-                                raw_email.encrypted_body_sanitized, master_key
-                            )
-                            was_anonymized = True
-                            sender_for_ai = "[ABSENDER]"
-                            
-                            if raw_email.encrypted_entity_map:
-                                try:
-                                    entity_map_json = encryption.EncryptionManager.decrypt_data(
-                                        raw_email.encrypted_entity_map, master_key
-                                    )
-                                    entity_map = json.loads(entity_map_json)
-                                    logger.debug(f"✅ Entity-Map geladen: {len(entity_map.get('reverse', {}))} Mappings")
-                                except Exception as em_err:
-                                    logger.warning(f"⚠️ Entity-Map Entschlüsselung fehlgeschlagen: {em_err}")
-                        except Exception as decrypt_err:
-                            logger.warning(f"Sanitized content decryption failed: {decrypt_err}")
-                    else:
-                        # On-the-fly Anonymisierung
-                        try:
-                            from src.services.content_sanitizer import ContentSanitizer
-                            sanitizer = ContentSanitizer()
-                            result = sanitizer.sanitize_with_roles(
-                                subject=decrypted_subject,
-                                body=decrypted_body,
-                                sender=decrypted_sender,
-                                recipient=user.username,
-                                level=2
-                            )
-                            content_for_ai_subject = result.subject
-                            content_for_ai_body = result.body
-                            sender_for_ai = "[ABSENDER]"
-                            entity_map = result.entity_map.to_dict()
-                            was_anonymized = True
-                            
-                            # Speichere in DB
-                            raw_email.encrypted_subject_sanitized = encryption.EmailDataManager.encrypt_email_subject(
-                                result.subject, master_key
-                            )
-                            raw_email.encrypted_body_sanitized = encryption.EmailDataManager.encrypt_email_body(
-                                result.body, master_key
-                            )
-                            raw_email.sanitization_entities_count = result.entities_found
-                            raw_email.encrypted_entity_map = encryption.EncryptionManager.encrypt_data(
-                                json.dumps(entity_map), master_key
-                            )
-                            db.commit()
-                        except Exception as anon_err:
-                            logger.error(f"On-the-fly anonymization failed: {anon_err}")
-                            db.rollback()
-                
-                generator = reply_generator_mod.ReplyGenerator(ai_client=client)
-                
-                result = generator.generate_reply_with_user_style(
-                    db=db,
+                # Task starten (ASYNC!)
+                task = generate_reply_draft.delay(
                     user_id=user.id,
-                    original_subject=content_for_ai_subject,
-                    original_body=content_for_ai_body,
-                    original_sender=sender_for_ai,
+                    raw_email_id=raw_email_id,
+                    service_token_id=service_token.id,
                     tone=tone,
-                    thread_context=thread_context if thread_context else None,
-                    has_attachments=raw_email.has_attachments or False,
-                    master_key=master_key,
-                    account_id=raw_email.mail_account_id
+                    provider=provider,
+                    model=resolved_model,
+                    use_anonymization=use_anonymization
                 )
                 
-                if result["success"]:
-                    result["was_anonymized"] = was_anonymized
-                    result["entity_map"] = entity_map
-                    result["provider_used"] = provider
-                    result["model_used"] = resolved_model
-                    logger.info(f"✅ Reply generiert für Email {raw_email_id} (Ton: {result['tone_used']}) - anonymized={was_anonymized}, entity_map_keys={list(entity_map.keys()) if entity_map else None}")
+                logger.info(f"✅ Reply Task {task.id} gequeued für Email {raw_email_id} ({provider}/{resolved_model})")
                 
-                return jsonify(result), 200 if result["success"] else 500
-                
-            except ImportError as e:
-                logger.error(f"Reply generator import failed: {e}")
-                return jsonify({"success": False, "error": "Reply Generator nicht verfügbar"}), 500
-            except Exception as gen_err:
-                logger.error(f"Reply generation failed: {gen_err}")
                 return jsonify({
-                    "success": False,
-                    "error": "Generierung fehlgeschlagen",
-                    "reply_text": "",
-                    "tone_used": tone
-                }), 500
+                    "success": True,
+                    "status": "queued",
+                    "task_id": task.id,
+                    "message": "Entwurf wird generiert..."
+                })
+                
+            except Exception as e:
+                logger.error(f"api_generate_reply: Celery-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"success": False, "error": "Fehler beim Starten des Generierungs-Tasks"}), 500
+
     except Exception as e:
         logger.error(f"api_generate_reply: Fehler für Email {raw_email_id}: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -989,9 +724,6 @@ def api_reprocess_email(raw_email_id):
     models = _get_models()
     encryption = _get_encryption()
     
-    # Check: Celery Mode? (USE_LEGACY_JOBS=false bedeutet Celery)
-    use_celery = os.environ.get("USE_LEGACY_JOBS", "false").lower() == "false"
-    
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
@@ -1013,138 +745,42 @@ def api_reprocess_email(raw_email_id):
                 return jsonify({"success": False, "error": "Email nicht gefunden"}), 404
             
             # ═══════════════════════════════════════════════════════════════
-            # CELERY PATH (NEW) - Async Processing
+            # CELERY PATH (Standard) - Async Processing
             # ═══════════════════════════════════════════════════════════════
-            if use_celery:
-                import importlib
-                from src.tasks.email_processing_tasks import reprocess_email_base
-                auth = importlib.import_module(".07_auth", "src")
-                ServiceTokenManager = auth.ServiceTokenManager
-                
-                try:
-                    # Phase 2 Security: ServiceToken erstellen
-                    _, service_token = ServiceTokenManager.create_token(
-                        user_id=user.id,
-                        master_key=master_key,
-                        session=db,
-                        days=1  # Reprocess-Token nur 1 Tag gültig
-                    )
-                    
-                    # Task starten (ASYNC!)
-                    task = reprocess_email_base.delay(
-                        user_id=user.id,
-                        raw_email_id=raw_email_id,
-                        service_token_id=service_token.id
-                    )
-                    
-                    logger.info(f"✅ ReprocessEmail Task {task.id} gequeued für Email {raw_email_id}")
-                    
-                    return jsonify({
-                        "success": True,
-                        "status": "queued",
-                        "task_id": task.id,
-                        "task_type": "celery",
-                        "message": "Email wird neu verarbeitet..."
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"api_reprocess_email: Celery-Fehler: {type(e).__name__}: {e}")
-                    return jsonify({"success": False, "error": "Fehler beim Starten des Tasks"}), 500
+            import importlib
+            from src.tasks.email_processing_tasks import reprocess_email_base
+            auth = importlib.import_module(".07_auth", "src")
+            ServiceTokenManager = auth.ServiceTokenManager
             
-            # ═══════════════════════════════════════════════════════════════
-            # LEGACY PATH (OLD) - Synchronous Processing
-            # ═══════════════════════════════════════════════════════════════
-            # Entschlüssele für Reprocessing
             try:
-                decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
-                    raw_email.encrypted_subject or "", master_key
-                )
-                decrypted_body = encryption.EmailDataManager.decrypt_email_body(
-                    raw_email.encrypted_body or "", master_key
-                )
-            except Exception as e:
-                logger.error(f"Decryption failed for email {raw_email_id}: {e}")
-                return jsonify({"success": False, "error": "Entschlüsselung fehlgeschlagen"}), 500
-            
-            ai_score = None
-            
-            # 1. EMBEDDING neu generieren
-            try:
-                semantic_search = _get_semantic_search()
-                ai_client = _get_ai_client()
-                
-                provider_embedding = (getattr(user, 'preferred_embedding_provider', None) or "ollama").lower()
-                model_embedding = getattr(user, 'preferred_embedding_model', None) or "all-minilm:22m"
-                resolved_model_embedding = ai_client.resolve_model(provider_embedding, model_embedding)
-                
-                embedding_client = ai_client.build_client(provider_embedding, model=resolved_model_embedding)
-                
-                embedding_bytes, model_name, timestamp = semantic_search.generate_embedding_for_email(
-                    subject=decrypted_subject,
-                    body=decrypted_body,
-                    ai_client=embedding_client,
-                    model_name=resolved_model_embedding
-                )
-                
-                if embedding_bytes:
-                    raw_email.email_embedding = embedding_bytes
-                    raw_email.embedding_model = model_name or resolved_model_embedding
-                    raw_email.embedding_generated_at = timestamp
-                    logger.info(f"✅ Embedding regenerated: {model_name}")
-            except Exception as emb_err:
-                logger.warning(f"Embedding regeneration error: {emb_err}")
-            
-            # 2. AI-SCORE + KATEGORIE neu berechnen
-            try:
-                processing_mod = importlib.import_module(".12_processing", "src")
-                ai_client = _get_ai_client()
-                
-                thread_context = processing_mod.build_thread_context(
-                    session=db,
-                    raw_email=raw_email,
+                # Phase 2 Security: ServiceToken erstellen
+                _, service_token = ServiceTokenManager.create_token(
+                    user_id=user.id,
                     master_key=master_key,
-                    max_context_emails=5
+                    session=db,
+                    days=1  # Reprocess-Token nur 1 Tag gültig
                 )
                 
-                provider_optimize = (getattr(user, 'preferred_ai_provider_optimize', None) or "ollama").lower()
-                model_optimize = getattr(user, 'preferred_ai_model_optimize', None) or "llama3.2:1b"
-                resolved_model_optimize = ai_client.resolve_model(provider_optimize, model_optimize)
-                
-                optimize_client = ai_client.build_client(provider_optimize, model=resolved_model_optimize)
-                
-                result = optimize_client.analyze_email(
-                    subject=decrypted_subject,
-                    body=decrypted_body,
-                    language="de",
-                    context=thread_context if thread_context else None
+                # Task starten (ASYNC!)
+                task = reprocess_email_base.delay(
+                    user_id=user.id,
+                    raw_email_id=raw_email_id,
+                    service_token_id=service_token.id
                 )
                 
-                processed = db.query(models.ProcessedEmail).filter_by(
-                    raw_email_id=raw_email.id
-                ).first()
+                logger.info(f"✅ ReprocessEmail Task {task.id} gequeued für Email {raw_email_id}")
                 
-                if processed and result:
-                    processed.score = result.get("score", processed.score)
-                    processed.farbe = result.get("farbe", processed.farbe)
-                    processed.kategorie_aktion = result.get("kategorie_aktion", processed.kategorie_aktion)
-                    ai_score = processed.score
-                    logger.info(f"✅ Score regenerated: {processed.score}")
-            except Exception as score_err:
-                logger.warning(f"Score regeneration error: {score_err}")
-            
-            try:
-                db.commit()
+                return jsonify({
+                    "success": True,
+                    "status": "queued",
+                    "task_id": task.id,
+                    "task_type": "celery",
+                    "message": "Email wird neu verarbeitet..."
+                })
+                
             except Exception as e:
-                db.rollback()
-                logger.error(f"api_reprocess_email: Commit-Fehler: {e}")
-                return jsonify({"success": False, "error": "Speichern fehlgeschlagen"}), 500
-            
-            return jsonify({
-                "success": True,
-                "message": "Email erfolgreich neu verarbeitet",
-                "embedding_model": getattr(raw_email, 'embedding_model', None),
-                "ai_score": ai_score
-            }), 200
+                logger.error(f"api_reprocess_email: Celery-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"success": False, "error": "Fehler beim Starten des Tasks"}), 500
             
     except Exception as e:
         logger.error(f"api_reprocess_email: Fehler für Email {raw_email_id}: {type(e).__name__}: {e}")
@@ -2391,12 +2027,12 @@ def api_embeddings_stats():
 @login_required
 def api_batch_reprocess_embeddings():
     """
-    Batch-Reprocess: Regeneriert Embeddings für ALLE Emails (async mit Progress)
+    Batch-Reprocess: Regeneriert Embeddings fuer ALLE Emails (async mit Progress)
     
-    Use Case: User wechselt Embedding-Model (z.B. all-minilm → bge-large)
-    → Alle Emails müssen neu embedded werden für konsistente Semantic Search!
+    Use Case: User wechselt Embedding-Model (z.B. all-minilm -> bge-large)
+    Alle Emails muessen neu embedded werden fuer konsistente Semantic Search!
     
-    Returns job_id für Progress-Tracking
+    Returns job_id fuer Progress-Tracking
     """
     models = _get_models()
     
@@ -2414,28 +2050,51 @@ def api_batch_reprocess_embeddings():
             provider_embedding = (user.preferred_embedding_provider or "ollama").lower()
             model_embedding = user.preferred_embedding_model or "all-minilm:22m"
             
-            # Enqueue async job
+            # Celery: Batch-Reprocess Task
             try:
-                job_queue = importlib.import_module("src.14_background_jobs")
-                job_id = job_queue.enqueue_batch_reprocess_job(
+                from src.tasks.mail_sync_tasks import batch_reprocess_emails
+                auth = importlib.import_module(".07_auth", "src")
+                ServiceTokenManager = auth.ServiceTokenManager
+                
+                # Phase 2 Security: ServiceToken erstellen (DEK nicht in Redis!)
+                with get_db_session() as token_db:
+                    _, service_token = ServiceTokenManager.create_token(
+                        user_id=user.id,
+                        master_key=master_key,
+                        session=token_db,
+                        days=1  # Batch-Reprocess-Token nur 1 Tag gültig
+                    )
+                    service_token_id = service_token.id
+                
+                # Enqueue Celery Task
+                task = batch_reprocess_emails.delay(
                     user_id=user.id,
-                    master_key=master_key,
+                    service_token_id=service_token_id,
                     provider=provider_embedding,
                     model=model_embedding
                 )
-            except (ImportError, AttributeError) as e:
-                logger.warning(f"Job-Queue nicht verfügbar: {e}")
+                
+                logger.info(f"✅ [CELERY] Batch-reprocess task enqueued: {task.id}")
+                
+                return jsonify({
+                    "success": True,
+                    "status": "queued",
+                    "task_id": task.id,
+                    "message": "Batch-Reprocess gestartet"
+                }), 202  # Accepted
+                
+            except ImportError as e:
+                logger.error(f"api_batch_reprocess: Import-Fehler: {e}")
                 return jsonify({
                     "success": False,
-                    "error": "Background-Jobs nicht verfügbar"
+                    "error": "Batch-Reprocess-Task nicht verfügbar"
                 }), 503
-            
-            return jsonify({
-                "success": True,
-                "status": "queued",
-                "job_id": job_id,
-                "message": "Batch-Reprocess gestartet"
-            }), 200
+            except Exception as e:
+                logger.error(f"api_batch_reprocess: Celery-Fehler: {type(e).__name__}: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": "Fehler beim Enqueuen des Batch-Reprocess"
+                }), 500
             
     except ValueError as ve:
         return jsonify({"success": False, "error": str(ve)}), 400
@@ -2489,7 +2148,7 @@ def api_get_reply_styles():
 @api_bp.route("/reply-styles/<style_key>", methods=["GET"])
 @login_required
 def api_get_reply_style(style_key):
-    """Holt effektive Settings für einen spezifischen Stil (Merged: Defaults → Global → Style-Specific)"""
+    """Holt effektive Settings fuer einen spezifischen Stil (Merged: Defaults -> Global -> Style-Specific)"""
     try:
         with get_db_session() as db:
             user = get_current_user_model(db)
@@ -3808,7 +3467,7 @@ def api_scan_account_senders(account_id):
     POST Body:
     {
         "folder": "INBOX",  // default: INBOX
-        "limit": 1000       // default: 1000 (Max für Timeout-Prevention)
+        "limit": 1000       // default: 1000 (Max fuer Timeout-Prevention)
     }
     
     Returns:
@@ -4055,13 +3714,13 @@ def api_bulk_add_trusted_senders():
                             'reason': f"Exception: {str(e)}"
                         })
                 
-                # Alle erfolgreich → Commit
+                # Alle erfolgreich -> Commit
                 db.commit()
                 
                 logger.info(f"✅ Bulk-Add abgeschlossen: {len(added)} hinzugefügt, {len(skipped)} übersprungen")
                 
             except Exception as critical_error:
-                # Kritischer Fehler → ROLLBACK alles!
+                # Kritischer Fehler -> ROLLBACK alles!
                 logger.error(f"CRITICAL: Bulk-Add Transaction failed, rolling back: {critical_error}")
                 db.rollback()
                 
@@ -4083,3 +3742,132 @@ def api_bulk_add_trusted_senders():
     except Exception as e:
         logger.error(f"api_bulk_add_trusted_senders: Fehler: {type(e).__name__}: {e}")
         return jsonify({"error": "Internal server error"}), 500
+
+
+# =============================================================================
+# Route 68: /auto-fetch-mails GET (Background Mail Fetch)
+# =============================================================================
+@api_bp.route("/auto-fetch-mails", methods=["GET"])
+@login_required
+def api_auto_fetch_mails():
+    """
+    Startet automatischen Mail-Fetch für alle User-Accounts im Hintergrund.
+    
+    Wird vom Frontend alle 10 Minuten aufgerufen (wenn User Setting aktiviert).
+    Nutzt die EXAKT GLEICHE Logik wie der "Abrufen"-Button pro Account!
+    
+    Security:
+        - Nur während aktiver Session (master_key in Session)
+        - ServiceToken-Pattern (kein master_key in Redis)
+        - User muss enable_auto_fetch=True haben
+    
+    Returns:
+        {
+            "success": true,
+            "tasks_queued": int,
+            "accounts": [account_ids]
+        }
+    """
+    master_key = session.get('master_key')
+    if not master_key:
+        return jsonify({
+            'success': False,
+            'error': 'Unauthorized - keine aktive Session'
+        }), 401
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({'success': False, 'error': 'User nicht gefunden'}), 404
+            
+            # Prüfe ob User Auto-Fetch aktiviert hat
+            if not user.enable_auto_fetch:
+                return jsonify({
+                    'success': False,
+                    'error': 'Auto-Fetch ist deaktiviert',
+                    'hint': 'Aktiviere Auto-Fetch in den Einstellungen'
+                }), 403
+            
+            # Lade alle aktiven Mail-Accounts des Users
+            models = _get_models()
+            accounts = db.query(models.MailAccount).filter_by(
+                user_id=user.id
+            ).all()
+            
+            if not accounts:
+                return jsonify({
+                    'success': True,
+                    'tasks_queued': 0,
+                    'accounts': [],
+                    'message': 'Keine Mail-Accounts konfiguriert'
+                }), 200
+            
+            # Lazy imports
+            import importlib
+            ai_client = importlib.import_module(".03_ai_client", "src")
+            sanitizer = importlib.import_module(".04_sanitizer", "src")
+            auth = importlib.import_module(".07_auth", "src")
+            from src.tasks.mail_sync_tasks import sync_user_emails
+            
+            ServiceTokenManager = auth.ServiceTokenManager
+            
+            tasks_queued = []
+            
+            # Für jeden Account: GLEICHE LOGIK wie fetch_mails Button!
+            for account in accounts:
+                try:
+                    # 1. Fetch-Limits (EXAKT wie Button)
+                    is_initial = not account.initial_sync_done
+                    fetch_limit = 500 if is_initial else 50
+                    
+                    # 2. AI Provider/Model (EXAKT wie Button)
+                    provider = (user.preferred_ai_provider or "ollama").lower()
+                    resolved_model = ai_client.resolve_model(provider, user.preferred_ai_model)
+                    
+                    # 3. ServiceToken erstellen (EXAKT wie Button)
+                    with get_db_session() as token_db:
+                        _, service_token = ServiceTokenManager.create_token(
+                            user_id=user.id,
+                            master_key=master_key,
+                            session=token_db,
+                            days=1
+                        )
+                        service_token_id = service_token.id
+                    
+                    # 4. Celery Task queuen (EXAKT wie Button)
+                    task = sync_user_emails.delay(
+                        user_id=user.id,
+                        account_id=account.id,
+                        service_token_id=service_token_id,
+                        max_emails=fetch_limit
+                    )
+                    
+                    tasks_queued.append({
+                        'account_id': account.id,
+                        'task_id': task.id,
+                        'email': account.email,
+                        'is_initial': is_initial,
+                        'fetch_limit': fetch_limit
+                    })
+                    logger.info(f"Auto-Fetch: Task {task.id} für Account {account.id} gequeued (fetch_limit={fetch_limit})")
+                    
+                except Exception as e:
+                    logger.error(f"Auto-Fetch: Fehler für Account {account.id}: {e}")
+                    # Weiter mit nächstem Account
+                    continue
+            
+            return jsonify({
+                'success': True,
+                'tasks_queued': len(tasks_queued),
+                'accounts': [t['account_id'] for t in tasks_queued],
+                'tasks': tasks_queued
+            }), 200
+            
+    except Exception as e:
+        logger.error(f"api_auto_fetch_mails: Fehler: {type(e).__name__}: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+

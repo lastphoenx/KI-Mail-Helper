@@ -1,7 +1,7 @@
 ﻿# src/helpers/__init__.py
 """Shared helper modules for all blueprints.
 
-This package provides common functionality extracted from 01_web_app.py
+This package provides common functionality for all blueprints
 to avoid code duplication across blueprints.
 """
 
