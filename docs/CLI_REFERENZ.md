@@ -63,7 +63,7 @@ bash scripts/production-readiness-check.sh
 ```bash
 # Flask starten (Port 5003)
 source venv/bin/activate
-USE_BLUEPRINTS=1 python3 -m src.00_main --serve --https --port 5003
+python3 -m src.00_main --serve --https --port 5003
 
 # Alternativer Start via Flask CLI
 flask --app "src.app_factory:create_app()" run --host 127.0.0.1 --port 5000
@@ -727,11 +727,11 @@ git tag -l
 ```bash
 # Terminal 1: Alte Version (main, Port 5003)
 git checkout main
-USE_BLUEPRINTS=1 python3 -m src.00_main --serve --https --port 5003
+python3 -m src.00_main --serve --https --port 5003
 
 # Terminal 2: Feature-Branch (Port 5004)
 git checkout feature/xyz
-USE_BLUEPRINTS=1 python3 -m src.00_main --serve --https --port 5004
+python3 -m src.00_main --serve --https --port 5004
 ```
 
 ---
@@ -969,47 +969,97 @@ Benutzerkorrekturen. Hier die wichtigsten Verwaltungsbefehle:
 
 ### Circuit Breaker zurücksetzen
 
-Wenn das Training durch zu viele Fehler blockiert ist (`circuit_breaker_open`):
+Wenn das Training durch zu viele Fehler blockiert ist (`circuit_breaker_open`), muss der error_count zurückgesetzt werden.
+
+**💡 Tipp:** Statt den vollen Connection-String zu tippen, nutze die Umgebungsvariable:
 
 ```bash
-# Circuit Breaker für alle User zurücksetzen
-sudo -u postgres psql -d mail_helper -c \
-  "UPDATE classifier_metadata SET error_count = 0, is_active = true;"
-
-# Nur für einen bestimmten User (z.B. user_id=1)
-sudo -u postgres psql -d mail_helper -c \
-  "UPDATE classifier_metadata SET error_count = 0, is_active = true WHERE user_id = 1;"
-
-# Status prüfen
-sudo -u postgres psql -d mail_helper -c \
-  "SELECT user_id, classifier_type, error_count, is_active, last_trained_at 
-   FROM classifier_metadata ORDER BY user_id, classifier_type;"
+export DATABASE_URL="postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper"
 ```
+
+Dann kannst du einfach `psql $DATABASE_URL -c "..."` verwenden.
+
+---
+
+#### 1. Fehlerhafte Klassifikatoren abfragen
+
+Zeigt alle Einträge, bei denen der Circuit-Breaker (error_count >= 3) zugeschlagen hat:
+
+```bash
+psql $DATABASE_URL -c "SELECT user_id, classifier_type, error_count, is_active, last_trained_at FROM classifier_metadata WHERE error_count >= 3;"
+
+# Oder alle anzeigen (inklusive funktionierende):
+psql $DATABASE_URL -c "SELECT user_id, classifier_type, error_count, is_active, last_trained_at FROM classifier_metadata ORDER BY user_id, classifier_type;"
+```
+
+#### 2. Error-Count für spezifischen Klassifikator zurücksetzen
+
+Falls du das Training für einen bestimmten User (z.B. ID 1) und Typ (z.B. 'dringlichkeit') wieder freischalten willst:
+
+```bash
+psql $DATABASE_URL -c "UPDATE classifier_metadata SET error_count = 0, is_active = true WHERE user_id = 1 AND classifier_type = 'dringlichkeit';"
+```
+
+#### 3. Alle Fehler auf einmal zurücksetzen
+
+Um den Circuit-Breaker für alle User/Modelle global auf 0 zu setzen:
+
+```bash
+# Alle mit error_count > 0 zurücksetzen
+psql $DATABASE_URL -c "UPDATE classifier_metadata SET error_count = 0, is_active = true WHERE error_count > 0;"
+
+# ODER: Komplett alle zurücksetzen (auch wenn error_count schon 0 ist)
+psql $DATABASE_URL -c "UPDATE classifier_metadata SET error_count = 0, is_active = true;"
+```
+
+#### 4. Bestätigung anzeigen
+
+Nach dem Reset prüfen, ob alles zurückgesetzt wurde:
+
+```bash
+psql $DATABASE_URL -c "SELECT user_id, classifier_type, error_count, is_active FROM classifier_metadata ORDER BY user_id, classifier_type;"
+```
+
+---
+
+#### Alternative: Python-Script (falls psql nicht verfügbar)
+
+```bash
+cd /home/thomas/projects/KI-Mail-Helper-Dev
+
+# Alle error_counts zurücksetzen
+python3 -c "
+import sys; sys.path.insert(0, '.')
+from src.helpers.database import get_db_session
+from sqlalchemy import text
+with get_db_session() as db:
+    result = db.execute(text('UPDATE classifier_metadata SET error_count = 0, is_active = true WHERE error_count > 0'))
+    db.commit()
+    print(f'✅ {result.rowcount} Einträge zurückgesetzt')
+"
+```
+
+---
 
 ### Classifier-Metadaten anzeigen
 
 ```bash
 # Alle Classifier-Metadaten
-sudo -u postgres psql -d mail_helper -c \
-  "SELECT * FROM classifier_metadata ORDER BY user_id;"
+psql $DATABASE_URL -c "SELECT user_id, classifier_type, model_version, training_samples, accuracy_score, last_trained_at FROM classifier_metadata ORDER BY user_id, classifier_type;"
 
-# Trainierte Modelle mit Accuracy
-sudo -u postgres psql -d mail_helper -c \
-  "SELECT user_id, classifier_type, model_version, samples_count, accuracy, last_trained_at 
-   FROM classifier_metadata WHERE last_trained_at IS NOT NULL;"
+# Nur trainierte Modelle (mit Accuracy)
+psql $DATABASE_URL -c "SELECT user_id, classifier_type, model_version, training_samples, accuracy_score, last_trained_at FROM classifier_metadata WHERE last_trained_at IS NOT NULL ORDER BY user_id, classifier_type;"
 ```
 
 ### Training manuell triggern
 
 ```bash
-# Force-Training für einen User (via Python)
 cd /home/thomas/projects/KI-Mail-Helper-Dev
 source venv/bin/activate
-python3 -c "
-from src.celery_app import celery_app
-from src.tasks.training_tasks import train_personal_classifier
 
-# Force-Training für user_id=1, alle Classifier-Typen
+# Force-Training für einen User (z.B. user_id=1), alle Classifier-Typen
+python3 -c "
+from src.tasks.training_tasks import train_personal_classifier
 for ctype in ['dringlichkeit', 'wichtigkeit', 'spam', 'kategorie']:
     result = train_personal_classifier.delay(user_id=1, classifier_type=ctype, force=True)
     print(f'{ctype}: Task {result.id} submitted')
@@ -1075,11 +1125,12 @@ sudo -u postgres psql -d mail_helper -c "
 
 | Problem | Ursache | Lösung |
 |---------|---------|--------|
-| `circuit_breaker_open (errors=3)` | 3+ Trainingsfehler | Circuit Breaker zurücksetzen (s.o.) |
+| `circuit_breaker_open (errors=3)` | 3+ Trainingsfehler | **Python-Script verwenden** (siehe oben), dann Worker restart |
 | `throttle_samples (only X new corrections)` | Weniger als 5 Korrekturen | Normal - Training startet ab 5 Korrekturen |
 | `insufficient_samples` | Zu wenig Samples pro Klasse | Mehr Korrekturen machen (min. 2 pro Klasse) |
 | `throttle_time` | Zu oft trainiert | Warten (min. 5 Min zwischen Trainings) |
 | Worker reagiert nicht | Alter Code im Cache | `sudo systemctl restart mail-helper-celery-worker` |
+| `'RawEmail' object has no attribute 'embedding'` | Bug in Code | Gefixt - Worker neustarten |
 
 ---
 

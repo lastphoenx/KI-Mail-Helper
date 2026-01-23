@@ -1,7 +1,7 @@
 # src/helpers/database.py
 """Database session helpers for all blueprints.
 
-Extracted from 01_web_app.py lines 399-414.
+Provides centralized database session management.
 """
 
 from contextlib import contextmanager

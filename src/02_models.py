@@ -7,6 +7,7 @@ Phase 2: User, MailAccount, ServiceToken, RecoveryCode
 from datetime import datetime, timedelta, UTC
 from enum import Enum
 from typing import Optional
+import os
 from sqlalchemy import (
     create_engine,
     Column,
@@ -346,6 +347,11 @@ class User(Base):
     # Wenn aktiviert: Tags mit ≥80% Similarity werden automatisch zugewiesen
     # Unabhängig von enable_tag_suggestion_queue (verschiedene Features!)
     enable_auto_assignment = Column(Boolean, default=False)
+
+    # Auto-Fetch: Automatisches Mail-Fetching im Hintergrund (Default: AUS)
+    # Wenn aktiviert: Frontend pollt alle 10 Minuten /api/auto-fetch-mails
+    # Nur während aktiver Session, nutzt ServiceToken-Pattern
+    enable_auto_fetch = Column(Boolean, default=False)
 
     # Phase X: UrgencyBooster Setting
     urgency_booster_enabled = Column(Boolean, default=True, nullable=False)
@@ -1456,20 +1462,41 @@ class AutoRule(Base):
 
 
 # DB-Setup
-def init_db(db_path="emails.db"):
-    """Initialisiert die Datenbank"""
-    if db_path == ":memory:":
-        engine = create_engine(
-            f"sqlite:///{db_path}",
-            echo=False,
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
+def init_db(db_url=None):
+    """Initialisiert die Datenbank. 
+    db_url kann ein Pfad (SQLite) oder eine vollständige URL sein.
+    Falls None, wird DATABASE_URL aus Env genutzt oder emails.db (SQLite).
+    """
+    if db_url is None:
+        db_url = os.getenv("DATABASE_URL", "emails.db")
+    
+    # Falls nur ein Pfad gegeben wurde, zu SQLite URL machen
+    if not (db_url.startswith("sqlite://") or db_url.startswith("postgresql://") or db_url.startswith("postgres://")):
+        db_url = f"sqlite:///{db_url}"
+
+    if db_url.startswith("sqlite"):
+        if ":memory:" in db_url:
+            engine = create_engine(
+                db_url,
+                echo=False,
+                connect_args={"check_same_thread": False},
+                poolclass=StaticPool,
+            )
+        else:
+            engine = create_engine(
+                db_url,
+                echo=False,
+                connect_args={"check_same_thread": False},
+            )
     else:
+        # PostgreSQL logic
         engine = create_engine(
-            f"sqlite:///{db_path}",
-            echo=False,
-            connect_args={"check_same_thread": False},
+            db_url,
+            pool_size=10,
+            max_overflow=20,
+            pool_recycle=3600,
+            pool_pre_ping=True,
+            connect_args={"connect_timeout": 10}
         )
 
     if engine.url.drivername.startswith("sqlite"):

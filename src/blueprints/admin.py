@@ -3,8 +3,6 @@
 
 Routes (1 total):
     1. /api/debug-logger-status (GET) - Debug-Logger-Status
-
-Extracted from 01_web_app.py lines: 9412-9433
 """
 
 from flask import Blueprint, jsonify

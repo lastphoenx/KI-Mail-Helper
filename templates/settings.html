@@ -219,6 +219,28 @@
                             </div>
                         </div>
                         
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="enableAutoFetch" name="enable_auto_fetch" 
+                                       {% if current_user.enable_auto_fetch %}checked{% endif %}>
+                                <label class="form-check-label" for="enableAutoFetch">
+                                    <strong>🔄 Auto-Fetch aktivieren (NEU!)</strong>
+                                    <small class="d-block text-muted">
+                                        Holt automatisch alle 10 Minuten neue Mails im Hintergrund (nur während aktiver Session)
+                                    </small>
+                                </label>
+                            </div>
+                            <div class="alert alert-info mt-2 mb-0">
+                                <small>
+                                    <strong>ℹ️ Wie funktioniert Auto-Fetch?</strong><br>
+                                    • Nur aktiv wenn du eingeloggt bist<br>
+                                    • Nutzt sichere ServiceTokens (kein master_key in Redis)<br>
+                                    • Pollt alle 10 Minuten im Hintergrund<br>
+                                    • Startet Celery Tasks für alle deine Mail-Accounts
+                                </small>
+                            </div>
+                        </div>
+                        
                         <!-- Phase 13C Part 5: Erweiterte Filter -->
                         <div class="col-12">
                             <hr class="my-3 opacity-25">

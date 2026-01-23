@@ -1,7 +1,7 @@
 ﻿# src/helpers/validation.py
 """Input validation helpers for API endpoints.
 
-Extracted from 01_web_app.py lines 415-520.
+Provides standardized validation for all blueprints.
 """
 
 

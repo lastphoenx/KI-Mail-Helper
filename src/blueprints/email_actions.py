@@ -13,8 +13,6 @@ Routes (11 total):
     9. /email/<id>/mark-read (POST) - als gelesen markieren
     10. /email/<id>/toggle-read (POST) - Lese-Status togglen
     11. /email/<id>/mark-flag (POST) - Flag togglen
-
-Extracted from 01_web_app.py lines: 1794-2172, 7527-8480
 """
 
 from flask import Blueprint, jsonify, request, redirect, url_for, session, flash
@@ -113,8 +111,6 @@ def mark_done(raw_email_id):
                 .filter(
                     models.RawEmail.id == raw_email_id,
                     models.RawEmail.user_id == user.id,
-                    models.RawEmail.deleted_at == None,
-                    models.ProcessedEmail.deleted_at == None,
                 )
                 .first()
             )
@@ -157,8 +153,6 @@ def mark_undone(raw_email_id):
                 .filter(
                     models.RawEmail.id == raw_email_id,
                     models.RawEmail.user_id == user.id,
-                    models.RawEmail.deleted_at == None,
-                    models.ProcessedEmail.deleted_at == None,
                 )
                 .first()
             )
@@ -186,11 +180,7 @@ def mark_undone(raw_email_id):
 @login_required
 def reprocess_email(raw_email_id):
     """Reprocessed eine Email - ASYNC via Celery"""
-    import os
     models = _get_models()
-    
-    # Check: Celery Mode? (USE_LEGACY_JOBS=false bedeutet Celery)
-    use_celery = os.environ.get("USE_LEGACY_JOBS", "false").lower() == "false"
     
     with get_db_session() as db:
         try:
@@ -202,7 +192,7 @@ def reprocess_email(raw_email_id):
             raw_email = db.query(models.RawEmail).filter_by(
                 id=raw_email_id,
                 user_id=user.id
-            ).filter(models.RawEmail.deleted_at == None).first()
+            ).first()
             
             if not raw_email:
                 return jsonify({"error": "Email nicht gefunden"}), 404
@@ -213,44 +203,41 @@ def reprocess_email(raw_email_id):
                 return jsonify({"error": "Session abgelaufen. Bitte neu einloggen."}), 401
 
             # ═══════════════════════════════════════════════════════════════
-            # CELERY PATH (NEW) - Async Processing
+            # CELERY PATH (Standard) - Async Processing
             # ═══════════════════════════════════════════════════════════════
-            if use_celery:
-                import importlib
-                from src.tasks.email_processing_tasks import reprocess_email_base
-                auth = importlib.import_module(".07_auth", "src")
-                ServiceTokenManager = auth.ServiceTokenManager
+            import importlib
+            from src.tasks.email_processing_tasks import reprocess_email_base
+            auth = importlib.import_module(".07_auth", "src")
+            ServiceTokenManager = auth.ServiceTokenManager
+            
+            try:
+                # Phase 2 Security: ServiceToken erstellen
+                _, service_token = ServiceTokenManager.create_token(
+                    user_id=user.id,
+                    master_key=master_key,
+                    session=db,
+                    days=1  # Reprocess-Token nur 1 Tag gültig
+                )
                 
-                try:
-                    # Phase 2 Security: ServiceToken erstellen
-                    _, service_token = ServiceTokenManager.create_token(
-                        user_id=user.id,
-                        master_key=master_key,
-                        session=db,
-                        days=1  # Reprocess-Token nur 1 Tag gültig
-                    )
-                    
-                    # Task starten (ASYNC!)
-                    task = reprocess_email_base.delay(
-                        user_id=user.id,
-                        raw_email_id=raw_email_id,
-                        service_token_id=service_token.id
-                    )
-                    
-                    logger.info(f"✅ Reprocess Task {task.id} gequeued für Email {raw_email_id}")
-                    
-                    return jsonify({
-                        "status": "queued",
-                        "task_id": task.id,
-                        "task_type": "celery",
-                        "message": "Base-Lauf wird neu generiert..."
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"reprocess_email: Celery-Fehler: {type(e).__name__}: {e}")
-                    return jsonify({"error": "Fehler beim Starten des Reprocess-Tasks"}), 500
-
-            return jsonify({"error": "Synchroner Modus wird nicht mehr unterstützt. Bitte Celery aktivieren."}), 400
+                # Task starten (ASYNC!)
+                task = reprocess_email_base.delay(
+                    user_id=user.id,
+                    raw_email_id=raw_email_id,
+                    service_token_id=service_token.id
+                )
+                
+                logger.info(f"✅ Reprocess Task {task.id} gequeued für Email {raw_email_id}")
+                
+                return jsonify({
+                    "status": "queued",
+                    "task_id": task.id,
+                    "task_type": "celery",
+                    "message": "Base-Lauf wird neu generiert..."
+                })
+                
+            except Exception as e:
+                logger.error(f"reprocess_email: Celery-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"error": "Fehler beim Starten des Reprocess-Tasks"}), 500
 
         except Exception as proc_err:
             db.rollback()
@@ -273,11 +260,7 @@ def reprocess_email(raw_email_id):
 @login_required
 def optimize_email(raw_email_id):
     """Triggert Optimize-Pass für Email - ASYNC via Celery"""
-    import os
     models = _get_models()
-    
-    # Check: Celery Mode? (USE_LEGACY_JOBS=false bedeutet Celery)
-    use_celery = os.environ.get("USE_LEGACY_JOBS", "false").lower() == "false"
     
     with get_db_session() as db:
         try:
@@ -289,7 +272,7 @@ def optimize_email(raw_email_id):
             raw_email = db.query(models.RawEmail).filter_by(
                 id=raw_email_id,
                 user_id=user.id
-            ).filter(models.RawEmail.deleted_at == None).first()
+            ).first()
             
             if not raw_email:
                 return jsonify({"error": "Email nicht gefunden"}), 404
@@ -300,44 +283,41 @@ def optimize_email(raw_email_id):
                 return jsonify({"error": "Session abgelaufen. Bitte neu einloggen."}), 401
 
             # ═══════════════════════════════════════════════════════════════
-            # CELERY PATH (NEW) - Async Processing
+            # CELERY PATH (Standard) - Async Processing
             # ═══════════════════════════════════════════════════════════════
-            if use_celery:
-                import importlib
-                from src.tasks.email_processing_tasks import optimize_email_processing
-                auth = importlib.import_module(".07_auth", "src")
-                ServiceTokenManager = auth.ServiceTokenManager
+            import importlib
+            from src.tasks.email_processing_tasks import optimize_email_processing
+            auth = importlib.import_module(".07_auth", "src")
+            ServiceTokenManager = auth.ServiceTokenManager
+            
+            try:
+                # Phase 2 Security: ServiceToken erstellen
+                _, service_token = ServiceTokenManager.create_token(
+                    user_id=user.id,
+                    master_key=master_key,
+                    session=db,
+                    days=1  # Optimize-Token nur 1 Tag gültig
+                )
                 
-                try:
-                    # Phase 2 Security: ServiceToken erstellen
-                    _, service_token = ServiceTokenManager.create_token(
-                        user_id=user.id,
-                        master_key=master_key,
-                        session=db,
-                        days=1  # Optimize-Token nur 1 Tag gültig
-                    )
-                    
-                    # Task starten (ASYNC!)
-                    task = optimize_email_processing.delay(
-                        user_id=user.id,
-                        raw_email_id=raw_email_id,
-                        service_token_id=service_token.id
-                    )
-                    
-                    logger.info(f"✅ Optimize Task {task.id} gequeued für Email {raw_email_id}")
-                    
-                    return jsonify({
-                        "status": "queued",
-                        "task_id": task.id,
-                        "task_type": "celery",
-                        "message": "Optimize-Lauf wird gestartet..."
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"optimize_email: Celery-Fehler: {type(e).__name__}: {e}")
-                    return jsonify({"error": "Fehler beim Starten des Optimize-Tasks"}), 500
-
-            return jsonify({"error": "Synchroner Modus wird nicht mehr unterstützt. Bitte Celery aktivieren."}), 400
+                # Task starten (ASYNC!)
+                task = optimize_email_processing.delay(
+                    user_id=user.id,
+                    raw_email_id=raw_email_id,
+                    service_token_id=service_token.id
+                )
+                
+                logger.info(f"✅ Optimize Task {task.id} gequeued für Email {raw_email_id}")
+                
+                return jsonify({
+                    "status": "queued",
+                    "task_id": task.id,
+                    "task_type": "celery",
+                    "message": "Optimize-Lauf wird gestartet..."
+                })
+                
+            except Exception as e:
+                logger.error(f"optimize_email: Celery-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"error": "Fehler beim Starten des Optimize-Tasks"}), 500
 
         except Exception as proc_err:
             db.rollback()
@@ -374,7 +354,6 @@ def correct_email(raw_email_id: int):
                 .filter(
                     models.RawEmail.id == raw_email_id,
                     models.RawEmail.user_id == user.id,
-                    models.ProcessedEmail.deleted_at == None,
                 )
                 .first()
             )
@@ -498,8 +477,7 @@ def delete_email(raw_email_id):
                 .filter(
                     models.RawEmail.id == raw_email_id,
                     models.RawEmail.user_id == user.id,
-                    models.RawEmail.deleted_at == None,
-                    models.ProcessedEmail.deleted_at == None,
+
                 )
                 .first()
             )
@@ -664,8 +642,6 @@ def move_email_to_folder(raw_email_id):
                 .filter(
                     models.RawEmail.id == raw_email_id,
                     models.RawEmail.user_id == user.id,
-                    models.RawEmail.deleted_at == None,
-                    models.ProcessedEmail.deleted_at == None,
                 )
                 .first()
             )
@@ -759,8 +735,6 @@ def mark_email_read(raw_email_id):
                 .filter(
                     models.RawEmail.id == raw_email_id,
                     models.RawEmail.user_id == user.id,
-                    models.RawEmail.deleted_at == None,
-                    models.ProcessedEmail.deleted_at == None,
                 )
                 .first()
             )
@@ -837,8 +811,6 @@ def toggle_email_read(raw_email_id):
                 .filter(
                     models.RawEmail.id == raw_email_id,
                     models.RawEmail.user_id == user.id,
-                    models.RawEmail.deleted_at == None,
-                    models.ProcessedEmail.deleted_at == None,
                 )
                 .first()
             )
@@ -925,8 +897,6 @@ def toggle_email_flag(raw_email_id):
                 .filter(
                     models.RawEmail.id == raw_email_id,
                     models.RawEmail.user_id == user.id,
-                    models.RawEmail.deleted_at == None,
-                    models.ProcessedEmail.deleted_at == None,
                 )
                 .first()
             )

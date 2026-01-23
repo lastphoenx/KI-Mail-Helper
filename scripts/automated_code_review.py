@@ -172,12 +172,6 @@ KNOWN_FALSE_POSITIVES = {
     ],
     "Uncontrolled Thread": [
         {
-            "pattern": r"threading\.Thread.*ensure_worker",
-            "reason": "Single worker thread per instance (controlled)",
-            "status": "MONITOR",  # Bei Multi-Instance Deployment prüfen
-            "applies_to": ["src/14_background_jobs.py"]
-        },
-        {
             "pattern": r"threading\.Thread.*run_http_redirector.*daemon=True",
             "reason": "HTTP→HTTPS redirector thread (daemon=True, terminates with parent process)",
             "status": "IGNORED",  # Safe pattern
@@ -283,7 +277,6 @@ LAYERS = {
         'priority': 'MITTEL',
         'files': [
             'src/00_main.py',
-            'src/14_background_jobs.py',
             'src/00_env_validator.py',
         ],
         'focus': [

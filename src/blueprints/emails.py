@@ -7,8 +7,6 @@ Routes (5 total):
     3. /threads (GET) - Thread-basierte Ansicht
     4. /email/<id> (GET) - Email-Detailansicht
     5. /email/<id>/render-html (GET) - HTML-Rendering für iframe
-
-Extracted from 01_web_app.py lines: 978-1759
 """
 
 from flask import Blueprint, render_template, request, redirect, url_for, session, g, make_response
@@ -280,8 +278,6 @@ def list_view():
             .join(models.RawEmail)
             .filter(
                 models.RawEmail.user_id == user.id,
-                models.RawEmail.deleted_at == None,
-                models.ProcessedEmail.deleted_at == None,
             )
         )
 
@@ -671,14 +667,13 @@ def email_detail(raw_email_id):
             if not user:
                 return redirect(url_for("auth.login"))
 
+            # Email laden (OHNE deleted_at Filter - damit gelöschte Emails angezeigt werden können!)
             processed = (
                 db.query(models.ProcessedEmail)
                 .join(models.RawEmail)
                 .filter(
                     models.RawEmail.id == raw_email_id,
                     models.RawEmail.user_id == user.id,
-                    models.RawEmail.deleted_at == None,
-                    models.ProcessedEmail.deleted_at == None,
                 )
                 .first()
             )
@@ -918,8 +913,6 @@ def render_email_html(raw_email_id: int):
                 .filter(
                     models.RawEmail.id == raw_email_id,
                     models.RawEmail.user_id == user.id,
-                    models.RawEmail.deleted_at == None,
-                    models.ProcessedEmail.deleted_at == None,
                 )
                 .first()
             )

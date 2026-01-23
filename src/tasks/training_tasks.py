@@ -291,19 +291,25 @@ def _get_training_data(
         if not raw_email:
             continue
         
-        # Embedding aus RawEmail
-        embedding = raw_email.embedding
+        # Embedding aus RawEmail (Attribut: email_embedding, nicht embedding)
+        embedding = raw_email.email_embedding
         if not embedding:
             logger.debug(f"Kein Embedding für RawEmail {raw_email.id}")
             continue
         
-        # Parse Embedding (kann JSON-String oder Liste sein)
-        if isinstance(embedding, str):
+        # Parse Embedding (kann JSON-String, bytes oder Liste sein)
+        if isinstance(embedding, bytes):
+            try:
+                embedding = np.frombuffer(embedding, dtype=np.float32)
+            except Exception as e:
+                logger.warning(f"Ungültiges bytes-Embedding für RawEmail {raw_email.id}: {e}")
+                continue
+        elif isinstance(embedding, str):
             import json
             try:
                 embedding = json.loads(embedding)
             except json.JSONDecodeError:
-                logger.warning(f"Ungültiges Embedding für RawEmail {raw_email.id}")
+                logger.warning(f"Ungültiges JSON-Embedding für RawEmail {raw_email.id}")
                 continue
         
         if not isinstance(embedding, (list, np.ndarray)):

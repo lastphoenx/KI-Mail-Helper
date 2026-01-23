@@ -26,8 +26,6 @@ Routes (23 total):
     22. /account/<id>/mail-count (GET) - get_account_mail_count
     23. /account/<id>/folders (GET) - get_account_folders
     24. /whitelist-imap-setup (GET) - whitelist_imap_setup_page
-
-Extracted from 01_web_app.py lines: 2392-2720, 6322-6490, 6583-7520, 7763-8020, 8985-9050
 """
 
 from flask import Blueprint, render_template, request, redirect, url_for, jsonify, session, flash, g
@@ -312,6 +310,7 @@ def save_fetch_config():
                 return redirect(url_for("accounts.settings"))
             
             use_delta_sync = request.form.get('use_delta_sync') == 'on'
+            enable_auto_fetch = request.form.get('enable_auto_fetch') == 'on'
             since_date_str = request.form.get('since_date', '').strip()
             unseen_only = request.form.get('unseen_only') == 'on'
             include_folders = request.form.getlist('include_folders')
@@ -336,6 +335,7 @@ def save_fetch_config():
             user.fetch_mails_per_folder = mails_per_folder
             user.fetch_max_total = max_total_mails
             user.fetch_use_delta_sync = use_delta_sync
+            user.enable_auto_fetch = enable_auto_fetch
             
             account.fetch_since_date = since_date
             account.fetch_unseen_only = unseen_only
@@ -1235,9 +1235,6 @@ def fetch_mails(account_id):
     import os
     models = _get_models()
     
-    # Check: Celery oder Legacy Job Queue?
-    use_celery = os.getenv("USE_LEGACY_JOBS", "false").lower() == "false"
-    
     # Lazy imports für AI und Sanitizer
     import importlib
     ai_client = importlib.import_module(".03_ai_client", "src")
@@ -1277,83 +1274,48 @@ def fetch_mails(account_id):
             sanitize_level = sanitizer.get_sanitization_level(use_cloud)
         
         # ═══════════════════════════════════════════════════════════════════
-        # CELERY PATH (NEW) - Multi-User Ready
+        # CELERY PATH (Standard) - Multi-User Ready
         # ═══════════════════════════════════════════════════════════════════
-        if use_celery:
-            import importlib
-            from src.tasks.mail_sync_tasks import sync_user_emails
-            auth = importlib.import_module(".07_auth", "src")
-            ServiceTokenManager = auth.ServiceTokenManager
-            
-            try:
-                # Phase 2 Security: ServiceToken erstellen (DEK nicht in Redis!)
-                # Der Task bekommt nur die token_id, nicht den master_key
-                with get_db_session() as token_db:
-                    _, service_token = ServiceTokenManager.create_token(
-                        user_id=user.id,
-                        master_key=master_key,
-                        session=token_db,
-                        days=1  # Sync-Token nur 1 Tag gültig
-                    )
-                    service_token_id = service_token.id
-                
-                # Queue Celery Task (asynchron, skalierbar)
-                task = sync_user_emails.delay(
-                    user_id=user.id,
-                    account_id=account_id,
-                    service_token_id=service_token_id,
-                    max_emails=fetch_limit
-                )
-                
-                logger.info(f"fetch_mails: Celery Task {task.id} für Account {account_id} gequeued")
-                
-                return jsonify({
-                    "status": "queued",
-                    "task_id": task.id,
-                    "task_type": "celery",
-                    "provider": provider,
-                    "model": resolved_model,
-                    "is_initial": is_initial,
-                    "max_mails": fetch_limit
-                })
-                
-            except Exception as e:
-                logger.error(f"fetch_mails: Celery-Fehler: {type(e).__name__}: {e}")
-                return jsonify({"error": "Fehler beim Starten des Sync-Tasks"}), 500
+        import importlib
+        from src.tasks.mail_sync_tasks import sync_user_emails
+        auth = importlib.import_module(".07_auth", "src")
+        ServiceTokenManager = auth.ServiceTokenManager
         
-        # ═══════════════════════════════════════════════════════════════════
-        # LEGACY PATH (OLD) - BackgroundJobQueue
-        # ═══════════════════════════════════════════════════════════════════
-        else:
-            job_queue = _get_job_queue()
-            
-            try:
-                job_id = job_queue.enqueue_fetch_job(
+        try:
+            # Phase 2 Security: ServiceToken erstellen (DEK nicht in Redis!)
+            # Der Task bekommt nur die token_id, nicht den master_key
+            with get_db_session() as token_db:
+                _, service_token = ServiceTokenManager.create_token(
                     user_id=user.id,
-                    account_id=account.id,
                     master_key=master_key,
-                    provider=provider,
-                    model=resolved_model,
-                    max_mails=fetch_limit,
-                    sanitize_level=sanitize_level,
-                    meta={"trigger": "settings", "is_initial": is_initial},
+                    session=token_db,
+                    days=1  # Sync-Token nur 1 Tag gültig
                 )
-                logger.info(f"fetch_mails: Legacy Job {job_id} für Account {account_id} gequeued")
-                return jsonify({
-                    "status": "queued",
-                    "job_id": job_id,
-                    "task_type": "legacy",
-                    "provider": provider,
-                    "model": resolved_model,
-                    "is_initial": is_initial,
-                    "max_mails": fetch_limit
-                })
-            except ValueError as e:
-                logger.error(f"fetch_mails: Validierung fehlgeschlagen: {e}")
-                return jsonify({"error": str(e)}), 400
-            except Exception as e:
-                logger.error(f"fetch_mails: Queue-Fehler: {type(e).__name__}: {e}")
-                return jsonify({"error": "Fehler beim Starten des Fetch-Jobs"}), 500
+                service_token_id = service_token.id
+            
+            # Queue Celery Task (asynchron, skalierbar)
+            task = sync_user_emails.delay(
+                user_id=user.id,
+                account_id=account_id,
+                service_token_id=service_token_id,
+                max_emails=fetch_limit
+            )
+            
+            logger.info(f"fetch_mails: Celery Task {task.id} für Account {account_id} gequeued")
+            
+            return jsonify({
+                "status": "queued",
+                "task_id": task.id,
+                "task_type": "celery",
+                "provider": provider,
+                "model": resolved_model,
+                "is_initial": is_initial,
+                "max_mails": fetch_limit
+            })
+            
+        except Exception as e:
+            logger.error(f"fetch_mails: Celery-Fehler: {type(e).__name__}: {e}")
+            return jsonify({"error": "Fehler beim Starten des Sync-Tasks"}), 500
             
     except Exception as e:
         logger.error(f"fetch_mails: Fehler: {type(e).__name__}: {e}")

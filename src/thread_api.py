@@ -44,15 +44,14 @@ def format_datetime(dt):
 
 def get_db_session():
     """Get database session from shared pool (avoid circular imports with lazy import)"""
-    web_app = importlib.import_module(".01_web_app", "src")
-    return web_app.SessionLocal()
+    db_helper = importlib.import_module(".helpers.database", "src")
+    return db_helper.get_session_factory()()
 
 
 def get_current_user_model(db):
-    """Holt das aktuelle User-Model aus DB (identisch zu 01_web_app.py)"""
-    if not current_user.is_authenticated:
-        return None
-    return db.query(models.User).filter_by(id=current_user.id).first()
+    """Holt das aktuelle User-Model aus DB (nutzt Helper)"""
+    db_helper = importlib.import_module(".helpers.database", "src")
+    return db_helper.get_current_user_model(db)
 
 
 def decrypt_email(encrypted_text: str, master_key: str) -> str:

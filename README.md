@@ -614,7 +614,7 @@ Email-Detail → "✏️ Bewertung korrigieren"
 
 #### **Schritt 3: ML-Training (zukünftig)**
 ```python
-# _update_user_override_tags() (01_web_app.py:1970-2003)
+# _update_user_override_tags() (src/blueprints/email_actions.py)
 def _update_user_override_tags(email_id, user_id):
     current_tags = TagManager.get_email_tags(db, email_id, user_id)
     tag_string = ",".join([tag.name for tag in current_tags])
@@ -714,8 +714,8 @@ Dashboard → Filter-Bereich (links oder oben)
 
 **Performance-Optimierung:**
 ```python
-# src/01_web_app.py:858-895
-# Eager Loading: Alle Tags für alle Emails in EINER Query
+# src/blueprints/emails.py - Eager Loading
+# Alle Tags für alle Emails in EINER Query
 email_ids = [mail.id for mail in mails]
 tag_assignments = (
     db.query(EmailTagAssignment, EmailTag)
@@ -739,12 +739,12 @@ tag_assignments = (
 | **Tag-Manager** | `src/services/tag_manager.py` | 1-332 | 8 Methoden für CRUD + Assignment |
 | **Models** | `src/02_models.py` | 87-125 | EmailTag + EmailTagAssignment |
 | **Migration** | `migrations/versions/ph10_email_tags.py` | - | Alembic Migration |
-| **API Routes** | `src/01_web_app.py` | 1763-2003 | 7 REST Endpoints |
+| **API Routes** | `src/blueprints/api.py` | - | 67 REST Endpoints |
 | **Tag-UI** | `templates/tags.html` | 1-302 | Tag-Management Seite |
 | **Email-Detail** | `templates/email_detail.html` | 90-787 | Tag-Badges + Modal |
 | **Learning-Modal** | `templates/base.html` | 124-210 | "Bewertung korrigieren" |
 | **Filter** | `templates/list_view.html` | 8-88 | Multi-Select Tag-Filter |
-| **Learning Helper** | `src/01_web_app.py` | 1970-2003 | _update_user_override_tags() |
+| **Learning Helper** | `src/blueprints/email_actions.py` | - | _update_user_override_tags() |
 
 ---
 
@@ -784,7 +784,7 @@ suggested_tags = ai_result.get("suggested_tags", [])  # ← Muss gefüllt sein
 #### **Problem: user_override_tags nicht gesetzt**
 ```python
 # _update_user_override_tags() muss nach JEDEM Tag-Add/Remove aufgerufen werden!
-# src/01_web_app.py:1990-2003
+# src/blueprints/email_actions.py
 
 # Prüfen:
 sqlite3 emails.db "SELECT id, user_override_tags FROM processed_emails WHERE user_override_tags IS NOT NULL;"

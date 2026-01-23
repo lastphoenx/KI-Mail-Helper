@@ -186,8 +186,6 @@ FLASK_ENV=production
 # PFLICHT: Feature Flags
 # ═══════════════════════════════════════════════════════════════
 USE_POSTGRESQL=true
-USE_LEGACY_JOBS=false
-USE_BLUEPRINTS=1
 
 # ═══════════════════════════════════════════════════════════════
 # KI-Backend (wähle eins oder mehrere)
