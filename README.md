@@ -52,7 +52,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## Status
 
-**Version:** 2.2.0  
+**Version:** 2.2.1  
 **Development:** Aktiv  
 **Architecture:** Flask Blueprints + PostgreSQL + Celery  
 **Stability:** Production-ready  
@@ -64,6 +64,13 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ Blueprint-basierte Modularisierung (10 Blueprints)
 - ✅ Zero-Knowledge Encryption (DEK/KEK Pattern)
 - ✅ Mandatory 2FA für alle Accounts
+
+**v2.2.1 Highlights (Januar 2026):**
+- ✅ Robuste Mail-Verarbeitung: Fortsetzung unvollständiger Emails
+- ✅ Live-Status-Tracking: Erfolg/Fehler/Warnungen mit Delta-Anzeige
+- ✅ Verbessertes Opus-MT: inscriptis-Konfiguration + Token-Count-Präzision
+- ✅ Prozess-Reihenfolge: Älteste unverarbeitete Emails zuerst
+- ✅ SQL-Wartungsbefehle: Schnelle DB-Operationen für Status-Reset & Debugging
 
 ---
 

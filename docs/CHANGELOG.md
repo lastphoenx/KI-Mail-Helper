@@ -6,6 +6,53 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
+## [2.2.1] - 2026-01-24
+
+### 🔧 Mail-Processing-Verbesserungen & Übersetzungs-Fix
+
+#### Mail-Verarbeitung robuster gemacht
+- **Fortsetzung unvollständiger Verarbeitung**
+  - System setzt Verarbeitung bei Status 10, 20, 40, 50 fort (nicht nur bei 0)
+  - Ermöglicht Recovery nach Crashes oder abgebrochenen Prozessen
+  - ProcessedEmails werden gelöscht wenn RawEmail neu verarbeitet wird
+  
+- **Verbesserte Status-Anzeige**
+  - Frontend zeigt jetzt Fehler-Status (⚠️) und Erfolgs-Status (✅) mit Tooltips
+  - Delta-Anzeige: Zeigt Differenz seit letztem Abruf (z.B. "+3 neue")
+  - Warnung bei Quota-Limits oder Verbindungsfehlern
+  - UI lädt automatisch nach jedem Fetch
+
+- **Verarbeitungs-Reihenfolge korrigiert**
+  - Emails werden jetzt nach `received_at` aufsteigend verarbeitet (älteste zuerst)
+  - Vorher: Nach ID (zufällig bei gleichzeitigem Fetch mehrerer Accounts)
+  - Verhindert, dass neueste Emails alte blockieren
+
+#### Opus-MT Übersetzungs-Fix (Halluzination behoben)
+- **Root Cause:** HTML→Plain-Text-Konvertierung mit inscriptis produzierte massive Trailing Spaces
+- **Fixes:**
+  - `inscriptis.get_text()` nutzt jetzt `ParserConfig(display_links=False)` (kein Link-Text mehr)
+  - `line.rstrip()` entfernt Trailing Spaces vor Opus-MT-Übergabe
+  - Token-Count statt Char-Count für Chunking-Entscheidung (präziser)
+  - MAX_TRANSLATION_CHARS von 1500 → 5000 erhöht (vermeidet vorzeitiges Abschneiden)
+  - Whitespace-Skipping in Chunking-Logik: `if not chunk.strip(): continue`
+- **Ergebnis:** Keine "Es ist nicht bekannt, ob"-Halluzinationen mehr, saubere Übersetzungen
+
+#### Neue SQL-Wartungsbefehle
+- Dokumentiert in `docs/CLI_REFERENZ.md` → Abschnitt "4.5 Schnelle DB-Wartung (SQL)"
+- Status zurücksetzen: `UPDATE raw_emails SET processing_status=0 WHERE id=X;`
+- Übersetzung löschen: `SET encrypted_translation_de=NULL, translation_engine=NULL`
+- Fehler bereinigen: `SET processing_error=NULL, processing_warnings=NULL`
+- Batch-Operationen: `WHERE processing_status > 0 AND processing_status < 100`
+
+#### Geänderte Dateien
+- `src/12_processing.py` – inscriptis ParserConfig, Verarbeitungs-Reihenfolge (ORDER BY received_at ASC)
+- `src/services/translator_service.py` – Token-Count-Check, line.rstrip(), Whitespace-Skipping
+- `src/blueprints/api.py` – Frontend-Response mit Fehler/Erfolg/Delta-Counts
+- `templates/settings.html` – Fehler-Status-Icon, Delta-Anzeige, bessere Tooltips
+- `docs/CLI_REFERENZ.md` – Neue SQL-Befehle für DB-Wartung
+
+---
+
 ## [2.2.0] - 2026-01-22
 
 ### 🧹 Code-Bereinigung & Architektur-Migration

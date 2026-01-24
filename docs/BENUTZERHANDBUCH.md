@@ -1,6 +1,6 @@
 ﻿# 📧 KI-Mail-Helper – Benutzerhandbuch
 
-**Version:** 2.2.0 (Multi-User Edition)  
+**Version:** 2.2.1 (Multi-User Edition)  
 **Stand:** Januar 2026
 
 ---
@@ -16,10 +16,11 @@
 7. [Auto-Rules](#7-auto-rules)
 8. [Antwort-Stile](#8-antwort-stile)
 9. [KI-Priorisierung](#9-ki-priorisierung)
-10. [KI-Übersetzer](#10-ki-übersetzer)
-11. [Einstellungen](#11-einstellungen)
-12. [Sicherheit & Datenschutz](#12-sicherheit--datenschutz)
-13. [Fehlerbehebung](#13-fehlerbehebung)
+10. [Mail-Verarbeitung & Status](#10-mail-verarbeitung--status)
+11. [KI-Übersetzer](#11-ki-übersetzer)
+12. [Einstellungen](#12-einstellungen)
+13. [Sicherheit & Datenschutz](#13-sicherheit--datenschutz)
+14. [Fehlerbehebung](#14-fehlerbehebung)
 
 ---
 
@@ -414,7 +415,63 @@ Wenn du Cloud-AI nutzt, kannst du PII automatisch entfernen:
 
 ---
 
-## 10. KI-Übersetzer
+## 10. Mail-Verarbeitung & Status
+
+### 10.1 Verarbeitungs-Pipeline
+
+Jede Email durchläuft 5 Schritte:
+
+| Status | Schritt | Beschreibung |
+|--------|---------|---------------|
+| 0 | Unbearbeitet | Email wurde abgerufen, aber noch nicht analysiert |
+| 10 | Embedding | Semantische Vektorisierung für Suche |
+| 20 | Translation | Spracherkennung + Übersetzung (wenn nicht DE/EN) |
+| 40 | AI-Classified | KI-Priorisierung (Dringlichkeit × Wichtigkeit) |
+| 50 | Auto-Rules | Automatische Regelverarbeitung |
+| 100 | Complete | Vollständig verarbeitet |
+
+**Fehlerbehandlung:**
+- Bei Fehler: Status bleibt auf letztem erfolgreichen Schritt
+- System setzt Verarbeitung automatisch fort beim nächsten Durchlauf
+- Fehler werden in `processing_error` gespeichert und im UI angezeigt
+
+### 10.2 Status-Anzeige im Dashboard
+
+Unter **⚙️ Einstellungen** bei jedem Mail-Account:
+
+- **✅ Grüner Status:** Letzter Abruf erfolgreich
+- **⚠️ Gelber Status:** Warnungen (z.B. Quota-Limit erreicht)
+- **❌ Roter Status:** Fehler beim Abrufen
+- **Delta-Anzeige:** Zeigt Anzahl neuer Emails seit letztem Abruf (z.B. "+3 neue")
+
+**Tooltip:** Fahre mit der Maus über den Status für Details.
+
+### 10.3 Fortsetzung unvollständiger Verarbeitung
+
+Das System ist robust gegen Unterbrechungen:
+
+- **Crash-Recovery:** Nach Server-Neustart werden unvollständige Emails automatisch fortgesetzt
+- **Partielle Verarbeitung:** Emails bei Status 10, 20, 40, 50 werden nicht neu begonnen, sondern fortgesetzt
+- **Alte ProcessedEmails:** Wenn RawEmail neu verarbeitet wird, werden alte ProcessedEmails gelöscht
+
+**Beispiel:**
+```
+Email ID 123:
+1. Erster Durchlauf: Status 0 → 10 → 20 → [CRASH]
+2. Nach Neustart: Status 20 → 40 → 50 → 100 (setzt bei 20 fort)
+```
+
+### 10.4 Verarbeitungs-Reihenfolge
+
+**Wichtig:** Emails werden nach **Empfangsdatum** verarbeitet (älteste zuerst), nicht nach ID.
+
+- **Vorteil:** Chronologische Verarbeitung, ältere Emails blockieren nicht
+- **Früher:** Nach ID (zufällig bei Multi-Account-Fetch)
+- **Jetzt:** `ORDER BY received_at ASC` in der Processing-Pipeline
+
+---
+
+## 11. KI-Übersetzer
 
 Der **KI-Übersetzer** ist ein eigenständiges Tool zur Übersetzung von Texten mit automatischer Spracherkennung.
 
