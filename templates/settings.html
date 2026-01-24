@@ -256,9 +256,10 @@
                             <label for="sinceDate" class="form-label">Nur Mails ab Datum</label>
                             <input type="date" class="form-control bg-dark text-light border-secondary" 
                                    id="sinceDate" name="since_date"
-                                   value="{{ user_prefs.get('since_date', '')|string if user_prefs.get('since_date') else '' }}">
+                                   value="{{ user_prefs.get('since_date', '')|string if user_prefs.get('since_date') else '' }}"
+                                   style="color-scheme: dark;">
                             <small class="text-muted d-block mt-1">
-                                Leer = alle Mails. Empfohlen: 2025-12-01 für neue Accounts<br>
+                                Leer = alle Mails. Empfohlen: 01.12.2025 für neue Accounts<br>
                                 <strong>Hinweis:</strong> Bei Delta-Sync deaktiviert (UID-Range effizienter)
                             </small>
                         </div>
@@ -2131,6 +2132,7 @@ function updateFetchPreview(data) {
     // Berechne Summe UND sammle ALLE Ordner-Infos
     let totalEstimate = 0;
     let includedFolderCount = 0;
+    let filteredRemoteTotal = 0; // Tatsächliche Summe der gefilterten Ordner (für Delta)
     let allFolderDetails = [];
     
     Object.entries(folderCounts).forEach(([folderName, folderData]) => {
@@ -2153,9 +2155,13 @@ function updateFetchPreview(data) {
                 baseCount = Math.floor(baseCount * 0.5);
             }
             
+            // Für Fetch-Schätzung: Mit mailsPerFolder Limit
             let folderEstimate = Math.min(baseCount, mailsPerFolder);
-            
             totalEstimate += folderEstimate;
+            
+            // Für Delta: OHNE mailsPerFolder Limit (echte Remote-Zahl)
+            filteredRemoteTotal += baseCount;
+            
             includedFolderCount++;
         }
         
@@ -2181,7 +2187,11 @@ function updateFetchPreview(data) {
         return;
     }
     
-    previewCount.textContent = totalEstimate || 0;
+    // Berechne Delta hier (für Badge-Anzeige)
+    const filteredDelta = Math.max(0, filteredRemoteTotal - (summary.total_local || 0));
+    
+    // Badge: Zeige gefilterte Remote + Delta
+    previewCount.textContent = `${filteredRemoteTotal} (Δ${filteredDelta})`;
     
     // Details mit HTML-Struktur für bessere Lesbarkeit
     let detailsHtml = '<div style="font-size: 0.9em;">';
@@ -2220,14 +2230,13 @@ function updateFetchPreview(data) {
     
     // Summary-Infos mit gefiltertem Delta (b)
     detailsHtml += `<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ccc;">`;
-    detailsHtml += `<strong>Gesamt Remote:</strong> ${summary.total_remote || 0} Mails<br>`;
-    detailsHtml += `<strong>Ungelesen:</strong> ${summary.total_unseen || 0}<br>`;
+    detailsHtml += `<strong>Gefilterte Remote:</strong> ${filteredRemoteTotal} Mails (Filter angewendet)<br>`;
+    detailsHtml += `<strong>Alle Remote:</strong> ${summary.total_remote || 0} Mails<br>`;
     detailsHtml += `<strong>Lokal in DB:</strong> ${summary.total_local || 0}<br>`;
     
-    // Delta: Gefiltert vs. Lokal (nicht Total vs. Lokal)
-    const filteredDelta = Math.max(0, totalEstimate - (summary.total_local || 0));
+    // Delta wurde bereits oben berechnet, nutze es hier
     const deltaColor = filteredDelta > 0 ? '#856404' : '#155724';
-    detailsHtml += `<strong style="color: ${deltaColor};">Delta:</strong> ${filteredDelta} Mails fehlen lokal`;
+    detailsHtml += `<strong style="color: ${deltaColor};">Delta (zu fetchen):</strong> ${filteredDelta} Mails`;
     detailsHtml += '</div>';
     
     detailsHtml += '</div>';

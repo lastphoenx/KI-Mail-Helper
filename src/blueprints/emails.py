@@ -807,6 +807,16 @@ def email_detail(raw_email_id):
                         )
                 except Exception as e:
                     logger.warning(f"Sanitized body decryption failed for email {raw.id}: {e}")
+                
+                # Phase 26: Auto-Translation entschlüsseln (wenn vorhanden)
+                decrypted_translation_de = None
+                try:
+                    if raw.encrypted_translation_de:
+                        decrypted_translation_de = encryption.EncryptionManager.decrypt_data(
+                            raw.encrypted_translation_de, master_key
+                        )
+                except Exception as e:
+                    logger.warning(f"Translation decryption failed for email {raw.id}: {e}")
 
             # Phase 10: Lade Email-Tags
             email_tags = []
@@ -868,6 +878,7 @@ def email_detail(raw_email_id):
             decrypted_tags=decrypted_tags,
             decrypted_subject_sanitized=decrypted_subject_sanitized,  # Phase 22
             decrypted_body_sanitized=decrypted_body_sanitized,        # Phase 22
+            decrypted_translation_de=decrypted_translation_de,        # Phase 26
             priority_label=priority_label,
             email_tags=email_tags,
             all_user_tags=all_user_tags,

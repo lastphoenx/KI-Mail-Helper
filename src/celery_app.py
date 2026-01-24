@@ -57,8 +57,9 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     task_reject_on_worker_lost=True,
-    task_time_limit=15 * 60,      # 15 Minuten Hard-Limit
-    task_soft_time_limit=12 * 60,  # 12 Minuten Soft-Limit (für lokale LLMs)
+    # KEIN globales time_limit! Jede Task setzt ihr eigenes Limit (oder None für long-running)
+    # task_time_limit=15 * 60,      # REMOVED: Mail-Sync kann Stunden dauern!
+    # task_soft_time_limit=12 * 60,  # REMOVED: Verursacht SIGKILL bei großen Accounts
     worker_prefetch_multiplier=1,
 )
 

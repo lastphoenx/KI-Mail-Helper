@@ -69,6 +69,9 @@ def generate_embedding_for_email(
     für lange Emails (>512 tokens), aber normalisiert am Ende für konsistente
     Similarity mit Tag-Embeddings (die auch normalisiert sind).
     
+    BUGFIX (24.01.2026): Validiert dass das Model ein Embedding-Model ist,
+    nicht ein Chat-Model (verhindert llama3.2:1b als Embedding-Model).
+    
     Args:
         subject: Email-Betreff (Klartext)
         body: Email-Body (Klartext)
@@ -85,6 +88,34 @@ def generate_embedding_for_email(
     if not ai_client:
         logger.debug("Kein AI-Client für Embedding-Generierung")
         return None, None, None
+    
+    # 🆕 KRITISCHE VALIDIERUNG: Prüfe ob Model ein Embedding-Model ist
+    # Verhindert: llama3.2:1b (Chat) statt bge-m3:latest (Embedding)
+    try:
+        actual_model = model_name or getattr(ai_client, "model", None)
+        if actual_model:
+            # Import model_discovery für Typ-Check (mit importlib wegen 04_* Prefix)
+            try:
+                import importlib
+                model_discovery = importlib.import_module("src.04_model_discovery")
+                model_type = model_discovery._detect_ollama_model_type("http://127.0.0.1:11434", actual_model)
+                
+                if model_type != "embedding":
+                    logger.error(
+                        f"❌ KRITISCHER FEHLER: '{actual_model}' ist ein {model_type.upper()}-Model, "
+                        "kein EMBEDDING-Model! Verwende bge-m3:latest oder all-minilm:22m stattdessen."
+                    )
+                    # BLOCKIERE das Embedding - sonst gibt's Dimensions-Mismatch!
+                    return None, None, None
+                    
+                logger.debug(f"✅ Model-Typ validiert: {actual_model} ist ein Embedding-Model")
+                
+            except ImportError:
+                logger.warning("⚠️  model_discovery nicht verfügbar, überspringe Typ-Check")
+            except Exception as type_check_err:
+                logger.warning(f"⚠️  Model-Typ-Check fehlgeschlagen: {type_check_err}")
+    except Exception as e:
+        logger.warning(f"⚠️  Model-Validierung fehlgeschlagen: {e}")
     
     try:
         # Text für Embedding kombinieren

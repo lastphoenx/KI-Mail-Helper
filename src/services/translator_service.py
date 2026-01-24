@@ -6,16 +6,21 @@ Features:
 - Spracherkennung via fastText (lid.176.bin Modell)
 - Übersetzung via Cloud-LLM (OpenAI/Anthropic/Mistral)
 - Lokale Übersetzung via Opus-MT (Helsinki-NLP)
+- Chunking für lange Texte (Opus-MT 512 Token Limit)
+- LRU-Cache für Opus-MT Modelle (RAM-Management)
+- Sync-Wrapper für Celery-Integration
 
-Version: 1.1.0
-Datum: 2026-01-21
+Version: 1.2.0
+Datum: 2026-01-23
 """
 
 import os
 import logging
+import asyncio
 from typing import Optional, Tuple, Dict, Any
 from dataclasses import dataclass
 from pathlib import Path
+from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
 
@@ -176,12 +181,53 @@ class TranslatorService:
         
         model = self._load_model()
         
-        # Nur erste 500 Zeichen für Geschwindigkeit
-        sample = text[:500].replace('\n', ' ')
+        # HTML-Tags entfernen für bessere Spracherkennung
+        sample = text
+        if '<' in text[:500]:  # HTML-Check (großzügiger für DOCTYPE/Meta-Tags)
+            try:
+                from inscriptis import get_text
+                from inscriptis.model.config import ParserConfig
+                sample = get_text(text, ParserConfig(display_links=False))
+            except Exception:
+                # Fallback: einfaches Strip von Tags
+                import re
+                sample = re.sub(r'<[^>]+>', ' ', text)
+        
+        # 🧹 ROBUSTE TEXT-BEREINIGUNG für bessere Language Detection
+        import re
+        
+        # 1. URLs entfernen (häufig in Newsletters, verwirren das Modell)
+        sample = re.sub(r'https?://[^\s<>"]+', ' ', sample)
+        
+        # 2. Email-Adressen entfernen
+        sample = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', ' ', sample)
+        
+        # 3. Base64-ähnliche lange Strings entfernen (Tracking-IDs, Inline-Bilder)
+        sample = re.sub(r'\b[A-Za-z0-9+/=]{30,}\b', ' ', sample)
+        
+        # 4. Mehrfache Leerzeichen normalisieren
+        sample = re.sub(r'\s+', ' ', sample).strip()
+        
+        # 5. Nehme mehr Text für bessere Analyse (2000 statt 1000)
+        sample = sample[:2000]
+        
+        if not sample or len(sample) < 10:
+            return LanguageDetectionResult(
+                language='unknown',
+                confidence=0.0,
+                language_name='Unbekannt (zu wenig Text nach Bereinigung)'
+            )
         
         predictions = model.predict(sample)
         lang_code = predictions[0][0].replace('__label__', '')
         confidence = float(predictions[1][0])
+        
+        # 🎯 HÖHERER CONFIDENCE-THRESHOLD: < 0.80 = unsichere Erkennung
+        if confidence < 0.80:
+            logger.warning(
+                f"⚠️ Language detection unsicher: {lang_code} ({confidence:.2f}) - "
+                f"Sample: '{sample[:100]}...'"
+            )
         
         lang_name = LANGUAGE_NAMES.get(lang_code, lang_code.upper())
         
@@ -365,28 +411,191 @@ REGELN:
             raise
     
     def _run_opus_translation(self, model_name: str, text: str) -> str:
-        """Führt Opus-MT Übersetzung synchron aus (für Thread-Pool)."""
+        """
+        Führt Opus-MT Übersetzung synchron aus (für Thread-Pool).
+        
+        Mit LRU-Cache (max 2 Modelle) und Chunking für lange Texte.
+        """
+        if not text or not text.strip():
+            return text
+
         from transformers import MarianMTModel, MarianTokenizer
+        import os
         
-        # Lazy-Loading der Modelle mit Caching
+        # KRITISCH: Trailing Spaces pro Zeile entfernen (inscriptis lässt die stehen)
+        # Ohne dies: Leere Chunks → Opus-MT halluziniert "Es ist nicht bekannt, ob"
+        lines = [line.rstrip() for line in text.split('\n')]
+        text = '\n'.join(lines)
+        
+        # DEBUG: Log den EXACT Text der übersetzt wird
+        logger.info(f"🔍 OPUS-MT Input ({len(text)} chars):\n{repr(text[:500])}\n")
+        
+        # LRU-Cache für Opus-MT Modelle (RAM-Management)
+        MAX_CACHED_MODELS = 2  # Max 600MB RAM (300MB pro Modell)
+        
         if not hasattr(self, '_opus_models'):
-            self._opus_models = {}
+            self._opus_models = OrderedDict()
         
+        # LRU: Wenn Cache voll, ältestes Modell entfernen
         if model_name not in self._opus_models:
+            if len(self._opus_models) >= MAX_CACHED_MODELS:
+                oldest = next(iter(self._opus_models))
+                logger.info(f"🗑️ Entferne Opus-MT Modell aus Cache: {oldest}")
+                del self._opus_models[oldest]
+            
             logger.info(f"📥 Lade Opus-MT Modell: {model_name}")
-            tokenizer = MarianTokenizer.from_pretrained(model_name)
-            model = MarianMTModel.from_pretrained(model_name)
-            self._opus_models[model_name] = (tokenizer, model)
-            logger.info(f"✅ Opus-MT Modell geladen: {model_name}")
+            
+            # FIX Phase 27: Timeout + Local-first + Error Handling
+            try:
+                # Prüfe ob Modell bereits lokal vorhanden (verhindert Download-Hänger)
+                cache_dir = os.path.expanduser("~/.cache/huggingface/hub")
+                model_cache = f"models--{model_name.replace('/', '--')}"
+                local_path = os.path.join(cache_dir, model_cache)
+                
+                # Local-first: Wenn vorhanden, erzwinge lokales Laden
+                if os.path.exists(local_path):
+                    logger.info(f"✅ Modell lokal gefunden: {local_path}")
+                    tokenizer = MarianTokenizer.from_pretrained(model_name, local_files_only=True)
+                    model = MarianMTModel.from_pretrained(model_name, local_files_only=True)
+                else:
+                    # Download mit Timeout (verhindert ewiges Hängen)
+                    logger.warning(f"⚠️ Modell nicht lokal, Download nötig: {model_name}")
+                    # transformers nutzt REQUESTS_TIMEOUT env var
+                    os.environ['REQUESTS_TIMEOUT'] = '60'  # 60s Timeout
+                    tokenizer = MarianTokenizer.from_pretrained(model_name, resume_download=True)
+                    model = MarianMTModel.from_pretrained(model_name, resume_download=True)
+                
+                self._opus_models[model_name] = (tokenizer, model)
+                logger.info(f"✅ Opus-MT Modell geladen: {model_name}")
+                
+            except Exception as e:
+                logger.error(f"❌ Opus-MT Modell konnte nicht geladen werden: {model_name} - {e}")
+                # Cleanup: Entferne .incomplete Files
+                if os.path.exists(local_path):
+                    incomplete_files = [f for f in os.listdir(os.path.join(local_path, 'blobs')) 
+                                       if f.endswith('.incomplete')]
+                    if incomplete_files:
+                        logger.warning(f"🗑️ Entferne {len(incomplete_files)} .incomplete Files")
+                        for f in incomplete_files:
+                            os.remove(os.path.join(local_path, 'blobs', f))
+                raise RuntimeError(f"Translation model {model_name} not available") from e
         
+        # Move to end (LRU)
+        self._opus_models.move_to_end(model_name)
         tokenizer, model = self._opus_models[model_name]
         
-        # Übersetzung durchführen
-        tokens = tokenizer(text, return_tensors='pt', padding=True, truncation=True, max_length=512)
-        translated_tokens = model.generate(**tokens, max_length=512)
-        result = tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+        # Prüfe Token-Count statt Zeichen-Count (präziser!)
+        test_tokens = tokenizer(text, return_tensors='pt', padding=True, max_length=512)
+        token_count = test_tokens['input_ids'].shape[1]
         
+        if token_count <= 512:
+            # Text passt in ein Chunk - DIREKT übersetzen!
+            logger.debug(f"Text OK: {len(text)} chars = {token_count} tokens (< 512)")
+            translated_tokens = model.generate(**test_tokens, max_length=512)
+            return tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+        
+        # Text zu lang: Chunking nötig
+        logger.warning(f"Text zu lang: {len(text)} chars = {token_count} tokens - Chunking aktiviert")
+        MAX_CHARS_PER_CHUNK = 350  # Konservativ für Chunking
+        
+        # Langer Text: In Absätze/Chunks aufteilen
+        logger.debug(f"Text zu lang ({len(text)} Zeichen), Chunking aktiviert")
+        
+        # Strategie: An Absätzen trennen, große Paragraphen aufteilen
+        paragraphs = text.split('\n\n')
+        translated_chunks = []
+        current_chunk = ""
+        
+        for para in paragraphs:
+            # Leere Absätze überspringen (verhindert Halluzinationen)
+            if not para.strip():
+                continue
+
+            # Wenn Paragraph selbst zu lang, in Sätze aufteilen
+            if len(para) > MAX_CHARS_PER_CHUNK:
+                # Versuche an Satzenden zu trennen
+                sentences = para.replace('. ', '.\n').split('\n')
+                for sentence in sentences:
+                    if not sentence.strip():
+                        continue
+
+                    # Falls einzelner Satz immer noch zu lang, hart trennen
+                    if len(sentence) > MAX_CHARS_PER_CHUNK:
+                        for i in range(0, len(sentence), MAX_CHARS_PER_CHUNK):
+                            chunk_part = sentence[i:i+MAX_CHARS_PER_CHUNK]
+                            if not chunk_part.strip():
+                                continue
+
+                            if current_chunk and len(current_chunk) + len(chunk_part) + 1 > MAX_CHARS_PER_CHUNK:
+                                # Aktuellen Chunk übersetzen (OHNE truncation!)
+                                if current_chunk.strip():
+                                    tokens = tokenizer(current_chunk, return_tensors='pt', padding=True, max_length=512)
+                                    translated_tokens = model.generate(**tokens, max_length=512)
+                                    translated_chunks.append(
+                                        tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+                                    )
+                                current_chunk = chunk_part
+                            else:
+                                current_chunk += (" " if current_chunk else "") + chunk_part
+                    else:
+                        if current_chunk and len(current_chunk) + len(sentence) + 1 > MAX_CHARS_PER_CHUNK:
+                            # Aktuellen Chunk übersetzen (OHNE truncation!)
+                            if current_chunk.strip():
+                                tokens = tokenizer(current_chunk, return_tensors='pt', padding=True, max_length=512)
+                                translated_tokens = model.generate(**tokens, max_length=512)
+                                translated_chunks.append(
+                                    tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+                                )
+                            current_chunk = sentence
+                        else:
+                            current_chunk += (" " if current_chunk else "") + sentence
+                continue
+            
+            if len(current_chunk) + len(para) + 2 > MAX_CHARS_PER_CHUNK:
+                # Chunk übersetzen (OHNE truncation!)
+                if current_chunk and current_chunk.strip():
+                    tokens = tokenizer(current_chunk, return_tensors='pt', padding=True, max_length=512)
+                    translated_tokens = model.generate(**tokens, max_length=512)
+                    translated_chunks.append(
+                        tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+                    )
+                current_chunk = para
+            else:
+                current_chunk += ("\n\n" if current_chunk else "") + para
+        
+        # Letzten Chunk übersetzen (OHNE truncation!)
+        if current_chunk and current_chunk.strip():
+            tokens = tokenizer(current_chunk, return_tensors='pt', padding=True, max_length=512)
+            translated_tokens = model.generate(**tokens, max_length=512)
+            translated_chunks.append(
+                tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+            )
+        
+        result = "\n\n".join(translated_chunks)
+        logger.debug(f"Chunking abgeschlossen: {len(translated_chunks)} chunks → {len(result)} Zeichen")
         return result
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Sync Wrapper für Celery
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    def translate_sync(
+        self,
+        text: str,
+        target_lang: str,
+        source_lang: Optional[str] = None,
+        engine: str = 'local',
+        provider: Optional[str] = None,
+        model_override: Optional[str] = None
+    ) -> TranslationResult:
+        """
+        Synchroner Wrapper für translate() - für Celery-Tasks.
+        
+        Verwendet asyncio.run() um async-Funktion synchron auszuführen.
+        """
+        return asyncio.run(self.translate(
+            text, target_lang, source_lang, engine, provider, model_override
+        ))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

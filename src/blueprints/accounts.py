@@ -446,6 +446,45 @@ def save_ai_preferences():
                 flash("Optimize-Model ist erforderlich!", "danger")
                 return redirect(url_for("accounts.settings"))
 
+            # ====================================================================
+            # KRITISCH: Embedding-Model-Wechsel mit Dimensions-Validierung
+            # ====================================================================
+            # Prüfe ob Embedding-Model geändert wird und bereits Embeddings existieren
+            old_embedding_model = user.preferred_embedding_model
+            embedding_model_changed = (old_embedding_model != model_embedding)
+            
+            if embedding_model_changed:
+                # Zähle existierende Embeddings
+                from sqlalchemy import func, text
+                existing_count = db.execute(
+                    text("""
+                        SELECT COUNT(*) 
+                        FROM raw_emails 
+                        WHERE email_embedding IS NOT NULL 
+                          AND deleted_at IS NULL
+                          AND mail_account_id IN (
+                              SELECT id FROM mail_accounts 
+                              WHERE user_id = :user_id AND deleted_at IS NULL
+                          )
+                    """),
+                    {"user_id": user.id}
+                ).scalar()
+                
+                if existing_count > 0:
+                    # Es gibt bereits Embeddings - MODEL-WECHSEL IST GEFÄHRLICH!
+                    logger.warning(
+                        f"⚠️ User {user.id} versucht Embedding-Model zu wechseln "
+                        f"({old_embedding_model} → {model_embedding}) mit {existing_count} existierenden Embeddings"
+                    )
+                    
+                    flash(
+                        f"⚠️ ACHTUNG: Du hast bereits {existing_count} Emails mit Embeddings vom Model '{old_embedding_model}'. "
+                        f"Ein Wechsel zu '{model_embedding}' kann zu inkompatiblen Dimensionen führen und Tag-Suche unbrauchbar machen! "
+                        f"Bitte zuerst alle Embeddings zurücksetzen (Button 'Alle Emails neu embedden' unter KI-Settings).",
+                        "danger"
+                    )
+                    return redirect(url_for("accounts.settings"))
+
             user.preferred_embedding_provider = provider_embedding
             user.preferred_embedding_model = model_embedding
             user.preferred_ai_provider = provider_base
@@ -1263,9 +1302,17 @@ def fetch_mails(account_id):
                     "code": "SESSION_EXPIRED"
                 }), 401
             
-            # Fetch-Limits
+            # Fetch-Limits: User-Einstellung oder None (Task verwendet dann Default)
             is_initial = not account.initial_sync_done
-            fetch_limit = 500 if is_initial else 50
+            user_max_total = getattr(user, 'fetch_max_total', 0) or 0
+            
+            # Für initial sync: größeres Limit falls nicht gesetzt
+            if user_max_total > 0:
+                fetch_limit = user_max_total
+            elif is_initial:
+                fetch_limit = 1000  # Initial: großzügiger
+            else:
+                fetch_limit = None  # None = Task nutzt Default (200) oder user.fetch_max_total
             
             # AI Provider/Model
             provider = (user.preferred_ai_provider or "ollama").lower()

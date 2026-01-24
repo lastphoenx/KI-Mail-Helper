@@ -1,5 +1,5 @@
 """
-Mail Helper - Datenbankmodelle (SQLAlchemy + SQLite)
+Mail Helper - Datenbankmodelle (SQLAlchemy + PostgreSQL)
 Phase 1: raw_emails, processed_emails
 Phase 2: User, MailAccount, ServiceToken, RecoveryCode
 """
@@ -25,6 +25,7 @@ from sqlalchemy import (
     LargeBinary,
     event,
 )
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.pool import StaticPool
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -48,6 +49,32 @@ class EmailActionCategory(str, Enum):
 
     ACTION_REQUIRED = "aktion_erforderlich"
     URGENT = "dringend"
+
+
+class ProcessingWarningCode(str, Enum):
+    """Standardisierte Warning-Codes für processing_warnings JSONB-Feld"""
+    
+    # Translation Warnings
+    TRANSLATION_MODEL_UNAVAILABLE = "TRANSLATION_MODEL_UNAVAILABLE"
+    TRANSLATION_UNSUPPORTED_LANGUAGE = "TRANSLATION_UNSUPPORTED_LANGUAGE"
+    TRANSLATION_API_ERROR = "TRANSLATION_API_ERROR"
+    
+    # Language Detection Warnings
+    LANGUAGE_DETECTION_LOW_CONFIDENCE = "LANGUAGE_DETECTION_LOW_CONFIDENCE"
+    LANGUAGE_DETECTION_FAILED = "LANGUAGE_DETECTION_FAILED"
+    
+    # Embedding Warnings
+    EMBEDDING_MODEL_UNAVAILABLE = "EMBEDDING_MODEL_UNAVAILABLE"
+    EMBEDDING_GENERATION_FAILED = "EMBEDDING_GENERATION_FAILED"
+    
+    # Anonymization Warnings
+    ANONYMIZATION_TEXT_TRUNCATED = "ANONYMIZATION_TEXT_TRUNCATED"
+    ANONYMIZATION_PARTIAL_FAILURE = "ANONYMIZATION_PARTIAL_FAILURE"
+    
+    # AI Classification Warnings
+    AI_CLASSIFICATION_FALLBACK_TO_BOOSTER = "AI_CLASSIFICATION_FALLBACK_TO_BOOSTER"
+    AI_CLASSIFICATION_LOW_CONFIDENCE = "AI_CLASSIFICATION_LOW_CONFIDENCE"
+    AI_CLASSIFICATION_MODEL_UNAVAILABLE = "AI_CLASSIFICATION_MODEL_UNAVAILABLE"
     INFO_ONLY = "nur_information"
 
 
@@ -117,12 +144,14 @@ class EmailTag(Base):
     # Recalculated after each tag assignment (mean of all email_embeddings)
     # If NULL: Fallback to description/name embedding
     learned_embedding = Column(LargeBinary, nullable=True)
+    learned_embedding_model = Column(String(50), nullable=True)  # Model used for learned_embedding
     embedding_updated_at = Column(DateTime, nullable=True)
     
     # Phase NEGATIVE-FEEDBACK: Aggregated negative embedding (v2.0)
     # Mean of all rejected emails for this tag
     # Used to reduce false positive suggestions
     negative_embedding = Column(LargeBinary, nullable=True)
+    negative_embedding_model = Column(String(50), nullable=True)  # Model used for negative_embedding
     negative_updated_at = Column(DateTime, nullable=True)
     negative_count = Column(Integer, default=0)
 
@@ -331,7 +360,7 @@ class User(Base):
     )  # Bessere Chat-Modelle: llama3.2:3b, gpt-4o, sonnet
 
     # Phase 13C Part 4: Fetch-Konfiguration (User-steuerbar)
-    fetch_mails_per_folder = Column(Integer, default=100)  # Limit pro Ordner
+    fetch_mails_per_folder = Column(Integer, default=100)  # Limit pro Ordner (matches UI default)
     fetch_max_total = Column(Integer, default=0)  # 0 = unbegrenzt
     fetch_use_delta_sync = Column(Boolean, default=True)  # Nur neue Mails holen
 
@@ -946,6 +975,65 @@ class MailServerState(Base):
         return f"<MailServerState({self.folder}/{self.uid} {fetched})>"
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# PHASE 27: Processing Status Codes (State Machine)
+# ═══════════════════════════════════════════════════════════════════════
+class EmailProcessingStatus:
+    """Status-Codes für RawEmail.processing_status - Resume-fähige Verarbeitung"""
+    
+    # Erfolgreiche Schritte (positiv, aufsteigend)
+    NEW = 0                    # Frisch gefetched, nichts gemacht
+    EMBEDDING_DONE = 10        # email_embedding generiert
+    TRANSLATION_DONE = 20      # encrypted_translation_de (falls detected_language != 'de')
+    SANITIZATION_DONE = 30     # encrypted_body_sanitized gesetzt
+    AI_CLASSIFIED = 40         # processed_email existiert (Kategorie, Tags, etc.)
+    AUTO_RULES_APPLIED = 50    # auto_rules_processed = True
+    COMPLETE = 100             # Alles fertig, keine weitere Verarbeitung nötig
+    
+    # Fehler-Stati (negativ) - Retry mit Counter möglich
+    EMBEDDING_FAILED = -10     # Ollama down, korrupte Email, OOM
+    TRANSLATION_FAILED = -20   # Opus-MT crash, unbekannte Sprache, Network-Timeout
+    SANITIZATION_FAILED = -30  # spaCy crash, zu lange Texte
+    AI_CLASSIFICATION_FAILED = -40  # LLM Timeout, Invalid Response
+    AUTO_RULES_FAILED = -50    # Rule-Engine Fehler
+    
+    # Hilfsfunktionen
+    @staticmethod
+    def is_error(status: int) -> bool:
+        """True wenn Fehler-Status (negativ)"""
+        return status < 0
+    
+    @staticmethod
+    def needs_retry(status: int, retry_count: int, max_retries: int = 3) -> bool:
+        """True wenn Fehler-Status und noch Retries übrig"""
+        return status < 0 and retry_count < max_retries
+    
+    @staticmethod
+    def get_retry_status(failed_status: int) -> int:
+        """Berechne Status für Retry: -10 → 0, -20 → 10, -30 → 20, etc."""
+        if failed_status >= 0:
+            return failed_status  # Kein Fehler, nichts zu tun
+        return abs(failed_status) - 10
+    
+    @staticmethod
+    def get_next_step(status: int) -> str:
+        """Ermittle nächsten nötigen Verarbeitungsschritt basierend auf Status"""
+        if status < 10:
+            return "NEED_EMBEDDING"
+        if status < 20:
+            return "NEED_TRANSLATION"
+        if status < 40:
+            return "NEED_AI_ANALYSIS"
+        if status < 50:
+            return "NEED_AUTO_RULES"
+        return "COMPLETE"
+    
+    @staticmethod
+    def should_skip_step(current_status: int, step_status: int) -> bool:
+        """True wenn Schritt bereits erledigt (z.B. current=20, step=10 → skip Embedding)"""
+        return current_status >= step_status
+
+
 class RawEmail(Base):
     """Rohdaten der abgeholten E-Mails (Zero-Knowledge verschlüsselt)
 
@@ -1054,6 +1142,27 @@ class RawEmail(Base):
     calendar_method = Column(String(20), nullable=True)
     # JSON mit Event-Details: {method, uid, summary, dtstart, dtend, location, organizer, attendees[], status}
     encrypted_calendar_data = Column(Text, nullable=True)
+
+    # ===== PHASE 26: AUTO-TRANSLATION =====
+    # Sprache der Email (ISO 639-1: 'de', 'en', 'it', etc.)
+    detected_language = Column(String(5), nullable=True, index=True)
+    # Automatische Übersetzung ins Deutsche (verschlüsselt, nur bei detected_language != 'de')
+    encrypted_translation_de = Column(Text, nullable=True)
+    # Engine/Modell für Übersetzung (z.B. "opus-mt-en-de")
+    translation_engine = Column(String(30), nullable=True)
+
+    # ===== PHASE 27: PROCESSING STATE MACHINE (Resume-fähig) =====
+    # Status-Code für Verarbeitung (0=neu, 10=embedding, 20=translation, ..., 100=fertig)
+    processing_status = Column(Integer, nullable=False, default=0, index=True)
+    # Retry-Counter für fehlerhafte Emails (max 3 Versuche)
+    processing_retry_count = Column(Integer, nullable=False, default=0)
+    # Letzter FATALER Fehler (nur für Fehler die Verarbeitung abbrechen)
+    processing_error = Column(Text, nullable=True)
+    # Nicht-fatale Warnungen (JSON Array mit Code, Step, Message)
+    # Beispiel: [{"code": "TRANSLATION_UNAVAILABLE", "step": "translation", "language": "hy", "message": "..."}]
+    processing_warnings = Column(postgresql.JSONB(astext_type=Text()), nullable=True)
+    # Zeitstempel letzter Verarbeitungsversuch
+    processing_last_attempt_at = Column(DateTime, nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="raw_emails")

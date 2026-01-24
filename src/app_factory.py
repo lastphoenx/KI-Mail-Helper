@@ -220,10 +220,10 @@ def create_app(config_name="production"):
             nonce = getattr(g, 'csp_nonce', '')
             csp = (
                 "default-src 'self'; "
-                f"script-src 'self' https://cdn.jsdelivr.net 'nonce-{nonce}'; "
-                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                f"script-src 'self' 'nonce-{nonce}'; "
+                "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data: https:; "
-                "font-src 'self' https://cdn.jsdelivr.net; "
+                "font-src 'self'; "
                 "connect-src 'self'; "
                 "frame-ancestors 'none'; "
                 "base-uri 'self'; "

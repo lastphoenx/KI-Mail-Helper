@@ -275,9 +275,23 @@ class TagEmbeddingCache:
     
     @classmethod
     def compute_similarity(cls, emb1: np.ndarray, emb2: np.ndarray) -> float:
-        """Berechnet Cosine-Similarity zwischen zwei Embeddings"""
+        """Berechnet Cosine-Similarity zwischen zwei Embeddings
+        
+        BUGFIX (24.01.2026): Prüft Dimensions-Kompatibilität!
+        Verhindert Crash/Schrott bei Model-Mismatch (z.B. bge-m3 1024d vs all-minilm 384d)
+        """
         if emb1 is None or emb2 is None:
             return 0.0
+        
+        # 🆕 KRITISCH: Dimensions-Check vor Berechnung
+        if len(emb1) != len(emb2):
+            logger.error(
+                f"❌ DIMENSIONS-MISMATCH: Kann Similarity nicht berechnen! "
+                f"Embedding 1: {len(emb1)} dims, Embedding 2: {len(emb2)} dims. "
+                f"Wahrscheinlich Model-Wechsel ohne Tag-Reset! "
+                f"Lösung: Button 'Alle Emails neu embedden' klicken."
+            )
+            return 0.0  # Graceful Degradation statt Crash
         
         norm1 = np.linalg.norm(emb1)
         norm2 = np.linalg.norm(emb2)
@@ -1057,10 +1071,13 @@ class TagManager:
             
             # Embeddings sammeln und mitteln
             embeddings = []
+            embedding_models = set()  # Track welche Models verwendet wurden
             for email in meaningful_emails:
                 try:
                     emb = np.frombuffer(email.email_embedding, dtype=np.float32)
                     embeddings.append(emb)
+                    if email.embedding_model:
+                        embedding_models.add(email.embedding_model)
                 except Exception as e:
                     logger.warning(f"Embedding konvertierung fehlgeschlagen: {e}")
                     continue
@@ -1071,8 +1088,26 @@ class TagManager:
             # Mittelwert berechnen
             learned_embedding = np.mean(embeddings, axis=0)
             
+            # 🆕 KRITISCH: Speichere das verwendete Embedding-Model
+            # Bei gemischten Models (z.B. nach Migration): Nutze häufigstes Model
+            if embedding_models:
+                # Wähle das am häufigsten verwendete Model
+                model_counts = {m: sum(1 for e in meaningful_emails if e.embedding_model == m) 
+                               for m in embedding_models}
+                most_common_model = max(model_counts, key=model_counts.get)
+                
+                if len(embedding_models) > 1:
+                    logger.warning(
+                        f"⚠️  Tag '{tag.name}': Gemischte Embedding-Models gefunden: {embedding_models}. "
+                        f"Verwende häufigstes Model: {most_common_model}"
+                    )
+            else:
+                most_common_model = None
+                logger.warning(f"⚠️  Tag '{tag.name}': Kein embedding_model in Emails gefunden")
+            
             # In DB speichern
             tag.learned_embedding = learned_embedding.tobytes()
+            tag.learned_embedding_model = most_common_model  # 🆕 Model tracken!
             tag.embedding_updated_at = datetime.now(UTC)
             db.commit()
             
@@ -1081,7 +1116,7 @@ class TagManager:
             
             logger.info(
                 f"🎓 Tag '{tag.name}': Learned embedding updated from "
-                f"{len(embeddings)} emails (min={MIN_EMAILS_FOR_LEARNING})"
+                f"{len(embeddings)} emails (min={MIN_EMAILS_FOR_LEARNING}, model={most_common_model})"
             )
             return True
             
@@ -1246,10 +1281,15 @@ def update_negative_embedding(
         
         # Embeddings sammeln
         embeddings = []
+        embedding_models = set()  # Track welche Models verwendet wurden
         for example in negative_examples:
             try:
                 emb = np.frombuffer(example.negative_embedding, dtype=np.float32)
                 embeddings.append(emb)
+                # Hole Model aus der Email (via ProcessedEmail)
+                email = db.query(models.ProcessedEmail).filter_by(id=example.email_id).first()
+                if email and email.raw_email and email.raw_email.embedding_model:
+                    embedding_models.add(email.raw_email.embedding_model)
             except Exception as e:
                 logger.warning(f"Konnte negative_embedding nicht lesen: {e}")
                 continue
@@ -1261,8 +1301,25 @@ def update_negative_embedding(
         # Mittelwert berechnen (genau wie bei learned_embedding)
         negative_embedding = np.mean(embeddings, axis=0)
         
+        # 🆕 KRITISCH: Speichere das verwendete Embedding-Model
+        if embedding_models:
+            model_counts = {m: sum(1 for ex in negative_examples 
+                                  for email in [db.query(models.ProcessedEmail).filter_by(id=ex.email_id).first()]
+                                  if email and email.raw_email and email.raw_email.embedding_model == m) 
+                           for m in embedding_models}
+            most_common_model = max(model_counts, key=model_counts.get) if model_counts else None
+            
+            if len(embedding_models) > 1:
+                logger.warning(
+                    f"⚠️  Tag '{tag.name}' negative examples: Gemischte Models: {embedding_models}. "
+                    f"Verwende häufigstes: {most_common_model}"
+                )
+        else:
+            most_common_model = None
+        
         # In DB speichern
         tag.negative_embedding = negative_embedding.tobytes()
+        tag.negative_embedding_model = most_common_model  # 🆕 Model tracken!
         tag.negative_updated_at = datetime.now(UTC)
         tag.negative_count = len(embeddings)
         db.commit()
