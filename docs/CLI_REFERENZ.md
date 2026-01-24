@@ -353,6 +353,169 @@ EOF
 
 ---
 
+## 4.5. Schnelle DB-Wartung (SQL)
+
+### Häufig genutzte SQL-Befehle für Debugging & Wartung
+
+#### Email-Status zurücksetzen
+
+```bash
+# Status für einzelne Email zurücksetzen (wird neu verarbeitet)
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    processing_status = 0,
+    processing_error = NULL,
+    processing_warnings = NULL,
+    processing_retry_count = 0,
+    processing_last_attempt_at = NULL
+WHERE id = 1276;
+EOF
+
+# Mehrere Emails gleichzeitig
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    processing_status = 0,
+    processing_error = NULL,
+    processing_warnings = NULL
+WHERE id IN (1276, 1277, 1278);
+EOF
+
+# Alle fehlgeschlagenen Emails neu verarbeiten
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    processing_status = 0,
+    processing_error = NULL,
+    processing_warnings = NULL
+WHERE processing_error IS NOT NULL;
+EOF
+```
+
+#### Übersetzung zurücksetzen (für Re-Translation)
+
+```bash
+# Übersetzung für einzelne Email löschen
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    processing_status = 0,
+    encrypted_translation_de = NULL,
+    translation_engine = NULL,
+    detected_language = NULL,
+    processing_error = NULL,
+    processing_warnings = NULL
+WHERE id = 1276;
+EOF
+
+# Alle Opus-MT-Übersetzungen neu generieren (z.B. nach Fix)
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    processing_status = 0,
+    encrypted_translation_de = NULL,
+    translation_engine = NULL
+WHERE translation_engine = 'opus-mt-it-de';
+EOF
+```
+
+#### Email-Status abfragen
+
+```bash
+# Status-Übersicht für alle Emails
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+SELECT 
+    processing_status,
+    COUNT(*) as count,
+    CASE processing_status
+        WHEN 0 THEN 'Unbearbeitet'
+        WHEN 10 THEN 'Embedding'
+        WHEN 20 THEN 'Translation'
+        WHEN 40 THEN 'AI-Classified'
+        WHEN 50 THEN 'Auto-Rules'
+        WHEN 100 THEN 'Complete'
+        ELSE 'Unknown'
+    END as status_name
+FROM raw_emails
+GROUP BY processing_status
+ORDER BY processing_status;
+EOF
+
+# Fehlerhafte Emails anzeigen
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+SELECT 
+    id,
+    subject,
+    processing_status,
+    processing_error,
+    processing_retry_count,
+    processing_last_attempt_at
+FROM raw_emails
+WHERE processing_error IS NOT NULL
+ORDER BY id DESC
+LIMIT 10;
+EOF
+
+# Emails mit Übersetzung anzeigen
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+SELECT 
+    id,
+    detected_language,
+    translation_engine,
+    length(encrypted_translation_de) as translation_length
+FROM raw_emails
+WHERE encrypted_translation_de IS NOT NULL
+ORDER BY id DESC
+LIMIT 10;
+EOF
+```
+
+#### Batch-Operationen
+
+```bash
+# Alle unvollständigen Emails neu starten (Status < 100)
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    processing_status = 0,
+    processing_error = NULL
+WHERE processing_status > 0 AND processing_status < 100;
+EOF
+
+# Alle Emails eines Accounts neu verarbeiten
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    processing_status = 0,
+    processing_error = NULL,
+    processing_warnings = NULL
+WHERE mail_account_id = 3;
+EOF
+```
+
+#### ProcessedEmails löschen (für vollständige Neu-Verarbeitung)
+
+```bash
+# ProcessedEmails für einzelne RawEmail löschen
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+DELETE FROM processed_emails
+WHERE raw_email_id = 1276;
+
+UPDATE raw_emails SET processing_status = 0 WHERE id = 1276;
+EOF
+
+# Alle ProcessedEmails löschen (kompletter Reset)
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+DELETE FROM processed_emails;
+UPDATE raw_emails SET processing_status = 0;
+EOF
+```
+
+> **💡 Tipp:** Nach Status- oder Übersetzungs-Reset immer Celery Worker neustarten:
+> ```bash
+> sudo systemctl restart mail-helper-celery-worker
+> ```
+
+> **⚠️ Warnung:** `DELETE FROM processed_emails` ist eine harte Operation. Besser: Nur Status zurücksetzen mit `UPDATE raw_emails SET processing_status = 0`.
+EOF
+```
+
+---
+
 ## 6. Wartungs-Skripte
 
 ### User-Verwaltung
