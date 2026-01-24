@@ -327,6 +327,19 @@
                     </button>
                 </li>
                 {% endif %}
+                <!-- Phase 26: Auto-Translation Tab (zeige wenn Sprache erkannt wurde) -->
+                {% if raw_email and raw_email.detected_language and raw_email.detected_language != 'de' %}
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="translationTab" data-bs-toggle="tab" data-bs-target="#translationContent" type="button" role="tab" aria-controls="translationContent" aria-selected="false">
+                        🌍 Übersetzung
+                        {% if raw_email.encrypted_translation_de %}
+                        <span class="badge bg-success">{{ raw_email.detected_language|upper }}→DE</span>
+                        {% else %}
+                        <span class="badge bg-warning text-dark">{{ raw_email.detected_language|upper }}</span>
+                        {% endif %}
+                    </button>
+                </li>
+                {% endif %}
             </ul>
             
             <div class="tab-content" id="emailTabContent">
@@ -427,6 +440,66 @@
                             </div>
                         </div>
                     </div>
+                </div>
+                {% endif %}
+                
+                <!-- Phase 26: Auto-Translation Tab -->
+                {% if raw_email and raw_email.detected_language and raw_email.detected_language != 'de' %}
+                <div class="tab-pane fade" id="translationContent" role="tabpanel" aria-labelledby="translationTab">
+                    {% if raw_email.encrypted_translation_de %}
+                    <div class="card mt-3" style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);">
+                        <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                            <span>🌍 Automatische Übersetzung ins Deutsche</span>
+                            <div>
+                                <span class="badge bg-light text-dark">{{ raw_email.detected_language|upper }}</span>
+                                <span class="mx-1">→</span>
+                                <span class="badge bg-light text-dark">DE</span>
+                                {% if raw_email.translation_engine %}
+                                <span class="badge bg-dark ms-2">{{ raw_email.translation_engine }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info">
+                                <small>
+                                    ℹ️ Diese Übersetzung wurde automatisch beim Email-Fetch generiert. 
+                                    Die Original-Sprache wurde als <strong>{{ raw_email.detected_language|upper }}</strong> erkannt.
+                                    {% if raw_email.translation_engine %}
+                                    <br>Übersetzt mit: <strong>{{ raw_email.translation_engine }}</strong> (lokales Modell)
+                                    {% endif %}
+                                </small>
+                            </div>
+                            <div class="bg-white p-3 border rounded shadow-sm">
+                                <pre style="
+                                    white-space: pre-wrap; 
+                                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                                    margin: 0; 
+                                    font-size: 14px; 
+                                    line-height: 1.6;
+                                    color: #1a202c;
+                                    background: none;
+                                ">{{ decrypted_translation_de }}</pre>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="card mt-3" style="background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);">
+                        <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+                            <span>🌍 Sprache erkannt: {{ raw_email.detected_language|upper }}</span>
+                            <span class="badge bg-dark">Übersetzung nicht verfügbar</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-warning">
+                                <small>
+                                    ℹ️ Die Original-Sprache wurde als <strong>{{ raw_email.detected_language|upper }}</strong> erkannt,
+                                    aber diese E-Mail wurde vor Aktivierung der Auto-Translation-Funktion verarbeitet.
+                                    <br><br>
+                                    💡 <strong>Tipp:</strong> Neu gefetchte E-Mails werden automatisch übersetzt.
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>

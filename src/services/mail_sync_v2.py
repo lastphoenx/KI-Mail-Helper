@@ -314,6 +314,13 @@ class MailSyncServiceV2:
             # Return mail count für Progress-Callback
             return len(server_mails)
             
+        except IntegrityError as e:
+            # UniqueViolation: Parallel läuft ein anderer Worker!
+            # WICHTIG: Session rollback sonst sind alle weiteren Ordner kaputt
+            self.session.rollback()
+            stats.errors.append(f"{folder}: Concurrent sync detected, skipping folder")
+            logger.warning(f"  ⚠️ {folder}: Parallel Worker erkannt (UniqueViolation) → Session rollback + skip")
+            return 0  # Return 0 bei Conflict
         except Exception as e:
             stats.errors.append(f"{folder}: {str(e)}")
             logger.warning(f"  ⚠️ {folder}: {e}")

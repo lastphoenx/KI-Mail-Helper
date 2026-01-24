@@ -3817,9 +3817,16 @@ def api_auto_fetch_mails():
             # Für jeden Account: GLEICHE LOGIK wie fetch_mails Button!
             for account in accounts:
                 try:
-                    # 1. Fetch-Limits (EXAKT wie Button)
+                    # 1. Fetch-Limits: User-Einstellung oder None (Task verwendet dann Default)
                     is_initial = not account.initial_sync_done
-                    fetch_limit = 500 if is_initial else 50
+                    user_max_total = getattr(user, 'fetch_max_total', 0) or 0
+                    
+                    if user_max_total > 0:
+                        fetch_limit = user_max_total
+                    elif is_initial:
+                        fetch_limit = 1000  # Initial: großzügiger
+                    else:
+                        fetch_limit = None  # None = Task nutzt Default (200) oder user.fetch_max_total
                     
                     # 2. AI Provider/Model (EXAKT wie Button)
                     provider = (user.preferred_ai_provider or "ollama").lower()

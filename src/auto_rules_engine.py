@@ -263,13 +263,17 @@ class AutoRulesEngine:
         Returns:
             Dict mit Statistiken
         """
-        cutoff = datetime.now(UTC) - timedelta(minutes=since_minutes)
-        
-        # Neue E-Mails finden (noch nicht von Regeln verarbeitet)
+        # PHASE 27: Neue E-Mails finden basierend auf processing_status
+        # Filtere nach:
+        # - AI-Klassifizierung abgeschlossen (status >= 40)
+        # - Noch nicht von Auto-Rules verarbeitet (status < 50)
+        # - Nicht in Fehler-Status (status >= 0)
+        # HINWEIS: Kein created_at-Filter! Status ist robuster (vermeidet Missing bei Resume/Long-Sync)
         new_emails = self.db.query(RawEmail).filter(
             RawEmail.user_id == self.user_id,
-            RawEmail.created_at >= cutoff,
-            RawEmail.auto_rules_processed == False,
+            RawEmail.processing_status >= models.EmailProcessingStatus.AI_CLASSIFIED,  # Status 40+
+            RawEmail.processing_status < models.EmailProcessingStatus.AUTO_RULES_APPLIED,  # Status < 50
+            RawEmail.processing_status >= 0,  # Keine Fehler-Stati
             RawEmail.deleted_at == None
         ).limit(limit).all()
         
@@ -297,12 +301,33 @@ class AutoRulesEngine:
                 # Nur bei Erfolg als verarbeitet markieren
                 if not has_error:
                     email.auto_rules_processed = True
-                    self.db.flush()  # Sofort persistieren
+                    
+                    # Phase 27: Status-Update nach Auto-Rules
+                    # WICHTIG: Erst auf AUTO_RULES_APPLIED setzen (Status 50)
+                    email.processing_status = models.EmailProcessingStatus.AUTO_RULES_APPLIED
+                    email.processing_last_attempt_at = datetime.now(UTC)
+                    self.db.flush()  # Zwischenspeichern (crash-safe)
+
+                    # Dann auf COMPLETE setzen (Status 100) - Rules waren letzter Schritt
+                    # HINWEIS: Kein flush() nötig - wird mit batch-commit() persistent
+                    email.processing_status = models.EmailProcessingStatus.COMPLETE
+                    email.processing_last_attempt_at = datetime.now(UTC)
+                    
                     stats["processed_email_ids"].append(email.id)
                 
             except Exception as e:
                 logger.error(f"Auto-Rule Error für E-Mail {email.id}: {e}")
                 stats["errors"] += 1
+                
+                # Phase 27: Status auf Fehler setzen
+                try:
+                    email.processing_status = models.EmailProcessingStatus.AUTO_RULES_FAILED
+                    email.processing_error = str(e)[:1000]
+                    email.processing_last_attempt_at = datetime.now(UTC)
+                    self.db.flush()
+                except Exception:
+                    pass  # Falls Status-Update fehlschlägt, ignorieren
+                
                 # NICHT als processed markieren → wird beim nächsten Run erneut versucht
         
         # Commit batch

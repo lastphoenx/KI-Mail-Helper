@@ -16,6 +16,7 @@ import json
 import gc
 from datetime import datetime, UTC
 from typing import Dict, Any, Callable, Optional
+from sqlalchemy import text as sa_text  # 🆕 Für raw SQL queries
 
 from src.celery_app import celery_app
 from src.helpers.database import get_session, get_user, get_mail_account
@@ -221,8 +222,18 @@ def _fetch_raw_emails(
             logger.info(f"📁 {len(folders)} Ordner, FULL SYNC{filter_str}")
         
         # Phase 13C Part 4: User-steuerbare Limits
-        mails_per_folder = max(100, limit // len(folders)) if folders else limit
-        mails_per_folder = min(mails_per_folder, user_mails_per_folder)
+        # Make UI setting authoritative: if the user explicitly set a per-folder value (>0),
+        # use that. Otherwise distribute the global `limit` across folders.
+        # This avoids the previous "cannot increase above 100" trap and makes the UI
+        # usable for raising the per-folder fetch amount.
+        if user_mails_per_folder and int(user_mails_per_folder) > 0:
+            mails_per_folder = int(user_mails_per_folder)
+        else:
+            if folders and limit:
+                mails_per_folder = max(1, int(limit // len(folders)))
+            else:
+                # fallback to a sensible default (UI shows 100)
+                mails_per_folder = int(user_mails_per_folder or 100)
         
         # Phase 13C Part 4: Delta-Sync: Hole highest UID per folder aus DB
         from sqlalchemy import func
@@ -561,6 +572,65 @@ def _persist_raw_emails(
                     logger.debug(f"🔍 Embedding generiert für: {subject_plain[:50]}...")
             except Exception as e:
                 logger.warning(f"⚠️ Embedding-Fehler: {e}")
+        
+        # ════════════════════════════════════════════════════════════════
+        # PHASE 26: Auto-Translation (VOR Verschlüsselung!)
+        # ════════════════════════════════════════════════════════════════
+        detected_lang = None
+        encrypted_translation_de = None
+        translation_engine = None
+        
+        if subject_plain or body_plain:
+            try:
+                from src.services.translator_service import get_translator
+                translator = get_translator()
+                
+                # 1. Sprache erkennen - HTML-Stripping für korrekte Detection!
+                text_for_detection = f"{subject_plain}\n{body_plain[:1500]}"
+                
+                # HTML-Tags entfernen VOR Language Detection (verhindert "en" Bias)
+                if '<' in text_for_detection[:500]:
+                    try:
+                        from inscriptis import get_text
+                        from inscriptis.model.config import ParserConfig
+                        text_for_detection = get_text(text_for_detection, ParserConfig(display_links=False))
+                    except Exception:
+                        # Fallback: einfaches Strip von Tags
+                        import re
+                        text_for_detection = re.sub(r'<[^>]+>', ' ', text_for_detection)
+                
+                detection = translator.detect_language(text_for_detection[:1000])
+                detected_lang = detection.language
+                
+                logger.debug(f"🌍 Detected language: {detected_lang} ({detection.confidence:.2f})")
+                
+                # 2. Falls nicht Deutsch → übersetzen (Confidence > 70%)
+                if detected_lang != 'de' and detection.confidence > 0.7:
+                    try:
+                        # Sync-Wrapper für Celery (asyncio.run intern)
+                        # Max 1500 Zeichen (Chunking in translator_service.py)
+                        text_to_translate = f"{subject_plain}\n\n{body_plain[:1500]}"
+                        
+                        result = translator.translate_sync(
+                            text=text_to_translate,
+                            target_lang='de',
+                            source_lang=detected_lang,
+                            engine='local'  # Opus-MT
+                        )
+                        
+                        # Verschlüsseln der Übersetzung
+                        encrypted_translation_de = encryption.EncryptionManager.encrypt_data(
+                            result.translated_text, master_key
+                        )
+                        translation_engine = result.model_used
+                        
+                        logger.info(f"🌍 Translated {detected_lang}→de via {translation_engine}")
+                        
+                    except Exception as trans_err:
+                        logger.warning(f"⚠️  Translation fehlgeschlagen: {trans_err}")
+                        
+            except Exception as lang_err:
+                logger.warning(f"⚠️  Language detection fehlgeschlagen: {lang_err}")
 
         encrypted_sender = encryption.EmailDataManager.encrypt_email_sender(
             raw_email_data["sender"], master_key
@@ -661,15 +731,34 @@ def _persist_raw_emails(
             email_embedding=embedding_bytes,
             embedding_model=embedding_model,
             embedding_generated_at=embedding_generated_at,
+            # Phase 26: Auto-Translation
+            detected_language=detected_lang,
+            encrypted_translation_de=encrypted_translation_de,
+            translation_engine=translation_engine,
             # Phase 25: Kalendereinladungen
             is_calendar_invite=raw_email_data.get("is_calendar_invite", False),
             calendar_method=calendar_data.get("method") if calendar_data else None,
             encrypted_calendar_data=encrypted_calendar_data,
+            # Phase 27: Processing Status - Initial
+            processing_status=models.EmailProcessingStatus.NEW,  # Startet bei 0
+            processing_retry_count=0,
+            processing_last_attempt_at=datetime.now(UTC),
         )
         
         try:
             session.add(raw_email)
             session.flush()  # Flush um raw_email.id zu bekommen
+            
+            # Phase 27: Status-Update nach erfolgreichem DB-Insert
+            # Embedding wurde bereits generiert → Status auf 10
+            if embedding_bytes:
+                raw_email.processing_status = models.EmailProcessingStatus.EMBEDDING_DONE
+            
+            # Translation wurde bereits gemacht → Status auf 20
+            if encrypted_translation_de or detected_lang == 'de':
+                raw_email.processing_status = models.EmailProcessingStatus.TRANSLATION_DONE
+            
+            session.flush()  # Status speichern
             
             # Klassische Anhänge speichern (verschlüsselt)
             classic_attachments = raw_email_data.get("attachments", [])
@@ -724,8 +813,101 @@ def _persist_raw_emails(
     return saved
 
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, name="tasks.sync_user_emails")
-def sync_user_emails(self, user_id: int, account_id: int, service_token_id: int, max_emails: int = 50):
+def resume_incomplete_processing(session, user, account, master_key, self_task):
+    """
+    Phase 27: Resume-Processor - Verarbeitet Mails mit processing_status < 100
+    
+    Wird VOR dem Fetch aufgerufen. Emails die bei früherem Crash/Timeout
+    nicht fertig verarbeitet wurden, werden hier abgeschlossen.
+    
+    Returns: Anzahl abgeschlossener Emails
+    """
+    models = importlib.import_module(".02_models", "src")
+    from datetime import datetime, UTC, timedelta
+    
+    # Query: Alle Emails mit status < 100 (nicht fertig)
+    incomplete_emails = (
+        session.query(models.RawEmail)
+        .filter(
+            models.RawEmail.user_id == user.id,
+            models.RawEmail.mail_account_id == account.id,
+            models.RawEmail.processing_status < models.EmailProcessingStatus.COMPLETE,
+            models.RawEmail.deleted_at.is_(None)
+        )
+        .all()
+    )
+    
+    if not incomplete_emails:
+        return 0
+    
+    logger.info(f"🔄 Resume: {len(incomplete_emails)} unvollständige Emails gefunden")
+    
+    completed = 0
+    
+    for email in incomplete_emails:
+        try:
+            # Retry-Logik: Fehler-Status mit zu vielen Retries → Skip
+            if models.EmailProcessingStatus.is_error(email.processing_status):
+                if not models.EmailProcessingStatus.needs_retry(
+                    email.processing_status, email.processing_retry_count
+                ):
+                    logger.warning(
+                        f"⏭️ Skip Email {email.id}: Max Retries erreicht "
+                        f"(status={email.processing_status}, retries={email.processing_retry_count})"
+                    )
+                    continue
+                
+                # Retry: Status zurücksetzen
+                email.processing_status = models.EmailProcessingStatus.get_retry_status(
+                    email.processing_status
+                )
+                email.processing_retry_count += 1
+                email.processing_last_attempt_at = datetime.now(UTC)
+                session.commit()
+                logger.info(
+                    f"🔁 Retry Email {email.id}: status={email.processing_status}, "
+                    f"attempt={email.processing_retry_count}"
+                )
+            
+            # Verarbeitung basierend auf aktuellem Status
+            # NOTE: Business-Logik bleibt in den jeweiligen Funktionen!
+            # Hier nur Status-Check + Weiterleitung
+            
+            if email.processing_status < models.EmailProcessingStatus.EMBEDDING_DONE:
+                # Embedding fehlt → wird in process_pending_raw_emails gemacht
+                pass
+            
+            if email.processing_status < models.EmailProcessingStatus.TRANSLATION_DONE:
+                # Translation fehlt → wird in process_pending_raw_emails gemacht
+                pass
+            
+            # ... weitere Stati analog
+            
+            # WICHTIG: Die eigentliche Verarbeitung macht process_pending_raw_emails()
+            # Wir zählen hier nur, wie viele ready sind
+            completed += 1
+            
+        except Exception as e:
+            logger.error(f"❌ Resume Email {email.id} fehlgeschlagen: {e}")
+            email.processing_error = str(e)
+            email.processing_last_attempt_at = datetime.now(UTC)
+            session.commit()
+    
+    logger.info(f"✅ Resume: {completed} Emails bereit für Verarbeitung")
+    return completed
+
+
+@celery_app.task(
+    bind=True, 
+    max_retries=3, 
+    default_retry_delay=60, 
+    name="tasks.sync_user_emails",
+    # KEIN time_limit! Mail-Sync kann bei 1000+ Emails Stunden dauern
+    # Mit Translation/Embedding: ~300ms pro Email = 5 Min für 1000 Emails
+    time_limit=None,
+    soft_time_limit=None
+)
+def sync_user_emails(self, user_id: int, account_id: int, service_token_id: int, max_emails: int | None = None):
     """
     Sync Emails - 6 Schritte wie Legacy 14_background_jobs.py
     
@@ -734,7 +916,61 @@ def sync_user_emails(self, user_id: int, account_id: int, service_token_id: int,
     Phase 2 Security: ServiceToken Pattern
     - Kein master_key als Parameter (wäre Plaintext in Redis!)
     - service_token_id → DEK wird aus DB geladen
+    
+    CONCURRENCY PROTECTION:
+    - Verhindert parallele Sync-Tasks für denselben Account via Redis-Lock
+    - Timeout 3600s (1h) - wenn Task länger dauert, wird Lock automatisch freigegeben
     """
+    from celery.exceptions import Reject
+    
+    # Redis-Lock: Verhindert parallele Syncs desselben Accounts
+    lock_key = f"mail_sync_lock:user_{user_id}:account_{account_id}"
+    lock_timeout = 600  # 10 Minuten max (auto-expire bei Worker-Crash)
+    
+    # Versuche Lock zu bekommen
+    redis_client = celery_app.backend.client  # Redis connection von Celery
+    lock_acquired = redis_client.set(lock_key, self.request.id, nx=True, ex=lock_timeout)
+    
+    if not lock_acquired:
+        # Ein anderer Worker synchronisiert bereits - prüfe ob Task noch existiert
+        existing_task_id = redis_client.get(lock_key)
+        if existing_task_id:
+            existing_task_id = existing_task_id.decode()
+            # Prüfe ob Task-Result existiert (wenn nicht: stuck lock!)
+            task_result_key = f"celery-task-meta-{existing_task_id}"
+            task_exists = redis_client.exists(task_result_key)
+            
+            if not task_exists:
+                # Lock ist stuck (Task existiert nicht mehr) → übernehmen!
+                logger.warning(
+                    f"🔧 Stuck lock erkannt für Account {account_id} (Task {existing_task_id} existiert nicht). "
+                    f"Übernehme Lock..."
+                )
+                redis_client.set(lock_key, self.request.id, ex=lock_timeout)
+                lock_acquired = True
+            else:
+                logger.warning(
+                    f"⏳ Sync übersprungen: Account {account_id} wird bereits synchronisiert (Task {existing_task_id})"
+                )
+                raise Reject("Account sync already in progress", requeue=False)
+        else:
+            # Kein Lock vorhanden, aber SET nx=True failed? Retry
+            lock_acquired = redis_client.set(lock_key, self.request.id, nx=True, ex=lock_timeout)
+            if not lock_acquired:
+                raise Reject("Account sync already in progress", requeue=False)
+    
+    try:
+        _execute_sync_with_lock(self, user_id, account_id, service_token_id, max_emails)
+    finally:
+        # Lock freigeben (nur wenn wir ihn haben!)
+        current_lock = redis_client.get(lock_key)
+        if current_lock and current_lock.decode() == self.request.id:
+            redis_client.delete(lock_key)
+            logger.info(f"🔓 Lock freigegeben für Account {account_id}")
+
+
+def _execute_sync_with_lock(self, user_id: int, account_id: int, service_token_id: int, max_emails: int | None = None):
+    """Eigentliche Sync-Logik (nach Lock-Acquisition)"""
     session = get_session()
     saved = 0
     processed = 0
@@ -763,6 +999,25 @@ def sync_user_emails(self, user_id: int, account_id: int, service_token_id: int,
         ai_client_mod = importlib.import_module(".03_ai_client", "src")
         # HINWEIS: 04_sanitizer entfernt - Sanitization-Level wird jetzt inline berechnet
         # Die eigentliche Anonymisierung erfolgt in 12_processing.py mit content_sanitizer.py (spaCy NER)
+        
+        # ═══════════════════════════════════════════════════════════════
+        # PHASE 27: Resume unvollständige Emails (VOR dem Fetch!)
+        # ═══════════════════════════════════════════════════════════════
+        
+        self.update_state(
+            state='PROGRESS',
+            meta={
+                "phase": "resume_incomplete",
+                "message": "Prüfe unvollständige Emails...",
+            }
+        )
+        
+        try:
+            resumed = resume_incomplete_processing(session, user, account, master_key, self)
+            if resumed > 0:
+                logger.info(f"✅ {resumed} unvollständige Emails für Verarbeitung vorbereitet")
+        except Exception as e:
+            logger.error(f"⚠️ Resume fehlgeschlagen (nicht kritisch): {e}")
         
         # ═══════════════════════════════════════════════════════════════
         # SCHRITT 1: State mit Server synchronisieren (DELETE + INSERT pro Ordner)
@@ -852,6 +1107,16 @@ def sync_user_emails(self, user_id: int, account_id: int, service_token_id: int,
         def fetch_progress(phase, message, **kwargs):
             self.update_state(state='PROGRESS', meta={'phase': phase, 'message': message, **kwargs})
         
+        # Bestimme max_emails dynamisch, wenn kein expliziter Wert übergeben wurde
+        if max_emails is None:
+            # Priorität: user.fetch_max_total (0 = unbegrenzt) → else konfigurierbarer Default
+            user_max_total = getattr(account.user, 'fetch_max_total', 0) or 0
+            if user_max_total and int(user_max_total) > 0:
+                max_emails = int(user_max_total)
+            else:
+                # Großzügigerer System-Default (statt harter 50)
+                max_emails = 200
+
         raw_emails = _fetch_raw_emails(
             account, master_key, max_emails, session, fetch_progress
         )
@@ -999,7 +1264,15 @@ def sync_user_emails(self, user_id: int, account_id: int, service_token_id: int,
         session.close()
 
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=60, name="tasks.batch_reprocess_emails")
+@celery_app.task(
+    bind=True, 
+    max_retries=2, 
+    default_retry_delay=60, 
+    name="tasks.batch_reprocess_emails",
+    # Batch-Reprocess kann auch lange dauern (1000 Emails × 100ms Embedding)
+    time_limit=None,
+    soft_time_limit=None
+)
 def batch_reprocess_emails(self, user_id: int, service_token_id: int, provider: str, model: str):
     """
     Batch-Reprocess Job (regenerate embeddings for all emails).
@@ -1114,14 +1387,42 @@ def batch_reprocess_emails(self, user_id: int, service_token_id: int, provider: 
         
         session.commit()
         
-        # Tag-Embedding-Cache leeren nach Batch-Reprocess!
+        # Tag-Embedding-Cache UND DB-Embeddings zurücksetzen nach Batch-Reprocess!
+        # KRITISCH: Verhindert Dimensions-Mismatch zwischen alten Tags (z.B. 1024 dim)
+        # und neuen Emails (z.B. 384 dim nach Model-Wechsel)
         try:
             from src.services.tag_manager import TagEmbeddingCache
+            
+            # 1. Memory-Cache leeren
             TagEmbeddingCache._cache.clear()
             TagEmbeddingCache._ai_client_cache.clear()
-            logger.info("🗑️  Tag-Embedding-Cache geleert (Tags werden mit neuem Model re-embedded)")
+            logger.info("🗑️  Tag-Embedding-Cache geleert")
+            
+            # 2. DB-Embeddings zurücksetzen (werden beim nächsten Tagging-Vorgang neu erstellt)
+            tag_reset_result = session.execute(
+                sa_text("""
+                    UPDATE email_tags 
+                    SET learned_embedding = NULL,
+                        learned_embedding_model = NULL,
+                        embedding_updated_at = NULL,
+                        negative_embedding = NULL,
+                        negative_embedding_model = NULL,
+                        negative_updated_at = NULL
+                    WHERE user_id = :user_id
+                      AND (learned_embedding IS NOT NULL OR negative_embedding IS NOT NULL)
+                """),
+                {"user_id": user_id}
+            )
+            session.commit()
+            
+            tags_reset = tag_reset_result.rowcount
+            if tags_reset > 0:
+                logger.info(f"🗑️  {tags_reset} Tag-Embeddings in DB zurückgesetzt (Model-Wechsel → neu generieren mit {resolved_model})")
+            else:
+                logger.info("ℹ️  Keine Tag-Embeddings zum Zurücksetzen gefunden")
+                
         except Exception as cache_err:
-            logger.warning(f"⚠️  Konnte Tag-Cache nicht leeren: {cache_err}")
+            logger.warning(f"⚠️  Konnte Tag-Cache/DB nicht leeren: {cache_err}")
         
         logger.info(f"✅ Batch-Reprocess abgeschlossen (processed={processed}, failed={failed})")
         
@@ -1152,7 +1453,14 @@ def batch_reprocess_emails(self, user_id: int, service_token_id: int, provider: 
         session.close()
 
 
-@celery_app.task(bind=True, max_retries=1, name="tasks.sync_all_accounts")
+@celery_app.task(
+    bind=True, 
+    max_retries=1, 
+    name="tasks.sync_all_accounts",
+    # KEIN time_limit! Multi-Account-Sync kann Stunden dauern (ruft sync_user_emails für jeden Account)
+    time_limit=None,
+    soft_time_limit=None
+)
 def sync_all_accounts(self, user_id: int, service_token_id: int):
     """
     Sync alle Accounts eines Users

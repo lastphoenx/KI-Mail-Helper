@@ -302,7 +302,8 @@ class ContentSanitizer:
             
             # Konfiguration für Email-optimierte Ausgabe
             config = ParserConfig(
-                display_links=True,      # Links anzeigen
+                display_links=False,     # Links NICHT ausschreiben (spart 30-50% Text)
+                display_images=False,    # Keine Bild-Platzhalter
                 display_anchors=False,   # Keine Anker
                 annotation_rules=None
             )
@@ -836,6 +837,15 @@ class ContentSanitizer:
     def _apply_spacy(self, text: str, nlp, types: set, em: EntityMap) -> Tuple[str, Dict[str, int]]:
         if not text or not nlp:
             return text, {}
+        
+        # 🚀 PERFORMANCE: spaCy wird langsam bei >100k chars, limitiere Input
+        # Newsletter mit riesigen Footern brauchen keine vollständige Anonymisierung
+        MAX_SPACY_CHARS = 50000
+        was_truncated = False
+        if len(text) > MAX_SPACY_CHARS:
+            logger.warning(f"⚠️ Text zu lang für spaCy ({len(text)} chars), limitiere auf {MAX_SPACY_CHARS}")
+            text = text[:MAX_SPACY_CHARS]
+            was_truncated = True
         
         try:
             # Geschützte Bereiche (bereits ersetzte Platzhalter)
