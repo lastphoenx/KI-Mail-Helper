@@ -1150,9 +1150,18 @@ class RawEmail(Base):
     encrypted_translation_de = Column(Text, nullable=True)
     # Engine/Modell für Übersetzung (z.B. "opus-mt-en-de")
     translation_engine = Column(String(30), nullable=True)
+    # Timestamp: Wann wurde Translation erfolgreich abgeschlossen?
+    translation_completed_at = Column(DateTime, nullable=True)
 
     # ===== PHASE 27: PROCESSING STATE MACHINE (Resume-fähig) =====
+    # Timestamp: Wann wurde AI-Classification erfolgreich abgeschlossen?
+    ai_classification_completed_at = Column(DateTime, nullable=True)
+    # Timestamp: Wann wurden Auto-Rules erfolgreich angewandt?
+    auto_rules_completed_at = Column(DateTime, nullable=True)
+    
     # Status-Code für Verarbeitung (0=neu, 10=embedding, 20=translation, ..., 100=fertig)
+    # LEGACY: Wird nur noch für Overall-Monitoring verwendet (100 = alles fertig)
+    # Die tatsächliche Steuerung läuft über die Timestamp-Spalten oben
     processing_status = Column(Integer, nullable=False, default=0, index=True)
     # Retry-Counter für fehlerhafte Emails (max 3 Versuche)
     processing_retry_count = Column(Integer, nullable=False, default=0)

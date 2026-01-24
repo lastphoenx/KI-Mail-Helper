@@ -12,6 +12,7 @@
 2. [Server & Services starten](#2-server--services-starten)
 3. [Celery Worker & Monitoring](#3-celery-worker--monitoring)
 4. [Datenbank-Verwaltung (PostgreSQL)](#4-datenbank-verwaltung-postgresql)
+   - [4.6. Processing-Timestamps (seit v2.2.1)](#46-processing-timestamps-seit-v221)
 5. [Email-Verwaltung](#5-email-verwaltung)
 6. [Wartungs-Skripte](#6-wartungs-skripte)
 7. [Alembic Migrationen](#7-alembic-migrationen)
@@ -355,6 +356,8 @@ EOF
 
 ## 4.5. Schnelle DB-Wartung (SQL)
 
+> **⚠️ Hinweis (seit v2.2.1):** Die meisten Befehle in diesem Abschnitt nutzen noch `processing_status = 0` (LEGACY). **Besser:** Nutze die neuen **Timestamp-basierten Befehle** aus [Abschnitt 4.6](#46-processing-timestamps-seit-v221) für **partielle Resets** ohne Datenverlust.
+
 ### Häufig genutzte SQL-Befehle für Debugging & Wartung
 
 #### Email-Status zurücksetzen
@@ -391,6 +394,8 @@ EOF
 ```
 
 #### Übersetzung zurücksetzen (für Re-Translation)
+
+> **⚠️ LEGACY-Methode:** Diese Befehle setzen `processing_status = 0` und löschen damit auch AI-Classification + Auto-Rules. **Besser seit v2.2.1:** Nutze [Timestamp-basierte Partial Resets](#46-processing-timestamps-seit-v221) um nur die Übersetzung zurückzusetzen.
 
 ```bash
 # Übersetzung für einzelne Email löschen
@@ -468,6 +473,8 @@ EOF
 
 #### Batch-Operationen
 
+> **⚠️ LEGACY-Methode:** `processing_status < 100` resettet ALLE unvollständigen Schritte. **Besser seit v2.2.1:** Nutze [Timestamp-basierte Queries](#46-processing-timestamps-seit-v221) um nur einzelne Schritte zurückzusetzen.
+
 ```bash
 # Alle unvollständigen Emails neu starten (Status < 100)
 psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
@@ -513,6 +520,447 @@ EOF
 > **⚠️ Warnung:** `DELETE FROM processed_emails` ist eine harte Operation. Besser: Nur Status zurücksetzen mit `UPDATE raw_emails SET processing_status = 0`.
 EOF
 ```
+
+---
+
+## 4.6. Processing-Timestamps (seit v2.2.1)
+
+### Was ist neu?
+
+Seit **v2.2.1** verwendet das System **granulare Timestamps** für jeden Processing-Schritt statt einem linearen `processing_status`. Das ermöglicht **partielle Resets** ohne Datenverlust.
+
+#### Alte Architektur (LEGACY)
+```
+processing_status:
+0 → 10 (Embedding) → 20 (Translation) → 40 (AI) → 50 (Rules) → 100 (Complete)
+```
+
+**Problem:** Reset von Schritt 2 (Translation) löscht auch Schritte 3+4 (AI + Rules).
+
+#### Neue Architektur (seit v2.2.1)
+```
+embedding_generated_at:           2025-01-15 10:30:00
+translation_completed_at:         2025-01-15 10:35:00
+ai_classification_completed_at:   2025-01-15 10:40:00
+auto_rules_completed_at:          2025-01-15 10:45:00
+```
+
+**Vorteil:** Reset von Translation (`SET translation_completed_at = NULL`) behält AI + Rules bei.
+
+---
+
+### Timestamp-basierte SQL-Queries
+
+#### Email-Status mit Timestamps abfragen
+
+```bash
+# Welche Emails brauchen noch Übersetzung?
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+SELECT 
+    id,
+    subject,
+    detected_language,
+    embedding_generated_at IS NOT NULL as has_embedding,
+    translation_completed_at IS NOT NULL as has_translation,
+    ai_classification_completed_at IS NOT NULL as has_ai,
+    auto_rules_completed_at IS NOT NULL as has_rules
+FROM raw_emails
+WHERE 
+    embedding_generated_at IS NOT NULL 
+    AND translation_completed_at IS NULL
+ORDER BY received_at ASC
+LIMIT 20;
+EOF
+
+# Processing-Pipeline Status-Übersicht
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+SELECT 
+    COUNT(*) as total,
+    COUNT(embedding_generated_at) as with_embedding,
+    COUNT(translation_completed_at) as with_translation,
+    COUNT(ai_classification_completed_at) as with_ai,
+    COUNT(auto_rules_completed_at) as with_rules,
+    COUNT(CASE WHEN 
+        embedding_generated_at IS NOT NULL AND
+        translation_completed_at IS NOT NULL AND
+        ai_classification_completed_at IS NOT NULL AND
+        auto_rules_completed_at IS NOT NULL
+    THEN 1 END) as fully_processed
+FROM raw_emails;
+EOF
+```
+
+---
+
+### Partielle Resets (Einzelne Schritte zurücksetzen)
+
+#### Nur Übersetzung zurücksetzen (AI + Rules bleiben erhalten)
+
+```bash
+# Einzelne Email
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    translation_completed_at = NULL,
+    encrypted_translation_de = NULL,
+    translation_engine = NULL
+WHERE id = 1276;
+EOF
+
+# Alle Opus-MT-Übersetzungen einer Sprache (z.B. nach Bug-Fix)
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    translation_completed_at = NULL,
+    encrypted_translation_de = NULL,
+    translation_engine = NULL
+WHERE 
+    translation_engine = 'opus-mt-it-de'
+    AND detected_language = 'it';
+EOF
+
+# Mit Datumsfilter (nur neue Emails)
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    translation_completed_at = NULL,
+    encrypted_translation_de = NULL
+WHERE 
+    translation_completed_at > '2025-01-15 00:00:00'
+    AND detected_language = 'it';
+EOF
+```
+
+#### Nur AI-Classification zurücksetzen (Rules bleiben erhalten)
+
+```bash
+# Einzelne Email
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    ai_classification_completed_at = NULL,
+    ai_category = NULL,
+    ai_summary = NULL,
+    ai_confidence = NULL,
+    ai_reasoning = NULL
+WHERE id = 1276;
+EOF
+
+# Alle Emails mit niedriger Confidence (< 0.70)
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    ai_classification_completed_at = NULL,
+    ai_category = NULL,
+    ai_summary = NULL
+WHERE ai_confidence < 0.70;
+EOF
+```
+
+#### Nur Auto-Rules zurücksetzen (AI bleibt erhalten)
+
+```bash
+# Einzelne Email
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    auto_rules_completed_at = NULL
+WHERE id = 1276;
+
+# Auch ProcessedEmail löschen, damit Rules neu angewendet werden
+DELETE FROM processed_emails WHERE raw_email_id = 1276;
+EOF
+
+# Alle Emails einer Kategorie (z.B. nach neuer Rule)
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    auto_rules_completed_at = NULL
+WHERE ai_category = 'newsletter';
+
+DELETE FROM processed_emails 
+WHERE raw_email_id IN (
+    SELECT id FROM raw_emails WHERE ai_category = 'newsletter'
+);
+EOF
+```
+
+---
+
+### Vollständige Resets (mit Dependency-Kaskaden)
+
+#### Kompletter Reset (alle 4 Schritte)
+
+```bash
+# Einzelne Email
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    embedding_generated_at = NULL,
+    translation_completed_at = NULL,
+    ai_classification_completed_at = NULL,
+    auto_rules_completed_at = NULL,
+    encrypted_body_vector = NULL,
+    encrypted_translation_de = NULL,
+    ai_category = NULL,
+    processing_status = 0,
+    processing_error = NULL
+WHERE id = 1276;
+
+DELETE FROM processed_emails WHERE raw_email_id = 1276;
+EOF
+
+# Alle Emails eines Accounts
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    embedding_generated_at = NULL,
+    translation_completed_at = NULL,
+    ai_classification_completed_at = NULL,
+    auto_rules_completed_at = NULL,
+    processing_status = 0
+WHERE mail_account_id = 3;
+
+DELETE FROM processed_emails 
+WHERE raw_email_id IN (
+    SELECT id FROM raw_emails WHERE mail_account_id = 3
+);
+EOF
+```
+
+#### Reset mit Abhängigkeiten (Cascading)
+
+```bash
+# Übersetzung zurücksetzen → AI + Rules müssen auch neu
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    translation_completed_at = NULL,
+    ai_classification_completed_at = NULL,  -- hängt von Translation ab
+    auto_rules_completed_at = NULL,         -- hängt von AI ab
+    encrypted_translation_de = NULL,
+    ai_category = NULL
+WHERE id = 1276;
+
+DELETE FROM processed_emails WHERE raw_email_id = 1276;
+EOF
+
+# Embedding zurücksetzen → ALLE nachfolgenden Schritte müssen neu
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    embedding_generated_at = NULL,
+    translation_completed_at = NULL,        -- hängt von Embedding ab
+    ai_classification_completed_at = NULL,  -- hängt von Translation ab
+    auto_rules_completed_at = NULL,         -- hängt von AI ab
+    encrypted_body_vector = NULL,
+    encrypted_translation_de = NULL,
+    ai_category = NULL,
+    processing_status = 0
+WHERE id = 1276;
+EOF
+```
+
+---
+
+### Performance-Optimierung: Batch-Processing
+
+#### Beispiel: 109 italienische Emails neu übersetzen
+
+```bash
+# Alte Methode (LEGACY): Kompletter Reset
+# → Dauer: ~25 Minuten (Embedding + Translation + AI + Rules)
+UPDATE raw_emails SET processing_status = 0 
+WHERE translation_engine = 'opus-mt-it-de';
+
+# Neue Methode (v2.2.1): Nur Translation resetten
+# → Dauer: ~5 Minuten (nur Translation)
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+UPDATE raw_emails SET
+    translation_completed_at = NULL,
+    encrypted_translation_de = NULL
+WHERE translation_engine = 'opus-mt-it-de';
+EOF
+
+# **Performance-Gewinn: 5× schneller** ✅
+```
+
+---
+
+### Migration Helper: Status → Timestamps
+
+#### Bestehenden processing_status konvertieren
+
+```bash
+# Zeige Emails an, die noch den alten Status verwenden
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+SELECT 
+    id,
+    processing_status,
+    embedding_generated_at,
+    translation_completed_at,
+    ai_classification_completed_at,
+    auto_rules_completed_at
+FROM raw_emails
+WHERE 
+    processing_status > 0 
+    AND (
+        (processing_status >= 10 AND embedding_generated_at IS NULL) OR
+        (processing_status >= 20 AND translation_completed_at IS NULL) OR
+        (processing_status >= 40 AND ai_classification_completed_at IS NULL) OR
+        (processing_status >= 50 AND auto_rules_completed_at IS NULL)
+    )
+LIMIT 10;
+EOF
+```
+
+> **💡 Tipp:** Die Migration 003181942ae3 hat alle bestehenden Emails automatisch konvertiert. Neue Emails nutzen automatisch Timestamps.
+
+---
+
+### Debugging: Fehlgeschlagene Schritte finden
+
+```bash
+# Emails, die bei Translation hängen (Embedding OK, Translation fehlt)
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+SELECT 
+    id,
+    subject,
+    detected_language,
+    embedding_generated_at,
+    translation_completed_at,
+    processing_error
+FROM raw_emails
+WHERE 
+    embedding_generated_at IS NOT NULL
+    AND translation_completed_at IS NULL
+    AND detected_language IS NOT NULL
+    AND detected_language != 'de'
+ORDER BY received_at ASC
+LIMIT 20;
+EOF
+
+# Emails mit fehlerhaften Dependencies (AI ohne Translation)
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+SELECT 
+    id,
+    subject,
+    translation_completed_at,
+    ai_classification_completed_at,
+    processing_error
+FROM raw_emails
+WHERE 
+    translation_completed_at IS NULL
+    AND ai_classification_completed_at IS NOT NULL;
+-- Sollte 0 Zeilen zurückgeben (sonst Dependency-Bug)
+EOF
+```
+
+---
+
+### ⚠️ Wichtig: UniqueConstraint bei AI-Classification Reset
+
+**Problem:** Wenn Sie `ai_classification_completed_at` manuell zurücksetzen, versucht die Pipeline einen neuen `ProcessedEmail`-Eintrag zu erstellen. Falls dieser bereits existiert, kommt es zu einem `UniqueViolation`-Fehler und die Neuverarbeitung wird übersprungen!
+
+**Lösung:** Löschen Sie **immer** den zugehörigen `ProcessedEmail`-Eintrag **vor** dem Timestamp-Reset:
+
+```bash
+# ✅ RICHTIG: ProcessedEmail zuerst löschen
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+-- Schritt 1: ProcessedEmail löschen
+DELETE FROM processed_emails WHERE raw_email_id = 1276;
+
+-- Schritt 2: Timestamp zurücksetzen
+UPDATE raw_emails 
+SET ai_classification_completed_at = NULL,
+    ai_category = NULL,
+    ai_summary = NULL,
+    ai_confidence = NULL
+WHERE id = 1276;
+EOF
+
+# ❌ FALSCH: Nur Timestamp zurücksetzen (führt zu UniqueViolation!)
+UPDATE raw_emails SET ai_classification_completed_at = NULL WHERE id = 1276;
+-- → Pipeline versucht INSERT INTO processed_emails
+-- → DB: UniqueViolation (raw_email_id = 1276 existiert!)
+-- → Rollback + Skip → Nichts passiert!
+```
+
+**Batch-Reset für mehrere Emails:**
+
+```bash
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper << 'EOF'
+-- Alle Emails mit niedriger Confidence neu klassifizieren
+DELETE FROM processed_emails 
+WHERE raw_email_id IN (
+    SELECT id FROM raw_emails WHERE ai_confidence < 0.70
+);
+
+UPDATE raw_emails 
+SET ai_classification_completed_at = NULL,
+    ai_category = NULL,
+    ai_summary = NULL
+WHERE ai_confidence < 0.70;
+EOF
+```
+
+> **💡 Tipp:** Das Script [scripts/reset_all_emails.py](../scripts/reset_all_emails.py) löscht ProcessedEmails automatisch vor den RawEmails.
+
+---
+
+### Best Practices
+
+#### ✅ Empfohlen
+
+```sql
+-- Partial Reset: Nur den fehlerhaften Schritt zurücksetzen
+UPDATE raw_emails SET translation_completed_at = NULL 
+WHERE id = 1276;
+
+-- Timestamps prüfen, nicht processing_status
+SELECT * FROM raw_emails 
+WHERE translation_completed_at IS NULL 
+AND embedding_generated_at IS NOT NULL;
+
+-- Dependencies beachten bei Resets
+UPDATE raw_emails SET
+    translation_completed_at = NULL,
+    ai_classification_completed_at = NULL,  -- abhängig von Translation
+    auto_rules_completed_at = NULL          -- abhängig von AI
+WHERE id = 1276;
+```
+
+#### ❌ Vermeiden
+
+```sql
+-- Nicht mehr verwenden (LEGACY):
+UPDATE raw_emails SET processing_status = 0;
+
+-- Nicht: AI resetten ohne abhängige Schritte
+UPDATE raw_emails SET ai_classification_completed_at = NULL;
+-- ⚠️ Fehlt: auto_rules_completed_at müsste auch NULL sein!
+
+-- Nicht: Timestamps einzeln prüfen ohne Dependencies
+SELECT * FROM raw_emails WHERE ai_classification_completed_at IS NOT NULL;
+-- ⚠️ Besser: Auch translation_completed_at prüfen!
+```
+
+---
+
+### Wartung nach Reset
+
+```bash
+# Nach jedem Reset: Celery Worker neustarten
+sudo systemctl restart mail-helper-celery-worker
+
+# Processing-Status überwachen
+watch -n 5 '
+psql postgresql://mail_helper:dev_mail_helper_2026@localhost:5432/mail_helper -c "
+SELECT 
+    COUNT(*) FILTER (WHERE embedding_generated_at IS NULL) as pending_embedding,
+    COUNT(*) FILTER (WHERE translation_completed_at IS NULL AND embedding_generated_at IS NOT NULL) as pending_translation,
+    COUNT(*) FILTER (WHERE ai_classification_completed_at IS NULL AND translation_completed_at IS NOT NULL) as pending_ai,
+    COUNT(*) FILTER (WHERE auto_rules_completed_at IS NULL AND ai_classification_completed_at IS NOT NULL) as pending_rules
+FROM raw_emails;
+"
+'
+```
+
+---
+
+> **📚 Siehe auch:**
+> - [docs/TIMESTAMP_PROCESSING_SYSTEM.md](TIMESTAMP_PROCESSING_SYSTEM.md) – Technische Architektur
+> - [docs/BENUTZERHANDBUCH.md](BENUTZERHANDBUCH.md) – Abschnitt 10.5: Granulare Processing-Timestamps
+> - [migrations/versions/003181942ae3_add_processing_timestamps.py](../migrations/versions/003181942ae3_add_processing_timestamps.py) – Alembic Migration
 
 ---
 

@@ -263,16 +263,15 @@ class AutoRulesEngine:
         Returns:
             Dict mit Statistiken
         """
-        # PHASE 27: Neue E-Mails finden basierend auf processing_status
+        # Phase 27.1: Timestamp-basierte Query für neue E-Mails
         # Filtere nach:
-        # - AI-Klassifizierung abgeschlossen (status >= 40)
-        # - Noch nicht von Auto-Rules verarbeitet (status < 50)
-        # - Nicht in Fehler-Status (status >= 0)
-        # HINWEIS: Kein created_at-Filter! Status ist robuster (vermeidet Missing bei Resume/Long-Sync)
+        # - AI-Klassifizierung abgeschlossen (ai_classification_completed_at != NULL)
+        # - Noch nicht von Auto-Rules verarbeitet (auto_rules_completed_at IS NULL)
+        # - Nicht in Fehler-Status (processing_status >= 0)
         new_emails = self.db.query(RawEmail).filter(
             RawEmail.user_id == self.user_id,
-            RawEmail.processing_status >= models.EmailProcessingStatus.AI_CLASSIFIED,  # Status 40+
-            RawEmail.processing_status < models.EmailProcessingStatus.AUTO_RULES_APPLIED,  # Status < 50
+            RawEmail.ai_classification_completed_at.isnot(None),  # AI fertig
+            RawEmail.auto_rules_completed_at.is_(None),           # Rules fehlen noch
             RawEmail.processing_status >= 0,  # Keine Fehler-Stati
             RawEmail.deleted_at == None
         ).limit(limit).all()
@@ -302,16 +301,13 @@ class AutoRulesEngine:
                 if not has_error:
                     email.auto_rules_processed = True
                     
-                    # Phase 27: Status-Update nach Auto-Rules
-                    # WICHTIG: Erst auf AUTO_RULES_APPLIED setzen (Status 50)
-                    email.processing_status = models.EmailProcessingStatus.AUTO_RULES_APPLIED
-                    email.processing_last_attempt_at = datetime.now(UTC)
-                    self.db.flush()  # Zwischenspeichern (crash-safe)
-
-                    # Dann auf COMPLETE setzen (Status 100) - Rules waren letzter Schritt
-                    # HINWEIS: Kein flush() nötig - wird mit batch-commit() persistent
+                    # Phase 27.1: Timestamp-Setzung nach Auto-Rules
+                    email.auto_rules_completed_at = datetime.now(UTC)
+                    
+                    # Legacy-Status für Monitoring
                     email.processing_status = models.EmailProcessingStatus.COMPLETE
                     email.processing_last_attempt_at = datetime.now(UTC)
+                    self.db.flush()  # Zwischenspeichern (crash-safe)
                     
                     stats["processed_email_ids"].append(email.id)
                 

@@ -417,18 +417,41 @@ Wenn du Cloud-AI nutzt, kannst du PII automatisch entfernen:
 
 ## 10. Mail-Verarbeitung & Status
 
-### 10.1 Verarbeitungs-Pipeline
+### 10.1 Gesamtablauf: Fetch + Processing
 
-Jede Email durchläuft 5 Schritte:
+Der komplette Email-Abruf und -Verarbeitung läuft in 4 Haupt-Phasen ab:
 
-| Status | Schritt | Beschreibung |
-|--------|---------|---------------|
-| 0 | Unbearbeitet | Email wurde abgerufen, aber noch nicht analysiert |
-| 10 | Embedding | Semantische Vektorisierung für Suche |
-| 20 | Translation | Spracherkennung + Übersetzung (wenn nicht DE/EN) |
-| 40 | AI-Classified | KI-Priorisierung (Dringlichkeit × Wichtigkeit) |
-| 50 | Auto-Rules | Automatische Regelverarbeitung |
-| 100 | Complete | Vollständig verarbeitet |
+#### Phase 1-4: Mail-Abruf (Fetch)
+
+| Phase | Schritt | Beschreibung | Dauer |
+|-------|---------|--------------|-------|
+| **1** | **IMAP-Connect** | Verbindung zum Mail-Server aufbauen | ~1-3s |
+| **2** | **Folder-Scan** | Ordner auflisten, UIDs ermitteln | ~2-10s |
+| **3** | **State-Sync** | Server-Status mit lokaler DB abgleichen | ~5-30s |
+| **4** | **Fetch-Download** | Neue Emails herunterladen (Header + Body) | ~10-300s |
+
+Nach Phase 4 haben alle neuen Emails **Status 0** (Unbearbeitet) in der Datenbank.
+
+#### Phase 5: Email-Processing (Verarbeitung)
+
+Jede Email durchläuft dann 5 Verarbeitungs-Schritte:
+
+| Status | Schritt | Beschreibung | Dauer |
+|--------|---------|--------------|-------|
+| **0** | **Unbearbeitet** | Email wurde abgerufen, aber noch nicht analysiert | — |
+| **10** | **Embedding** | Semantische Vektorisierung für Suche | ~0.5-2s |
+| **20** | **Translation** | Spracherkennung + Übersetzung (wenn nicht DE/EN) | ~1-5s |
+| **40** | **AI-Classified** | KI-Priorisierung (Dringlichkeit × Wichtigkeit) | ~2-10s |
+| **50** | **Auto-Rules** | Automatische Regelverarbeitung | ~0.1-1s |
+| **100** | **Complete** | Vollständig verarbeitet | — |
+
+**Typischer Gesamtablauf:**
+```
+1. Benutzer klickt "Abrufen" in Einstellungen
+2. Fetch-Phase 1-4: 20-60 Sekunden (je nach Anzahl neuer Emails)
+3. Processing-Phase: 5-20 Sekunden pro Email (parallel verarbeitet)
+4. Dashboard zeigt neue Emails mit KI-Priorisierung
+```
 
 **Fehlerbehandlung:**
 - Bei Fehler: Status bleibt auf letztem erfolgreichen Schritt
@@ -468,6 +491,43 @@ Email ID 123:
 - **Vorteil:** Chronologische Verarbeitung, ältere Emails blockieren nicht
 - **Früher:** Nach ID (zufällig bei Multi-Account-Fetch)
 - **Jetzt:** `ORDER BY received_at ASC` in der Processing-Pipeline
+
+### 10.5 Granulare Processing-Timestamps (seit v2.2.1)
+
+Das System nutzt **individuelle Timestamps** für jeden Verarbeitungsschritt, statt eines linearen Status-Codes:
+
+| Timestamp-Spalte | Schritt | Bedeutung |
+|------------------|---------|-----------|
+| `embedding_generated_at` | Embedding | Wann wurde semantische Vektorisierung abgeschlossen? |
+| `translation_completed_at` | Translation | Wann wurde Übersetzung abgeschlossen? |
+| `ai_classification_completed_at` | AI-Classification | Wann wurde KI-Priorisierung abgeschlossen? |
+| `auto_rules_completed_at` | Auto-Rules | Wann wurden Regelverarbeitung abgeschlossen? |
+
+**Vorteile:**
+- ✅ **Einzelne Steps nachholbar:** Nur fehlende Schritte werden wiederholt
+- ✅ **Kein Datenverlust:** Bei Reset eines Steps bleiben andere erhalten
+- ✅ **Audit-Trail:** Genaue Zeitstempel wann was gemacht wurde
+- ✅ **Idempotent:** Processing kann beliebig oft laufen
+
+**Beispiel - Nur Translation neu:**
+```sql
+-- Nur Übersetzung zurücksetzen, Rest bleibt erhalten
+UPDATE raw_emails SET 
+    translation_completed_at = NULL,
+    encrypted_translation_de = NULL
+WHERE id = 1276;
+
+-- Beim nächsten Processing:
+-- ✅ Embedding: Übersprungen (Timestamp vorhanden)
+-- 🔄 Translation: Wird nachgeholt (Timestamp fehlt)
+-- ✅ AI-Classification: Übersprungen (Timestamp vorhanden)
+-- ✅ Auto-Rules: Übersprungen (Timestamp vorhanden)
+```
+
+**Dependencies:**
+- **Translation** benötigt: Embedding (für Context)
+- **AI-Classification** benötigt: Embedding (für Semantic Features)
+- **Auto-Rules** benötigt: AI-Classification (für Kategorien/Scores)
 
 ---
 

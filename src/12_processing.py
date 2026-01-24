@@ -8,7 +8,7 @@ from typing import Callable, Optional, List, Dict
 from datetime import datetime, UTC
 
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 
 models = importlib.import_module(".02_models", "src")
 sanitizer_mod = importlib.import_module(".04_sanitizer", "src")
@@ -373,22 +373,35 @@ def process_pending_raw_emails(
         else sanitizer_mod.get_sanitization_level(False)
     )
 
-    # PHASE 27: Query für Resume-Pipeline
-    # Hole ALLE Mails die:
-    # - Noch nicht COMPLETE sind (status < 100) ODER Fehler hatten (status < 0)
-    # - AUCH wenn ProcessedEmail existiert (z.B. bei Re-Processing wegen falscher Übersetzung)
+    # Phase 27.1: Timestamp-basierte Query statt Status-Check
+    # Finde Emails bei denen mindestens ein Step fehlt
     query = (
         session.query(models.RawEmail)
-        .outerjoin(
-            models.ProcessedEmail,
-            models.RawEmail.id == models.ProcessedEmail.raw_email_id,
-        )
+        .filter(models.RawEmail.user_id == user.id)
+        .filter(models.RawEmail.deleted_at.is_(None))
         .filter(
-            models.RawEmail.user_id == user.id,
-            models.RawEmail.deleted_at.is_(None),
             or_(
-                models.RawEmail.processing_status < models.EmailProcessingStatus.COMPLETE,
-                models.RawEmail.processing_status < 0  # Fehler-Status
+                # Embedding fehlt
+                models.RawEmail.embedding_generated_at.is_(None),
+                
+                # Translation fehlt (nur wenn nötig: Sprache != de/en)
+                # Phase 27.1: NULL handling - auch Mails ohne detected_language einschließen
+                and_(
+                    or_(
+                        models.RawEmail.detected_language.is_(None),
+                        models.RawEmail.detected_language.notin_(['de', 'en'])
+                    ),
+                    models.RawEmail.translation_completed_at.is_(None)
+                ),
+                
+                # AI-Classification fehlt
+                models.RawEmail.ai_classification_completed_at.is_(None),
+                
+                # Auto-Rules fehlen
+                models.RawEmail.auto_rules_completed_at.is_(None),
+                
+                # Legacy: Fehler-Status (negative Werte)
+                models.RawEmail.processing_status < 0
             )
         )
     )
@@ -396,6 +409,7 @@ def process_pending_raw_emails(
     if mail_account:
         query = query.filter(models.RawEmail.mail_account_id == mail_account.id)
 
+    # Chronologische Verarbeitung: Älteste zuerst
     query = query.order_by(models.RawEmail.received_at.asc(), models.RawEmail.id.asc())
 
     if limit and limit > 0:
@@ -463,14 +477,15 @@ def process_pending_raw_emails(
                 )
                 continue
             
-            # Re-Processing: Lösche existierendes ProcessedEmail bei Neuverarbeitung
+            # Phase 27.1: Timestamp-basiertes Re-Processing
+            # → ProcessedEmail wird NICHT mehr gelöscht!
+            # → Jeder Step prüft seinen eigenen Timestamp
+            # → Bei partiellen Resets bleiben andere Steps erhalten
             if already_processed and raw_email.processing_status < models.EmailProcessingStatus.COMPLETE:
                 logger.info(
-                    f"🔄 RawEmail {raw_email.id} wird neu verarbeitet (Status {raw_email.processing_status}) "
-                    f"- lösche altes ProcessedEmail {already_processed.id}"
+                    f"🔄 RawEmail {raw_email.id} wird partiell neu verarbeitet (Status {raw_email.processing_status}) "
+                    f"- behalte ProcessedEmail {already_processed.id}"
                 )
-                session.delete(already_processed)
-                session.flush()  # Sofort löschen, damit kein UniqueConstraint-Konflikt
 
             # Zero-Knowledge: Entschlüssele E-Mail-Inhalte mit master_key (wird für alle Schritte benötigt)
             try:
@@ -520,10 +535,8 @@ def process_pending_raw_emails(
             # ═══════════════════════════════════════════════════════════════════════
             # SCHRITT 1: EMBEDDING (falls noch nicht vorhanden)
             # ═══════════════════════════════════════════════════════════════════════
-            if not models.EmailProcessingStatus.should_skip_step(
-                raw_email.processing_status, 
-                models.EmailProcessingStatus.EMBEDDING_DONE
-            ):
+            # Phase 27.1: Timestamp-Check statt Status-Check
+            if not raw_email.embedding_generated_at:
                 current_step = "embedding"
                 logger.info(f"🔄 [{idx}/{total_emails}] Schritt 1/4: Embedding für '{subject_preview}'")
                 
@@ -542,7 +555,9 @@ def process_pending_raw_emails(
                         raw_email.email_embedding = embedding_bytes
                         raw_email.embedding_model = embedding_model_used or ai_model
                         raw_email.embedding_generated_at = embedding_timestamp or datetime.now(UTC)
-                        raw_email.processing_status = models.EmailProcessingStatus.EMBEDDING_DONE
+                        # Legacy-Status für Monitoring
+                        if raw_email.processing_status < models.EmailProcessingStatus.EMBEDDING_DONE:
+                            raw_email.processing_status = models.EmailProcessingStatus.EMBEDDING_DONE
                         session.flush()  # 🔥 KRITISCH: Zwischenspeichern!
                         logger.info(f"✅ Embedding generiert ({len(embedding_bytes)} bytes)")
                     else:
@@ -553,7 +568,10 @@ def process_pending_raw_emails(
                             step="embedding",
                             message="No embedding bytes returned"
                         )
-                        raw_email.processing_status = models.EmailProcessingStatus.EMBEDDING_DONE
+                        # Markiere als "versucht" (auch wenn fehlgeschlagen)
+                        raw_email.embedding_generated_at = datetime.now(UTC)
+                        if raw_email.processing_status < models.EmailProcessingStatus.EMBEDDING_DONE:
+                            raw_email.processing_status = models.EmailProcessingStatus.EMBEDDING_DONE
                         session.flush()
                         
                 except Exception as emb_err:
@@ -565,7 +583,10 @@ def process_pending_raw_emails(
                         step="embedding",
                         message=str(emb_err)
                     )
-                    raw_email.processing_status = models.EmailProcessingStatus.EMBEDDING_DONE
+                    # Markiere als "versucht" (auch wenn fehlgeschlagen)
+                    raw_email.embedding_generated_at = datetime.now(UTC)
+                    if raw_email.processing_status < models.EmailProcessingStatus.EMBEDDING_DONE:
+                        raw_email.processing_status = models.EmailProcessingStatus.EMBEDDING_DONE
                     session.flush()
                     # ⚡ Verarbeitung läuft weiter - Semantic Search funktioniert nur nicht
             
@@ -609,55 +630,55 @@ def process_pending_raw_emails(
                         message=str(e)
                     )
             
+            # Phase 27.1: Timestamp-Check + Dependency-Check
             needs_translation = (
                 raw_email.detected_language and 
-                raw_email.detected_language != 'de' and 
-                not raw_email.encrypted_translation_de
+                raw_email.detected_language not in ('de', 'en') and 
+                not raw_email.translation_completed_at
             )
             
-            if needs_translation or not models.EmailProcessingStatus.should_skip_step(
-                raw_email.processing_status,
-                models.EmailProcessingStatus.TRANSLATION_DONE
-            ):
+            if needs_translation:
+                # Dependency-Check: Translation benötigt Embedding
+                if not raw_email.embedding_generated_at:
+                    logger.warning(f"⚠️ Email {raw_email.id}: Translation needs embedding first - skip for now")
+                    continue  # Nächste Email, dieser wird beim nächsten Durchlauf verarbeitet
+                
                 current_step = "translation"
                 logger.info(f"🔄 [{idx}/{total_emails}] Schritt 2/4: Translation Check")
                 
                 try:
-                    # Translation nur wenn detected_language != 'de' UND noch nicht vorhanden
-                    if needs_translation:
-                        translator_mod = importlib.import_module(".services.translator_service", "src")
-                        translator = translator_mod.get_translator()
-                        
-                        # Performance-Limit für sehr lange Emails (z.B. Newsletter)
-                        # Erhöht auf 5000 wegen trailing spaces in inscriptis output
-                        MAX_TRANSLATION_CHARS = 5000
-                        full_text = f"{decrypted_subject or ''}\n\n{plain_body}"
-                        
-                        if len(full_text) <= MAX_TRANSLATION_CHARS:
-                            text_to_translate = full_text
-                            logger.info(f"🔤 Translation Input (komplett): {len(text_to_translate)} Zeichen")
-                        else:
-                            text_to_translate = full_text[:MAX_TRANSLATION_CHARS]
-                            logger.info(f"🔤 Translation Input (begrenzt): {len(text_to_translate)}/{len(full_text)} Zeichen")
-                        
-                        result = translator.translate_sync(
-                            text=text_to_translate,
-                            target_lang='de',
-                            source_lang=raw_email.detected_language,
-                            engine='local'  # Opus-MT
-                        )
-                        logger.info(f"✅ Translation Output: {len(result.translated_text)} Zeichen")
-                        
-                        # Verschlüsseln der Übersetzung
-                        raw_email.encrypted_translation_de = encryption_mod.EncryptionManager.encrypt_data(
-                            result.translated_text, master_key
-                        )
-                        raw_email.translation_engine = result.model_used
-                        logger.info(f"✅ Translation {raw_email.detected_language}→de ({result.model_used})")
-                    else:
-                        logger.debug(f"⏭️  Keine Translation nötig (Sprache: {raw_email.detected_language or 'de'})")
+                    translator_mod = importlib.import_module(".services.translator_service", "src")
+                    translator = translator_mod.get_translator()
                     
-                    # Status nur setzen wenn nicht schon höher
+                    # Performance-Limit für sehr lange Emails (z.B. Newsletter)
+                    # Erhöht auf 5000 wegen trailing spaces in inscriptis output
+                    MAX_TRANSLATION_CHARS = 5000
+                    full_text = f"{decrypted_subject or ''}\n\n{plain_body}"
+                    
+                    if len(full_text) <= MAX_TRANSLATION_CHARS:
+                        text_to_translate = full_text
+                        logger.info(f"🔤 Translation Input (komplett): {len(text_to_translate)} Zeichen")
+                    else:
+                        text_to_translate = full_text[:MAX_TRANSLATION_CHARS]
+                        logger.info(f"🔤 Translation Input (begrenzt): {len(text_to_translate)}/{len(full_text)} Zeichen")
+                    
+                    result = translator.translate_sync(
+                        text=text_to_translate,
+                        target_lang='de',
+                        source_lang=raw_email.detected_language,
+                        engine='local'  # Opus-MT
+                    )
+                    logger.info(f"✅ Translation Output: {len(result.translated_text)} Zeichen")
+                    
+                    # Verschlüsseln der Übersetzung
+                    raw_email.encrypted_translation_de = encryption_mod.EncryptionManager.encrypt_data(
+                        result.translated_text, master_key
+                    )
+                    raw_email.translation_engine = result.model_used
+                    raw_email.translation_completed_at = datetime.now(UTC)
+                    logger.info(f"✅ Translation {raw_email.detected_language}→de ({result.model_used})")
+                    
+                    # Legacy-Status für Monitoring
                     if raw_email.processing_status < models.EmailProcessingStatus.TRANSLATION_DONE:
                         raw_email.processing_status = models.EmailProcessingStatus.TRANSLATION_DONE
                     session.flush()
@@ -680,7 +701,8 @@ def process_pending_raw_emails(
                         target_language="de"
                     )
                     
-                    # Status trotzdem auf TRANSLATION_DONE setzen (übersprungen)
+                    # Markiere als "versucht" (auch wenn fehlgeschlagen)
+                    raw_email.translation_completed_at = datetime.now(UTC)
                     if raw_email.processing_status < models.EmailProcessingStatus.TRANSLATION_DONE:
                         raw_email.processing_status = models.EmailProcessingStatus.TRANSLATION_DONE
                     session.flush()
@@ -689,10 +711,13 @@ def process_pending_raw_emails(
             # ═══════════════════════════════════════════════════════════════════════
             # SCHRITT 3: AI-KLASSIFIZIERUNG (nur wenn noch kein ProcessedEmail)
             # ═══════════════════════════════════════════════════════════════════════
-            if not models.EmailProcessingStatus.should_skip_step(
-                raw_email.processing_status,
-                models.EmailProcessingStatus.AI_CLASSIFIED
-            ):
+            # Phase 27.1: Timestamp-Check + Dependency-Check
+            if not raw_email.ai_classification_completed_at:
+                # Dependency-Check: AI benötigt Embedding
+                if not raw_email.embedding_generated_at:
+                    logger.warning(f"⚠️ Email {raw_email.id}: AI classification needs embedding first - skip for now")
+                    continue  # Nächste Email, dieser wird beim nächsten Durchlauf verarbeitet
+                
                 current_step = "ai_classification"
                 logger.info(f"🔄 [{idx}/{total_emails}] Schritt 3/4: AI-Klassifizierung")
                 
@@ -1331,7 +1356,9 @@ def process_pending_raw_emails(
                     # Per-Email Commit für bessere Concurrency (WAL-Mode erlaubt parallele Reads)
                     session.commit()
                     
-                    # Phase 27: Status-Update nach erfolgreichem Schritt 3
+                    # Phase 27.1: Timestamp-Setzung nach erfolgreichem Schritt 3
+                    raw_email.ai_classification_completed_at = datetime.now(UTC)
+                    # Legacy-Status für Monitoring
                     raw_email.processing_status = models.EmailProcessingStatus.AI_CLASSIFIED
                     raw_email.processing_last_attempt_at = datetime.now(UTC)
                     # Reset retry counter bei Erfolg
