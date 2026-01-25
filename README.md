@@ -47,12 +47,16 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **Kalender-Erkennung** – Automatische Erkennung von iCalendar-Einladungen (REQUEST/REPLY/CANCEL)
   - Farbcodierte Kalender-Karte in Detailansicht (blau/grün/rot)
   - Filter-Dropdown und Badges in Listenansicht
+- **Ordner-Audit** – Analyse von Papierkorb-Ordnern auf potenziell wichtige Emails
+  - Mehrsprachige Keywords (CH/DE/IT/FR) für Behörden, Finanzen, Verträge
+  - UI-Konfiguration für Domains, Keywords, Patterns, VIP-Absender
+  - Wildcard (*@firma.ch) und Regex-Unterstützung für VIP-Absender
 
 ---
 
 ## Status
 
-**Version:** 2.2.1  
+**Version:** 2.2.2  
 **Development:** Aktiv  
 **Architecture:** Flask Blueprints + PostgreSQL + Celery  
 **Stability:** Production-ready  
@@ -64,6 +68,12 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ Blueprint-basierte Modularisierung (10 Blueprints)
 - ✅ Zero-Knowledge Encryption (DEK/KEK Pattern)
 - ✅ Mandatory 2FA für alle Accounts
+
+**v2.2.2 Highlights (Januar 2026):**
+- ✅ Ordner-Audit: Analyse von Papierkorb-Ordnern auf wichtige Emails
+- ✅ UI-Konfiguration: Vertrauenswürdige Domains, Keywords, Patterns, VIP-Absender
+- ✅ Mehrsprachige Defaults: CH/DE/IT/FR Keywords und Patterns
+- ✅ VIP-Absender: Wildcard (*@firma.ch) und Regex-Unterstützung
 
 **v2.2.1 Highlights (Januar 2026):**
 - ✅ Robuste Mail-Verarbeitung: Fortsetzung unvollständiger Emails

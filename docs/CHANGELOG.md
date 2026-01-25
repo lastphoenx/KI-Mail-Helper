@@ -6,6 +6,59 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
+## [2.2.2] - 2026-01-25
+
+### 🗂️ Ordner-Audit System mit UI-Konfiguration
+
+#### Neues Feature: Ordner-Audit (Trash-Audit)
+- **Analyse von Papierkorb-Ordnern** auf potenziell wichtige Emails
+- **Mehrsprachige Unterstützung** für CH/DE/IT/FR Keywords und Patterns
+- **Intelligente Erkennung** von:
+  - Vertrauenswürdigen Domains (Behörden, Banken, Versicherungen)
+  - Wichtigen Betreff-Keywords (Rechnung, Kündigung, Mahnung, etc.)
+  - Sicheren Lösch-Patterns (Newsletter, Marketing, Werbung)
+  - VIP-Absendern mit Wildcard/Regex-Unterstützung
+- **Scan-Ergebnis-Karten** mit Confidence-Score und Kategorisierung
+
+#### UI-Konfiguration für Audit
+- **Neuer "Konfiguration"-Tab** im Ordner-Audit-Dialog
+- **Vier konfigurierbare Listen:**
+  - 🏛️ Vertrauenswürdige Domains (z.B. admin.ch, sparkasse.de)
+  - 📋 Wichtige Keywords (z.B. rechnung, kündigung, mahnung)
+  - 🔇 Sichere Patterns – Betreff (z.B. Newsletter, Werbung)
+  - 🔇 Sichere Patterns – Absender (z.B. @newsletter., noreply@)
+  - ⭐ VIP-Absender (Wildcards: *@firma.ch, Regex: /pattern/)
+- **"Defaults laden"** Button für mehrsprachige Standardwerte
+- **Account-spezifisch oder Global** (Optional per Account)
+
+#### Neue Datenbank-Tabellen
+- `audit_trusted_domains` – Vertrauenswürdige Domains
+- `audit_important_keywords` – Wichtige Betreff-Keywords
+- `audit_safe_patterns` – Sichere Lösch-Patterns (subject/sender)
+- `audit_vip_senders` – VIP-Absender mit Wildcard/Regex
+- `audit_list_sources` – Tracking für geladene Default-Listen
+
+#### API-Endpoints
+- `GET/POST /api/audit-config/trusted-domains` – Domain-Liste verwalten
+- `GET/POST /api/audit-config/important-keywords` – Keyword-Liste verwalten
+- `GET/POST /api/audit-config/safe-patterns` – Pattern-Liste verwalten
+- `GET/POST /api/audit-config/vip-senders` – VIP-Liste verwalten
+- `POST /api/audit-config/load-defaults` – Mehrsprachige Defaults laden
+- `GET /api/audit-config/stats` – Statistiken über konfigurierte Einträge
+
+#### Technische Details
+- **AuditConfigCache**: In-Memory-Caching für performante Konfiguration
+- **Pattern-Erkennung**: Automatische Unterscheidung zwischen Wildcard und Regex
+- **Batch-Operationen**: Komma-separierte Eingabe für schnelle Bulk-Updates
+- **Alembic Migration**: `46a0f5ab4550_add_audit_config_tables`
+
+#### Migration von Trusted-Senders
+- Modal "Als Trusted Sender" → "Als VIP Absender" umbenannt
+- Verwendet jetzt `/api/audit-config/vip-senders` statt altem System
+- VIP-Absender gelten spezifisch für Ordner-Audit
+
+---
+
 ## [2.2.1] - 2026-01-24
 
 ### 🔧 Mail-Processing-Verbesserungen & Übersetzungs-Fix
