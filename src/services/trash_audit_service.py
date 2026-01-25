@@ -239,6 +239,7 @@ class TrashCategory(Enum):
     SAFE = "safe"           # Sicher löschbar (Newsletter, Spam)
     REVIEW = "review"       # Manuell prüfen
     IMPORTANT = "important" # Möglicherweise wichtig
+    SCAM = "scam"           # Definitiv bösartig/betrügerisch → sofort vernichten
 
 
 @dataclass
@@ -263,6 +264,7 @@ class TrashEmailInfo:
     in_reply_to_msgid: Optional[str] = None  # Message-ID der referenzierten Mail
     spam_score: Optional[float] = None       # X-Spam-Score vom Server
     auth_results: Optional[str] = None       # SPF/DKIM/DMARC Ergebnisse
+    reply_to: Optional[str] = None           # Reply-To Header (für Mismatch-Erkennung)
     
     # Analyse-Ergebnisse
     category: TrashCategory = TrashCategory.REVIEW
@@ -309,6 +311,7 @@ class TrashEmailCluster:
     safe_count: int = 0
     review_count: int = 0
     important_count: int = 0
+    scam_count: int = 0                 # NEU: Scam-Emails im Cluster
     
     def to_dict(self) -> dict:
         return {
@@ -326,6 +329,7 @@ class TrashEmailCluster:
             "safe_count": self.safe_count,
             "review_count": self.review_count,
             "important_count": self.important_count,
+            "scam_count": self.scam_count,
         }
 
 
@@ -336,6 +340,7 @@ class TrashAuditResult:
     safe_count: int = 0
     review_count: int = 0
     important_count: int = 0
+    scam_count: int = 0                     # NEU: Anzahl Scam-Emails
     emails: List[TrashEmailInfo] = field(default_factory=list)
     clusters: List[TrashEmailCluster] = field(default_factory=list)  # NEU: Cluster-Liste
     scan_duration_ms: int = 0
@@ -346,6 +351,7 @@ class TrashAuditResult:
             "safe_count": self.safe_count,
             "review_count": self.review_count,
             "important_count": self.important_count,
+            "scam_count": self.scam_count,
             "scan_duration_ms": self.scan_duration_ms,
             "emails": [e.to_dict() for e in self.emails],
             "clusters": [c.to_dict() for c in self.clusters],
@@ -750,6 +756,8 @@ class TrashAuditService:
                 cluster.review_count += 1
             elif email.category == TrashCategory.IMPORTANT:
                 cluster.important_count += 1
+            elif email.category == TrashCategory.SCAM:
+                cluster.scam_count += 1
             
             # Datum-Range tracken
             if email.date:
@@ -758,14 +766,15 @@ class TrashAuditService:
                 if cluster.newest_date is None or email.date > cluster.newest_date:
                     cluster.newest_date = email.date
             
-            # Dominante Kategorie: nimm die "wichtigste"
+            # Dominante Kategorie: nimm die "wichtigste" (SCAM > IMPORTANT > REVIEW > SAFE)
             if cluster.count == 1:
                 cluster.category = email.category
             elif cluster.category != email.category:
-                if email.category == TrashCategory.IMPORTANT:
-                    cluster.category = TrashCategory.IMPORTANT
-                elif email.category == TrashCategory.REVIEW and cluster.category == TrashCategory.SAFE:
-                    cluster.category = TrashCategory.REVIEW
+                # Priorität: SCAM hat höchste, dann IMPORTANT, dann REVIEW, dann SAFE
+                priority = {TrashCategory.SCAM: 4, TrashCategory.IMPORTANT: 3, 
+                            TrashCategory.REVIEW: 2, TrashCategory.SAFE: 1}
+                if priority.get(email.category, 0) > priority.get(cluster.category, 0):
+                    cluster.category = email.category
         
         # Sortiere nach Anzahl (größte zuerst)
         clusters = sorted(cluster_map.values(), key=lambda c: c.count, reverse=True)
@@ -958,6 +967,168 @@ class TrashAuditService:
         
         return False
     
+    # =============================================================================
+    # Scam Detection Methods
+    # =============================================================================
+    
+    # Suspicious TLDs - oft für Spam/Scam missbraucht (kostenlose oder billige TLDs)
+    SUSPICIOUS_TLDS = {
+        '.xyz', '.top', '.click', '.buzz', '.loan', '.work', 
+        '.gq', '.ml', '.cf', '.tk', '.ga',  # Kostenlose TLDs (Freenom)
+        '.icu', '.club', '.online', '.site', '.website',
+        '.pw', '.cc', '.su', '.bid', '.stream', '.download',
+    }
+    
+    @staticmethod
+    def _check_reply_to_mismatch(sender_email: str, reply_to: Optional[str]) -> Optional[str]:
+        """Erkennt From ≠ Reply-To Mismatch = klassischer Scam-Trick.
+        
+        Scammer fälschen "From" um seriös auszusehen, brauchen aber echte
+        Reply-To Adresse um Antworten zu empfangen.
+        
+        Returns:
+            Grund-String wenn Mismatch erkannt, sonst None
+        """
+        if not reply_to or not sender_email:
+            return None
+        
+        # Extrahiere Domains
+        from_domain = TrashAuditService._extract_domain(sender_email)
+        reply_domain = TrashAuditService._extract_domain(reply_to)
+        
+        if not from_domain or not reply_domain:
+            return None
+        
+        # Gleiche Domain = OK
+        if from_domain == reply_domain:
+            return None
+        
+        # Subdomains erlauben (z.B. newsletter.firma.de → firma.de)
+        if from_domain.endswith('.' + reply_domain) or reply_domain.endswith('.' + from_domain):
+            return None
+        
+        # Bekannte Ausnahmen (Mailinglisten, Multi-Domain Firmen)
+        KNOWN_EXCEPTIONS = [
+            ('googlegroups.com', 'google.com'),
+            ('amazon.de', 'amazon.com'),
+            ('amazon.ch', 'amazon.com'),
+        ]
+        domain_pair = (from_domain, reply_domain)
+        if domain_pair in KNOWN_EXCEPTIONS or (reply_domain, from_domain) in KNOWN_EXCEPTIONS:
+            return None
+        
+        return f"🚨 Reply-To Mismatch: From @{from_domain} → Reply-To @{reply_domain}"
+    
+    @staticmethod
+    def _has_suspicious_tld(sender_email: str) -> Optional[str]:
+        """Prüft ob Absender-Domain eine verdächtige TLD hat.
+        
+        Returns:
+            Grund-String wenn verdächtig, sonst None
+        """
+        if not sender_email:
+            return None
+        
+        domain = TrashAuditService._extract_domain(sender_email)
+        if not domain:
+            return None
+        
+        for tld in TrashAuditService.SUSPICIOUS_TLDS:
+            if domain.endswith(tld):
+                return f"⚠️ Verdächtige TLD: {tld}"
+        
+        return None
+    
+    @staticmethod
+    def _parse_auth_failure(auth_results: Optional[str]) -> Optional[str]:
+        """Parst SPF/DKIM/DMARC Failures aus Authentication-Results Header.
+        
+        Ein Server hat bereits geprüft ob die Email authentisch ist.
+        Fails bedeuten: Der Absender ist NICHT wer er vorgibt zu sein.
+        
+        Returns:
+            Grund-String mit Liste der Failures, sonst None
+        """
+        if not auth_results:
+            return None
+        
+        auth_lower = auth_results.lower()
+        
+        failures = []
+        
+        # SPF: Sender Policy Framework
+        if 'spf=fail' in auth_lower or 'spf=softfail' in auth_lower:
+            failures.append('SPF')
+        
+        # DKIM: DomainKeys Identified Mail
+        if 'dkim=fail' in auth_lower:
+            failures.append('DKIM')
+        
+        # DMARC: Domain-based Message Authentication
+        if 'dmarc=fail' in auth_lower:
+            failures.append('DMARC')
+        
+        if failures:
+            return f"🚨 Auth-Fail: {', '.join(failures)}"
+        
+        return None
+    
+    @staticmethod
+    def _calculate_scam_score(info: 'TrashEmailInfo') -> Tuple[int, List[str]]:
+        """Berechnet Scam-Score basierend auf mehreren Signalen.
+        
+        Returns:
+            (scam_signals: int, reasons: List[str])
+        """
+        scam_signals = 0
+        reasons = []
+        
+        # 1. Reply-To Mismatch (sehr starkes Signal)
+        reply_to_issue = TrashAuditService._check_reply_to_mismatch(info.sender, info.reply_to)
+        if reply_to_issue:
+            scam_signals += 2  # Doppelt gewichten
+            reasons.append(reply_to_issue)
+        
+        # 2. Auth-Failure (SPF/DKIM/DMARC)
+        auth_issue = TrashAuditService._parse_auth_failure(info.auth_results)
+        if auth_issue:
+            scam_signals += 2  # Doppelt gewichten - Server sagt "ist Fake"
+            reasons.append(auth_issue)
+        
+        # 3. Suspicious TLD
+        tld_issue = TrashAuditService._has_suspicious_tld(info.sender)
+        if tld_issue:
+            scam_signals += 1
+            reasons.append(tld_issue)
+        
+        # 4. Brand-Domain Mismatch (existiert schon, hier integrieren)
+        subject_lower = info.subject.lower() if info.subject else ''
+        brand_issue = TrashAuditService._check_brand_domain_mismatch(subject_lower, info.sender)
+        if brand_issue:
+            scam_signals += 2
+            reasons.append(brand_issue)
+        
+        # 5. Gibberish Domain
+        domain = TrashAuditService._extract_domain(info.sender)
+        if TrashAuditService._is_gibberish_domain(domain):
+            scam_signals += 1
+            reasons.append("⚠️ Verdächtige Random-Domain")
+        
+        # 6. Clickbait/Scam Patterns im Subject
+        for pattern in CLICKBAIT_SCAM_PATTERNS:
+            if re.search(pattern, subject_lower, re.IGNORECASE):
+                scam_signals += 1
+                reasons.append(f"⚠️ Scam-Keyword im Betreff")
+                break  # Nur einmal zählen
+        
+        # 7. Fake-Absendername
+        name_issue = TrashAuditService._check_sender_name_mismatch(info.sender_name, info.sender)
+        if name_issue:
+            scam_signals += 1
+            reasons.append(name_issue)
+        
+        return scam_signals, reasons
+
     @staticmethod
     def analyze_email(
         info: TrashEmailInfo, 
@@ -1310,7 +1481,26 @@ class TrashAuditService:
             score -= 0.5
             reasons.append("War als wichtig markiert")
         
+        # --- SCAM DETECTION (finale Prüfung mit kombiniertem Score) ---
+        scam_signals, scam_reasons = TrashAuditService._calculate_scam_score(info)
+        
         # --- Kategorie bestimmen ---
+        # SCAM hat höchste Priorität: 3+ Signale = definitiv bösartig
+        if scam_signals >= 3:
+            info.category = TrashCategory.SCAM
+            info.confidence = min(1.0, scam_signals * 0.25)
+            # Ersetze Gründe durch Scam-Gründe (für klare Anzeige)
+            info.reasons = scam_reasons
+            return info
+        
+        # 2 Signale + zusätzliche Verdachtsmomente = SCAM
+        if scam_signals >= 2 and score >= 1.0:
+            info.category = TrashCategory.SCAM
+            info.confidence = min(1.0, 0.6 + scam_signals * 0.15)
+            info.reasons = scam_reasons + [r for r in reasons if r not in scam_reasons][:2]
+            return info
+        
+        # Normale Kategorisierung
         if score >= 0.6:  # Balanciert: Newsletter (List-Unsubscribe=0.8) → SAFE
             info.category = TrashCategory.SAFE
             info.confidence = min(1.0, score)
@@ -1392,7 +1582,7 @@ class TrashAuditService:
             
             # Header fetchen inkl. Power-Header für bessere Analyse
             # BODY.PEEK vermeidet \Seen Flag zu setzen
-            power_headers = 'BODY.PEEK[HEADER.FIELDS (LIST-UNSUBSCRIBE IN-REPLY-TO REFERENCES X-SPAM-STATUS X-SPAM-SCORE AUTHENTICATION-RESULTS)]'
+            power_headers = 'BODY.PEEK[HEADER.FIELDS (LIST-UNSUBSCRIBE IN-REPLY-TO REFERENCES REPLY-TO X-SPAM-STATUS X-SPAM-SCORE AUTHENTICATION-RESULTS)]'
             
             fetch_data = conn.fetch(uids, [
                 'UID',
@@ -1459,6 +1649,7 @@ class TrashAuditService:
                     in_reply_to_msgid = None
                     spam_score = None
                     auth_results = None
+                    reply_to = None  # NEU: Für Scam-Detection (From ≠ Reply-To)
                     
                     # Header-Daten aus verschiedenen möglichen Keys extrahieren
                     header_data = None
@@ -1516,6 +1707,17 @@ class TrashAuditService:
                                 auth_results = TrashAuditService._extract_folded_header(
                                     header_text, 'authentication-results:'
                                 )
+                            
+                            # Reply-To Header (für Scam-Detection: From ≠ Reply-To)
+                            if 'reply-to:' in header_lower:
+                                reply_to_header = TrashAuditService._extract_folded_header(
+                                    header_text, 'reply-to:'
+                                )
+                                if reply_to_header:
+                                    # Extrahiere Email-Adresse aus Reply-To
+                                    email_match = re.search(r'[\w.\-+]+@[\w.\-]+\.\w+', reply_to_header)
+                                    if email_match:
+                                        reply_to = email_match.group(0)
                                 
                         except Exception as e:
                             logger.debug(f"Header parsing error: {e}")
@@ -1537,6 +1739,7 @@ class TrashAuditService:
                         in_reply_to_msgid=in_reply_to_msgid,
                         spam_score=spam_score,
                         auth_results=auth_results,
+                        reply_to=reply_to,
                     )
                     
                     # Analysieren
@@ -1558,6 +1761,7 @@ class TrashAuditService:
             result.safe_count = sum(1 for e in result.emails if e.category == TrashCategory.SAFE)
             result.review_count = sum(1 for e in result.emails if e.category == TrashCategory.REVIEW)
             result.important_count = sum(1 for e in result.emails if e.category == TrashCategory.IMPORTANT)
+            result.scam_count = sum(1 for e in result.emails if e.category == TrashCategory.SCAM)
             
             # Clustering für bessere Übersicht
             result.clusters = TrashAuditService.build_clusters(result.emails)
@@ -1567,7 +1771,7 @@ class TrashAuditService:
             logger.info(
                 f"✅ Trash-Audit: {result.total} Emails analysiert in {result.scan_duration_ms}ms "
                 f"(🟢 {result.safe_count} safe, 🟡 {result.review_count} review, 🔴 {result.important_count} important, "
-                f"📦 {len(result.clusters)} Cluster)"
+                f"🚨 {result.scam_count} scam, 📦 {len(result.clusters)} Cluster)"
             )
             
         except Exception as e:
