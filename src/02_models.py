@@ -432,6 +432,22 @@ class User(Base):
     spacy_user_domains = relationship(
         "SpacyUserDomain", back_populates="user", cascade="all, delete-orphan"
     )
+    # Ordner-Audit Konfiguration
+    audit_trusted_domains = relationship(
+        "AuditTrustedDomain", back_populates="user", cascade="all, delete-orphan"
+    )
+    audit_important_keywords = relationship(
+        "AuditImportantKeyword", back_populates="user", cascade="all, delete-orphan"
+    )
+    audit_safe_patterns = relationship(
+        "AuditSafePattern", back_populates="user", cascade="all, delete-orphan"
+    )
+    audit_vip_senders = relationship(
+        "AuditVIPSender", back_populates="user", cascade="all, delete-orphan"
+    )
+    audit_list_sources = relationship(
+        "AuditListSource", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def set_password(self, password: str):
         """Hasht das Passwort (mit Längen-Validierung)"""
@@ -699,6 +715,20 @@ class MailAccount(Base):
     )
     spacy_user_domains = relationship(
         "SpacyUserDomain", back_populates="account", cascade="all, delete-orphan"
+    )
+    
+    # Ordner-Audit Konfiguration (Account-spezifisch)
+    audit_trusted_domains = relationship(
+        "AuditTrustedDomain", back_populates="account", cascade="all, delete-orphan"
+    )
+    audit_important_keywords = relationship(
+        "AuditImportantKeyword", back_populates="account", cascade="all, delete-orphan"
+    )
+    audit_safe_patterns = relationship(
+        "AuditSafePattern", back_populates="account", cascade="all, delete-orphan"
+    )
+    audit_vip_senders = relationship(
+        "AuditVIPSender", back_populates="account", cascade="all, delete-orphan"
     )
 
 
@@ -1989,6 +2019,236 @@ class ClassifierMetadata(Base):
     def __repr__(self):
         source = f"user_{self.user_id}" if self.user_id else "global"
         return f"<ClassifierMetadata({source}/{self.classifier_type} v{self.model_version} samples={self.training_samples})>"
+
+
+# ========================== ORDNER-AUDIT KONFIGURATION ==========================
+# Separate Tabellen für Audit-Feature (OHNE KI) - nicht mit SpaCy-Pipeline vermischen!
+
+
+class AuditTrustedDomain(Base):
+    """
+    Vertrauenswürdige Domains für Ordner-Audit.
+    Emails von diesen Domains werden NICHT als Scam markiert.
+    
+    Beispiele:
+    - ubs.com (Bank)
+    - admin.ch (Government)
+    - iliad.it (Telco IT)
+    
+    source: 'user' = manuell, 'system' = aus Default-Liste, 'import' = externe Liste
+    """
+    __tablename__ = "audit_trusted_domains"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    account_id = Column(Integer, ForeignKey("mail_accounts.id", ondelete="CASCADE"), nullable=True)
+    """NULL = global für User, sonst Account-spezifisch"""
+    
+    domain = Column(String(255), nullable=False)
+    """Domain ohne @ (z.B. 'ubs.com', 'admin.ch')"""
+    
+    category = Column(String(50), nullable=True)
+    """Optionale Kategorie: 'bank', 'government', 'telco', 'retail', etc."""
+    
+    source = Column(String(20), nullable=False, default="user")
+    """Herkunft: 'user', 'system', 'import'"""
+    
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    # Relationships
+    user = relationship("User", back_populates="audit_trusted_domains")
+    account = relationship("MailAccount", back_populates="audit_trusted_domains")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "account_id", "domain", name="uq_audit_trusted_domain"),
+        Index("idx_audit_trusted_domain_user", "user_id", "account_id"),
+    )
+
+    def __repr__(self):
+        return f"<AuditTrustedDomain({self.domain}, cat={self.category})>"
+
+
+class AuditImportantKeyword(Base):
+    """
+    Keywords die auf WICHTIGE Emails hindeuten (für Ordner-Audit).
+    Werden im Betreff gesucht → Email wird als 'important' kategorisiert.
+    
+    Mehrsprachig: DE, EN, IT, FR unterstützt.
+    
+    Beispiele:
+    - 'rechnung' (DE)
+    - 'invoice' (EN)
+    - 'fattura', 'bolletta' (IT)
+    - 'facture' (FR)
+    """
+    __tablename__ = "audit_important_keywords"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    account_id = Column(Integer, ForeignKey("mail_accounts.id", ondelete="CASCADE"), nullable=True)
+    
+    keyword = Column(String(100), nullable=False)
+    """Keyword (lowercase, ohne Regex)"""
+    
+    language = Column(String(5), nullable=True)
+    """ISO 639-1: 'de', 'en', 'it', 'fr', NULL = alle Sprachen"""
+    
+    category = Column(String(50), nullable=True)
+    """Kategorie: 'invoice', 'legal', 'medical', 'financial', 'shipping', etc."""
+    
+    source = Column(String(20), nullable=False, default="user")
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    user = relationship("User", back_populates="audit_important_keywords")
+    account = relationship("MailAccount", back_populates="audit_important_keywords")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "account_id", "keyword", name="uq_audit_important_keyword"),
+        Index("idx_audit_keyword_user", "user_id", "account_id"),
+    )
+
+    def __repr__(self):
+        return f"<AuditImportantKeyword({self.keyword}, lang={self.language})>"
+
+
+class AuditSafePattern(Base):
+    """
+    Patterns für SICHERE (löschbare) Emails im Ordner-Audit.
+    Newsletter, Marketing, Spam-Patterns.
+    
+    pattern_type:
+    - 'subject': Pattern im Betreff
+    - 'sender': Pattern im Absender
+    - 'domain': Ganze Domain
+    """
+    __tablename__ = "audit_safe_patterns"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    account_id = Column(Integer, ForeignKey("mail_accounts.id", ondelete="CASCADE"), nullable=True)
+    
+    pattern = Column(String(255), nullable=False)
+    """Pattern (lowercase), z.B. 'newsletter', 'noreply@', '@mailchimp.'"""
+    
+    pattern_type = Column(String(20), nullable=False)
+    """'subject', 'sender', 'domain'"""
+    
+    source = Column(String(20), nullable=False, default="user")
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    user = relationship("User", back_populates="audit_safe_patterns")
+    account = relationship("MailAccount", back_populates="audit_safe_patterns")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "account_id", "pattern", "pattern_type", name="uq_audit_safe_pattern"),
+        Index("idx_audit_safe_user", "user_id", "account_id"),
+        CheckConstraint(
+            "pattern_type IN ('subject', 'sender', 'domain')",
+            name='ck_audit_safe_pattern_type'
+        ),
+    )
+
+    def __repr__(self):
+        return f"<AuditSafePattern({self.pattern_type}: {self.pattern})>"
+
+
+class AuditVIPSender(Base):
+    """
+    VIP-Absender für Ordner-Audit (NICHT für KI-Pipeline!).
+    Emails von VIPs werden als 'important' markiert.
+    
+    Unterstützt komma-getrennte Eingabe im UI.
+    """
+    __tablename__ = "audit_vip_senders"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    account_id = Column(Integer, ForeignKey("mail_accounts.id", ondelete="CASCADE"), nullable=True)
+    
+    sender_pattern = Column(String(255), nullable=False)
+    """Email oder Domain: 'chef@firma.de', '@firma.de', 'firma.de'"""
+    
+    pattern_type = Column(String(20), nullable=False)
+    """'exact', 'email_domain', 'domain'"""
+    
+    label = Column(String(100), nullable=True)
+    """Optionales Label: 'Chef', 'Wichtiger Kunde', etc."""
+    
+    source = Column(String(20), nullable=False, default="user")
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    user = relationship("User", back_populates="audit_vip_senders")
+    account = relationship("MailAccount", back_populates="audit_vip_senders")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "account_id", "sender_pattern", name="uq_audit_vip_sender"),
+        Index("idx_audit_vip_user", "user_id", "account_id"),
+        CheckConstraint(
+            "pattern_type IN ('exact', 'email_domain', 'domain')",
+            name='ck_audit_vip_pattern_type'
+        ),
+    )
+
+    def __repr__(self):
+        return f"<AuditVIPSender({self.sender_pattern}, label={self.label})>"
+
+
+class AuditListSource(Base):
+    """
+    Externe Listen-Quellen für Ordner-Audit.
+    Ermöglicht Import von GitHub-Listen, etc.
+    
+    Beispiele:
+    - Disposable Email Domains
+    - Known Newsletter Senders
+    - Spam Domain Lists
+    """
+    __tablename__ = "audit_list_sources"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    
+    name = Column(String(100), nullable=False)
+    """Anzeigename: 'Disposable Email Domains'"""
+    
+    list_type = Column(String(30), nullable=False)
+    """'trusted_domains', 'safe_patterns', 'important_keywords', 'vip_senders'"""
+    
+    url = Column(String(500), nullable=True)
+    """URL zur externen Liste (GitHub raw, etc.)"""
+    
+    is_builtin = Column(Boolean, default=False, nullable=False)
+    """True = System-Liste die mitgeliefert wird"""
+    
+    is_enabled = Column(Boolean, default=True, nullable=False)
+    """User kann Listen deaktivieren"""
+    
+    auto_update = Column(Boolean, default=False, nullable=False)
+    """Automatisch aktualisieren (z.B. wöchentlich)"""
+    
+    last_updated_at = Column(DateTime, nullable=True)
+    entry_count = Column(Integer, default=0, nullable=False)
+    """Anzahl Einträge nach letztem Import"""
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    user = relationship("User", back_populates="audit_list_sources")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_audit_list_source"),
+        Index("idx_audit_list_user", "user_id"),
+        CheckConstraint(
+            "list_type IN ('trusted_domains', 'safe_patterns', 'important_keywords', 'vip_senders')",
+            name='ck_audit_list_type'
+        ),
+    )
+
+    def __repr__(self):
+        return f"<AuditListSource({self.name}, type={self.list_type}, entries={self.entry_count})>"
 
 
 if __name__ == "__main__":
