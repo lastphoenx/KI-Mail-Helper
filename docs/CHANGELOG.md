@@ -6,9 +6,32 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
-## [2.2.2] - 2026-01-25
+## [2.2.2] - 2026-01-26
 
 ### 🗂️ Ordner-Audit System mit UI-Konfiguration
+
+#### Neues Feature: Auto-Löschregeln
+- **Automatische Disposition** basierend auf Sender/Betreff-Patterns
+- **Drei Disposition-Typen:**
+  - `DELETABLE`: Email nach X Tagen löschbar (max_age_days)
+  - `PROTECTED`: Email niemals automatisch löschen (wichtig!)
+  - `JUNK`: Sofort als unwichtig markiert
+- **Pattern-Matching:** Sender-Pattern UND/ODER Betreff-Pattern
+- **Neue Datenbank-Tabelle:** `audit_auto_delete_rules`
+- **API-Endpoints:** GET/POST/DELETE für `/api/audit-config/auto-delete-rules`
+- **Vorkonfigurierte Beispielregeln:** Newsletter, Cron-Jobs, Backup-Meldungen
+
+#### UI-Verbesserungen: Cluster-Dropdown
+- **Einheitliches Dropdown** statt separater VIP/Rule-Buttons
+- **6 Konfigurationslisten** direkt aus Cluster-Ansicht erreichbar:
+  - 🏛️ Vertrauenswürdige Domain
+  - 📋 Wichtiges Keyword
+  - 📧 Sicherer Betreff-Pattern
+  - 👤 Sicherer Absender-Pattern
+  - ⭐ VIP Absender
+  - 🗑️ Auto-Löschregel
+- **Universelles Modal** passt sich dem gewählten Listentyp an
+- **Intelligente Vorbefüllung** aus Cluster-Daten (Sender, Domain, Subject)
 
 #### Neues Feature: Ordner-Audit (Trash-Audit)
 - **Analyse von Papierkorb-Ordnern** auf potenziell wichtige Emails
@@ -36,6 +59,7 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - `audit_important_keywords` – Wichtige Betreff-Keywords
 - `audit_safe_patterns` – Sichere Lösch-Patterns (subject/sender)
 - `audit_vip_senders` – VIP-Absender mit Wildcard/Regex
+- `audit_auto_delete_rules` – Auto-Löschregeln mit Disposition
 - `audit_list_sources` – Tracking für geladene Default-Listen
 
 #### API-Endpoints
@@ -43,6 +67,7 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - `GET/POST /api/audit-config/important-keywords` – Keyword-Liste verwalten
 - `GET/POST /api/audit-config/safe-patterns` – Pattern-Liste verwalten
 - `GET/POST /api/audit-config/vip-senders` – VIP-Liste verwalten
+- `GET/POST/DELETE /api/audit-config/auto-delete-rules` – Auto-Löschregeln verwalten
 - `POST /api/audit-config/load-defaults` – Mehrsprachige Defaults laden
 - `GET /api/audit-config/stats` – Statistiken über konfigurierte Einträge
 

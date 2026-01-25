@@ -221,19 +221,35 @@ def scan_trash():
             if not fetcher.connection:
                 return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
             
-            result = TrashAuditService.fetch_and_analyze_trash(
-                fetcher, 
-                limit, 
-                db_session=db, 
-                user_id=user.id,
-                account_id=account.id,
-                folder=folder  # NEU: Ordner-Parameter
-            )
+            # "Alle Ordner" oder einzelner Ordner?
+            if folder == "__ALL__":
+                # Alle Ordner scannen
+                # Pro Ordner bis zu 2000 Emails, aber Gesamt-Limit aus UI
+                result = TrashAuditService.fetch_and_analyze_all_folders(
+                    fetcher,
+                    limit_per_folder=2000,
+                    max_total=limit,  # User-Limit als Gesamt-Limit
+                    db_session=db,
+                    user_id=user.id,
+                    account_id=account.id,
+                )
+                scan_folder = "Alle Ordner"
+            else:
+                # Einzelner Ordner
+                result = TrashAuditService.fetch_and_analyze_trash(
+                    fetcher, 
+                    limit, 
+                    db_session=db, 
+                    user_id=user.id,
+                    account_id=account.id,
+                    folder=folder
+                )
+                scan_folder = folder or "Trash"
             
             return jsonify({
                 "success": True,
                 "result": result.to_dict(),
-                "folder": folder or "Trash",
+                "folder": scan_folder,
             })
             
         except Exception as e:

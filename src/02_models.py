@@ -445,6 +445,9 @@ class User(Base):
     audit_vip_senders = relationship(
         "AuditVIPSender", back_populates="user", cascade="all, delete-orphan"
     )
+    audit_auto_delete_rules = relationship(
+        "AuditAutoDeleteRule", back_populates="user", cascade="all, delete-orphan"
+    )
     audit_list_sources = relationship(
         "AuditListSource", back_populates="user", cascade="all, delete-orphan"
     )
@@ -729,6 +732,9 @@ class MailAccount(Base):
     )
     audit_vip_senders = relationship(
         "AuditVIPSender", back_populates="account", cascade="all, delete-orphan"
+    )
+    audit_auto_delete_rules = relationship(
+        "AuditAutoDeleteRule", back_populates="account", cascade="all, delete-orphan"
     )
 
 
@@ -2195,6 +2201,64 @@ class AuditVIPSender(Base):
 
     def __repr__(self):
         return f"<AuditVIPSender({self.sender_pattern}, label={self.label})>"
+
+
+class AuditAutoDeleteRule(Base):
+    """
+    Regeln für automatisches Löschen im Ordner-Audit.
+    Kombination aus Sender + Subject Pattern mit Disposition.
+    
+    Logik: Beide Patterns (sender UND subject) müssen matchen (falls gesetzt).
+    Keine Priorisierung - erste matchende Regel gewinnt.
+    
+    Dispositions:
+    - DELETABLE: Nach max_age_days Tagen sicher löschbar
+    - PROTECTED: Nie automatisch löschen (übersteuert alles)
+    - JUNK: Sofort als Müll markieren (max_age_days ignoriert)
+    """
+    __tablename__ = "audit_auto_delete_rules"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    account_id = Column(Integer, ForeignKey("mail_accounts.id", ondelete="CASCADE"), nullable=True)
+    
+    sender_pattern = Column(String(255), nullable=True)
+    """Pattern für Absender, z.B. '@newsletter.', '@amazon.', 'cron@'. NULL = alle Absender"""
+    
+    subject_pattern = Column(String(255), nullable=True)
+    """Pattern für Betreff (Regex), z.B. 'rechnung', 'empfehl|tipp', 'backup.*success'. NULL = alle Betreffs"""
+    
+    disposition = Column(String(20), nullable=False)
+    """DELETABLE, PROTECTED, JUNK"""
+    
+    max_age_days = Column(Integer, nullable=True)
+    """Mindest-Alter in Tagen für DELETABLE. NULL bei PROTECTED/JUNK."""
+    
+    description = Column(String(255), nullable=True)
+    """Optionale Beschreibung der Regel"""
+    
+    source = Column(String(20), nullable=False, default="user")
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    user = relationship("User", back_populates="audit_auto_delete_rules")
+    account = relationship("MailAccount", back_populates="audit_auto_delete_rules")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "account_id", "sender_pattern", "subject_pattern", name="uq_audit_auto_delete_rule"),
+        Index("idx_audit_auto_delete_user", "user_id", "account_id"),
+        CheckConstraint(
+            "disposition IN ('DELETABLE', 'PROTECTED', 'JUNK')",
+            name='ck_audit_auto_delete_disposition'
+        ),
+        CheckConstraint(
+            "sender_pattern IS NOT NULL OR subject_pattern IS NOT NULL",
+            name='ck_audit_auto_delete_has_pattern'
+        ),
+    )
+
+    def __repr__(self):
+        return f"<AuditAutoDeleteRule(sender={self.sender_pattern}, subject={self.subject_pattern}, {self.disposition})>"
 
 
 class AuditListSource(Base):

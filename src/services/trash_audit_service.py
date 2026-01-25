@@ -69,6 +69,7 @@ class AuditConfigCache:
                 'safe_subject_patterns': set(['newsletter', 'rabatt', ...]),
                 'safe_sender_patterns': set(['newsletter@', 'noreply@', ...]),
                 'vip_senders': set(['chef@firma.de', '@wichtig.de', ...]),
+                'auto_delete_rules': [...],  # Liste von Regel-Dicts
             }
         """
         cache_key = (user_id, account_id)
@@ -84,6 +85,7 @@ class AuditConfigCache:
             'safe_sender_patterns': set(),
             'vip_senders': set(),
             'vip_pattern_types': {},  # pattern -> pattern_type
+            'auto_delete_rules': [],  # Liste von Regeln
         }
         
         try:
@@ -132,12 +134,34 @@ class AuditConfigCache:
                 config['vip_senders'].add(pattern)
                 config['vip_pattern_types'][pattern] = v.pattern_type
             
+            # Auto-Delete Rules
+            if hasattr(models, 'AuditAutoDeleteRule'):
+                try:
+                    rules = db_session.query(models.AuditAutoDeleteRule).filter(
+                        models.AuditAutoDeleteRule.user_id == user_id,
+                        models.AuditAutoDeleteRule.is_active == True,
+                        (models.AuditAutoDeleteRule.account_id == account_id) | 
+                        (models.AuditAutoDeleteRule.account_id == None)
+                    ).all()
+                    
+                    for r in rules:
+                        config['auto_delete_rules'].append({
+                            'sender_pattern': r.sender_pattern.lower() if r.sender_pattern else None,
+                            'subject_pattern': r.subject_pattern.lower() if r.subject_pattern else None,
+                            'disposition': r.disposition,
+                            'max_age_days': r.max_age_days,
+                            'description': r.description,
+                        })
+                except Exception as e:
+                    logger.debug(f"Auto-delete rules not available yet: {e}")
+            
             logger.debug(f"Loaded audit config for user {user_id}: "
                         f"{len(config['trusted_domains'])} domains, "
                         f"{len(config['important_keywords'])} keywords, "
                         f"{len(config['safe_subject_patterns'])} safe subject patterns, "
                         f"{len(config['safe_sender_patterns'])} safe sender patterns, "
-                        f"{len(config['vip_senders'])} VIP senders")
+                        f"{len(config['vip_senders'])} VIP senders, "
+                        f"{len(config['auto_delete_rules'])} auto-delete rules")
             
         except Exception as e:
             logger.warning(f"Failed to load audit config from DB: {e}")
@@ -181,6 +205,87 @@ def _match_vip_sender(sender_email: str, vip_senders: set, vip_pattern_types: di
         else:  # domain
             if domain == pattern or domain.endswith('.' + pattern):
                 return pattern
+    
+    return None
+
+
+def _match_auto_delete_rule(
+    sender_email: str, 
+    subject: str, 
+    email_date: Optional[datetime],
+    rules: list
+) -> Optional[dict]:
+    """Prüft ob Email einer Auto-Delete-Regel entspricht.
+    
+    Args:
+        sender_email: Absender-Email (lowercase)
+        subject: Betreff (lowercase)
+        email_date: Email-Datum für Altersberechnung
+        rules: Liste von Regel-Dicts aus AuditConfigCache
+        
+    Returns:
+        Matching Rule-Dict oder None
+        {
+            'disposition': 'DELETABLE'|'PROTECTED'|'JUNK',
+            'max_age_days': int|None,
+            'description': str|None,
+            'age_ok': bool  # True wenn Email alt genug ist
+        }
+    """
+    if not rules:
+        return None
+    
+    sender_lower = sender_email.lower() if sender_email else ""
+    subject_lower = subject.lower() if subject else ""
+    
+    for rule in rules:
+        sender_pattern = rule.get('sender_pattern')
+        subject_pattern = rule.get('subject_pattern')
+        
+        # Beide Patterns müssen matchen (falls gesetzt)
+        sender_matches = True
+        subject_matches = True
+        
+        # Sender Pattern prüfen
+        if sender_pattern:
+            sender_matches = False
+            if sender_pattern in sender_lower:
+                sender_matches = True
+        
+        # Subject Pattern prüfen (unterstützt Regex)
+        if subject_pattern:
+            subject_matches = False
+            try:
+                if re.search(subject_pattern, subject_lower):
+                    subject_matches = True
+            except re.error:
+                # Fallback: einfacher String-Match
+                if subject_pattern in subject_lower:
+                    subject_matches = True
+        
+        # Nur wenn BEIDE matchen (falls gesetzt)
+        if sender_matches and subject_matches:
+            disposition = rule.get('disposition')
+            max_age_days = rule.get('max_age_days')
+            
+            # Alter prüfen für DELETABLE
+            age_ok = True
+            if disposition == 'DELETABLE' and max_age_days is not None and email_date:
+                try:
+                    now = datetime.now(UTC)
+                    if email_date.tzinfo is None:
+                        email_date = email_date.replace(tzinfo=UTC)
+                    age_days = (now - email_date).days
+                    age_ok = age_days >= max_age_days
+                except Exception:
+                    age_ok = False
+            
+            return {
+                'disposition': disposition,
+                'max_age_days': max_age_days,
+                'description': rule.get('description'),
+                'age_ok': age_ok,
+            }
     
     return None
 
@@ -273,6 +378,7 @@ class TrashEmailInfo:
     
     # Clustering
     cluster_key: Optional[str] = None  # Normalisierter Key für Gruppierung
+    folder: str = ""                   # Ordner aus dem die Email stammt
     
     def to_dict(self) -> dict:
         return {
@@ -290,6 +396,7 @@ class TrashEmailInfo:
             "reasons": self.reasons,
             "is_reply": self.is_reply,
             "cluster_key": self.cluster_key,
+            "folder": self.folder,
         }
 
 
@@ -397,66 +504,134 @@ def _get_known_newsletters():
 # Brand-Domain Mapping (Scam Detection)
 # =============================================================================
 # Wenn jemand behauptet "TWINT" zu sein aber von @nanayojapan.co.jp sendet = SCAM!
+# WICHTIG: Nur auf Absender-Namen und Absender-Email prüfen, NICHT auf Betreff!
+# (Tech-News schreiben ÜBER Apple/Microsoft etc. - das ist kein Scam!)
 
 BRAND_DOMAIN_MAP = {
-    # Swiss Brands
-    "twint": ["twint.ch"],
+    # Swiss Brands (nur Marken die oft für Phishing missbraucht werden)
+    "twint": ["twint.ch", "news.twint.ch"],
     "swisscom": ["swisscom.com", "swisscom.ch"],
-    "sunrise": ["sunrise.ch", "sunrise.net"],
-    "salt": ["salt.ch"],
-    "wingo": ["wingo.ch"],
-    "sbb": ["sbb.ch", "mailings.sbb.ch"],
-    "post": ["post.ch", "poste.ch"],
-    "swiss": ["swiss.com", "newsletter.swiss.com"],
-    "ubs": ["ubs.com"],
-    "credit suisse": ["credit-suisse.com", "cs.com"],
+    "sbb": ["sbb.ch", "mailings.sbb.ch", "mailing.swisspass.ch", "swisspass.ch"],
     "postfinance": ["postfinance.ch"],
-    "raiffeisen": ["raiffeisen.ch"],
-    "migros": ["migros.ch", "newsletter.migros.ch"],
-    "coop": ["coop.ch"],
-    "digitec": ["digitec.ch", "galaxus.ch"],
-    "galaxus": ["digitec.ch", "galaxus.ch"],
     "yuh": ["yuh.com"],
-    "neon": ["neon-free.ch"],
-    "orell füssli": ["orellfuessli.ch", "info.orellfuessli.ch"],
+    # Swiss Insurance (oft Phishing-Ziel)
+    "helsana": ["helsana.ch", "myhelsana.ch"],
+    "css": ["css.ch", "mycss.ch"],
+    "swica": ["swica.ch"],
+    "sanitas": ["sanitas.ch"],
+    # Swiss Universities
+    "unibas": ["example-university.edu"],
+    "ethz": ["ethz.ch"],
+    "uzh": ["uzh.ch"],
     
-    # International Brands
-    "spotify": ["spotify.com"],
-    "netflix": ["netflix.com", "mailer.netflix.com"],
-    "apple": ["apple.com", "email.apple.com"],
-    "google": ["google.com", "accounts.google.com"],
-    "microsoft": ["microsoft.com", "account.microsoft.com"],
-    "amazon": ["amazon.com", "amazon.de", "amazon.ch"],
+    # International Brands (häufig für Phishing missbraucht)
     "paypal": ["paypal.com", "paypal.ch"],
     "mcafee": ["mcafee.com"],
     "norton": ["norton.com", "nortonlifelock.com"],
-    "dhl": ["dhl.com", "dhl.de", "dhl.ch"],
-    "ups": ["ups.com"],
-    "fedex": ["fedex.com"],
-    "adidas": ["adidas.com", "ch-news.adidas.com"],
-    "nike": ["nike.com"],
-    "heise": ["heise.de", "newsletter.heise.de"],
 }
 
-# Trusted Swiss Domains (Whitelist)
-TRUSTED_SWISS_DOMAINS = {
-    # Banks
-    "ubs.com", "credit-suisse.com", "postfinance.ch", "raiffeisen.ch",
-    "zkb.ch", "bcv.ch", "bekb.ch", "lukb.ch", "yuh.com", "neon-free.ch",
-    # Telco
-    "swisscom.com", "swisscom.ch", "sunrise.ch", "salt.ch", "wingo.ch",
-    # Government
-    "admin.ch", "estv.admin.ch", "ahv-iv.ch",
-    # Transport
-    "sbb.ch", "post.ch", "swiss.com",
-    # Retail
-    "migros.ch", "coop.ch", "digitec.ch", "galaxus.ch", "brack.ch",
-    "microspot.ch", "manor.ch", "orellfuessli.ch",
-    # Insurance
-    "swisslife.ch", "axa.ch", "mobiliar.ch", "zurich.ch", "helvetia.ch",
-    # Media
-    "nzz.ch", "tagesanzeiger.ch", "blick.ch", "20min.ch", "srf.ch",
+# Homoglyph-Map für Typosquatting-Erkennung
+# Zeichen die visuell ähnlich aussehen
+HOMOGLYPH_MAP = {
+    '0': 'o',   # Zero → O
+    '1': 'l',   # One → L
+    'I': 'l',   # großes i → kleines L
+    'l': 'l',   # bereits L
+    'O': 'o',   # bereits O
+    'o': 'o',
+    '|': 'l',   # Pipe → L
+    'rn': 'm',  # r+n sieht aus wie m
 }
+
+def normalize_homoglyphs(text: str) -> str:
+    """Normalisiert Homoglyphen für Vergleiche.
+    
+    z.B. "myHeIsana" → "myhelsana"
+    z.B. "unIbas" → "unlbas" → erkennt Typo
+    """
+    result = text.lower()
+    # Erst rn → m (muss vor einzelnen Zeichen passieren)
+    result = result.replace('rn', 'm')
+    # Dann einzelne Zeichen
+    for char, replacement in HOMOGLYPH_MAP.items():
+        if char.lower() != replacement:  # Nur wenn unterschiedlich
+            result = result.replace(char.lower(), replacement)
+    # Großes I separat (case-sensitive)
+    result_chars = list(result)
+    for i, c in enumerate(text):
+        if c == 'I':  # Großes I im Original
+            result_chars[i] = 'l'
+    return ''.join(result_chars)
+
+
+# Bekannte Marken für Typosquatting-Check (mit korrekter Schreibweise)
+TYPOSQUATTING_TARGETS = {
+    "helsana": ["helsana.ch", "myhelsana.ch"],
+    "css": ["css.ch", "mycss.ch"],
+    "unibas": ["example-university.edu"],
+    "swisscom": ["swisscom.ch", "swisscom.com"],
+    "postfinance": ["postfinance.ch"],
+    "raiffeisen": ["raiffeisen.ch"],
+    "migros": ["migros.ch"],
+    "coop": ["coop.ch"],
+}
+
+# Diese Marken werden NICHT geprüft wenn sie von bekannten News/Shop-Domains kommen:
+# (um False Positives wie "heise schreibt über Apple" zu vermeiden)
+# NUR allgemein bekannte Domains - persönliche gehören in DB-Config!
+BRAND_CHECK_WHITELIST_DOMAINS = {
+    # === TECH-NEWS (schreiben ÜBER Brands) ===
+    "heise.de", "newsletter.heise.de",
+    "chip.de", "golem.de", "t3n.de",
+    
+    # === SCHWEIZER SHOPS (mehrere Marken) ===
+    "digitec.ch", "galaxus.ch",
+    "zalando.ch", "aboutyou.ch",
+    
+    # === SOCIAL MEDIA ===
+    "linkedin.com", "instagram.com", "facebook.com",
+    
+    # === PAYMENT/RESELLER ===
+    "digitalriver.com", "fastspring.com", "stripe.com",
+    "amazon.de", "amazon.com", "amazon.ch",
+}
+
+# Trusted Swiss Domains (Whitelist) - NUR allgemein gültige CH/EU Domains
+# Persönliche/spezifische Domains gehören in die DB-Konfiguration!
+# =============================================================================
+# TRUSTED DOMAINS - NUR absolutes Minimum im Code!
+# Alles andere kommt aus der DB via audit_config['trusted_domains']
+# =============================================================================
+
+# Globale Plattformen (für ALLE User weltweit relevant)
+TRUSTED_GLOBAL_DOMAINS = {
+    # Big Tech (weltweit relevant)
+    "google.com", "microsoft.com", "apple.com",
+    "amazon.de", "amazon.com", "amazon.ch",
+    # Payment (weltweit)
+    "paypal.com", "stripe.com", "paddle.com",
+    # Social (weltweit)
+    "linkedin.com", "instagram.com", "facebook.com", "twitter.com",
+    # Email Provider (eigener = nie Scam)
+    "gmx.ch", "gmx.de", "gmx.net", "gmx.at",
+    "gmail.com", "googlemail.com",
+    "outlook.com", "hotmail.com",
+    "protonmail.com", "proton.me",
+    "icloud.com",
+}
+
+# Schweizer Grundversorgung (für alle CH-User relevant, nicht personalisierbar)
+TRUSTED_SWISS_BASE = {
+    # Behörden (Basis)
+    "admin.ch",
+    # Transport
+    "sbb.ch", "post.ch",
+    # Telco
+    "swisscom.com", "swisscom.ch",
+}
+
+# Kombiniert für Rückwärtskompatibilität
+TRUSTED_SWISS_DOMAINS = TRUSTED_GLOBAL_DOMAINS | TRUSTED_SWISS_BASE
 
 # Spam/Scam Domain Patterns - diese Domains sind IMMER verdächtig
 SCAM_DOMAIN_PATTERNS = [
@@ -485,23 +660,23 @@ DISPOSABLE_DOMAIN_PATTERNS = [
 ]
 
 # Clickbait/Scam Subject Patterns - Diese übersteuern "wichtige" Keywords!
+# WICHTIG: Nur Patterns die FAST IMMER Scam sind!
+# Marketing-Newsletter (Sale, Rabatt) sind NICHT Scam!
 CLICKBAIT_SCAM_PATTERNS = [
-    # Alarm-Emojis am Anfang = Marketing/Scam
-    r"^[\U0001F631\U0001F525\U0001F4A5\U0001F6A8\U0001F3C6\U0001F911]",  # 😱🔥💥🚨🏆🤑
-    # Clickbait-Phrasen
-    r"panik|schock|skandal|sensation",
-    r"hier ist der grund",
-    r"du wirst nicht glauben",
-    r"das geheimnis",
-    r"\d+\s*(million|mio|milliarden).*?(euro|dollar|usd|chf|\u20ac|\$)",
-    r"(euro|dollar|chf)\s*spende",
-    r"lottery|lotterie|gewinner|winner|jackpot",
-    r"inheritance|erbschaft|erbe.*?(million|mio)",
-    r"nigeria|prince|prinz.*?(million|hilfe|transfer)",
-    r"dringend.*?(million|transfer|hilfe)",
-    r"geheime.*?(methode|trick|strategie)",
+    # Extreme Phishing-Phrasen
     r"banken.*?panik|crash.*?warnung",
-    r"\bfree\s+money\b|gratis.*?geld",
+    r"\bfree\s+money\b|gratis.*?geld\b",
+    r"nigeria|prince|prinz.*?(million|hilfe|transfer)",
+    r"inheritance|erbschaft.*?(million|mio|begünstigt)",
+    r"dringend.*?(million|transfer|überweisung)",
+    r"geheime.*?(methode|trick|strategie|formel)",
+    r"(euro|dollar|chf|usd)\s*spende",
+    # Nur bei SEHR hohen Beträgen + verdächtigen Phrasen
+    r"\b[1-9]\d*\s*(million|mio|milliarden).*?(gewinn|prize|preis|erhalten|bekommen|claim)",
+    r"(gewinn|prize|preis).*?\b[1-9]\d*\s*(million|mio)",
+    # Account-Drohungen (aber nicht von legitimen Domains - das prüfen wir separat)
+    r"(konto|account).*?(gesperrt|suspended|locked|closed).*?(sofort|immediately|urgent)",
+    r"(letzte|final|last)\s*(chance|warnung|warning).*?(sperrung|suspension|löschung)",
 ]
 
 
@@ -793,10 +968,18 @@ class TrashAuditService:
         return ""
     
     @staticmethod
-    def _check_brand_domain_mismatch(sender_name: str, sender_email: str) -> Optional[str]:
+    def _check_brand_domain_mismatch(sender_name: str, sender_email: str, trusted_domains: Optional[set] = None) -> Optional[str]:
         """Prüft ob Absendername und Domain zueinander passen.
         
         Beispiel: "TWINT" von @nanayojapan.co.jp = SCAM!
+        
+        WICHTIG: Wird NUR auf Absendernamen angewendet, NICHT auf Betreff!
+        (News schreiben ÜBER Brands - das ist kein Scam)
+        
+        Args:
+            sender_name: Display-Name des Absenders
+            sender_email: Email-Adresse des Absenders
+            trusted_domains: Optional Set von trusted Domains aus DB-Config
         
         Returns:
             Grund-String wenn Mismatch erkannt, sonst None
@@ -807,24 +990,38 @@ class TrashAuditService:
         sender_name_lower = sender_name.lower()
         domain = TrashAuditService._extract_domain(sender_email)
         
+        # Prüfe ob Absender von einer Whitelist-Domain kommt (hardcoded)
+        for whitelist_domain in BRAND_CHECK_WHITELIST_DOMAINS:
+            if domain == whitelist_domain or domain.endswith('.' + whitelist_domain):
+                return None  # Diese Domain darf andere Brands erwähnen
+        
+        # Prüfe auch User-konfigurierte Trusted Domains aus DB
+        if trusted_domains:
+            for trusted in trusted_domains:
+                if domain == trusted or domain.endswith('.' + trusted):
+                    return None
+        
         for brand, valid_domains in BRAND_DOMAIN_MAP.items():
-            # Prüfe ob Brand im Namen vorkommt
-            if brand in sender_name_lower:
-                # Prüfe ob Domain zu den validen gehört
-                # KORREKTE Subdomain-Prüfung:
-                #   - "sbb.ch" → exakter Match → OK
-                #   - "mail.sbb.ch" → endet mit ".sbb.ch" → OK (echte Subdomain)
-                #   - "sbb-marketing.ch" → SCAM! (enthält nur den Namen, ist keine Subdomain!)
-                #   - "twint-secure.com" → SCAM! (Scammer registrieren genau solche Domains)
-                domain_valid = False
-                for valid_domain in valid_domains:
-                    # Exakter Match ODER echte Subdomain (mit Punkt davor!)
-                    if domain == valid_domain or domain.endswith('.' + valid_domain):
-                        domain_valid = True
-                        break
-                
-                if not domain_valid:
-                    return f"⚠️ SCAM: '{brand.upper()}' aber Domain '{domain}'"
+            # Word-Boundary Matching: "twint" soll nicht in "twintastic" matchen
+            # Aber "TWINT" als eigenständiges Wort im Namen = Match
+            if not re.search(rf'\b{re.escape(brand)}\b', sender_name_lower):
+                continue  # Brand nicht als ganzes Wort gefunden
+            
+            # Brand als Wort gefunden - prüfe ob Domain valide ist
+            # KORREKTE Subdomain-Prüfung:
+            #   - "sbb.ch" → exakter Match → OK
+            #   - "mail.sbb.ch" → endet mit ".sbb.ch" → OK (echte Subdomain)
+            #   - "sbb-marketing.ch" → SCAM! (enthält nur den Namen, ist keine Subdomain!)
+            #   - "twint-secure.com" → SCAM! (Scammer registrieren genau solche Domains)
+            domain_valid = False
+            for valid_domain in valid_domains:
+                # Exakter Match ODER echte Subdomain (mit Punkt davor!)
+                if domain == valid_domain or domain.endswith('.' + valid_domain):
+                    domain_valid = True
+                    break
+            
+            if not domain_valid:
+                return f"⚠️ SCAM: '{brand.upper()}' aber Domain '{domain}'"
         
         return None
     
@@ -859,97 +1056,163 @@ class TrashAuditService:
     
     @staticmethod
     def _is_gibberish_domain(domain: str) -> bool:
-        """Erkennt zufällig generierte Domains (z.B. 'sipeviuanw.de').
+        """Erkennt zufällig generierte Domains (z.B. 'whvbavgmwn.org', 'gihnlihhbf@sipeviuanw.de').
         
-        Heuristik:
-        - Hoher Konsonanten-zu-Vokal-Ratio
-        - Keine erkennbaren Wörter
-        - Ungewöhnliche Buchstabenfolgen
+        WICHTIG: Viele legitime Domains sehen "komisch" aus aber sind OK:
+        - "liebscher-bracht.com" = legitimer deutscher Name
+        - "fhschweiz.ch" = FH Schweiz Alumni
+        - "newsletter.swiss.com" = Swiss Air Newsletter
+        
+        Wir erkennen nur ECHTEN Gibberish:
+        - Sehr hoher Konsonanten-Anteil (keine aussprechbaren Silben)
+        - Komplett zufällige Zeichenfolgen
         """
         if not domain or '.' not in domain:
             return False
         
-        # Nur den Hauptteil prüfen (ohne TLD)
-        main_part = domain.rsplit('.', 1)[0]
-        if len(main_part) < 6:
-            return False  # Zu kurz für Gibberish-Erkennung
+        # Prüfe ob Domain in Trusted List
+        for trusted in TRUSTED_SWISS_DOMAINS:
+            if domain == trusted or domain.endswith('.' + trusted):
+                return False  # Trusted = nie Gibberish
         
-        # Entferne Zahlen und Bindestriche
+        # Nur den Hauptteil prüfen (ohne TLD), auch ohne Subdomains
+        parts = domain.rsplit('.', 1)[0]  # Entferne TLD
+        # Wenn es eine Subdomain ist, prüfe den Hauptdomain-Teil
+        main_part = parts.split('.')[-1] if '.' in parts else parts
+        
+        if len(main_part) < 8:
+            return False  # Zu kurz für zuverlässige Gibberish-Erkennung
+        
+        # Entferne Zahlen und Bindestriche - nur Buchstaben zählen
         letters_only = ''.join(c for c in main_part.lower() if c.isalpha())
-        if len(letters_only) < 5:
+        if len(letters_only) < 7:
             return False
+        
+        # Bekannte Wort-Muster die OK sind (deutsche/englische Namen, Marken)
+        # Diese sehen "komisch" aus, sind aber legitim
+        known_patterns = [
+            'newsletter', 'software', 'master', 'service', 'support',
+            'schweiz', 'swiss', 'bracht', 'liebscher', 'lastpass',
+            'goodsync', 'fastspring', 'worldpay', 'stripe', 'paddle',
+            'philips', 'panasonic', 'collabora', 'planzer', 'interdiscount',
+            'letsgo', 'shopping', 'trolley', 'merchant',
+        ]
+        for pattern in known_patterns:
+            if pattern in letters_only:
+                return False
         
         # Zähle Vokale und Konsonanten
         vowels = sum(1 for c in letters_only if c in 'aeiou')
         consonants = len(letters_only) - vowels
-        
-        # Extrem hohes Konsonanten-Ratio = Gibberish
-        # "sipeviuanw" = 6 Kons, 4 Vok → Ratio 1.5 (noch OK für echte Wörter)
-        # "bcdfghjklm" = 10 Kons, 0 Vok → Ratio ∞
-        # Aber: "sipeviuanw" hat viele seltene Kombinationen
         
         if vowels == 0:
             return True  # Keine Vokale = definitiv Gibberish
         
         ratio = consonants / vowels
         
-        # Ratio > 2.5 bei langen Strings = verdächtig
-        if ratio > 2.5 and len(letters_only) > 7:
+        # NUR bei extremen Ratios und langen Strings = Gibberish
+        # Erhöht von 2.5 auf 3.0 um False Positives zu reduzieren
+        if ratio > 3.0 and len(letters_only) > 8:
             return True
         
-        # Prüfe auf ungewöhnliche Trigramme (3-Buchstaben-Folgen)
-        # Echte Wörter haben bestimmte Muster, Gibberish nicht
-        unusual_trigrams = ['bcd', 'cfg', 'dfg', 'gkl', 'jkl', 'qrs', 'vwx', 'xyz',
-                           'pvi', 'uanw', 'iuan', 'hnli', 'sipev']
-        for trigram in unusual_trigrams:
-            if trigram in letters_only:
+        # Prüfe auf SEHR ungewöhnliche Trigramme (nur die schlimmsten)
+        # Reduziert von vorher - nur echte Gibberish-Muster
+        extreme_gibberish = ['qxz', 'xzq', 'vwxyz', 'bcdfg', 'ghjkl', 'mnpqr']
+        for pattern in extreme_gibberish:
+            if pattern in letters_only:
                 return True
         
         return False
     
     @staticmethod
     def _check_sender_name_mismatch(sender_name: str, sender_email: str) -> Optional[str]:
-        """Erkennt Fake-Namen (z.B. 'Markus.Lanz' aber email='gihnlihhbf@...').
+        """Erkennt ECHTE Fake-Namen bei Scam-Emails.
+        
+        Beispiel SCAM: 'Markus Lanz' aber email='gihnlihhbf@sipeviuanw.de'
+        → Berühmter Name + Gibberish-Email = definitiv Scam!
+        
+        WICHTIG: Firmenname als Display-Name ist NORMAL und KEIN Scam!
+        - "Swiss International Air Lines" von news@newsletter.swiss.com → OK!
+        - "Liebscher & Bracht" von noreply@liebscher-bracht.com → OK!
+        - "Miles & More" von newsletter@mailing.milesandmore.com → OK!
+        
+        Wir erkennen nur:
+        1. Prominenten-Namen (Markus Lanz, Elon Musk) von Gibberish-Domains
+        2. Personennamen (Vor- Nachname) von komplett fremden Domains
         
         Returns:
-            Grund-String wenn Mismatch erkannt, sonst None
+            Grund-String wenn Fake erkannt, sonst None
         """
         if not sender_name or not sender_email:
             return None
         
-        # Extrahiere Local-Part der Email
         if '@' not in sender_email:
             return None
+        
         local_part = sender_email.split('@')[0].lower()
+        domain = TrashAuditService._extract_domain(sender_email)
         name_lower = sender_name.lower()
         
-        # Bereinige den Namen (Punkte, Leerzeichen entfernen)
-        name_parts = re.split(r'[\\s.]+', name_lower)
-        name_parts = [p for p in name_parts if len(p) > 2]
+        # NICHT prüfen wenn Domain in Trusted List
+        for trusted in TRUSTED_SWISS_DOMAINS:
+            if domain == trusted or domain.endswith('.' + trusted):
+                return None  # Trusted Domain = kein Fake-Check nötig
         
-        if not name_parts:
-            return None
+        # NICHT prüfen wenn es nach Firma/Service aussieht (das ist normal!)
+        company_indicators = [
+            'team', 'support', 'info', 'service', 'noreply', 'newsletter',
+            'official', 'studio', 'gmbh', 'ag', 'ltd', 'inc', 'llc',
+            'shop', 'store', 'club', 'news', 'mail', 'alert', 'update',
+            'schweiz', 'swiss', 'suisse', 'svizzera',
+            'international', 'airlines', 'air lines',
+            'specialists', 'spezialisten', 'experts',
+            'angebote', 'benefits', 'offers', 'promo',
+            '&',  # Firmen haben oft & im Namen
+        ]
+        if any(indicator in name_lower for indicator in company_indicators):
+            return None  # Firmenname = normal, kein Fake
         
-        # Prüfe ob irgendein Namensteil in der Email vorkommt
-        name_in_email = any(part in local_part for part in name_parts)
+        # NICHT prüfen wenn Local-Part normale Newsletter-Muster hat
+        normal_local_patterns = [
+            'news', 'newsletter', 'noreply', 'no-reply', 'info', 'mail',
+            'support', 'service', 'team', 'hello', 'contact', 'admin',
+            'updates', 'notifications', 'alerts', 'marketing', 'promo',
+        ]
+        if any(pattern in local_part for pattern in normal_local_patterns):
+            return None  # Normale Newsletter-Email
         
-        # Prüfe ob der Name "echt" aussieht (nicht generisch)
-        looks_like_real_name = (
-            len(name_parts) >= 1 and 
-            len(name_lower) > 4 and
-            not any(kw in name_lower for kw in ['team', 'support', 'info', 'service', 'noreply', 'newsletter'])
+        # Jetzt prüfen wir auf echte Fakes:
+        # Personenname (Vorname Nachname) von Gibberish-Domain
+        
+        # Hat der Name das Format "Vorname Nachname" oder "Vorname.Nachname"?
+        name_parts = re.split(r'[\s.]+', name_lower)
+        name_parts = [p for p in name_parts if len(p) > 2 and p.isalpha()]
+        
+        # Mindestens 2 Teile und beide sehen nach Namen aus (nicht nach Firma)
+        looks_like_person_name = (
+            len(name_parts) >= 2 and
+            all(len(p) > 2 and p[0].isalpha() for p in name_parts[:2])
         )
         
-        # Prüfe ob die Email "gibberish" ist
-        email_is_gibberish = len(local_part) > 6 and not any(c.isdigit() for c in local_part[:4])
-        # Prüfe auf Konsonanten-Häufung im Email-Local-Part
-        vowels_in_local = sum(1 for c in local_part if c in 'aeiou')
-        consonants_in_local = sum(1 for c in local_part if c.isalpha() and c not in 'aeiou')
+        if not looks_like_person_name:
+            return None  # Kein Personenname-Format
         
-        if looks_like_real_name and not name_in_email:
-            if consonants_in_local > 0 and vowels_in_local > 0:
-                if consonants_in_local / vowels_in_local > 2.0:
-                    return f"⚠️ Fake-Absendername ('{sender_name}' passt nicht zu Email)"
+        # Prüfe ob der Local-Part der Email Gibberish ist
+        # (echter Scam: Promi-Name + komplett zufällige Email)
+        letters_only = ''.join(c for c in local_part if c.isalpha())
+        if len(letters_only) < 6:
+            return None  # Zu kurz für Gibberish-Check
+        
+        vowels = sum(1 for c in letters_only if c in 'aeiou')
+        consonants = len(letters_only) - vowels
+        
+        # Extremes Verhältnis = Gibberish Local-Part
+        if vowels > 0 and consonants / vowels > 2.5 and len(letters_only) > 8:
+            return f"⚠️ Fake-Absendername ('{sender_name}' + Gibberish-Email)"
+        
+        # Prüfe auch ob die Domain selbst Gibberish ist
+        if TrashAuditService._is_gibberish_domain(domain):
+            return f"⚠️ Fake-Absendername ('{sender_name}' + Random-Domain)"
         
         return None
     
@@ -972,11 +1235,21 @@ class TrashAuditService:
     # =============================================================================
     
     # Suspicious TLDs - oft für Spam/Scam missbraucht (kostenlose oder billige TLDs)
+    # HINWEIS: Einige legitime Firmen nutzen diese TLDs, daher nur in Kombination
+    # mit anderen Signalen als verdächtig werten!
     SUSPICIOUS_TLDS = {
         '.xyz', '.top', '.click', '.buzz', '.loan', '.work', 
         '.gq', '.ml', '.cf', '.tk', '.ga',  # Kostenlose TLDs (Freenom)
-        '.icu', '.club', '.online', '.site', '.website',
-        '.pw', '.cc', '.su', '.bid', '.stream', '.download',
+        '.icu', '.online', '.site', '.website',
+        '.pw', '.su', '.bid', '.stream', '.download',
+        # ENTFERNT: '.cc' - legitime Firmen wie itead.cc, ewelink.cc nutzen das
+        # ENTFERNT: '.club' - manche legitime Shops nutzen das
+    }
+    
+    # Whitelist für TLDs die eigentlich verdächtig sind aber von bekannten Firmen genutzt werden
+    SUSPICIOUS_TLD_WHITELIST = {
+        'itead.cc',      # SONOFF / ITEAD Smart Home Hardware
+        'ewelink.cc',    # eWeLink Smart Home App
     }
     
     @staticmethod
@@ -1007,15 +1280,87 @@ class TrashAuditService:
         if from_domain.endswith('.' + reply_domain) or reply_domain.endswith('.' + from_domain):
             return None
         
+        # Gemeinsame Root-Domain extrahieren und vergleichen
+        # z.B. "ch-news.adidas.com" und "link.adidas.com" → beide "adidas.com"
+        def get_root_domain(domain: str) -> str:
+            parts = domain.split('.')
+            if len(parts) >= 2:
+                # Für .co.uk, .com.au etc. müssten wir Public Suffix List nutzen
+                # Vereinfachung: nehme die letzten 2 Teile
+                return '.'.join(parts[-2:])
+            return domain
+        
+        from_root = get_root_domain(from_domain)
+        reply_root = get_root_domain(reply_domain)
+        
+        if from_root == reply_root:
+            return None  # Gleiche Root-Domain = OK
+        
         # Bekannte Ausnahmen (Mailinglisten, Multi-Domain Firmen)
-        KNOWN_EXCEPTIONS = [
+        # Format: (from_pattern, reply_pattern) - kann partial matches sein
+        # NUR allgemein gültige Beziehungen - persönliche gehören in DB-Config!
+        KNOWN_DOMAIN_RELATIONSHIPS = [
+            # === GROSSE PLATTFORMEN ===
             ('googlegroups.com', 'google.com'),
             ('amazon.de', 'amazon.com'),
             ('amazon.ch', 'amazon.com'),
+            
+            # === SCHWEIZER MULTI-DOMAIN FIRMEN ===
+            # AMAG = offizieller Schweizer Importeur für VW, SEAT, CUPRA, Skoda
+            ('volkswagen.ch', 'amag.ch'),
+            ('seat.ch', 'amag.ch'),
+            ('cupraofficial.ch', 'amag.ch'),
+            ('skoda.ch', 'amag.ch'),
+            # Interdiscount
+            ('info.interdiscount.ch', 'service.interdiscount.ch'),
+            # Miles & More (Lufthansa Group)
+            ('mailing.milesandmore.com', 'milesandmoremailing.de'),
+            
+            # === MARKETING-PLATTFORMEN (allgemein) ===
+            # Diese senden für ALLE Shops - Wildcard-Match
+            ('shopifyemail.com', '*'),
+            ('parcelpanel.com', '*'),
+            ('ccsend.com', '*'),
+            ('shared1.ccsend.com', '*'),
+            ('trustpilotmail.com', '*'),
+            ('event.eventbrite.com', '*'),
+            ('wordpress.com', '*'),
+            ('afterbuy.de', '*'),
+            ('mailchimp.com', '*'),
+            ('sendgrid.net', '*'),
+            
+            # === SCHWEIZER DIENSTE ===
+            ('axa.ch', '*'),
+            ('axa-arag.ch', '*'),
+            ('chmedia.ch', '*'),
         ]
-        domain_pair = (from_domain, reply_domain)
-        if domain_pair in KNOWN_EXCEPTIONS or (reply_domain, from_domain) in KNOWN_EXCEPTIONS:
+        
+        # Spezial-Check: From oder Reply-To ist eine bekannte Marketing-Plattform
+        MARKETING_PLATFORMS = {
+            'shopifyemail.com', 'parcelpanel.com', 'ccsend.com', 'shared1.ccsend.com',
+            'trustpilotmail.com', 'eventbrite.com', 'event.eventbrite.com',
+            'wordpress.com', 'afterbuy.de', 'mailchimp.com', 'sendgrid.net',
+            'constantcontact.com', 'hubspot.com', 'mailgun.org', 'sparkpost.com',
+            'beacons.email', 'beacons.ai',
+        }
+        
+        # Wenn From ODER Reply-To eine Marketing-Plattform ist → OK
+        if any(plat in from_domain for plat in MARKETING_PLATFORMS):
             return None
+        if any(plat in reply_domain for plat in MARKETING_PLATFORMS):
+            return None
+        
+        for from_pattern, reply_pattern in KNOWN_DOMAIN_RELATIONSHIPS:
+            # Prüfe beide Richtungen
+            if (from_pattern in from_domain and reply_pattern in reply_domain) or \
+               (reply_pattern in from_domain and from_pattern in reply_domain):
+                return None
+        
+        # Wenn beide Domains in TRUSTED_SWISS_DOMAINS sind, ist es vermutlich OK
+        from_trusted = any(from_domain == t or from_domain.endswith('.' + t) for t in TRUSTED_SWISS_DOMAINS)
+        reply_trusted = any(reply_domain == t or reply_domain.endswith('.' + t) for t in TRUSTED_SWISS_DOMAINS)
+        if from_trusted and reply_trusted:
+            return None  # Beide vertrauenswürdig = vermutlich legitimes Setup
         
         return f"🚨 Reply-To Mismatch: From @{from_domain} → Reply-To @{reply_domain}"
     
@@ -1032,6 +1377,11 @@ class TrashAuditService:
         domain = TrashAuditService._extract_domain(sender_email)
         if not domain:
             return None
+        
+        # Whitelist-Check - bekannte legitime Domains mit verdächtigen TLDs
+        for whitelisted in TrashAuditService.SUSPICIOUS_TLD_WHITELIST:
+            if domain == whitelisted or domain.endswith('.' + whitelisted):
+                return None  # Whitelisted = nicht verdächtig
         
         for tld in TrashAuditService.SUSPICIOUS_TLDS:
             if domain.endswith(tld):
@@ -1095,8 +1445,12 @@ class TrashAuditService:
         return result
     
     @staticmethod
-    def _calculate_scam_score(info: 'TrashEmailInfo') -> Tuple[int, List[str]]:
+    def _calculate_scam_score(info: 'TrashEmailInfo', trusted_domains: Optional[set] = None) -> Tuple[int, List[str]]:
         """Berechnet Scam-Score basierend auf mehreren Signalen.
+        
+        Args:
+            info: TrashEmailInfo mit Email-Metadaten
+            trusted_domains: Optional Set von trusted Domains aus DB-Config
         
         Returns:
             (scam_signals: int, reasons: List[str])
@@ -1104,21 +1458,44 @@ class TrashAuditService:
         scam_signals = 0
         reasons = []
         
-        # 1. Reply-To Mismatch (sehr starkes Signal)
+        # Subject für Clickbait-Check extrahieren
+        subject_lower = info.subject.lower() if info.subject else ''
+        
+        # 1. Reply-To Mismatch
+        # WICHTIG: Allein KEIN starkes Signal! Viele legitime Firmen nutzen
+        # Marketing-Plattformen mit anderem Reply-To.
+        # Nur in Kombination mit anderen Signalen relevant.
         reply_to_issue = TrashAuditService._check_reply_to_mismatch(info.sender, info.reply_to)
         if reply_to_issue:
-            scam_signals += 2  # Doppelt gewichten
+            scam_signals += 1  # Nur 1 Signal (vorher 2) - allein nicht ausreichend für SCAM
             reasons.append(reply_to_issue)
         
         # 2. Auth-Results (SPF/DKIM/DMARC) - strukturiert parsen
+        # WICHTIG: DKIM-Fail bei alten Mails ignorieren (Signaturen können nach Jahren ungültig werden)
         auth = TrashAuditService._parse_auth_results(info.auth_results)
+        is_old_email = False
+        if info.date:
+            from datetime import datetime, timezone
+            try:
+                age_days = (datetime.now(timezone.utc) - info.date).days
+                is_old_email = age_days > 365  # Älter als 1 Jahr
+            except:
+                pass
+        
         if auth['is_forged']:
-            scam_signals += 2  # Server sagt "ist Fake" - sehr stark
+            # Bei alten Mails: DKIM-Fail ignorieren, nur SPF/DMARC zählen
             if auth['spf'] == 'fail':
+                scam_signals += 2
                 reasons.append("🚨 SPF-Fail: Absender gefälscht")
-            if auth['dkim'] == 'fail':
+            if auth['dkim'] == 'fail' and not is_old_email:
+                # DKIM-Fail nur bei neueren Mails als Scam-Signal
+                scam_signals += 1
                 reasons.append("🚨 DKIM-Fail: Signatur ungültig")
+            elif auth['dkim'] == 'fail' and is_old_email:
+                # Bei alten Mails nur Info, kein Scam-Signal
+                pass  # Ignorieren - DKIM-Keys werden oft rotiert
             if auth['dmarc'] == 'fail':
+                scam_signals += 2
                 reasons.append("🚨 DMARC-Fail: Domain-Policy verletzt")
         elif auth['spf'] == 'softfail':
             scam_signals += 1  # Verdächtig aber nicht definitiv
@@ -1130,9 +1507,10 @@ class TrashAuditService:
             scam_signals += 1
             reasons.append(tld_issue)
         
-        # 4. Brand-Domain Mismatch (existiert schon, hier integrieren)
-        subject_lower = info.subject.lower() if info.subject else ''
-        brand_issue = TrashAuditService._check_brand_domain_mismatch(subject_lower, info.sender)
+        # 4. Brand-Domain Mismatch - NUR auf Absender-NAME prüfen, NICHT Betreff!
+        # (News schreiben ÜBER Brands, das ist kein Scam)
+        # Nutzt auch User-konfigurierte trusted_domains aus DB
+        brand_issue = TrashAuditService._check_brand_domain_mismatch(info.sender_name, info.sender, trusted_domains)
         if brand_issue:
             scam_signals += 2
             reasons.append(brand_issue)
@@ -1156,7 +1534,51 @@ class TrashAuditService:
             scam_signals += 1
             reasons.append(name_issue)
         
+        # 8. Typosquatting-Detection (Homoglyphen wie HeIsana statt Helsana)
+        typosquat = TrashAuditService._check_typosquatting(info.sender, info.sender_name)
+        if typosquat:
+            scam_signals += 2  # Sehr starkes Signal - bewusste Täuschung
+            reasons.append(typosquat)
+        
         return scam_signals, reasons
+    
+    @staticmethod
+    def _check_typosquatting(sender_email: str, sender_name: str) -> Optional[str]:
+        """Erkennt Typosquatting mit Homoglyphen (z.B. HeIsana statt Helsana).
+        
+        Prüft ob Domain oder Absendername eine bekannte Marke imitiert
+        durch visuelle Tricks wie I statt l, 0 statt O, rn statt m.
+        
+        Returns:
+            Grund-String wenn Typosquatting erkannt, sonst None
+        """
+        if not sender_email:
+            return None
+        
+        domain = TrashAuditService._extract_domain(sender_email)
+        domain_normalized = normalize_homoglyphs(domain)
+        name_normalized = normalize_homoglyphs(sender_name) if sender_name else ""
+        
+        for brand, valid_domains in TYPOSQUATTING_TARGETS.items():
+            # Prüfe ob normalisierte Domain die Marke enthält
+            if brand in domain_normalized:
+                # Aber die echte Domain ist NICHT in valid_domains
+                domain_valid = any(
+                    domain == vd or domain.endswith('.' + vd) 
+                    for vd in valid_domains
+                )
+                if not domain_valid:
+                    # Check ob es wirklich Typosquatting ist (Original != Normalized)
+                    if domain.lower() != domain_normalized:
+                        return f"🚨 Typosquatting: '{domain}' imitiert '{brand}'"
+            
+            # Prüfe auch Absendername
+            if brand in name_normalized and name_normalized != sender_name.lower():
+                # Name enthält Brand nach Normalisierung, aber Original sieht anders aus
+                if brand not in sender_name.lower():
+                    return f"🚨 Typosquatting im Namen: imitiert '{brand}'"
+        
+        return None
 
     @staticmethod
     def analyze_email(
@@ -1221,6 +1643,76 @@ class TrashAuditService:
             score -= 1.0  # Stark wichtig
             reasons.append(f"⭐ VIP-Absender: {vip_match}")
         
+        # --- AUTO-DELETE RULES (from DB) ---
+        # Prüft konfigurierte Regeln mit Sender+Subject-Kombination
+        auto_delete_match = _match_auto_delete_rule(
+            info.sender,
+            subject,
+            info.date,
+            audit_config.get('auto_delete_rules', [])
+        )
+        
+        if auto_delete_match:
+            disposition = auto_delete_match['disposition']
+            age_ok = auto_delete_match['age_ok']
+            desc = auto_delete_match.get('description') or ''
+            
+            if disposition == 'PROTECTED':
+                # PROTECTED übersteuert ALLES - sofort als IMPORTANT markieren
+                score -= 2.0
+                reasons.append(f"🛡️ Geschützt: {desc}" if desc else "🛡️ Geschützt (Regel)")
+                # Setze Kategorie direkt und beende früh
+                info.category = TrashCategory.IMPORTANT
+                info.reasons = reasons
+                info.score = score
+                return info
+                
+            elif disposition == 'JUNK':
+                # JUNK = sofort löschbar
+                score += 2.0
+                reasons.append(f"🗑️ Junk: {desc}" if desc else "🗑️ Junk (Regel)")
+                
+            elif disposition == 'DELETABLE':
+                if age_ok:
+                    # Alt genug → löschbar
+                    max_age = auto_delete_match.get('max_age_days', 0)
+                    score += 1.5
+                    reasons.append(f"⏰ Löschbar (>{max_age}d): {desc}" if desc else f"⏰ Löschbar (>{max_age} Tage)")
+                else:
+                    # Noch nicht alt genug → neutral, aber markieren
+                    max_age = auto_delete_match.get('max_age_days', 0)
+                    reasons.append(f"⏳ Wird löschbar in {max_age}d: {desc}" if desc else f"⏳ Wird löschbar (nach {max_age} Tagen)")
+        
+        # --- SOFORT-AUSSCHLUSS VON SCAM-ERKENNUNG ---
+        # Diese Fälle können NIEMALS Scam sein
+        never_scam = False
+        
+        # 1. Eigene Absender-Adresse (z.B. eigene Mails in Gelöscht)
+        if account_domain and sender_domain == account_domain:
+            never_scam = True
+        
+        # 2. Gesendete Ordner - eigene Mails sind nie Scam
+        sent_folder_names = {'sent', 'gesendet', 'gesendete', 'envoyé', 'envoyés', 
+                            'inviati', 'sent items', 'sent mail', 'drafts', 'entwürfe'}
+        if info.folder and info.folder.lower() in sent_folder_names:
+            never_scam = True
+        
+        # 3. System-Mails (Mailer-Daemon, Postmaster)
+        system_senders = {'mailer-daemon', 'postmaster', 'noreply', 'no-reply'}
+        sender_local = sender_lower.split('@')[0] if '@' in sender_lower else ''
+        if sender_local in system_senders:
+            # Mailer-Daemon ist kein Scam, aber auch nicht wichtig
+            score += 0.3
+            reasons.append("📧 System-Mail")
+            never_scam = True
+        
+        # 4. Schweizer/Deutsche Behörden-Domains (nie Scam)
+        gov_tlds = ('.admin.ch', '.ag.ch', '.zh.ch', '.be.ch', '.sg.ch', '.gr.ch',
+                   '.lu.ch', '.ti.ch', '.vd.ch', '.vs.ch', '.ne.ch', '.ge.ch', '.ju.ch',
+                   '.bund.de', '.bayern.de', '.nrw.de', '.gov.it')
+        if any(sender_domain.endswith(tld) for tld in gov_tlds):
+            never_scam = True
+        
         # --- DB LOOKUP (In-Reply-To) ---
         # Wenn wir auf eine Email antworten, die wir bereits als wichtig eingestuft haben
         if db_session and user_id and info.in_reply_to_msgid:
@@ -1250,38 +1742,14 @@ class TrashAuditService:
             except Exception as e:
                 logger.debug(f"DB In-Reply-To lookup failed: {e}")
 
-        # --- SCAM DETECTION (höchste Priorität) ---
-        # 0. Clickbait/Nigeria-Scam Patterns im Subject (übersteuert "wichtige" Keywords!)
-        for pattern in CLICKBAIT_SCAM_PATTERNS:
-            if re.search(pattern, subject_lower):
-                score += 1.8  # Sehr hoher Score = definitiv SAFE/löschbar
-                reasons.append("🚨 Clickbait/Scam-Betreff erkannt")
-                break  # Nur einmal zählen
-        
-        # 1. Brand-Domain Mismatch (z.B. TWINT von falscher Domain)
-        scam_reason = TrashAuditService._check_brand_domain_mismatch(
-            sender_name, info.sender
-        )
-        if scam_reason:
-            score += 1.5  # Sehr sicher löschbar!
-            reasons.append(scam_reason)
-        
-        # 2. Bekannte Scam-Domain-Patterns (inkl. Gibberish-Detection)
-        scam_pattern = TrashAuditService._check_scam_patterns(info.sender)
-        if scam_pattern:
-            score += 1.2
-            reasons.append(scam_pattern)
-        
-        # 3. Sender-Name/Email Mismatch (z.B. "Markus.Lanz" <gihnlihhbf@...>)
-        name_mismatch = TrashAuditService._check_sender_name_mismatch(sender_name, info.sender)
-        if name_mismatch:
-            score += 1.0
-            reasons.append(name_mismatch)
-        
-        # 4. Authentication-Results (SPF/DKIM/DMARC) - Server hat Vorarbeit geleistet!
-        # WICHTIG: Nur vertrauen wenn der Header von UNSEREM Provider stammt!
-        # Die eigentliche Scam-Detection passiert jetzt in _calculate_scam_score(),
-        # hier nur für den normalen Score (Newsletter etc.) relevant.
+        # --- SCAM DETECTION ---
+        # HINWEIS: Die vollständige Scam-Detection passiert in _calculate_scam_score()
+        # am Ende von analyze_email(). Dort werden Brand-Mismatch, Gibberish-Domain,
+        # Clickbait-Patterns, Sender-Name-Mismatch etc. geprüft.
+        # Hier keine doppelte Prüfung mehr!
+
+        # --- Authentication-Results (SPF/DKIM/DMARC) ---
+        # Server hat Vorarbeit geleistet - nutzen wir wenn von trusted Provider
         if info.auth_results:
             auth_lower = info.auth_results.lower()
             
@@ -1494,12 +1962,41 @@ class TrashAuditService:
                 score -= 0.2
                 reasons.append("Hat Anhänge")
         
-        # --- Alter der Email ---
+        # --- Alter der Email + Zeitliche Relevanz ---
         if info.date:
             age_days = (datetime.now(UTC) - info.date).days
+            
+            # Zeitlich abgelaufene Relevanz: Bestimmte Mail-Typen werden mit der Zeit irrelevant
+            time_expired_patterns = [
+                # Versand/Lieferung (nach 60 Tagen sicher angekommen oder verloren)
+                (r'(versendet|versandt|shipped|dispatched|unterwegs|on.?the.?way)', 60),
+                (r'(geliefert|zugestellt|delivered|angekommen|arrived)', 30),
+                (r'(tracking|sendungsverfolgung|paket.*status)', 60),
+                # Aktivierung/Registrierung (nach 30 Tagen ignoriert = unwichtig)
+                (r'(aktivier|activate|verify.?your|bestätig.*registr)', 30),
+                (r'(willkommen|welcome|getting.?started)', 60),
+                # Events (nach dem Datum vorbei)
+                (r'(reminder|erinnerung|don.?t.?forget)', 14),
+                (r'(webinar|conference|event|termin)', 30),
+                # Promotions/Sales (zeitlich begrenzt)
+                (r'(nur.?heute|last.?chance|endet.?bald|expires)', 7),
+                (r'(rabatt|discount|sale|angebot|offer)', 30),
+            ]
+            
+            for pattern, expire_days in time_expired_patterns:
+                if re.search(pattern, subject_lower, re.IGNORECASE):
+                    if age_days > expire_days:
+                        score += 0.5  # Zeitlich abgelaufen = sicher löschbar
+                        reasons.append(f"⏰ Zeitlich abgelaufen ({age_days} Tage alt)")
+                        break
+            
+            # Standard Alter-Bonus
             if age_days < 7:
                 score -= 0.1
                 reasons.append("Kürzlich gelöscht")
+            elif age_days > 365:
+                score += 0.3  # Erhöht für sehr alte Mails
+                reasons.append("Älter als 1 Jahr")
             elif age_days > 180:
                 score += 0.1
                 reasons.append("Älter als 6 Monate")
@@ -1510,11 +2007,18 @@ class TrashAuditService:
             reasons.append("War als wichtig markiert")
         
         # --- SCAM DETECTION (finale Prüfung mit kombiniertem Score) ---
-        scam_signals, scam_reasons = TrashAuditService._calculate_scam_score(info)
+        # Übergebe trusted_domains aus DB-Config für bessere Whitelist
+        trusted_domains = audit_config.get('trusted_domains', set()) if audit_config else set()
+        scam_signals, scam_reasons = TrashAuditService._calculate_scam_score(info, trusted_domains)
+        
+        # Scam-Signale erhöhen auch den Score (für 2-Signal-Fälle wichtig)
+        if scam_signals >= 1 and not never_scam:
+            score += scam_signals * 0.5  # Jedes Signal = +0.5 Score
         
         # --- Kategorie bestimmen ---
         # SCAM hat höchste Priorität: 3+ Signale = definitiv bösartig
-        if scam_signals >= 3:
+        # ABER: never_scam überschreibt (eigene Mails, Behörden, System-Mails)
+        if scam_signals >= 3 and not never_scam:
             info.category = TrashCategory.SCAM
             info.confidence = min(1.0, scam_signals * 0.25)
             # Ersetze Gründe durch Scam-Gründe (für klare Anzeige)
@@ -1522,7 +2026,7 @@ class TrashAuditService:
             return info
         
         # 2 Signale + zusätzliche Verdachtsmomente = SCAM
-        if scam_signals >= 2 and score >= 1.0:
+        if scam_signals >= 2 and score >= 1.0 and not never_scam:
             info.category = TrashCategory.SCAM
             info.confidence = min(1.0, 0.6 + scam_signals * 0.15)
             info.reasons = scam_reasons + [r for r in reasons if r not in scam_reasons][:2]
@@ -1768,6 +2272,7 @@ class TrashAuditService:
                         spam_score=spam_score,
                         auth_results=auth_results,
                         reply_to=reply_to,
+                        folder=target_folder,
                     )
                     
                     # Analysieren
@@ -1804,6 +2309,125 @@ class TrashAuditService:
             
         except Exception as e:
             logger.error(f"Trash-Audit Fehler: {type(e).__name__}: {e}")
+        
+        return result
+    
+    @staticmethod
+    def fetch_and_analyze_all_folders(
+        fetcher,
+        limit_per_folder: int = 200,
+        max_total: int = 10000,
+        db_session=None,
+        user_id: Optional[int] = None,
+        account_id: Optional[int] = None,
+        exclude_folders: Optional[List[str]] = None
+    ) -> TrashAuditResult:
+        """Scannt ALLE Ordner eines Accounts und analysiert Emails.
+        
+        Args:
+            fetcher: Verbundener MailFetcher
+            limit_per_folder: Maximale Anzahl Emails pro Ordner (default 200)
+            max_total: Maximale Gesamtzahl Emails über alle Ordner (default 10000)
+            db_session: Optionale DB-Session
+            user_id: Optionale User-ID
+            account_id: Optionale Account-ID für User-Trusted-Senders
+            exclude_folders: Ordner die übersprungen werden sollen
+            
+        Returns:
+            TrashAuditResult mit kategorisierten Emails aus allen Ordnern
+        """
+        import time
+        start_time = time.time()
+        result = TrashAuditResult()
+        
+        # Standard-Ausschlüsse
+        if exclude_folders is None:
+            exclude_folders = []
+        
+        # Immer ausschließen (System-Ordner die wenig Sinn machen)
+        always_exclude = {'[Gmail]', '[Google Mail]'}
+        exclude_set = set(exclude_folders) | always_exclude
+        
+        try:
+            conn = fetcher.connection
+            if not conn:
+                logger.error("Keine IMAP-Verbindung")
+                return result
+            
+            # Alle Ordner auflisten
+            folders = conn.list_folders()
+            folder_names = []
+            
+            for flags, delimiter, name in folders:
+                # Überspringen wenn:
+                # - In Exclude-Liste
+                # - Noselect-Flag (virtuelle Ordner)
+                if name in exclude_set:
+                    continue
+                if b'\\Noselect' in flags:
+                    continue
+                folder_names.append(name)
+            
+            logger.info(f"📂 Scanne {len(folder_names)} Ordner (max {max_total} Emails total)...")
+            
+            all_emails = []
+            folder_stats = {}
+            total_scanned = 0
+            
+            for folder_name in folder_names:
+                # Gesamt-Limit erreicht?
+                if total_scanned >= max_total:
+                    logger.info(f"⏹️ Gesamt-Limit {max_total} erreicht, stoppe Scan")
+                    break
+                
+                # Wie viele noch scannen?
+                remaining = max_total - total_scanned
+                folder_limit = min(limit_per_folder, remaining)
+                
+                try:
+                    # Einzelnen Ordner scannen (ohne Clustering, das machen wir am Ende)
+                    folder_result = TrashAuditService.fetch_and_analyze_trash(
+                        fetcher=fetcher,
+                        limit=folder_limit,
+                        db_session=db_session,
+                        user_id=user_id,
+                        account_id=account_id,
+                        folder=folder_name
+                    )
+                    
+                    if folder_result.total > 0:
+                        all_emails.extend(folder_result.emails)
+                        folder_stats[folder_name] = folder_result.total
+                        total_scanned += folder_result.total
+                        logger.debug(f"  📁 {folder_name}: {folder_result.total} Emails (total: {total_scanned})")
+                    
+                except Exception as e:
+                    logger.warning(f"Fehler bei Ordner '{folder_name}': {e}")
+                    continue
+            
+            # Gesamtergebnis zusammenbauen
+            result.emails = all_emails
+            result.total = len(all_emails)
+            result.safe_count = sum(1 for e in all_emails if e.category == TrashCategory.SAFE)
+            result.review_count = sum(1 for e in all_emails if e.category == TrashCategory.REVIEW)
+            result.important_count = sum(1 for e in all_emails if e.category == TrashCategory.IMPORTANT)
+            result.scam_count = sum(1 for e in all_emails if e.category == TrashCategory.SCAM)
+            
+            # Clustering über ALLE Emails (nicht pro Ordner!)
+            result.clusters = TrashAuditService.build_clusters(all_emails)
+            
+            result.scan_duration_ms = int((time.time() - start_time) * 1000)
+            
+            logger.info(
+                f"✅ Alle-Ordner-Audit: {result.total} Emails aus {len(folder_stats)} Ordnern "
+                f"in {result.scan_duration_ms}ms "
+                f"(🟢 {result.safe_count} safe, 🟡 {result.review_count} review, "
+                f"🔴 {result.important_count} important, 🚨 {result.scam_count} scam, "
+                f"📦 {len(result.clusters)} Cluster)"
+            )
+            
+        except Exception as e:
+            logger.error(f"Alle-Ordner-Audit Fehler: {type(e).__name__}: {e}")
         
         return result
     

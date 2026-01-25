@@ -649,7 +649,16 @@ Nach dem Scan zeigt die Detailansicht:
 
 ### Konfiguration (Tab)
 
-Im Ordner-Audit-Dialog gibt es einen **"Konfiguration"**-Tab mit folgenden Einstellungen:
+Im Ordner-Audit-Dialog gibt es einen **"Konfiguration"**-Tab mit **6 konfigurierbaren Listen:**
+
+| # | Liste | Beschreibung |
+|---|-------|--------------|
+| 1 | 🏛️ Vertrauenswürdige Domains | Behörden, Banken, Versicherungen |
+| 2 | 📋 Wichtige Keywords | Betreff-Schlüsselwörter |
+| 3 | 🔇 Sichere Patterns (Betreff) | Newsletter, Marketing |
+| 4 | 🔇 Sichere Patterns (Absender) | noreply@, @newsletter. |
+| 5 | ⭐ VIP-Absender | Wichtige Kontakte |
+| 6 | 🗑️ Auto-Löschregeln | Automatische Disposition |
 
 #### 🏛️ Vertrauenswürdige Domains
 
@@ -716,6 +725,51 @@ Die Defaults enthalten auch mehrsprachige Keywords für:
 - 📋 Verträge/Kündigungen
 - ⚠️ Mahnungen/Fristen
 - 🏛️ Behördliche Korrespondenz
+
+### 🗑️ Auto-Löschregeln
+
+Automatisiere die Bewertung von Emails anhand von Sender/Betreff-Patterns:
+
+| Disposition | Beschreibung | Score-Auswirkung |
+|-------------|--------------|------------------|
+| **DELETABLE** | Nach X Tagen löschbar | +1.5 (wenn älter als max_age_days) |
+| **PROTECTED** | Niemals automatisch löschen | Kategorie = WICHTIG |
+| **JUNK** | Sofort als unwichtig markiert | +2.0 |
+
+#### Pattern-Format
+
+| Feld | Beispiel | Beschreibung |
+|------|----------|--------------|
+| **Sender-Pattern** | `newsletter@` | Matcht alle Absender die mit "newsletter@" beginnen |
+| **Betreff-Pattern** | `backup success` | Matcht Betreffs die "backup success" enthalten |
+| **Max-Age (Tage)** | `14` | Nur für DELETABLE: Erst nach 14 Tagen löschbar |
+
+> 💡 Mind. ein Pattern (Sender ODER Betreff) ist erforderlich. Beide können kombiniert werden (UND-Verknüpfung).
+
+#### Beispielregeln
+
+| Sender-Pattern | Betreff-Pattern | Disposition | Max-Age |
+|----------------|-----------------|-------------|---------|
+| `newsletter@` | — | DELETABLE | 7 |
+| `mailchimp@` | — | DELETABLE | 14 |
+| `cron@` | — | JUNK | — |
+| `root@` | `backup success` | JUNK | — |
+| `@estv.admin.ch` | — | PROTECTED | — |
+
+### Cluster-Dropdown (Schnellzugriff)
+
+Bei jedem Cluster in der Scan-Ergebnis-Liste gibt es einen **Dropdown-Button** mit 6 Optionen:
+
+| Option | Beschreibung |
+|--------|--------------|
+| 🏛️ **Als Domain** | Domain zur Vertrauenswürdige-Liste hinzufügen |
+| 📋 **Als Keyword** | Wort aus Betreff zur Wichtige-Keywords-Liste |
+| 📧 **Als sicherer Betreff** | Betreff-Pattern zur Safe-Patterns-Liste |
+| 👤 **Als sicherer Absender** | Absender-Pattern zur Safe-Patterns-Liste |
+| ⭐ **Als VIP Absender** | Absender zur VIP-Liste hinzufügen |
+| 🗑️ **Als Auto-Regel** | Neue Auto-Löschregel erstellen |
+
+Das Modal passt sich automatisch dem gewählten Listentyp an und befüllt die Felder mit Daten aus dem Cluster.
 
 ### VIP-Absender manuell hinzufügen
 
