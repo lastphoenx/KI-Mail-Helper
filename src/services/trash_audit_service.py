@@ -1040,38 +1040,59 @@ class TrashAuditService:
         return None
     
     @staticmethod
-    def _parse_auth_failure(auth_results: Optional[str]) -> Optional[str]:
-        """Parst SPF/DKIM/DMARC Failures aus Authentication-Results Header.
+    def _parse_auth_results(auth_results: Optional[str]) -> dict:
+        """Parst Authentication-Results Header verschiedener Provider.
         
-        Ein Server hat bereits geprüft ob die Email authentisch ist.
-        Fails bedeuten: Der Absender ist NICHT wer er vorgibt zu sein.
+        Der Mail-Provider hat bereits SPF/DKIM/DMARC geprüft.
+        Wir lesen nur sein Ergebnis - keine eigene Prüfung nötig.
         
         Returns:
-            Grund-String mit Liste der Failures, sonst None
+            {
+                'spf': 'pass'|'fail'|'softfail'|'none'|None,
+                'dkim': 'pass'|'fail'|None,
+                'dmarc': 'pass'|'fail'|None,
+                'is_forged': bool,  # True wenn SPF/DKIM/DMARC fail
+            }
         """
+        result = {
+            'spf': None,
+            'dkim': None,
+            'dmarc': None,
+            'is_forged': False,
+        }
+        
         if not auth_results:
-            return None
+            return result
         
         auth_lower = auth_results.lower()
         
-        failures = []
-        
         # SPF: Sender Policy Framework
-        if 'spf=fail' in auth_lower or 'spf=softfail' in auth_lower:
-            failures.append('SPF')
+        if 'spf=pass' in auth_lower:
+            result['spf'] = 'pass'
+        elif 'spf=fail' in auth_lower:
+            result['spf'] = 'fail'
+            result['is_forged'] = True
+        elif 'spf=softfail' in auth_lower:
+            result['spf'] = 'softfail'
+            # Softfail ist verdächtig aber nicht definitiv gefälscht
+        elif 'spf=none' in auth_lower or 'spf=neutral' in auth_lower:
+            result['spf'] = 'none'
         
         # DKIM: DomainKeys Identified Mail
-        if 'dkim=fail' in auth_lower:
-            failures.append('DKIM')
+        if 'dkim=pass' in auth_lower:
+            result['dkim'] = 'pass'
+        elif 'dkim=fail' in auth_lower:
+            result['dkim'] = 'fail'
+            result['is_forged'] = True
         
         # DMARC: Domain-based Message Authentication
-        if 'dmarc=fail' in auth_lower:
-            failures.append('DMARC')
+        if 'dmarc=pass' in auth_lower:
+            result['dmarc'] = 'pass'
+        elif 'dmarc=fail' in auth_lower:
+            result['dmarc'] = 'fail'
+            result['is_forged'] = True
         
-        if failures:
-            return f"🚨 Auth-Fail: {', '.join(failures)}"
-        
-        return None
+        return result
     
     @staticmethod
     def _calculate_scam_score(info: 'TrashEmailInfo') -> Tuple[int, List[str]]:
@@ -1089,11 +1110,19 @@ class TrashAuditService:
             scam_signals += 2  # Doppelt gewichten
             reasons.append(reply_to_issue)
         
-        # 2. Auth-Failure (SPF/DKIM/DMARC)
-        auth_issue = TrashAuditService._parse_auth_failure(info.auth_results)
-        if auth_issue:
-            scam_signals += 2  # Doppelt gewichten - Server sagt "ist Fake"
-            reasons.append(auth_issue)
+        # 2. Auth-Results (SPF/DKIM/DMARC) - strukturiert parsen
+        auth = TrashAuditService._parse_auth_results(info.auth_results)
+        if auth['is_forged']:
+            scam_signals += 2  # Server sagt "ist Fake" - sehr stark
+            if auth['spf'] == 'fail':
+                reasons.append("🚨 SPF-Fail: Absender gefälscht")
+            if auth['dkim'] == 'fail':
+                reasons.append("🚨 DKIM-Fail: Signatur ungültig")
+            if auth['dmarc'] == 'fail':
+                reasons.append("🚨 DMARC-Fail: Domain-Policy verletzt")
+        elif auth['spf'] == 'softfail':
+            scam_signals += 1  # Verdächtig aber nicht definitiv
+            reasons.append("⚠️ SPF-Softfail: Absender möglicherweise gefälscht")
         
         # 3. Suspicious TLD
         tld_issue = TrashAuditService._has_suspicious_tld(info.sender)
@@ -1251,6 +1280,8 @@ class TrashAuditService:
         
         # 4. Authentication-Results (SPF/DKIM/DMARC) - Server hat Vorarbeit geleistet!
         # WICHTIG: Nur vertrauen wenn der Header von UNSEREM Provider stammt!
+        # Die eigentliche Scam-Detection passiert jetzt in _calculate_scam_score(),
+        # hier nur für den normalen Score (Newsletter etc.) relevant.
         if info.auth_results:
             auth_lower = info.auth_results.lower()
             
@@ -1266,20 +1297,17 @@ class TrashAuditService:
                     provider_trusted = True
             
             if provider_trusted:
-                # Regex für verschiedene Server-Formate (pass, ok, hardfail, softfail, fail)
-                spf_fail = re.search(r'spf\s*=\s*(fail|hardfail|softfail)', auth_lower)
-                dkim_fail = re.search(r'dkim\s*=\s*(fail|hardfail)', auth_lower)
-                dmarc_fail = re.search(r'dmarc\s*=\s*(fail|reject)', auth_lower)
+                # Nutze strukturierte Auth-Prüfung
+                auth = TrashAuditService._parse_auth_results(info.auth_results)
                 
-                spf_pass = re.search(r'spf\s*=\s*(pass|ok)', auth_lower)
-                dkim_pass = re.search(r'dkim\s*=\s*(pass|ok)', auth_lower)
-                
-                if dkim_fail or spf_fail:
-                    score += 1.0  # Auth fehlgeschlagen = sehr verdächtig
-                    reasons.append("⚠️ SPF/DKIM fehlgeschlagen (verifiziert)")
-                elif dmarc_fail:
-                    score += 0.8
-                    reasons.append("⚠️ DMARC fehlgeschlagen (verifiziert)")
+                if auth['is_forged']:
+                    score += 1.0  # Auth fehlgeschlagen = verdächtig (Scam-Erkennung separat)
+                    # Detaillierte Gründe werden in _calculate_scam_score() hinzugefügt
+                    if 'SPF-Fail' not in str(reasons) and 'DKIM-Fail' not in str(reasons):
+                        reasons.append("⚠️ Auth fehlgeschlagen (verifiziert)")
+                elif auth['spf'] == 'softfail':
+                    score += 0.5
+                    reasons.append("⚠️ SPF-Softfail (verifiziert)")
                 # Pass = vertrauenswürdig, aber kein Bonus für Löschbarkeit
             else:
                 # Header nicht von trusted Provider - IGNORIEREN (könnte gefälscht sein)
