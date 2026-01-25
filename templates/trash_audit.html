@@ -433,35 +433,43 @@
         
         <!-- Config Stats -->
         <div class="row mb-4 g-3" id="configStats">
-            <div class="col-md-3">
+            <div class="col-6 col-md">
                 <div class="card text-center">
-                    <div class="card-body">
-                        <h3 class="text-success" id="configTrustedCount">-</h3>
+                    <div class="card-body py-2">
+                        <h4 class="text-success mb-0" id="configTrustedCount">-</h4>
                         <small class="text-muted">Trusted Domains</small>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md">
                 <div class="card text-center">
-                    <div class="card-body">
-                        <h3 class="text-primary" id="configKeywordsCount">-</h3>
-                        <small class="text-muted">Wichtige Keywords</small>
+                    <div class="card-body py-2">
+                        <h4 class="text-primary mb-0" id="configKeywordsCount">-</h4>
+                        <small class="text-muted">Keywords</small>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md">
                 <div class="card text-center">
-                    <div class="card-body">
-                        <h3 class="text-warning" id="configSafeCount">-</h3>
+                    <div class="card-body py-2">
+                        <h4 class="text-warning mb-0" id="configSafeCount">-</h4>
                         <small class="text-muted">Safe Patterns</small>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md">
                 <div class="card text-center">
-                    <div class="card-body">
-                        <h3 class="text-danger" id="configVipCount">-</h3>
+                    <div class="card-body py-2">
+                        <h4 class="text-danger mb-0" id="configVipCount">-</h4>
                         <small class="text-muted">VIP Absender</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <h4 class="text-info mb-0" id="configAutoDeleteCount">-</h4>
+                        <small class="text-muted">Auto-Regeln</small>
                     </div>
                 </div>
             </div>
@@ -498,7 +506,7 @@
                             placeholder="ubs.com, credit-suisse.com, admin.ch, iliad.it, estraprometeo.it..."></textarea>
                         <div class="mt-2 d-flex justify-content-between">
                             <small class="text-muted">Komma-getrennt oder eine Domain pro Zeile</small>
-                            <button class="btn btn-sm btn-primary" onclick="saveTrustedDomains()">
+                            <button class="btn btn-sm btn-primary" id="saveTrustedDomainsBtn">
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
                         </div>
@@ -525,7 +533,7 @@
                             placeholder="rechnung, fattura, bolletta, invoice, mahnung, kündigung, contratto..."></textarea>
                         <div class="mt-2 d-flex justify-content-between">
                             <small class="text-muted">Komma-getrennt oder ein Keyword pro Zeile</small>
-                            <button class="btn btn-sm btn-primary" onclick="saveImportantKeywords()">
+                            <button class="btn btn-sm btn-primary" id="saveImportantKeywordsBtn">
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
                         </div>
@@ -551,7 +559,7 @@
                             placeholder="newsletter, weekly digest, rabatt, sale, gutschein, unsubscribe..."></textarea>
                         <div class="mt-2 d-flex justify-content-between">
                             <small class="text-muted">Komma-getrennt</small>
-                            <button class="btn btn-sm btn-primary" onclick="saveSafePatterns('subject')">
+                            <button class="btn btn-sm btn-primary" id="saveSafeSubjectBtn">
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
                         </div>
@@ -577,7 +585,7 @@
                             placeholder="newsletter@, noreply@, marketing@, @mailchimp., @sendgrid...."></textarea>
                         <div class="mt-2 d-flex justify-content-between">
                             <small class="text-muted">Komma-getrennt</small>
-                            <button class="btn btn-sm btn-primary" onclick="saveSafePatterns('sender')">
+                            <button class="btn btn-sm btn-primary" id="saveSafeSenderBtn">
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
                         </div>
@@ -604,9 +612,96 @@
                             placeholder="chef@firma.de, @wichtiger-kunde.de, partner-firma.com..."></textarea>
                         <div class="mt-2 d-flex justify-content-between">
                             <small class="text-muted">Komma-getrennt</small>
-                            <button class="btn btn-sm btn-primary" onclick="saveVipSenders()">
+                            <button class="btn btn-sm btn-primary" id="saveVipSendersBtn">
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Auto-Delete Rules -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#autoDeleteSection">
+                        <i class="bi bi-trash3 me-2 text-info"></i>
+                        Auto-Löschregeln
+                        <span class="badge bg-info ms-2" id="autoDeleteBadge">0</span>
+                    </button>
+                </h2>
+                <div id="autoDeleteSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                    <div class="accordion-body">
+                        <p class="text-muted mb-3">
+                            Regeln für automatisches Löschen/Schützen. Wenn <strong>beide</strong> Patterns matchen (falls gesetzt), wird die Aktion ausgeführt.
+                        </p>
+                        
+                        <!-- Regeln Tabelle -->
+                        <div class="table-responsive mb-3">
+                            <table class="table table-sm table-hover" id="autoDeleteTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 25%">Absender-Pattern</th>
+                                        <th style="width: 25%">Betreff-Pattern</th>
+                                        <th style="width: 15%">Aktion</th>
+                                        <th style="width: 10%">Tage</th>
+                                        <th style="width: 20%">Beschreibung</th>
+                                        <th style="width: 5%"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="autoDeleteRulesBody">
+                                    <!-- Dynamisch befüllt -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Neue Regel Form -->
+                        <div class="card bg-light">
+                            <div class="card-body py-2">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-1">Absender</label>
+                                        <input type="text" class="form-control form-control-sm font-monospace" 
+                                               id="newRuleSender" placeholder="@newsletter.">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-1">Betreff (Regex)</label>
+                                        <input type="text" class="form-control form-control-sm font-monospace" 
+                                               id="newRuleSubject" placeholder="backup.*success">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-1">Aktion</label>
+                                        <select class="form-select form-select-sm" id="newRuleDisposition">
+                                            <option value="DELETABLE">🗑️ Löschbar</option>
+                                            <option value="PROTECTED">🛡️ Geschützt</option>
+                                            <option value="JUNK">⚠️ Junk</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-1">
+                                        <label class="form-label small mb-1">Tage</label>
+                                        <input type="number" class="form-control form-control-sm" 
+                                               id="newRuleMaxAge" placeholder="14" min="0">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small mb-1">Beschreibung</label>
+                                        <input type="text" class="form-control form-control-sm" 
+                                               id="newRuleDescription" placeholder="Newsletter älter als 14 Tage">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <button class="btn btn-sm btn-success w-100" id="addAutoDeleteRuleBtn">
+                                            <i class="bi bi-plus-lg me-1"></i>Hinzufügen
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-12">
+                                        <small class="text-muted">
+                                            <strong>DELETABLE:</strong> Nach X Tagen löschbar | 
+                                            <strong>PROTECTED:</strong> Nie löschen | 
+                                            <strong>JUNK:</strong> Sofort löschbar
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -626,96 +721,58 @@
     <div class="text-light-50" id="loadingSubtext">Dies kann bei vielen Emails einige Sekunden dauern</div>
 </div>
 
-<!-- VIP Absender Modal (für Ordner-Audit) -->
-<div class="modal fade" id="trustModal" tabindex="-1">
+<!-- Universelles Hinzufügen-Modal für alle Konfigurationslisten -->
+<div class="modal fade" id="addToListModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">⭐ VIP-Absender hinzufügen</h5>
+                <h5 class="modal-title" id="addToListModalTitle">Zur Liste hinzufügen</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>Absender als <strong>VIP</strong> markieren (Emails werden als wichtig erkannt):</p>
+                <!-- Info über gewählte Liste -->
+                <div class="alert alert-secondary py-2 mb-3" id="addToListInfo"></div>
+                
+                <!-- Wert der hinzugefügt wird -->
                 <div class="mb-3">
-                    <label class="form-label">Pattern-Typ</label>
-                    <select id="trustPatternType" class="form-select">
-                        <option value="exact" selected>Exakte Email-Adresse</option>
-                        <option value="domain">Gesamte Domain</option>
+                    <label class="form-label" id="addToListValueLabel">Wert</label>
+                    <input type="text" id="addToListValue" class="form-control font-monospace">
+                    <small class="text-muted" id="addToListValueHint"></small>
+                </div>
+                
+                <!-- Optionales zweites Feld (für Auto-Rules: Subject Pattern) -->
+                <div class="mb-3" id="addToListValue2Group" style="display: none;">
+                    <label class="form-label" id="addToListValue2Label">Zweiter Wert</label>
+                    <input type="text" id="addToListValue2" class="form-control font-monospace">
+                    <small class="text-muted" id="addToListValue2Hint"></small>
+                </div>
+                
+                <!-- Disposition für Auto-Rules -->
+                <div class="mb-3" id="addToListDispositionGroup" style="display: none;">
+                    <label class="form-label">Aktion</label>
+                    <select id="addToListDisposition" class="form-select">
+                        <option value="DELETABLE">🗑️ Löschbar (nach X Tagen)</option>
+                        <option value="PROTECTED">🛡️ Geschützt (nie löschen)</option>
+                        <option value="JUNK">⚠️ Junk (sofort löschbar)</option>
                     </select>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Absender/Domain</label>
-                    <input type="text" id="trustPattern" class="form-control" readonly>
-                    <small class="text-muted" id="trustHint">Emails von diesem Absender werden als wichtig markiert.</small>
+                
+                <!-- Max Age für DELETABLE -->
+                <div class="mb-3" id="addToListMaxAgeGroup" style="display: none;">
+                    <label class="form-label">Nach wie vielen Tagen löschbar?</label>
+                    <input type="number" id="addToListMaxAge" class="form-control" value="14" min="0">
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Label (optional)</label>
-                    <input type="text" id="trustLabel" class="form-control" placeholder="z.B. Chef, Wichtiger Kunde">
-                </div>
-                <div class="alert alert-info small mb-0">
-                    <i class="bi bi-info-circle me-1"></i>
-                    Konfiguration wird unter Tab "Konfiguration" → VIP Absender gespeichert.
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
-                <button type="button" class="btn btn-warning" id="trustConfirmBtn">
-                    <i class="bi bi-star-fill me-1"></i> Als VIP hinzufügen
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Auto-Rule Modal -->
-<div class="modal fade" id="ruleModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">⚡ Auto-Rule erstellen</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6>Bedingungen</h6>
-                        <div class="mb-3">
-                            <label class="form-label">Absender enthält</label>
-                            <input type="text" id="ruleSender" class="form-control">
-                            <small class="text-muted">Email-Adresse oder Domain</small>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Betreff enthält (optional)</label>
-                            <input type="text" id="ruleSubject" class="form-control">
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <h6>Aktion</h6>
-                        <div class="mb-3">
-                            <label class="form-label">Was soll passieren?</label>
-                            <select id="ruleAction" class="form-select">
-                                <option value="delete">🗑️ Endgültig löschen (EXPUNGE)</option>
-                                <option value="trash">📁 In Papierkorb verschieben</option>
-                                <option value="archive">📦 Archivieren</option>
-                                <option value="mark_read">✓ Als gelesen markieren</option>
-                                <option value="tag">🏷️ Tag vergeben</option>
-                            </select>
-                        </div>
-                        <div class="mb-3" id="ruleTagGroup" style="display: none;">
-                            <label class="form-label">Tag-Name</label>
-                            <input type="text" id="ruleTag" class="form-control" placeholder="z.B. Newsletter">
-                        </div>
-                    </div>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Regel-Name</label>
-                    <input type="text" id="ruleName" class="form-control">
+                
+                <!-- Beschreibung (optional) -->
+                <div class="mb-3" id="addToListDescGroup" style="display: none;">
+                    <label class="form-label">Beschreibung (optional)</label>
+                    <input type="text" id="addToListDesc" class="form-control" placeholder="z.B. Newsletter Heise">
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
-                <button type="button" class="btn btn-info" id="ruleConfirmBtn">
-                    <i class="bi bi-plus-lg me-1"></i> Rule erstellen
+                <button type="button" class="btn btn-primary" id="addToListConfirmBtn">
+                    <i class="bi bi-plus-lg me-1"></i> Hinzufügen
                 </button>
             </div>
         </div>
@@ -726,6 +783,8 @@
     let scanResult = null;
     let selectedUids = new Set();
     let currentFilter = 'all';
+    let currentAddAction = null;  // Aktuell gewählte Aktion (trusted-domain, vip-sender, etc.)
+    let currentClusterData = null; // Cluster-Daten für das Modal
     
     // Event Listeners (CSP-konform)
     document.addEventListener('DOMContentLoaded', function() {
@@ -759,6 +818,13 @@
         document.getElementById('deleteSelectedBtn').addEventListener('click', deleteSelected);
         document.getElementById('selectAllVisibleBtn').addEventListener('click', selectAllVisible);
         document.getElementById('deselectAllBtn').addEventListener('click', deselectAll);
+        
+        // Config Save Buttons (CSP-konform)
+        document.getElementById('saveTrustedDomainsBtn').addEventListener('click', saveTrustedDomains);
+        document.getElementById('saveImportantKeywordsBtn').addEventListener('click', saveImportantKeywords);
+        document.getElementById('saveSafeSubjectBtn').addEventListener('click', function() { saveSafePatterns('subject'); });
+        document.getElementById('saveSafeSenderBtn').addEventListener('click', function() { saveSafePatterns('sender'); });
+        document.getElementById('saveVipSendersBtn').addEventListener('click', saveVipSenders);
     });
     
     // Ordner laden wenn Account gewählt
@@ -780,9 +846,11 @@
             const data = await response.json();
             
             if (data.success && data.folders) {
-                folderSelect.innerHTML = data.folders.map(f => 
+                // "Alle Ordner" als erste Option + alle verfügbaren Ordner
+                const folderOptions = data.folders.map(f => 
                     `<option value="${escapeHtml(f)}" ${f.toLowerCase().includes('trash') || f.toLowerCase().includes('deleted') || f.toLowerCase() === 'papierkorb' ? 'selected' : ''}>${escapeHtml(f)}</option>`
                 ).join('');
+                folderSelect.innerHTML = '<option value="__ALL__">📁 Alle Ordner scannen</option>' + folderOptions;
                 folderSelect.disabled = false;
             } else {
                 folderSelect.innerHTML = '<option value="">Fehler beim Laden</option>';
@@ -937,6 +1005,7 @@
                             <div class="email-subject">${escapeHtml(email.subject || '(Kein Betreff)')}</div>
                             <div class="email-sender">
                                 ${senderDisplay}
+                                ${email.folder ? `<span class="badge bg-secondary ms-2" style="font-size: 0.7em; vertical-align: middle;">📁 ${escapeHtml(email.folder)}</span>` : ''}
                             </div>
                             <div class="email-reasons">${escapeHtml(reasons)}</div>
                         </div>
@@ -1184,21 +1253,40 @@
                                 ${isAllSelected ? '✓ Ausgewählt' : isSomeSelected ? 'Teilweise' : 'Auswählen'}
                             </button>
                             <div class="btn-group btn-group-sm mt-1">
-                                <button class="btn btn-outline-warning cluster-trust-btn" 
-                                        data-sender="${escapeHtml(cluster.sample_sender || '')}"
-                                        data-domain="${escapeHtml(cluster.sender_domain)}"
-                                        title="Absender als VIP hinzufügen (wichtig markieren)">
-                                    ⭐ VIP
-                                </button>
-                                <button class="btn btn-outline-info cluster-rule-btn"
+                                <button class="btn btn-outline-secondary dropdown-toggle cluster-add-btn" 
+                                        type="button"
+                                        data-bs-toggle="dropdown" 
+                                        aria-expanded="false"
                                         data-sender="${escapeHtml(cluster.sample_sender || '')}"
                                         data-domain="${escapeHtml(cluster.sender_domain)}"
                                         data-pattern="${escapeHtml(cluster.display_name)}"
                                         data-subject="${escapeHtml(cluster.sample_subject || '')}"
                                         data-category="${cluster.category}"
-                                        title="Auto-Rule für dieses Muster erstellen">
-                                    ⚡ Rule
+                                        title="Zu Konfigurationsliste hinzufügen">
+                                    <i class="bi bi-plus-circle"></i> Hinzufügen
                                 </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><h6 class="dropdown-header">Zur Liste hinzufügen</h6></li>
+                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="trusted-domain">
+                                        <i class="bi bi-shield-check text-success"></i> Trusted Domain
+                                    </a></li>
+                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="important-keyword">
+                                        <i class="bi bi-exclamation-triangle text-danger"></i> Wichtiges Keyword
+                                    </a></li>
+                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="safe-subject">
+                                        <i class="bi bi-envelope-check text-warning"></i> Safe Betreff-Pattern
+                                    </a></li>
+                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="safe-sender">
+                                        <i class="bi bi-person-check text-warning"></i> Safe Absender-Pattern
+                                    </a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="vip-sender">
+                                        <i class="bi bi-star-fill text-warning"></i> VIP Absender
+                                    </a></li>
+                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="auto-rule">
+                                        <i class="bi bi-lightning text-info"></i> Auto-Löschregel
+                                    </a></li>
+                                </ul>
                             </div>
                         </div>
                     </div>
@@ -1214,6 +1302,7 @@
                                     ${!email.subject && email.content_summary ? `<span class="text-info small ms-2">• ${escapeHtml(email.content_summary)}</span>` : ''}
                                 </div>
                                 <div class="cluster-email-meta">
+                                    ${email.folder ? `<span class="badge bg-secondary me-2" title="Ordner">📁 ${escapeHtml(email.folder)}</span>` : ''}
                                     ${email.date ? new Date(email.date).toLocaleDateString('de-DE') : ''}
                                     ${email.size ? ` · ${Math.round(email.size/1024)} KB` : ''}
                                 </div>
@@ -1258,220 +1347,232 @@
             });
         });
         
-        // VIP Absender Buttons - öffnen Modal
-        container.querySelectorAll('.cluster-trust-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const sender = this.dataset.sender;
-                const domain = this.dataset.domain;
+        // Dropdown-Aktionen für Hinzufügen zu Listen
+        container.querySelectorAll('.cluster-add-action').forEach(action => {
+            action.addEventListener('click', function(e) {
+                e.preventDefault();
                 
-                // Modal-Felder befüllen
-                document.getElementById('trustPattern').value = sender || `@${domain}`;
-                document.getElementById('trustPatternType').value = sender ? 'exact' : 'domain';
-                document.getElementById('trustLabel').value = `Ordner-Audit: ${domain}`;
-                updateTrustHint();
+                // Finde den übergeordneten Dropdown-Button für Cluster-Daten
+                const dropdownBtn = this.closest('.btn-group').querySelector('.cluster-add-btn');
                 
-                // Speichere Button-Referenz für Callback
-                window._currentTrustBtn = this;
+                currentClusterData = {
+                    sender: dropdownBtn.dataset.sender,
+                    domain: dropdownBtn.dataset.domain,
+                    pattern: dropdownBtn.dataset.pattern,
+                    subject: dropdownBtn.dataset.subject,
+                    category: dropdownBtn.dataset.category
+                };
+                currentAddAction = this.dataset.action;
                 
-                // Modal öffnen
-                new bootstrap.Modal(document.getElementById('trustModal')).show();
-            });
-        });
-        
-        // Auto-Rule Buttons - öffnen Modal
-        container.querySelectorAll('.cluster-rule-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const sender = this.dataset.sender;
-                const domain = this.dataset.domain;
-                const pattern = this.dataset.pattern;  // Normalisiertes Pattern (display_name)
-                const subject = this.dataset.subject;
-                const category = this.dataset.category;
-                
-                // Modal-Felder befüllen
-                document.getElementById('ruleSender').value = sender || domain;
-                
-                // Betreff: Nutze normalisiertes Pattern, entferne Platzhalter für Regex
-                // "<HOST>: <N> package update(s)" → "package update"
-                let cleanPattern = pattern || '';
-                cleanPattern = cleanPattern.replace(/<HOST>/g, '').replace(/<N>/g, '').replace(/<ID>/g, '');
-                cleanPattern = cleanPattern.replace(/<DATE>/g, '').replace(/<TIME>/g, '').replace(/<PATH>/g, '');
-                cleanPattern = cleanPattern.replace(/[:\s]+/g, ' ').trim();
-                // Nimm die ersten aussagekräftigen Wörter
-                const words = cleanPattern.split(' ').filter(w => w.length > 2);
-                const keyPhrase = words.slice(0, 3).join(' ');
-                document.getElementById('ruleSubject').value = keyPhrase || '';
-                
-                // Regel-Name: Kurz und prägnant
-                const ruleName = keyPhrase ? `${domain}: ${keyPhrase}` : `${domain} Rule`;
-                document.getElementById('ruleName').value = ruleName.substring(0, 50);
-                
-                // Aktion basierend auf Kategorie vorschlagen
-                const actionSelect = document.getElementById('ruleAction');
-                if (category === 'safe') {
-                    actionSelect.value = 'delete';  // Safe → löschen
-                } else {
-                    actionSelect.value = 'trash';   // Review/Important → Papierkorb
-                }
-                document.getElementById('ruleTagGroup').style.display = 'none';
-                
-                // Speichere Button-Referenz für Callback
-                window._currentRuleBtn = this;
+                // Modal vorbereiten basierend auf Aktion
+                prepareAddToListModal(currentAddAction, currentClusterData);
                 
                 // Modal öffnen
-                new bootstrap.Modal(document.getElementById('ruleModal')).show();
+                new bootstrap.Modal(document.getElementById('addToListModal')).show();
             });
         });
     }
     
-    // Trust Modal: Pattern-Typ Änderung
-    document.getElementById('trustPatternType')?.addEventListener('change', updateTrustHint);
-    
-    function updateTrustHint() {
-        const patternType = document.getElementById('trustPatternType').value;
-        const patternInput = document.getElementById('trustPattern');
-        const hint = document.getElementById('trustHint');
+    // Modal vorbereiten basierend auf gewählter Aktion
+    function prepareAddToListModal(action, data) {
+        const modal = document.getElementById('addToListModal');
+        const title = document.getElementById('addToListModalTitle');
+        const info = document.getElementById('addToListInfo');
+        const valueLabel = document.getElementById('addToListValueLabel');
+        const valueInput = document.getElementById('addToListValue');
+        const valueHint = document.getElementById('addToListValueHint');
+        const value2Group = document.getElementById('addToListValue2Group');
+        const value2Label = document.getElementById('addToListValue2Label');
+        const value2Input = document.getElementById('addToListValue2');
+        const value2Hint = document.getElementById('addToListValue2Hint');
+        const dispositionGroup = document.getElementById('addToListDispositionGroup');
+        const maxAgeGroup = document.getElementById('addToListMaxAgeGroup');
+        const descGroup = document.getElementById('addToListDescGroup');
+        const confirmBtn = document.getElementById('addToListConfirmBtn');
         
-        const currentValue = patternInput.value;
+        // Alles zurücksetzen
+        value2Group.style.display = 'none';
+        dispositionGroup.style.display = 'none';
+        maxAgeGroup.style.display = 'none';
+        descGroup.style.display = 'none';
+        valueInput.readOnly = false;
         
-        if (patternType === 'exact') {
-            // Zeige vollständige Email
-            hint.textContent = 'Emails von dieser Adresse werden als wichtig markiert.';
-            hint.className = 'text-muted';
-        } else {
-            // Domain-Modus
-            const domain = currentValue.includes('@') ? currentValue.split('@')[1] : currentValue;
-            patternInput.value = `@${domain}`;
-            hint.textContent = 'Alle Emails von dieser Domain werden als wichtig markiert.';
-            hint.className = 'text-info';
+        switch (action) {
+            case 'trusted-domain':
+                title.textContent = '🛡️ Trusted Domain hinzufügen';
+                info.innerHTML = '<i class="bi bi-shield-check text-success"></i> Emails von dieser Domain werden <strong>nicht als Scam</strong> markiert.';
+                valueLabel.textContent = 'Domain';
+                valueInput.value = data.domain || '';
+                valueHint.textContent = 'z.B. example.com oder subdomain.example.com';
+                confirmBtn.className = 'btn btn-success';
+                break;
+                
+            case 'important-keyword':
+                title.textContent = '⚠️ Wichtiges Keyword hinzufügen';
+                info.innerHTML = '<i class="bi bi-exclamation-triangle text-danger"></i> Emails mit diesem Keyword im Betreff werden als <strong>wichtig</strong> markiert.';
+                valueLabel.textContent = 'Keyword';
+                // Aus Betreff ein Keyword extrahieren
+                valueInput.value = extractKeyword(data.subject || data.pattern || '');
+                valueHint.textContent = 'z.B. rechnung, mahnung, termin';
+                confirmBtn.className = 'btn btn-danger';
+                break;
+                
+            case 'safe-subject':
+                title.textContent = '📧 Safe Betreff-Pattern hinzufügen';
+                info.innerHTML = '<i class="bi bi-envelope-check text-warning"></i> Emails mit diesem Pattern im Betreff werden als <strong>löschbar</strong> markiert.';
+                valueLabel.textContent = 'Betreff-Pattern';
+                valueInput.value = extractKeyword(data.pattern || data.subject || '');
+                valueHint.textContent = 'z.B. newsletter, weekly digest, sale';
+                confirmBtn.className = 'btn btn-warning';
+                break;
+                
+            case 'safe-sender':
+                title.textContent = '👤 Safe Absender-Pattern hinzufügen';
+                info.innerHTML = '<i class="bi bi-person-check text-warning"></i> Emails von Absendern mit diesem Pattern werden als <strong>löschbar</strong> markiert.';
+                valueLabel.textContent = 'Absender-Pattern';
+                // Domain als Pattern vorschlagen
+                valueInput.value = `@${data.domain}` || '';
+                valueHint.textContent = 'z.B. newsletter@, @mailchimp., noreply@';
+                confirmBtn.className = 'btn btn-warning';
+                break;
+                
+            case 'vip-sender':
+                title.textContent = '⭐ VIP Absender hinzufügen';
+                info.innerHTML = '<i class="bi bi-star-fill text-warning"></i> Emails von diesem Absender werden immer als <strong>wichtig</strong> markiert.';
+                valueLabel.textContent = 'Absender/Domain';
+                valueInput.value = data.sender || `@${data.domain}` || '';
+                valueHint.textContent = 'Exakte Email oder @domain für alle Emails dieser Domain';
+                confirmBtn.className = 'btn btn-warning';
+                break;
+                
+            case 'auto-rule':
+                title.textContent = '⚡ Auto-Löschregel erstellen';
+                info.innerHTML = '<i class="bi bi-lightning text-info"></i> Erstellt eine Regel für automatisches Löschen/Schützen basierend auf Absender und Betreff.';
+                valueLabel.textContent = 'Absender-Pattern';
+                valueInput.value = `@${data.domain}` || '';
+                valueHint.textContent = 'z.B. @newsletter., cron@, @mailchimp.';
+                
+                // Zweites Feld für Subject
+                value2Group.style.display = 'block';
+                value2Label.textContent = 'Betreff-Pattern (optional, Regex möglich)';
+                value2Input.value = extractKeyword(data.pattern || '');
+                value2Hint.textContent = 'z.B. package update, backup.*success';
+                
+                // Disposition + Max Age
+                dispositionGroup.style.display = 'block';
+                document.getElementById('addToListDisposition').value = 'DELETABLE';
+                maxAgeGroup.style.display = 'block';
+                document.getElementById('addToListMaxAge').value = '14';
+                
+                // Beschreibung
+                descGroup.style.display = 'block';
+                document.getElementById('addToListDesc').value = `${data.domain}: ${extractKeyword(data.pattern || '')}`.substring(0, 50);
+                
+                confirmBtn.className = 'btn btn-info';
+                break;
         }
     }
     
-    // VIP Modal: Bestätigen
-    document.getElementById('trustConfirmBtn')?.addEventListener('click', async function() {
-        const pattern = document.getElementById('trustPattern').value;
-        const patternType = document.getElementById('trustPatternType').value;
-        const label = document.getElementById('trustLabel').value;
-        
-        try {
-            // Speichere als VIP-Absender in Audit-Config (nicht alte Trusted-Senders)
-            const response = await fetch('/api/audit-config/vip-senders', {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCsrfToken()
-                },
-                body: JSON.stringify({
-                    senders: pattern,  // Einzelner Sender als String
-                    label: label || null
-                })
-            });
-            const data = await response.json();
-            
-            if (data.success) {
-                // Button updaten
-                if (window._currentTrustBtn) {
-                    window._currentTrustBtn.classList.remove('btn-outline-warning');
-                    window._currentTrustBtn.classList.add('btn-warning');
-                    window._currentTrustBtn.innerHTML = '⭐ VIP';
-                    window._currentTrustBtn.disabled = true;
-                }
-                bootstrap.Modal.getInstance(document.getElementById('trustModal')).hide();
-                alert('✅ VIP-Absender hinzugefügt!');
-            } else {
-                alert('Fehler: ' + (data.error || 'Unbekannt'));
-            }
-        } catch (e) {
-            alert('Fehler: ' + e.message);
-        }
+    // Hilfsfunktion: Keyword aus Betreff/Pattern extrahieren
+    function extractKeyword(text) {
+        if (!text) return '';
+        // Entferne Platzhalter
+        let clean = text.replace(/<HOST>/g, '').replace(/<N>/g, '').replace(/<ID>/g, '');
+        clean = clean.replace(/<DATE>/g, '').replace(/<TIME>/g, '').replace(/<PATH>/g, '');
+        clean = clean.replace(/[:\s]+/g, ' ').trim();
+        // Nimm die ersten aussagekräftigen Wörter
+        const words = clean.split(' ').filter(w => w.length > 2);
+        return words.slice(0, 3).join(' ').toLowerCase();
+    }
+    
+    // Disposition-Änderung: Max Age anzeigen/verstecken
+    document.getElementById('addToListDisposition')?.addEventListener('change', function() {
+        document.getElementById('addToListMaxAgeGroup').style.display = 
+            this.value === 'DELETABLE' ? 'block' : 'none';
     });
     
-    // Rule Modal: Aktion-Änderung
-    document.getElementById('ruleAction')?.addEventListener('change', function() {
-        document.getElementById('ruleTagGroup').style.display = 
-            this.value === 'tag' ? 'block' : 'none';
-    });
-    
-    // Rule Modal: Bestätigen
-    document.getElementById('ruleConfirmBtn')?.addEventListener('click', async function() {
-        const sender = document.getElementById('ruleSender').value.trim();
-        const subject = document.getElementById('ruleSubject').value.trim();
-        const action = document.getElementById('ruleAction').value;
-        const tag = document.getElementById('ruleTag').value.trim();
-        const name = document.getElementById('ruleName').value.trim();
+    // Modal: Bestätigen
+    document.getElementById('addToListConfirmBtn')?.addEventListener('click', async function() {
+        const value = document.getElementById('addToListValue').value.trim();
+        const value2 = document.getElementById('addToListValue2').value.trim();
+        const disposition = document.getElementById('addToListDisposition').value;
+        const maxAge = document.getElementById('addToListMaxAge').value;
+        const desc = document.getElementById('addToListDesc').value.trim();
         
-        if (!sender && !subject) {
-            alert('Bitte mindestens Absender oder Betreff angeben.');
+        if (!value) {
+            alert('Bitte einen Wert eingeben!');
             return;
         }
         
-        // Conditions bauen
-        const conditions = {};
-        if (sender) {
-            if (sender.includes('@') && !sender.startsWith('@')) {
-                conditions.sender_equals = sender;
-            } else if (sender.startsWith('@')) {
-                conditions.sender_domain = sender.substring(1);
-            } else {
-                conditions.sender_contains = sender;
-            }
-        }
-        if (subject) {
-            conditions.subject_contains = subject;
-        }
+        let endpoint = '';
+        let body = {};
         
-        // Actions bauen
-        const actions = {};
-        switch (action) {
-            case 'delete':
-                actions.move_to_folder = 'Trash';
-                actions.mark_as_read = true;
-                // TODO: EXPUNGE wird nicht direkt unterstützt, Trash ist nächstbeste Option
+        switch (currentAddAction) {
+            case 'trusted-domain':
+                endpoint = '/api/audit-config/trusted-domains';
+                body = { domains: value };
                 break;
-            case 'trash':
-                actions.move_to_folder = 'Trash';
+                
+            case 'important-keyword':
+                endpoint = '/api/audit-config/important-keywords';
+                body = { keywords: value };
                 break;
-            case 'archive':
-                actions.move_to_folder = 'Archive';
+                
+            case 'safe-subject':
+                endpoint = '/api/audit-config/safe-patterns';
+                body = { patterns: value, pattern_type: 'subject' };
                 break;
-            case 'mark_read':
-                actions.mark_as_read = true;
+                
+            case 'safe-sender':
+                endpoint = '/api/audit-config/safe-patterns';
+                body = { patterns: value, pattern_type: 'sender' };
                 break;
-            case 'tag':
-                if (!tag) {
-                    alert('Bitte Tag-Namen angeben.');
+                
+            case 'vip-sender':
+                endpoint = '/api/audit-config/vip-senders';
+                body = { senders: value };
+                break;
+                
+            case 'auto-rule':
+                endpoint = '/api/audit-config/auto-delete-rules';
+                if (disposition === 'DELETABLE' && !maxAge) {
+                    alert('Bei "Löschbar" muss eine Anzahl Tage angegeben werden!');
                     return;
                 }
-                actions.apply_tag = tag;
+                body = {
+                    sender_pattern: value || null,
+                    subject_pattern: value2 || null,
+                    disposition: disposition,
+                    max_age_days: disposition === 'DELETABLE' ? parseInt(maxAge) : null,
+                    description: desc || null
+                };
                 break;
         }
         
         try {
-            const response = await fetch('/api/rules', {
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
                     'X-CSRFToken': getCsrfToken()
                 },
-                body: JSON.stringify({
-                    name: name || 'Trash Audit Rule',
-                    description: `Erstellt aus Trash Audit`,
-                    conditions: conditions,
-                    actions: actions,
-                    is_active: true,
-                    priority: 100
-                })
+                body: JSON.stringify(body)
             });
             const data = await response.json();
             
-            if (data.id) {
-                // Button updaten
-                if (window._currentRuleBtn) {
-                    window._currentRuleBtn.classList.remove('btn-outline-info');
-                    window._currentRuleBtn.classList.add('btn-info');
-                    window._currentRuleBtn.innerHTML = '✓ Rule';
-                    window._currentRuleBtn.disabled = true;
-                }
-                bootstrap.Modal.getInstance(document.getElementById('ruleModal')).hide();
+            if (data.success || data.added >= 0 || data.action) {
+                bootstrap.Modal.getInstance(document.getElementById('addToListModal')).hide();
+                
+                // Erfolgsmeldung
+                const actionNames = {
+                    'trusted-domain': 'Trusted Domain',
+                    'important-keyword': 'Wichtiges Keyword',
+                    'safe-subject': 'Safe Betreff-Pattern',
+                    'safe-sender': 'Safe Absender-Pattern',
+                    'vip-sender': 'VIP Absender',
+                    'auto-rule': 'Auto-Löschregel'
+                };
+                alert(`✅ ${actionNames[currentAddAction]} hinzugefügt!`);
             } else {
                 alert('Fehler: ' + (data.error || 'Unbekannt'));
             }
@@ -1563,11 +1664,14 @@
                 <strong>🚨 ${count} Scam/Betrugs-Email${count > 1 ? 's' : ''} erkannt!</strong>
                 Diese Emails zeigen starke Anzeichen für Betrug (gefälschte Absender, Auth-Failures, verdächtige Domains).
             </div>
-            <button class="btn btn-danger btn-sm" onclick="deleteAllScam()">
+            <button class="btn btn-danger btn-sm" id="deleteAllScamBtn">
                 🗑️ Alle Scam-Emails löschen
             </button>
         `;
         alertDiv.style.display = 'flex';
+        
+        // Event Listener für dynamisch erstellten Button
+        document.getElementById('deleteAllScamBtn').addEventListener('click', deleteAllScam);
     }
     
     async function deleteAllScam() {
@@ -1617,6 +1721,8 @@
             document.getElementById('trustedBadge').textContent = data.trusted_domains;
             document.getElementById('keywordsBadge').textContent = data.important_keywords;
             document.getElementById('vipBadge').textContent = data.vip_senders;
+            document.getElementById('autoDeleteBadge').textContent = data.auto_delete_rules || 0;
+            document.getElementById('configAutoDeleteCount').textContent = data.auto_delete_rules || 0;
         } catch (error) {
             console.error('Error loading config stats:', error);
         }
@@ -1661,6 +1767,9 @@
             const data = await resp.json();
             document.getElementById('vipSendersInput').value = data.comma_separated || '';
         } catch (e) { console.error(e); }
+        
+        // Load Auto-Delete Rules
+        loadAutoDeleteRules();
     }
     
     async function saveTrustedDomains() {
@@ -1676,7 +1785,7 @@
             });
             const data = await response.json();
             if (data.success) {
-                alert(`✅ Gespeichert: ${data.added} hinzugefügt, ${data.removed} entfernt`);
+                alert(`✅ Trusted Domains gespeichert!\n\n${data.total || 'Unbekannt'} Domains aktiv\n(${data.added} neu, ${data.removed} deaktiviert)`);
                 loadConfigStats();
             } else {
                 throw new Error(data.error);
@@ -1699,7 +1808,7 @@
             });
             const data = await response.json();
             if (data.success) {
-                alert(`✅ Gespeichert: ${data.added} hinzugefügt, ${data.removed} entfernt`);
+                alert(`✅ Wichtige Keywords gespeichert!\n\n${data.total || 'Unbekannt'} Keywords aktiv\n(${data.added} neu, ${data.removed} deaktiviert)`);
                 loadConfigStats();
             } else {
                 throw new Error(data.error);
@@ -1723,7 +1832,8 @@
             });
             const data = await response.json();
             if (data.success) {
-                alert(`✅ Gespeichert: ${data.added} hinzugefügt, ${data.removed} entfernt`);
+                const typeName = patternType === 'subject' ? 'Betreff-Patterns' : 'Absender-Patterns';
+                alert(`✅ ${typeName} gespeichert!\n\n${data.total} Patterns aktiv\n(${data.added} neu hinzugefügt, ${data.removed} deaktiviert)`);
                 loadConfigStats();
             } else {
                 throw new Error(data.error);
@@ -1746,7 +1856,7 @@
             });
             const data = await response.json();
             if (data.success) {
-                alert(`✅ Gespeichert: ${data.added} hinzugefügt, ${data.removed} entfernt`);
+                alert(`✅ VIP Absender gespeichert!\n\n${data.total || 'Unbekannt'} VIPs aktiv\n(${data.added} neu, ${data.removed} deaktiviert)`);
                 loadConfigStats();
             } else {
                 throw new Error(data.error);
@@ -1755,6 +1865,159 @@
             alert('Fehler: ' + error.message);
         }
     }
+    
+    // =================================================================
+    // Auto-Delete Rules
+    // =================================================================
+    
+    async function loadAutoDeleteRules() {
+        try {
+            const response = await fetch('/api/audit-config/auto-delete-rules');
+            const data = await response.json();
+            
+            const tbody = document.getElementById('autoDeleteRulesBody');
+            tbody.innerHTML = '';
+            
+            if (data.rules && data.rules.length > 0) {
+                data.rules.forEach(rule => {
+                    const tr = document.createElement('tr');
+                    
+                    // Disposition Styling
+                    let dispBadge = '';
+                    if (rule.disposition === 'DELETABLE') {
+                        dispBadge = '<span class="badge bg-info">🗑️ Löschbar</span>';
+                    } else if (rule.disposition === 'PROTECTED') {
+                        dispBadge = '<span class="badge bg-success">🛡️ Geschützt</span>';
+                    } else if (rule.disposition === 'JUNK') {
+                        dispBadge = '<span class="badge bg-warning text-dark">⚠️ Junk</span>';
+                    }
+                    
+                    tr.innerHTML = `
+                        <td class="font-monospace small">${rule.sender_pattern || '<span class="text-muted">-</span>'}</td>
+                        <td class="font-monospace small">${rule.subject_pattern || '<span class="text-muted">-</span>'}</td>
+                        <td>${dispBadge}</td>
+                        <td class="text-center">${rule.max_age_days !== null ? rule.max_age_days : '-'}</td>
+                        <td class="small text-muted">${rule.description || ''}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-danger py-0 px-1" 
+                                    data-rule-id="${rule.id}" title="Löschen">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </td>
+                    `;
+                    
+                    // Delete Button Event
+                    tr.querySelector('button').addEventListener('click', function() {
+                        deleteAutoDeleteRule(rule.id, rule.description || `${rule.sender_pattern || ''}/${rule.subject_pattern || ''}`);
+                    });
+                    
+                    tbody.appendChild(tr);
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">Keine Regeln konfiguriert</td></tr>';
+            }
+            
+            // Badge aktualisieren
+            document.getElementById('autoDeleteBadge').textContent = data.count || 0;
+            
+        } catch (error) {
+            console.error('Fehler beim Laden der Auto-Delete Rules:', error);
+        }
+    }
+    
+    async function addAutoDeleteRule() {
+        const sender = document.getElementById('newRuleSender').value.trim();
+        const subject = document.getElementById('newRuleSubject').value.trim();
+        const disposition = document.getElementById('newRuleDisposition').value;
+        const maxAge = document.getElementById('newRuleMaxAge').value;
+        const description = document.getElementById('newRuleDescription').value.trim();
+        
+        // Validierung
+        if (!sender && !subject) {
+            alert('Mindestens Absender oder Betreff muss angegeben werden!');
+            return;
+        }
+        
+        if (disposition === 'DELETABLE' && !maxAge) {
+            alert('Bei "Löschbar" muss eine Anzahl Tage angegeben werden!');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/audit-config/auto-delete-rules', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    sender_pattern: sender || null,
+                    subject_pattern: subject || null,
+                    disposition: disposition,
+                    max_age_days: maxAge ? parseInt(maxAge) : null,
+                    description: description || null
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                // Form zurücksetzen
+                document.getElementById('newRuleSender').value = '';
+                document.getElementById('newRuleSubject').value = '';
+                document.getElementById('newRuleMaxAge').value = '';
+                document.getElementById('newRuleDescription').value = '';
+                
+                // Tabelle neu laden
+                loadAutoDeleteRules();
+                loadConfigStats();
+            } else {
+                throw new Error(data.error);
+            }
+        } catch (error) {
+            alert('Fehler: ' + error.message);
+        }
+    }
+    
+    async function deleteAutoDeleteRule(ruleId, ruleName) {
+        if (!confirm(`Regel löschen?\n\n${ruleName}`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/audit-config/auto-delete-rules/${ruleId}`, {
+                method: 'DELETE',
+                headers: { 
+                    'X-CSRFToken': getCsrfToken()
+                }
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                loadAutoDeleteRules();
+                loadConfigStats();
+            } else {
+                throw new Error(data.error);
+            }
+        } catch (error) {
+            alert('Fehler: ' + error.message);
+        }
+    }
+    
+    // Event Listener für Add-Button
+    document.getElementById('addAutoDeleteRuleBtn').addEventListener('click', addAutoDeleteRule);
+    
+    // Disposition-Änderung: Tage-Feld aktivieren/deaktivieren
+    document.getElementById('newRuleDisposition').addEventListener('change', function() {
+        const maxAgeInput = document.getElementById('newRuleMaxAge');
+        if (this.value === 'DELETABLE') {
+            maxAgeInput.disabled = false;
+            maxAgeInput.placeholder = '14';
+        } else {
+            maxAgeInput.disabled = true;
+            maxAgeInput.value = '';
+            maxAgeInput.placeholder = '-';
+        }
+    });
     
     // Load Defaults Button
     document.getElementById('loadDefaultsBtn').addEventListener('click', async function() {

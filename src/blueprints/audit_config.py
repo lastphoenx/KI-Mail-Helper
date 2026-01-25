@@ -683,6 +683,263 @@ def save_vip_senders():
         })
 
 
+# =============================================================================
+# Auto-Delete Rules API
+# =============================================================================
+
+@audit_config_bp.route("/api/audit-config/auto-delete-rules", methods=["GET"])
+@login_required
+def get_auto_delete_rules():
+    """Lädt Auto-Delete Rules"""
+    account_id = request.args.get("account_id", type=int)
+    disposition = request.args.get("disposition")  # DELETABLE, PROTECTED, JUNK
+    
+    with get_db_session() as db:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        
+        models = _get_models()
+        
+        query = db.query(models.AuditAutoDeleteRule).filter(
+            models.AuditAutoDeleteRule.user_id == user.id,
+            models.AuditAutoDeleteRule.is_active == True,
+        )
+        
+        if account_id:
+            query = query.filter(
+                (models.AuditAutoDeleteRule.account_id == account_id) |
+                (models.AuditAutoDeleteRule.account_id == None)
+            )
+        
+        if disposition:
+            query = query.filter(models.AuditAutoDeleteRule.disposition == disposition)
+        
+        rules = query.order_by(
+            models.AuditAutoDeleteRule.disposition,
+            models.AuditAutoDeleteRule.sender_pattern,
+            models.AuditAutoDeleteRule.subject_pattern
+        ).all()
+        
+        # Gruppiert nach Disposition
+        by_disposition = {"DELETABLE": [], "PROTECTED": [], "JUNK": []}
+        for r in rules:
+            if r.disposition in by_disposition:
+                by_disposition[r.disposition].append({
+                    "id": r.id,
+                    "sender_pattern": r.sender_pattern,
+                    "subject_pattern": r.subject_pattern,
+                    "max_age_days": r.max_age_days,
+                    "description": r.description,
+                    "source": r.source,
+                })
+        
+        return jsonify({
+            "rules": [
+                {
+                    "id": r.id,
+                    "sender_pattern": r.sender_pattern,
+                    "subject_pattern": r.subject_pattern,
+                    "disposition": r.disposition,
+                    "max_age_days": r.max_age_days,
+                    "description": r.description,
+                    "source": r.source,
+                    "account_id": r.account_id,
+                }
+                for r in rules
+            ],
+            "by_disposition": by_disposition,
+            "count": len(rules),
+        })
+
+
+@audit_config_bp.route("/api/audit-config/auto-delete-rules", methods=["POST"])
+@login_required
+def save_auto_delete_rule():
+    """Speichert eine einzelne Auto-Delete Rule"""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Keine Daten"}), 400
+    
+    sender_pattern = data.get("sender_pattern")
+    subject_pattern = data.get("subject_pattern")
+    disposition = data.get("disposition")
+    max_age_days = data.get("max_age_days")
+    description = data.get("description")
+    account_id = data.get("account_id")
+    
+    # Validierung
+    if not disposition or disposition not in ("DELETABLE", "PROTECTED", "JUNK"):
+        return jsonify({"error": "Ungültige disposition (DELETABLE, PROTECTED, JUNK)"}), 400
+    
+    if not sender_pattern and not subject_pattern:
+        return jsonify({"error": "Mindestens sender_pattern oder subject_pattern erforderlich"}), 400
+    
+    # DELETABLE braucht max_age_days
+    if disposition == "DELETABLE" and max_age_days is None:
+        return jsonify({"error": "DELETABLE benötigt max_age_days"}), 400
+    
+    with get_db_session() as db:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        
+        models = _get_models()
+        
+        # Prüfen ob Regel existiert
+        existing = db.query(models.AuditAutoDeleteRule).filter(
+            models.AuditAutoDeleteRule.user_id == user.id,
+            models.AuditAutoDeleteRule.account_id == account_id,
+            models.AuditAutoDeleteRule.sender_pattern == sender_pattern,
+            models.AuditAutoDeleteRule.subject_pattern == subject_pattern,
+        ).first()
+        
+        if existing:
+            # Update
+            existing.disposition = disposition
+            existing.max_age_days = max_age_days
+            existing.description = description
+            existing.is_active = True
+            action = "updated"
+        else:
+            # Insert
+            db.add(models.AuditAutoDeleteRule(
+                user_id=user.id,
+                account_id=account_id,
+                sender_pattern=sender_pattern,
+                subject_pattern=subject_pattern,
+                disposition=disposition,
+                max_age_days=max_age_days,
+                description=description,
+                source="user",
+            ))
+            action = "created"
+        
+        db.commit()
+        
+        # Cache invalidieren
+        AuditConfigCache.clear_cache(user.id)
+        
+        return jsonify({
+            "success": True,
+            "action": action,
+        })
+
+
+@audit_config_bp.route("/api/audit-config/auto-delete-rules/<int:rule_id>", methods=["DELETE"])
+@login_required
+def delete_auto_delete_rule(rule_id):
+    """Löscht eine Auto-Delete Rule (soft delete)"""
+    
+    with get_db_session() as db:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        
+        models = _get_models()
+        
+        rule = db.query(models.AuditAutoDeleteRule).filter(
+            models.AuditAutoDeleteRule.id == rule_id,
+            models.AuditAutoDeleteRule.user_id == user.id,
+        ).first()
+        
+        if not rule:
+            return jsonify({"error": "Regel nicht gefunden"}), 404
+        
+        rule.is_active = False
+        db.commit()
+        
+        # Cache invalidieren
+        AuditConfigCache.clear_cache(user.id)
+        
+        return jsonify({
+            "success": True,
+            "deleted": rule_id,
+        })
+
+
+@audit_config_bp.route("/api/audit-config/auto-delete-rules/bulk", methods=["POST"])
+@login_required
+def save_auto_delete_rules_bulk():
+    """Speichert mehrere Auto-Delete Rules auf einmal"""
+    data = request.get_json()
+    if not data or "rules" not in data:
+        return jsonify({"error": "Keine Regeln angegeben"}), 400
+    
+    rules_data = data.get("rules", [])
+    account_id = data.get("account_id")
+    
+    with get_db_session() as db:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        
+        models = _get_models()
+        
+        added = 0
+        updated = 0
+        errors = []
+        
+        for rule in rules_data:
+            sender_pattern = rule.get("sender_pattern")
+            subject_pattern = rule.get("subject_pattern")
+            disposition = rule.get("disposition")
+            max_age_days = rule.get("max_age_days")
+            description = rule.get("description")
+            
+            # Validierung
+            if not disposition or disposition not in ("DELETABLE", "PROTECTED", "JUNK"):
+                errors.append(f"Ungültige disposition: {disposition}")
+                continue
+            
+            if not sender_pattern and not subject_pattern:
+                errors.append("Regel ohne Pattern übersprungen")
+                continue
+            
+            if disposition == "DELETABLE" and max_age_days is None:
+                errors.append(f"DELETABLE ohne max_age_days: {sender_pattern}/{subject_pattern}")
+                continue
+            
+            # Prüfen ob existiert
+            existing = db.query(models.AuditAutoDeleteRule).filter(
+                models.AuditAutoDeleteRule.user_id == user.id,
+                models.AuditAutoDeleteRule.account_id == account_id,
+                models.AuditAutoDeleteRule.sender_pattern == sender_pattern,
+                models.AuditAutoDeleteRule.subject_pattern == subject_pattern,
+            ).first()
+            
+            if existing:
+                existing.disposition = disposition
+                existing.max_age_days = max_age_days
+                existing.description = description
+                existing.is_active = True
+                updated += 1
+            else:
+                db.add(models.AuditAutoDeleteRule(
+                    user_id=user.id,
+                    account_id=account_id,
+                    sender_pattern=sender_pattern,
+                    subject_pattern=subject_pattern,
+                    disposition=disposition,
+                    max_age_days=max_age_days,
+                    description=description,
+                    source="user",
+                ))
+                added += 1
+        
+        db.commit()
+        
+        # Cache invalidieren
+        AuditConfigCache.clear_cache(user.id)
+        
+        return jsonify({
+            "success": True,
+            "added": added,
+            "updated": updated,
+            "errors": errors,
+        })
+
+
 @audit_config_bp.route("/api/audit-config/load-defaults", methods=["POST"])
 @login_required
 def load_defaults():
@@ -818,4 +1075,5 @@ def get_stats():
             "important_keywords": count_entries(models.AuditImportantKeyword),
             "safe_patterns": count_entries(models.AuditSafePattern),
             "vip_senders": count_entries(models.AuditVIPSender),
+            "auto_delete_rules": count_entries(models.AuditAutoDeleteRule) if hasattr(models, 'AuditAutoDeleteRule') else 0,
         })
