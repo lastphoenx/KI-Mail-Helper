@@ -717,14 +717,15 @@ Die Defaults enthalten auch mehrsprachige Keywords für:
 - ⚠️ Mahnungen/Fristen
 - 🏛️ Behördliche Korrespondenz
 
-### VIP-Absender aus Email hinzufügen
+### VIP-Absender manuell hinzufügen
 
-In der Email-Detailansicht kannst du einen Absender direkt als VIP markieren:
-
-1. Öffne die Email
-2. Klicke auf **"⭐ Als VIP Absender"**
-3. Wähle ob für alle Accounts oder nur diesen Account
-4. Speichern
+1. Öffne den **"Konfiguration"**-Tab im Ordner-Audit
+2. Klappe **"VIP Absender"** auf
+3. Gib Absender komma-getrennt ein:
+   - `chef@firma.de` – Exakte Adresse
+   - `@wichtiger-kunde.de` – Alle von dieser Domain
+   - `partner-firma.com` – Nur Domain-Teil
+4. Klicke auf **"Speichern"**
 
 ---
 
