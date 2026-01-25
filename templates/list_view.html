@@ -99,6 +99,21 @@
                     </select>
                 </div>
 
+                <!-- Sprache -->
+                <div class="col-auto">
+                    <label class="form-label small mb-1">🌐 Sprache</label>
+                    <select class="form-select form-select-sm filter-select" data-filter="language">
+                        <option value="">Alle Sprachen</option>
+                        {% if available_languages %}
+                            {% for lang in available_languages %}
+                            <option value="{{ lang }}" {% if lang == filter_language %}selected{% endif %}>
+                                {{ lang|upper }}
+                            </option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+
                 <!-- More/Advanced Toggle -->
                 <div class="col-auto ms-auto d-flex gap-2">
                     <a href="/list" class="btn btn-sm btn-outline-danger" id="resetFiltersBtn" title="Alle Filter zurücksetzen">

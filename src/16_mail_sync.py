@@ -11,7 +11,7 @@ from imapclient import IMAPClient
 from imapclient.exceptions import IMAPClientError
 import logging
 import re
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict
 from enum import Enum
 from dataclasses import dataclass
 
@@ -234,6 +234,128 @@ class MailSynchronizer:
                 target_folder="Trash",
                 message=f"Fehler: {str(e)}"
             )
+
+    def move_to_trash_bulk(
+        self, 
+        uids: List[int], 
+        source_folder: str = "INBOX"
+    ) -> Dict[int, MoveResult]:
+        """Bulk-Move: Verschiebt mehrere Emails in den Papierkorb mit einem einzigen IMAP-Befehl.
+        
+        Optimiert für Massenoperationen - verwendet COPY + DELETE für alle UIDs gleichzeitig.
+        
+        Args:
+            uids: Liste der IMAP UIDs
+            source_folder: Quell-Ordner (alle UIDs müssen aus diesem Ordner stammen)
+            
+        Returns:
+            Dict[uid, MoveResult] - Ergebnis pro UID
+        """
+        results = {}
+        
+        if not uids:
+            return results
+        
+        try:
+            trash_folder = self.find_trash_folder()
+            if not trash_folder:
+                for uid in uids:
+                    results[uid] = MoveResult(
+                        success=False,
+                        target_folder="Trash",
+                        message="Papierkorb-Ordner nicht gefunden"
+                    )
+                return results
+            
+            # 1. SELECT source folder
+            self.conn.select_folder(source_folder)
+            
+            # 2. Clear untagged responses
+            if hasattr(self.conn, '_imap'):
+                self.conn._imap.untagged_responses.clear()
+            
+            # 3. BULK COPY - alle UIDs mit einem Befehl!
+            self.logger.info(f"📤 BULK IMAP: UID COPY {uids} {trash_folder}")
+            copy_response = self.conn.copy(uids, trash_folder)
+            
+            # 4. Parse COPYUID für neue UIDs (falls UIDPLUS unterstützt)
+            uid_mapping = {}  # old_uid -> new_uid
+            target_uidvalidity = None
+            
+            if hasattr(self.conn, '_imap'):
+                untagged = self.conn._imap.untagged_responses
+                if 'COPYUID' in untagged and untagged['COPYUID']:
+                    copyuid_data = untagged['COPYUID'][0]
+                    if isinstance(copyuid_data, bytes):
+                        copyuid_str = copyuid_data.decode('utf-8')
+                        # Format: "uidvalidity source_uids dest_uids"
+                        # Beispiel: "1 443:445 8:10" oder "1 443,444,445 8,9,10"
+                        parts = copyuid_str.split()
+                        if len(parts) >= 3:
+                            target_uidvalidity = int(parts[0])
+                            source_str = parts[1]
+                            dest_str = parts[2]
+                            
+                            # Parse UID ranges/sequences
+                            source_uids = self._parse_uid_sequence(source_str)
+                            dest_uids = self._parse_uid_sequence(dest_str)
+                            
+                            if len(source_uids) == len(dest_uids):
+                                for s, d in zip(source_uids, dest_uids):
+                                    uid_mapping[s] = d
+                            
+                            self.logger.info(f"✅ COPYUID bulk parsed: {len(uid_mapping)} mappings")
+            
+            # 5. BULK DELETE - alle UIDs markieren und expunge
+            try:
+                self.conn.set_flags(uids, ['\\Deleted'])
+                self.conn.expunge()
+                self.logger.info(f"🗑️ BULK DELETE+EXPUNGE: {len(uids)} UIDs")
+            except Exception as e:
+                self.logger.warning(f"Bulk expunge warning (mails are copied): {e}")
+            
+            # 6. Ergebnisse erstellen
+            for uid in uids:
+                new_uid = uid_mapping.get(uid)
+                results[uid] = MoveResult(
+                    success=True,
+                    target_folder=trash_folder,
+                    target_uid=new_uid,
+                    target_uidvalidity=target_uidvalidity,
+                    message=f"Zu {trash_folder} verschoben" + (f" (UID: {new_uid})" if new_uid else "")
+                )
+            
+            self.logger.info(f"✅ BULK move_to_trash: {len(uids)} UIDs erfolgreich")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"BULK MOVE_TO_TRASH fehlgeschlagen: {e}")
+            for uid in uids:
+                if uid not in results:
+                    results[uid] = MoveResult(
+                        success=False,
+                        target_folder="Trash",
+                        message=f"Fehler: {str(e)}"
+                    )
+            return results
+
+    def _parse_uid_sequence(self, seq_str: str) -> List[int]:
+        """Parst IMAP UID-Sequenzen wie '1:5' oder '1,3,5' oder '1:3,5:7'.
+        
+        Args:
+            seq_str: UID-Sequenz String
+            
+        Returns:
+            Liste der UIDs
+        """
+        uids = []
+        for part in seq_str.split(','):
+            if ':' in part:
+                start, end = part.split(':')
+                uids.extend(range(int(start), int(end) + 1))
+            else:
+                uids.append(int(part))
+        return uids
 
     def move_to_folder(self, uid: int, target_folder: str, source_folder: str = "INBOX") -> MoveResult:
         """Phase 14c: Verschiebt Email in anderen Ordner (mit COPYUID Support)

@@ -262,6 +262,7 @@ def list_view():
         filter_flagged = (request.args.get("flagged") or "").lower()
         filter_attachments = (request.args.get("attach") or "").lower()
         filter_calendar = (request.args.get("calendar") or "").lower()  # Phase 25
+        filter_language = request.args.get("language") or None  # Phase 27: Sprachen-Filter
 
         # Datums-Filter
         filter_date_from = request.args.get("date_from") or None
@@ -323,6 +324,10 @@ def list_view():
             query = query.filter(models.RawEmail.is_calendar_invite == True)
         elif filter_calendar == "false":
             query = query.filter((models.RawEmail.is_calendar_invite == False) | (models.RawEmail.is_calendar_invite == None))
+
+        # Phase 27: Sprachen-Filter
+        if filter_language:
+            query = query.filter(models.RawEmail.detected_language == filter_language)
 
         # Phase 13: Datums-Filter
         if filter_date_from:
@@ -538,6 +543,18 @@ def list_view():
         )
         available_folders = sorted([f for (f,) in available_folders_query.all()])
 
+        # Phase 27: Sammle verfügbare Sprachen aus ALLEN RawEmails des Users
+        available_languages_query = (
+            db.query(models.RawEmail.detected_language)
+            .filter(
+                models.RawEmail.user_id == user.id,
+                models.RawEmail.deleted_at == None,
+                models.RawEmail.detected_language != None,
+            )
+            .distinct()
+        )
+        available_languages = sorted([lang for (lang,) in available_languages_query.all()])
+
         # Speichere aktuelle Filter-URL in Session (für "Zurück zur Liste" Button)
         filter_params = []
         if filter_account_id:
@@ -552,6 +569,8 @@ def list_view():
             filter_params.append(f"attach={filter_attachments}")
         if filter_calendar:
             filter_params.append(f"calendar={filter_calendar}")
+        if filter_language:
+            filter_params.append(f"language={filter_language}")
         if search_term:
             filter_params.append(f"search={search_term}")
         if filter_tag_ids:
@@ -590,6 +609,8 @@ def list_view():
             filter_flagged=filter_flagged,
             filter_attachments=filter_attachments,
             filter_calendar=filter_calendar,  # Phase 25
+            filter_language=filter_language,  # Phase 27
+            available_languages=available_languages,  # Phase 27
             filter_date_from=filter_date_from,
             filter_date_to=filter_date_to,
             sort_by=sort_by,
