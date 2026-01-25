@@ -1,7 +1,7 @@
 # src/blueprints/email_actions.py
 """Email Actions Blueprint - CRUD-Operationen für Emails.
 
-Routes (11 total):
+Routes (12 total):
     1. /email/<id>/done (POST) - als erledigt markieren
     2. /email/<id>/undo (POST) - erledigt rückgängig
     3. /email/<id>/reprocess (POST) - erneut verarbeiten
@@ -13,6 +13,7 @@ Routes (11 total):
     9. /email/<id>/mark-read (POST) - als gelesen markieren
     10. /email/<id>/toggle-read (POST) - Lese-Status togglen
     11. /email/<id>/mark-flag (POST) - Flag togglen
+    12. /emails/bulk-action (POST) - Massenbearbeitung (NEU)
 """
 
 from flask import Blueprint, jsonify, request, redirect, url_for, session, flash
@@ -22,6 +23,7 @@ import importlib
 import logging
 
 from src.helpers import get_db_session, get_current_user_model
+from src.services.email_action_service import EmailActionService
 
 email_actions_bp = Blueprint("email_actions", __name__)
 logger = logging.getLogger(__name__)
@@ -95,39 +97,20 @@ def _get_imap_fetcher(account, master_key):
 @email_actions_bp.route("/email/<int:raw_email_id>/done", methods=["POST"])
 @login_required
 def mark_done(raw_email_id):
-    """Markiert eine Mail als erledigt"""
-    models = _get_models()
-    
+    """Markiert eine Mail als erledigt - nutzt EmailActionService"""
     with get_db_session() as db:
-        try:
-            user = get_current_user_model(db)
-            if not user:
-                flash("Benutzer nicht gefunden. Bitte neu anmelden.", "error")
-                return redirect(url_for("auth.login"))
-
-            email = (
-                db.query(models.ProcessedEmail)
-                .join(models.RawEmail)
-                .filter(
-                    models.RawEmail.id == raw_email_id,
-                    models.RawEmail.user_id == user.id,
-                )
-                .first()
-            )
-
-            if email:
-                email.done = True
-                email.done_at = datetime.now(UTC)
-                db.commit()
-                logger.info(f"✅ Mail {raw_email_id} als erledigt markiert")
-            else:
-                flash("E-Mail nicht gefunden.", "warning")
-
-        except Exception as e:
-            db.rollback()
-            logger.error(f"❌ Fehler bei mark_done für Email {raw_email_id}: {type(e).__name__}")
-            flash("Fehler beim Markieren der E-Mail. Bitte versuche es erneut.", "error")
-
+        user = get_current_user_model(db)
+        if not user:
+            flash("Benutzer nicht gefunden. Bitte neu anmelden.", "error")
+            return redirect(url_for("auth.login"))
+        
+        result = EmailActionService.mark_done_single(db, user.id, raw_email_id)
+        
+        if result.success:
+            logger.info(f"✅ Mail {raw_email_id} als erledigt markiert")
+        else:
+            flash(result.error or "E-Mail nicht gefunden.", "warning")
+        
         return redirect(request.referrer or url_for("emails.list_view"))
 
 
@@ -137,39 +120,20 @@ def mark_done(raw_email_id):
 @email_actions_bp.route("/email/<int:raw_email_id>/undo", methods=["POST"])
 @login_required
 def mark_undone(raw_email_id):
-    """Macht 'erledigt'-Markierung rückgängig"""
-    models = _get_models()
-    
+    """Macht 'erledigt'-Markierung rückgängig - nutzt EmailActionService"""
     with get_db_session() as db:
-        try:
-            user = get_current_user_model(db)
-            if not user:
-                flash("Benutzer nicht gefunden. Bitte neu anmelden.", "error")
-                return redirect(url_for("auth.login"))
-
-            email = (
-                db.query(models.ProcessedEmail)
-                .join(models.RawEmail)
-                .filter(
-                    models.RawEmail.id == raw_email_id,
-                    models.RawEmail.user_id == user.id,
-                )
-                .first()
-            )
-
-            if email:
-                email.done = False
-                email.done_at = None
-                db.commit()
-                logger.info(f"↩️ Mail {raw_email_id} zurückgesetzt")
-            else:
-                flash("E-Mail nicht gefunden.", "warning")
-
-        except Exception as e:
-            db.rollback()
-            logger.error(f"❌ Fehler bei mark_undone für Email {raw_email_id}: {type(e).__name__}")
-            flash("Fehler beim Zurücksetzen der E-Mail. Bitte versuche es erneut.", "error")
-
+        user = get_current_user_model(db)
+        if not user:
+            flash("Benutzer nicht gefunden. Bitte neu anmelden.", "error")
+            return redirect(url_for("auth.login"))
+        
+        result = EmailActionService.mark_undone_single(db, user.id, raw_email_id)
+        
+        if result.success:
+            logger.info(f"↩️ Mail {raw_email_id} zurückgesetzt")
+        else:
+            flash(result.error or "E-Mail nicht gefunden.", "warning")
+        
         return redirect(request.referrer or url_for("emails.list_view"))
 
 
@@ -461,75 +425,25 @@ def correct_email(raw_email_id: int):
 @email_actions_bp.route("/email/<int:raw_email_id>/delete", methods=["POST"])
 @login_required
 def delete_email(raw_email_id):
-    """Löscht eine Email auf dem Server"""
-    models = _get_models()
-    mail_sync = _get_mail_sync()
-    
+    """Löscht eine Email auf dem Server - nutzt EmailActionService"""
     with get_db_session() as db:
-        try:
-            user = get_current_user_model(db)
-            if not user:
-                return jsonify({"error": "Nicht authentifiziert"}), 401
-
-            email = (
-                db.query(models.ProcessedEmail)
-                .join(models.RawEmail)
-                .filter(
-                    models.RawEmail.id == raw_email_id,
-                    models.RawEmail.user_id == user.id,
-
-                )
-                .first()
-            )
-
-            if not email:
-                return jsonify({"error": "Email nicht gefunden"}), 404
-
-            raw_email = email.raw_email
-            master_key = session.get("master_key")
-            if not master_key:
-                return jsonify({"error": "Master-Key erforderlich"}), 401
-
-            account = (
-                db.query(models.MailAccount)
-                .filter(
-                    models.MailAccount.id == raw_email.mail_account_id,
-                    models.MailAccount.user_id == user.id,
-                )
-                .first()
-            )
-
-            if not account or account.auth_type != "imap":
-                return jsonify({"error": "IMAP-Account erforderlich"}), 400
-
-            fetcher = _get_imap_fetcher(account, master_key)
-            
-            try:
-                fetcher.connect()
-                
-                if not fetcher.connection:
-                    return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
-
-                synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
-                uid_to_use = raw_email.imap_uid
-                folder_to_use = raw_email.imap_folder or "INBOX"
-                success, message = synchronizer.delete_email(uid_to_use, folder_to_use)
-
-                if success:
-                    email.deleted_at = datetime.now(UTC)
-                    db.commit()
-                    logger.info(f"✓ Email {raw_email_id} auf Server gelöscht")
-                    return jsonify({"success": True, "message": message})
-                else:
-                    return jsonify({"error": message}), 500
-
-            finally:
-                fetcher.disconnect()
-
-        except Exception as e:
-            db.rollback()
-            logger.error(f"❌ Fehler bei delete_email für Email {raw_email_id}: {type(e).__name__}")
-            return jsonify({"error": f"Löschen fehlgeschlagen: {str(e)}"}), 500
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key erforderlich"}), 401
+        
+        result = EmailActionService.delete_permanent_single(
+            db, user.id, raw_email_id, master_key
+        )
+        
+        if result.success:
+            logger.info(f"✓ Email {raw_email_id} auf Server gelöscht")
+            return jsonify({"success": True, "message": result.message})
+        else:
+            return jsonify({"error": result.error}), 500
 
 
 # =============================================================================
@@ -538,86 +452,25 @@ def delete_email(raw_email_id):
 @email_actions_bp.route("/email/<int:raw_email_id>/move-trash", methods=["POST"])
 @login_required
 def move_email_to_trash(raw_email_id):
-    """Verschiebt eine Email in den Papierkorb auf dem Server"""
-    models = _get_models()
-    mail_sync = _get_mail_sync()
-    
+    """Verschiebt eine Email in den Papierkorb auf dem Server - nutzt EmailActionService"""
     with get_db_session() as db:
-        try:
-            user = get_current_user_model(db)
-            if not user:
-                return jsonify({"error": "Nicht authentifiziert"}), 401
-
-            email = (
-                db.query(models.ProcessedEmail)
-                .join(models.RawEmail)
-                .filter(
-                    models.RawEmail.id == raw_email_id,
-                    models.RawEmail.user_id == user.id,
-                    models.RawEmail.deleted_at == None,
-                    models.ProcessedEmail.deleted_at == None,
-                )
-                .first()
-            )
-
-            if not email:
-                return jsonify({"error": "Email nicht gefunden"}), 404
-
-            raw_email = email.raw_email
-            master_key = session.get("master_key")
-            if not master_key:
-                return jsonify({"error": "Master-Key erforderlich"}), 401
-
-            account = (
-                db.query(models.MailAccount)
-                .filter(
-                    models.MailAccount.id == raw_email.mail_account_id,
-                    models.MailAccount.user_id == user.id,
-                )
-                .first()
-            )
-
-            if not account or account.auth_type != "imap":
-                return jsonify({"error": "IMAP-Account erforderlich"}), 400
-
-            fetcher = _get_imap_fetcher(account, master_key)
-            
-            try:
-                fetcher.connect()
-                
-                if not fetcher.connection:
-                    return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
-
-                synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
-                uid_to_use = raw_email.imap_uid
-                folder_to_use = raw_email.imap_folder or "INBOX"
-
-                result = synchronizer.move_to_trash(uid_to_use, folder_to_use)
-
-                if result.success:
-                    raw_email.imap_folder = result.target_folder
-                    
-                    if result.target_uid is not None:
-                        raw_email.imap_uid = result.target_uid
-                    
-                    if result.target_uidvalidity is not None:
-                        raw_email.imap_uidvalidity = result.target_uidvalidity
-                    
-                    email.deleted_at = datetime.now(UTC)
-                    db.commit()
-                    
-                    logger.info(f"✅ Email {raw_email_id} in Papierkorb verschoben")
-                    return jsonify({"success": True, "message": result.message})
-                else:
-                    return jsonify({"error": result.message}), 500
-
-            finally:
-                fetcher.disconnect()
-
-        except Exception as e:
-            db.rollback()
-            logger.error(f"❌ Fehler bei move_email_to_trash für Email {raw_email_id}: {type(e).__name__}")
-            return jsonify({"error": f"Verschieben fehlgeschlagen: {str(e)}"}), 500
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key erforderlich"}), 401
+        
+        result = EmailActionService.move_to_trash_single(
+            db, user.id, raw_email_id, master_key
+        )
+        
+        if result.success:
+            logger.info(f"✅ Email {raw_email_id} in Papierkorb verschoben")
+            return jsonify({"success": True, "message": result.message})
+        else:
+            return jsonify({"error": result.error}), 500
 
 
 # =============================================================================
@@ -626,91 +479,30 @@ def move_email_to_trash(raw_email_id):
 @email_actions_bp.route("/email/<int:raw_email_id>/move-to-folder", methods=["POST"])
 @login_required
 def move_email_to_folder(raw_email_id):
-    """Verschiebt eine Email in einen bestimmten Ordner"""
-    models = _get_models()
-    mail_sync = _get_mail_sync()
-    
+    """Verschiebt eine Email in einen bestimmten Ordner - nutzt EmailActionService"""
     with get_db_session() as db:
-        try:
-            user = get_current_user_model(db)
-            if not user:
-                return jsonify({"error": "Nicht authentifiziert"}), 401
-
-            email = (
-                db.query(models.ProcessedEmail)
-                .join(models.RawEmail)
-                .filter(
-                    models.RawEmail.id == raw_email_id,
-                    models.RawEmail.user_id == user.id,
-                )
-                .first()
-            )
-
-            if not email:
-                return jsonify({"error": "Email nicht gefunden"}), 404
-
-            raw_email = email.raw_email
-            master_key = session.get("master_key")
-            if not master_key:
-                return jsonify({"error": "Master-Key erforderlich"}), 401
-
-            data = request.get_json() or {}
-            target_folder = data.get("target_folder")
-            if not target_folder:
-                return jsonify({"error": "Ziel-Ordner erforderlich"}), 400
-
-            account = (
-                db.query(models.MailAccount)
-                .filter(
-                    models.MailAccount.id == raw_email.mail_account_id,
-                    models.MailAccount.user_id == user.id,
-                )
-                .first()
-            )
-
-            if not account or account.auth_type != "imap":
-                return jsonify({"error": "IMAP-Account erforderlich"}), 400
-
-            fetcher = _get_imap_fetcher(account, master_key)
-            
-            try:
-                fetcher.connect()
-                
-                if not fetcher.connection:
-                    return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
-
-                synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
-                uid_to_use = raw_email.imap_uid
-                folder_to_use = raw_email.imap_folder or "INBOX"
-
-                result = synchronizer.move_to_folder(
-                    uid_to_use, target_folder, folder_to_use
-                )
-
-                if result.success:
-                    raw_email.imap_folder = result.target_folder
-                    
-                    if result.target_uid is not None:
-                        raw_email.imap_uid = result.target_uid
-                    
-                    if result.target_uidvalidity is not None:
-                        raw_email.imap_uidvalidity = result.target_uidvalidity
-                    
-                    raw_email.imap_last_seen_at = datetime.now(UTC)
-                    db.commit()
-                    
-                    logger.info(f"✅ Email {raw_email_id} zu {result.target_folder} verschoben")
-                    return jsonify({"success": True, "message": result.message})
-                else:
-                    return jsonify({"error": result.message}), 500
-
-            finally:
-                fetcher.disconnect()
-
-        except Exception as e:
-            db.rollback()
-            logger.error(f"❌ Fehler bei move_email_to_folder für Email {raw_email_id}: {type(e).__name__}")
-            return jsonify({"error": f"Verschieben fehlgeschlagen: {str(e)}"}), 500
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key erforderlich"}), 401
+        
+        data = request.get_json() or {}
+        target_folder = data.get("target_folder")
+        if not target_folder:
+            return jsonify({"error": "Ziel-Ordner erforderlich"}), 400
+        
+        result = EmailActionService.move_to_folder(
+            db, user.id, raw_email_id, target_folder, master_key
+        )
+        
+        if result.success:
+            logger.info(f"✅ Email {raw_email_id} zu {target_folder} verschoben")
+            return jsonify({"success": True, "message": result.message})
+        else:
+            return jsonify({"error": result.error}), 500
 
 
 # =============================================================================
@@ -719,74 +511,23 @@ def move_email_to_folder(raw_email_id):
 @email_actions_bp.route("/email/<int:raw_email_id>/mark-read", methods=["POST"])
 @login_required
 def mark_email_read(raw_email_id):
-    """Markiert eine Email als gelesen auf dem Server"""
-    models = _get_models()
-    mail_sync = _get_mail_sync()
-    
+    """Markiert eine Email als gelesen auf dem Server - nutzt EmailActionService"""
     with get_db_session() as db:
-        try:
-            user = get_current_user_model(db)
-            if not user:
-                return jsonify({"error": "Nicht authentifiziert"}), 401
-
-            email = (
-                db.query(models.ProcessedEmail)
-                .join(models.RawEmail)
-                .filter(
-                    models.RawEmail.id == raw_email_id,
-                    models.RawEmail.user_id == user.id,
-                )
-                .first()
-            )
-
-            if not email:
-                return jsonify({"error": "Email nicht gefunden"}), 404
-
-            raw_email = email.raw_email
-            master_key = session.get("master_key")
-            if not master_key:
-                return jsonify({"error": "Master-Key erforderlich"}), 401
-
-            account = (
-                db.query(models.MailAccount)
-                .filter(
-                    models.MailAccount.id == raw_email.mail_account_id,
-                    models.MailAccount.user_id == user.id,
-                )
-                .first()
-            )
-
-            if not account or account.auth_type != "imap":
-                return jsonify({"error": "IMAP-Account erforderlich"}), 400
-
-            fetcher = _get_imap_fetcher(account, master_key)
-            
-            try:
-                fetcher.connect()
-                
-                if not fetcher.connection:
-                    return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
-
-                synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
-                uid_to_use = raw_email.imap_uid
-                folder_to_use = raw_email.imap_folder or "INBOX"
-                success, message = synchronizer.mark_as_read(uid_to_use, folder_to_use)
-
-                if success:
-                    raw_email.imap_is_seen = True
-                    db.commit()
-                    logger.info(f"✅ Email {raw_email_id} als gelesen markiert")
-                    return jsonify({"success": True, "message": message})
-                else:
-                    return jsonify({"error": message}), 500
-
-            finally:
-                fetcher.disconnect()
-
-        except Exception as e:
-            db.rollback()
-            logger.error(f"❌ Fehler bei mark_email_read für Email {raw_email_id}: {type(e).__name__}")
-            return jsonify({"error": f"Markieren fehlgeschlagen: {str(e)}"}), 500
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key erforderlich"}), 401
+        
+        result = EmailActionService.mark_read(db, user.id, raw_email_id, master_key)
+        
+        if result.success:
+            logger.info(f"✅ Email {raw_email_id} als gelesen markiert")
+            return jsonify({"success": True, "message": result.message})
+        else:
+            return jsonify({"error": result.error}), 500
 
 
 # =============================================================================
@@ -795,84 +536,25 @@ def mark_email_read(raw_email_id):
 @email_actions_bp.route("/email/<int:raw_email_id>/toggle-read", methods=["POST"])
 @login_required
 def toggle_email_read(raw_email_id):
-    """Togglet Gelesen/Ungelesen Status einer Email auf dem Server"""
-    models = _get_models()
-    mail_sync = _get_mail_sync()
-    
+    """Togglet Gelesen/Ungelesen Status einer Email - nutzt EmailActionService"""
     with get_db_session() as db:
-        try:
-            user = get_current_user_model(db)
-            if not user:
-                return jsonify({"error": "Nicht authentifiziert"}), 401
-
-            email = (
-                db.query(models.ProcessedEmail)
-                .join(models.RawEmail)
-                .filter(
-                    models.RawEmail.id == raw_email_id,
-                    models.RawEmail.user_id == user.id,
-                )
-                .first()
-            )
-
-            if not email:
-                return jsonify({"error": "Email nicht gefunden"}), 404
-
-            raw_email = email.raw_email
-            master_key = session.get("master_key")
-            if not master_key:
-                return jsonify({"error": "Master-Key erforderlich"}), 401
-
-            account = (
-                db.query(models.MailAccount)
-                .filter(
-                    models.MailAccount.id == raw_email.mail_account_id,
-                    models.MailAccount.user_id == user.id,
-                )
-                .first()
-            )
-
-            if not account or account.auth_type != "imap":
-                return jsonify({"error": "IMAP-Account erforderlich"}), 400
-
-            fetcher = _get_imap_fetcher(account, master_key)
-            
-            try:
-                fetcher.connect()
-                
-                if not fetcher.connection:
-                    return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
-
-                synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
-                uid_to_use = raw_email.imap_uid
-                folder_to_use = raw_email.imap_folder or "INBOX"
-
-                if raw_email.imap_is_seen:
-                    success, message = synchronizer.mark_as_unread(
-                        uid_to_use, folder_to_use
-                    )
-                    is_now_seen = False
-                else:
-                    success, message = synchronizer.mark_as_read(uid_to_use, folder_to_use)
-                    is_now_seen = True
-
-                if success:
-                    raw_email.imap_is_seen = is_now_seen
-                    db.commit()
-                    logger.info(f"✅ Email {raw_email_id} toggle-read: is_seen={is_now_seen}")
-                    return jsonify(
-                        {"success": True, "message": message, "is_seen": is_now_seen}
-                    )
-                else:
-                    return jsonify({"error": message}), 500
-
-            finally:
-                fetcher.disconnect()
-
-        except Exception as e:
-            db.rollback()
-            logger.error(f"❌ Fehler bei toggle_email_read für Email {raw_email_id}: {type(e).__name__}")
-            return jsonify({"error": f"Toggle fehlgeschlagen: {str(e)}"}), 500
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key erforderlich"}), 401
+        
+        result = EmailActionService.toggle_read(db, user.id, raw_email_id, master_key)
+        
+        if result.success:
+            # Parse is_seen state from message (format: "is_seen:True" or "is_seen:False")
+            is_seen = result.message.endswith(":True")
+            logger.info(f"✅ Email {raw_email_id} toggle-read: is_seen={is_seen}")
+            return jsonify({"success": True, "message": result.message, "is_seen": is_seen})
+        else:
+            return jsonify({"error": result.error}), 500
 
 
 # =============================================================================
@@ -881,79 +563,124 @@ def toggle_email_read(raw_email_id):
 @email_actions_bp.route("/email/<int:raw_email_id>/mark-flag", methods=["POST"])
 @login_required
 def toggle_email_flag(raw_email_id):
-    """Togglet Wichtig-Flag einer Email auf dem Server"""
-    models = _get_models()
-    mail_sync = _get_mail_sync()
+    """Togglet Wichtig-Flag einer Email - nutzt EmailActionService"""
+    with get_db_session() as db:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key erforderlich"}), 401
+        
+        result = EmailActionService.toggle_flag(db, user.id, raw_email_id, master_key)
+        
+        if result.success:
+            # Parse flagged state from message (format: "flagged:True" or "flagged:False")
+            flagged = result.message.endswith(":True")
+            logger.info(f"✅ Email {raw_email_id} toggle-flag: flagged={flagged}")
+            return jsonify({"success": True, "message": result.message, "flagged": flagged})
+        else:
+            return jsonify({"error": result.error}), 500
+
+
+# =============================================================================
+# Route 12: /emails/bulk-action (NEU - Massenbearbeitung)
+# =============================================================================
+@email_actions_bp.route("/emails/bulk-action", methods=["POST"])
+@login_required
+def bulk_email_action():
+    """Führt eine Aktion auf mehreren Emails gleichzeitig aus.
+    
+    Request Body:
+        {
+            "action": "mark_done" | "mark_undone" | "move_trash" | "delete_permanent",
+            "email_ids": [1, 2, 3, ...]
+        }
+    
+    Response:
+        {
+            "total": 3,
+            "succeeded": 2,
+            "failed": 1,
+            "all_success": false,
+            "partial_success": true,
+            "results": [
+                {"raw_email_id": 1, "success": true, "message": "OK"},
+                {"raw_email_id": 2, "success": true, "message": "OK"},
+                {"raw_email_id": 3, "success": false, "error": "IMAP-Fehler"}
+            ]
+        }
+    """
+    VALID_ACTIONS = ["mark_done", "mark_undone", "move_trash", "delete_permanent"]
     
     with get_db_session() as db:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "JSON-Body erforderlich"}), 400
+        
+        action = data.get("action")
+        email_ids = data.get("email_ids", [])
+        
+        # Validierung
+        if not action:
+            return jsonify({"error": "action ist erforderlich"}), 400
+        
+        if action not in VALID_ACTIONS:
+            return jsonify({
+                "error": f"Ungültige Aktion '{action}'. Erlaubt: {VALID_ACTIONS}"
+            }), 400
+        
+        if not email_ids or not isinstance(email_ids, list):
+            return jsonify({"error": "email_ids muss eine nicht-leere Liste sein"}), 400
+        
+        # Limit für Bulk-Operationen (Sicherheit)
+        MAX_BULK_SIZE = 100
+        if len(email_ids) > MAX_BULK_SIZE:
+            return jsonify({
+                "error": f"Maximal {MAX_BULK_SIZE} Emails pro Bulk-Aktion erlaubt"
+            }), 400
+        
+        # IDs validieren (müssen Integers sein)
         try:
-            user = get_current_user_model(db)
-            if not user:
-                return jsonify({"error": "Nicht authentifiziert"}), 401
-
-            email = (
-                db.query(models.ProcessedEmail)
-                .join(models.RawEmail)
-                .filter(
-                    models.RawEmail.id == raw_email_id,
-                    models.RawEmail.user_id == user.id,
-                )
-                .first()
-            )
-
-            if not email:
-                return jsonify({"error": "Email nicht gefunden"}), 404
-
-            raw_email = email.raw_email
+            email_ids = [int(eid) for eid in email_ids]
+        except (ValueError, TypeError):
+            return jsonify({"error": "email_ids müssen Integer-Werte sein"}), 400
+        
+        # Action ausführen
+        logger.info(f"📦 Bulk-Action '{action}' für {len(email_ids)} Emails (User {user.id})")
+        
+        if action == "mark_done":
+            result = EmailActionService.mark_done(db, user.id, email_ids)
+        
+        elif action == "mark_undone":
+            result = EmailActionService.mark_undone(db, user.id, email_ids)
+        
+        elif action == "move_trash":
             master_key = session.get("master_key")
             if not master_key:
-                return jsonify({"error": "Master-Key erforderlich"}), 401
-
-            account = (
-                db.query(models.MailAccount)
-                .filter(
-                    models.MailAccount.id == raw_email.mail_account_id,
-                    models.MailAccount.user_id == user.id,
-                )
-                .first()
-            )
-
-            if not account or account.auth_type != "imap":
-                return jsonify({"error": "IMAP-Account erforderlich"}), 400
-
-            fetcher = _get_imap_fetcher(account, master_key)
-            
-            try:
-                fetcher.connect()
-                
-                if not fetcher.connection:
-                    return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
-
-                synchronizer = mail_sync.MailSynchronizer(fetcher.connection, logger)
-                uid_to_use = raw_email.imap_uid
-                folder_to_use = raw_email.imap_folder or "INBOX"
-
-                if raw_email.imap_is_flagged:
-                    success, message = synchronizer.unset_flag(uid_to_use, folder_to_use)
-                    flag_state = False
-                else:
-                    success, message = synchronizer.set_flag(uid_to_use, folder_to_use)
-                    flag_state = True
-
-                if success:
-                    raw_email.imap_is_flagged = flag_state
-                    db.commit()
-                    logger.info(f"✅ Email {raw_email_id} toggle-flag: flagged={flag_state}")
-                    return jsonify(
-                        {"success": True, "message": message, "flagged": flag_state}
-                    )
-                else:
-                    return jsonify({"error": message}), 500
-
-            finally:
-                fetcher.disconnect()
-
-        except Exception as e:
-            db.rollback()
-            logger.error(f"❌ Fehler bei toggle_email_flag für Email {raw_email_id}: {type(e).__name__}")
-            return jsonify({"error": f"Flag-Toggle fehlgeschlagen: {str(e)}"}), 500
+                return jsonify({"error": "Master-Key erforderlich. Bitte neu einloggen."}), 401
+            result = EmailActionService.move_to_trash(db, user.id, email_ids, master_key)
+        
+        elif action == "delete_permanent":
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Master-Key erforderlich. Bitte neu einloggen."}), 401
+            result = EmailActionService.delete_permanent(db, user.id, email_ids, master_key)
+        
+        else:
+            # Sollte nicht passieren wegen VALID_ACTIONS check
+            return jsonify({"error": f"Aktion '{action}' nicht implementiert"}), 501
+        
+        # Response
+        logger.info(
+            f"📦 Bulk-Action '{action}' abgeschlossen: "
+            f"{result.succeeded}/{result.total} erfolgreich"
+        )
+        
+        status_code = 200 if result.all_success else (207 if result.partial_success else 500)
+        return jsonify(result.to_dict()), status_code

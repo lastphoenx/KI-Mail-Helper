@@ -1,6 +1,6 @@
 ﻿# 📧 KI-Mail-Helper – Benutzerhandbuch
 
-**Version:** 2.2.1 (Multi-User Edition)  
+**Version:** 2.2.2 (Multi-User Edition)  
 **Stand:** Januar 2026
 
 ---
@@ -18,9 +18,10 @@
 9. [KI-Priorisierung](#9-ki-priorisierung)
 10. [Mail-Verarbeitung & Status](#10-mail-verarbeitung--status)
 11. [KI-Übersetzer](#11-ki-übersetzer)
-12. [Einstellungen](#12-einstellungen)
-13. [Sicherheit & Datenschutz](#13-sicherheit--datenschutz)
-14. [Fehlerbehebung](#14-fehlerbehebung)
+12. [Ordner-Audit](#12-ordner-audit)
+13. [Einstellungen](#13-einstellungen)
+14. [Sicherheit & Datenschutz](#14-sicherheit--datenschutz)
+15. [Fehlerbehebung](#15-fehlerbehebung)
 
 ---
 
@@ -618,7 +619,116 @@ Nutzt **Helsinki-NLP/opus-mt** Modelle von Hugging Face:
 
 ---
 
-## 11. Einstellungen
+## 12. Ordner-Audit
+
+Das **Ordner-Audit** (Trash-Audit) analysiert Papierkorb-Ordner auf potenziell wichtige Emails, die versehentlich gelöscht wurden.
+
+### Zugang
+
+- **URL:** `/trash-audit` oder in der Ordner-Ansicht über "🗂️ Ordner-Audit"
+- **Voraussetzung:** Angemeldeter Benutzer mit mindestens einem Mail-Account
+
+### Funktionsweise
+
+Das System scannt alle Emails im ausgewählten Ordner (z.B. Papierkorb) und bewertet jede Email anhand von:
+
+| Kriterium | Beschreibung |
+|-----------|--------------|
+| **🏛️ Vertrauenswürdige Domains** | Bekannte Behörden, Banken, Versicherungen (z.B. admin.ch, sparkasse.de) |
+| **📋 Wichtige Keywords** | Betreff-Schlüsselwörter wie "Rechnung", "Kündigung", "Mahnung", "Vertrag" |
+| **🔇 Sichere Patterns** | Bekannte unwichtige Emails (Newsletter, Marketing, Werbung) |
+| **⭐ VIP-Absender** | Manuell definierte wichtige Absender |
+
+### Scan-Ergebnis
+
+Nach dem Scan zeigt die Detailansicht:
+
+- **Confidence-Score:** Wie sicher ist die Bewertung (0-100%)
+- **Kategorie:** Grün (sicher löschen), Gelb (prüfen), Rot (wichtig!)
+- **Gründe:** Warum wurde diese Bewertung getroffen
+
+### Konfiguration (Tab)
+
+Im Ordner-Audit-Dialog gibt es einen **"Konfiguration"**-Tab mit folgenden Einstellungen:
+
+#### 🏛️ Vertrauenswürdige Domains
+
+Domains von denen Emails als wichtig eingestuft werden:
+
+```
+admin.ch, estv.admin.ch, seco.admin.ch
+sparkasse.de, commerzbank.de, ing.de
+suva.ch, svazurich.ch, swica.ch
+```
+
+#### 📋 Wichtige Keywords
+
+Betreff-Schlüsselwörter die auf wichtige Emails hinweisen:
+
+```
+rechnung, invoice, fattura, facture
+kündigung, risoluzione, résiliation
+mahnung, sollecito, rappel
+vertrag, contratto, contrat
+```
+
+> 💡 Mehrsprachige Keywords (DE/CH/IT/FR) sind in den Defaults enthalten.
+
+#### 🔇 Sichere Patterns (Betreff)
+
+Betreff-Muster die als unwichtig gelten:
+
+```
+newsletter, digest, marketing
+rabatt, gutschein, sonderangebot
+```
+
+#### 🔇 Sichere Patterns (Absender)
+
+Absender-Muster die als unwichtig gelten:
+
+```
+@newsletter., @marketing., @promo.
+noreply@, no-reply@, donotreply@
+```
+
+#### ⭐ VIP-Absender
+
+Wichtige Absender mit erweiterten Matching-Optionen:
+
+| Format | Beispiel | Beschreibung |
+|--------|----------|--------------|
+| **Exakt** | `chef@firma.ch` | Nur diese eine Adresse |
+| **Wildcard** | `*@firma.ch` | Alle Adressen von firma.ch |
+| **Regex** | `/.*@(firma|konzern)\.ch/` | Regex-Pattern (mit `/.../' umschließen) |
+
+### Defaults laden
+
+Klicke auf **"📥 Defaults laden"** um vordefinierte Listen für mehrere Länder/Sprachen zu importieren:
+
+- **CH:** Schweizer Behörden (admin.ch, ahv-iv.ch, etc.)
+- **DE:** Deutsche Behörden (bund.de, arbeitsagentur.de, etc.)
+- **IT:** Italienische Behörden (gov.it, inps.it, etc.)
+- **FR:** Französische Behörden (gouv.fr, impots.gouv.fr, etc.)
+
+Die Defaults enthalten auch mehrsprachige Keywords für:
+- 📄 Rechnungen/Finanzen
+- 📋 Verträge/Kündigungen
+- ⚠️ Mahnungen/Fristen
+- 🏛️ Behördliche Korrespondenz
+
+### VIP-Absender aus Email hinzufügen
+
+In der Email-Detailansicht kannst du einen Absender direkt als VIP markieren:
+
+1. Öffne die Email
+2. Klicke auf **"⭐ Als VIP Absender"**
+3. Wähle ob für alle Accounts oder nur diesen Account
+4. Speichern
+
+---
+
+## 13. Einstellungen
 
 ### Mail-Accounts
 
@@ -646,7 +756,7 @@ Nutzt **Helsinki-NLP/opus-mt** Modelle von Hugging Face:
 
 ---
 
-## 12. Sicherheit & Datenschutz
+## 14. Sicherheit & Datenschutz
 
 ### Zero-Knowledge-Architektur
 
@@ -664,7 +774,7 @@ Nutzt **Helsinki-NLP/opus-mt** Modelle von Hugging Face:
 
 ---
 
-## 13. Fehlerbehebung
+## 15. Fehlerbehebung
 
 ### "Emails werden nicht abgerufen"
 
