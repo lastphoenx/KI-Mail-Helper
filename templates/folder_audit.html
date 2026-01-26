@@ -78,8 +78,13 @@
     .email-item.selected {
         outline: 2px solid #0d6efd;
     }
-    .email-item .select-area {
-        cursor: pointer;
+    .email-item .btn-group-sm .btn {
+        font-size: 0.75rem;
+        padding: 0.2rem 0.4rem;
+    }
+    .email-item .email-select-btn {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
     }
     
     .email-subject {
@@ -1009,12 +1014,46 @@
                             </div>
                             <div class="email-reasons">${escapeHtml(reasons)}</div>
                         </div>
-                        <div class="text-end select-area" style="min-width: 100px;">
-                            <div class="email-date">${date}</div>
-                            <div>
-                                <input type="checkbox" class="form-check-input email-checkbox" 
-                                       data-uid="${email.uid}"
-                                       ${isSelected ? 'checked' : ''}>
+                        <div class="text-end d-flex flex-column gap-1" style="min-width: 120px;">
+                            <div class="email-date small text-muted">${date}</div>
+                            <button class="btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline-secondary'} email-select-btn"
+                                    data-uid="${email.uid}">
+                                ${isSelected ? '✓ Ausgewählt' : 'Auswählen'}
+                            </button>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-secondary dropdown-toggle email-add-btn" 
+                                        type="button"
+                                        data-bs-toggle="dropdown" 
+                                        aria-expanded="false"
+                                        data-sender="${escapeHtml(email.sender || '')}"
+                                        data-domain="${escapeHtml(email.sender ? email.sender.split('@')[1] || '' : '')}"
+                                        data-subject="${escapeHtml(email.subject || '')}"
+                                        data-category="${email.category}"
+                                        title="Zu Konfigurationsliste hinzufügen">
+                                    <i class="bi bi-plus-circle"></i> Hinzufügen
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><h6 class="dropdown-header">Zur Liste hinzufügen</h6></li>
+                                    <li><a class="dropdown-item email-add-action" href="#" data-action="trusted-domain">
+                                        <i class="bi bi-shield-check text-success"></i> Trusted Domain
+                                    </a></li>
+                                    <li><a class="dropdown-item email-add-action" href="#" data-action="important-keyword">
+                                        <i class="bi bi-exclamation-triangle text-danger"></i> Wichtiges Keyword
+                                    </a></li>
+                                    <li><a class="dropdown-item email-add-action" href="#" data-action="safe-subject">
+                                        <i class="bi bi-envelope-check text-warning"></i> Safe Betreff-Pattern
+                                    </a></li>
+                                    <li><a class="dropdown-item email-add-action" href="#" data-action="safe-sender">
+                                        <i class="bi bi-person-check text-warning"></i> Safe Absender-Pattern
+                                    </a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item email-add-action" href="#" data-action="vip-sender">
+                                        <i class="bi bi-star-fill text-warning"></i> VIP Absender
+                                    </a></li>
+                                    <li><a class="dropdown-item email-add-action" href="#" data-action="auto-rule">
+                                        <i class="bi bi-lightning text-info"></i> Auto-Löschregel
+                                    </a></li>
+                                </ul>
                             </div>
                         </div>
                     </div>
@@ -1024,18 +1063,27 @@
         
         container.innerHTML = html;
         
-        // Event Delegation für Checkbox-Bereich (nicht ganzes Item, damit Text selektierbar)
-        container.querySelectorAll('.select-area').forEach(function(area) {
-            area.addEventListener('click', function(e) {
-                if (e.target.classList.contains('email-checkbox')) return;
-                const uid = parseInt(this.closest('.email-item').dataset.uid);
+        // Event Handler für Auswählen-Buttons
+        container.querySelectorAll('.email-select-btn').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const uid = parseInt(this.dataset.uid);
                 toggleSelect(uid);
             });
         });
-        container.querySelectorAll('.email-checkbox').forEach(function(checkbox) {
-            checkbox.addEventListener('click', function(e) {
+        
+        // Event Handler für Hinzufügen-Dropdown-Aktionen
+        container.querySelectorAll('.email-add-action').forEach(function(item) {
+            item.addEventListener('click', function(e) {
+                e.preventDefault();
                 e.stopPropagation();
-                toggleSelect(parseInt(this.dataset.uid));
+                const action = this.dataset.action;
+                const btn = this.closest('.btn-group').querySelector('.email-add-btn');
+                const sender = btn.dataset.sender || '';
+                const domain = btn.dataset.domain || '';
+                const subject = btn.dataset.subject || '';
+                const category = btn.dataset.category || '';
+                prepareAddToListModal(action, sender, domain, subject, category);
             });
         });
         
