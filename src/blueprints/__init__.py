@@ -27,7 +27,7 @@ from .api import api_bp
 from .rules import rules_bp
 from .training import training_bp
 from .admin import admin_bp
-from .trash_audit import trash_audit_bp
+from .folder_audit import folder_audit_bp
 
 __all__ = [
     "auth_bp",
@@ -39,5 +39,5 @@ __all__ = [
     "rules_bp",
     "training_bp",
     "admin_bp",
-    "trash_audit_bp",
+    "folder_audit_bp",
 ]

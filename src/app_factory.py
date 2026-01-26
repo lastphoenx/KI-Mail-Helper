@@ -280,7 +280,7 @@ def create_app(config_name="production"):
     from .blueprints import (
         auth_bp, emails_bp, email_actions_bp, accounts_bp,
         tags_bp, api_bp, rules_bp, training_bp, admin_bp,
-        trash_audit_bp
+        folder_audit_bp
     )
     from .thread_api import thread_api
     from .blueprints.translator import translator_bp
@@ -297,7 +297,7 @@ def create_app(config_name="production"):
     app.register_blueprint(admin_bp)
     app.register_blueprint(thread_api)
     app.register_blueprint(translator_bp)
-    app.register_blueprint(trash_audit_bp)
+    app.register_blueprint(folder_audit_bp)
     app.register_blueprint(audit_config_bp)
     
     # Context Processors für Templates
