@@ -625,7 +625,7 @@ Das **Ordner-Audit** (Trash-Audit) analysiert Papierkorb-Ordner auf potenziell w
 
 ### Zugang
 
-- **URL:** `/trash-audit` oder in der Ordner-Ansicht über "🗂️ Ordner-Audit"
+- **URL:** `/folder-audit` oder in der Ordner-Ansicht über "🗂️ Ordner-Audit"
 - **Voraussetzung:** Angemeldeter Benutzer mit mindestens einem Mail-Account
 
 ### Funktionsweise

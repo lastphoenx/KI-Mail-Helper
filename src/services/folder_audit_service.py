@@ -1,5 +1,5 @@
 ﻿"""
-Trash Audit Service - Analysiert Papierkorb-Emails für sichere Löschung
+Folder Audit Service - Analysiert Papierkorb-Emails für sichere Löschung
 
 Verwendet Heuristiken zur Kategorisierung:
 - 🟢 SAFE: Newsletter, Spam, Marketing, Scam → sicher löschbar
@@ -340,7 +340,7 @@ def decode_mime_header(value: str) -> str:
 
 
 class TrashCategory(Enum):
-    """Kategorien für Trash-Audit"""
+    """Kategorien für Folder-Audit"""
     SAFE = "safe"           # Sicher löschbar (Newsletter, Spam)
     REVIEW = "review"       # Manuell prüfen
     IMPORTANT = "important" # Möglicherweise wichtig
@@ -441,8 +441,8 @@ class TrashEmailCluster:
 
 
 @dataclass
-class TrashAuditResult:
-    """Gesamtergebnis des Trash-Audits"""
+class FolderAuditResult:
+    """Gesamtergebnis des Folder-Audits"""
     total: int = 0
     safe_count: int = 0
     review_count: int = 0
@@ -806,8 +806,8 @@ IMPORTANT_SENDER_PATTERNS = [
 ]
 
 
-class TrashAuditService:
-    """Service für Trash-Audit Analyse"""
+class FolderAuditService:
+    """Service für Folder-Audit Analyse"""
     
     # =============================================================================
     # Subject Normalisierung für Clustering
@@ -883,8 +883,8 @@ class TrashAuditService:
     @staticmethod
     def create_cluster_key(sender_email: str, subject: str) -> str:
         """Erstellt einen Cluster-Key aus Sender-Domain + normalisiertem Subject."""
-        domain = TrashAuditService._extract_domain(sender_email)
-        normalized_subject = TrashAuditService.normalize_subject_for_clustering(subject)
+        domain = FolderAuditService._extract_domain(sender_email)
+        normalized_subject = FolderAuditService.normalize_subject_for_clustering(subject)
         return f"{domain}|{normalized_subject}"
     
     @staticmethod
@@ -900,13 +900,13 @@ class TrashAuditService:
         
         for email in emails:
             # Cluster-Key generieren
-            key = TrashAuditService.create_cluster_key(email.sender, email.subject)
+            key = FolderAuditService.create_cluster_key(email.sender, email.subject)
             email.cluster_key = key
             
             if key not in cluster_map:
                 # Neuen Cluster erstellen
-                domain = TrashAuditService._extract_domain(email.sender)
-                display_name = TrashAuditService.normalize_subject_for_clustering(email.subject)
+                domain = FolderAuditService._extract_domain(email.sender)
+                display_name = FolderAuditService.normalize_subject_for_clustering(email.subject)
                 if not display_name:
                     display_name = "(Kein Betreff)"
                 
@@ -988,7 +988,7 @@ class TrashAuditService:
             return None
         
         sender_name_lower = sender_name.lower()
-        domain = TrashAuditService._extract_domain(sender_email)
+        domain = FolderAuditService._extract_domain(sender_email)
         
         # Prüfe ob Absender von einer Whitelist-Domain kommt (hardcoded)
         for whitelist_domain in BRAND_CHECK_WHITELIST_DOMAINS:
@@ -1048,8 +1048,8 @@ class TrashAuditService:
                 return "⚠️ Wegwerf-Email"
         
         # Gibberish-Domain Detection (z.B. "sipeviuanw.de")
-        domain = TrashAuditService._extract_domain(sender_email)
-        if TrashAuditService._is_gibberish_domain(domain):
+        domain = FolderAuditService._extract_domain(sender_email)
+        if FolderAuditService._is_gibberish_domain(domain):
             return "⚠️ Verdächtige Random-Domain"
         
         return None
@@ -1150,7 +1150,7 @@ class TrashAuditService:
             return None
         
         local_part = sender_email.split('@')[0].lower()
-        domain = TrashAuditService._extract_domain(sender_email)
+        domain = FolderAuditService._extract_domain(sender_email)
         name_lower = sender_name.lower()
         
         # NICHT prüfen wenn Domain in Trusted List
@@ -1211,7 +1211,7 @@ class TrashAuditService:
             return f"⚠️ Fake-Absendername ('{sender_name}' + Gibberish-Email)"
         
         # Prüfe auch ob die Domain selbst Gibberish ist
-        if TrashAuditService._is_gibberish_domain(domain):
+        if FolderAuditService._is_gibberish_domain(domain):
             return f"⚠️ Fake-Absendername ('{sender_name}' + Random-Domain)"
         
         return None
@@ -1222,7 +1222,7 @@ class TrashAuditService:
         if not sender_email:
             return False
         
-        domain = TrashAuditService._extract_domain(sender_email)
+        domain = FolderAuditService._extract_domain(sender_email)
         
         for trusted in TRUSTED_SWISS_DOMAINS:
             if domain == trusted or domain.endswith("." + trusted):
@@ -1266,8 +1266,8 @@ class TrashAuditService:
             return None
         
         # Extrahiere Domains
-        from_domain = TrashAuditService._extract_domain(sender_email)
-        reply_domain = TrashAuditService._extract_domain(reply_to)
+        from_domain = FolderAuditService._extract_domain(sender_email)
+        reply_domain = FolderAuditService._extract_domain(reply_to)
         
         if not from_domain or not reply_domain:
             return None
@@ -1374,16 +1374,16 @@ class TrashAuditService:
         if not sender_email:
             return None
         
-        domain = TrashAuditService._extract_domain(sender_email)
+        domain = FolderAuditService._extract_domain(sender_email)
         if not domain:
             return None
         
         # Whitelist-Check - bekannte legitime Domains mit verdächtigen TLDs
-        for whitelisted in TrashAuditService.SUSPICIOUS_TLD_WHITELIST:
+        for whitelisted in FolderAuditService.SUSPICIOUS_TLD_WHITELIST:
             if domain == whitelisted or domain.endswith('.' + whitelisted):
                 return None  # Whitelisted = nicht verdächtig
         
-        for tld in TrashAuditService.SUSPICIOUS_TLDS:
+        for tld in FolderAuditService.SUSPICIOUS_TLDS:
             if domain.endswith(tld):
                 return f"⚠️ Verdächtige TLD: {tld}"
         
@@ -1465,14 +1465,14 @@ class TrashAuditService:
         # WICHTIG: Allein KEIN starkes Signal! Viele legitime Firmen nutzen
         # Marketing-Plattformen mit anderem Reply-To.
         # Nur in Kombination mit anderen Signalen relevant.
-        reply_to_issue = TrashAuditService._check_reply_to_mismatch(info.sender, info.reply_to)
+        reply_to_issue = FolderAuditService._check_reply_to_mismatch(info.sender, info.reply_to)
         if reply_to_issue:
             scam_signals += 1  # Nur 1 Signal (vorher 2) - allein nicht ausreichend für SCAM
             reasons.append(reply_to_issue)
         
         # 2. Auth-Results (SPF/DKIM/DMARC) - strukturiert parsen
         # WICHTIG: DKIM-Fail bei alten Mails ignorieren (Signaturen können nach Jahren ungültig werden)
-        auth = TrashAuditService._parse_auth_results(info.auth_results)
+        auth = FolderAuditService._parse_auth_results(info.auth_results)
         is_old_email = False
         if info.date:
             from datetime import datetime, timezone
@@ -1502,7 +1502,7 @@ class TrashAuditService:
             reasons.append("⚠️ SPF-Softfail: Absender möglicherweise gefälscht")
         
         # 3. Suspicious TLD
-        tld_issue = TrashAuditService._has_suspicious_tld(info.sender)
+        tld_issue = FolderAuditService._has_suspicious_tld(info.sender)
         if tld_issue:
             scam_signals += 1
             reasons.append(tld_issue)
@@ -1510,14 +1510,14 @@ class TrashAuditService:
         # 4. Brand-Domain Mismatch - NUR auf Absender-NAME prüfen, NICHT Betreff!
         # (News schreiben ÜBER Brands, das ist kein Scam)
         # Nutzt auch User-konfigurierte trusted_domains aus DB
-        brand_issue = TrashAuditService._check_brand_domain_mismatch(info.sender_name, info.sender, trusted_domains)
+        brand_issue = FolderAuditService._check_brand_domain_mismatch(info.sender_name, info.sender, trusted_domains)
         if brand_issue:
             scam_signals += 2
             reasons.append(brand_issue)
         
         # 5. Gibberish Domain
-        domain = TrashAuditService._extract_domain(info.sender)
-        if TrashAuditService._is_gibberish_domain(domain):
+        domain = FolderAuditService._extract_domain(info.sender)
+        if FolderAuditService._is_gibberish_domain(domain):
             scam_signals += 1
             reasons.append("⚠️ Verdächtige Random-Domain")
         
@@ -1529,13 +1529,13 @@ class TrashAuditService:
                 break  # Nur einmal zählen
         
         # 7. Fake-Absendername
-        name_issue = TrashAuditService._check_sender_name_mismatch(info.sender_name, info.sender)
+        name_issue = FolderAuditService._check_sender_name_mismatch(info.sender_name, info.sender)
         if name_issue:
             scam_signals += 1
             reasons.append(name_issue)
         
         # 8. Typosquatting-Detection (Homoglyphen wie HeIsana statt Helsana)
-        typosquat = TrashAuditService._check_typosquatting(info.sender, info.sender_name)
+        typosquat = FolderAuditService._check_typosquatting(info.sender, info.sender_name)
         if typosquat:
             scam_signals += 2  # Sehr starkes Signal - bewusste Täuschung
             reasons.append(typosquat)
@@ -1555,7 +1555,7 @@ class TrashAuditService:
         if not sender_email:
             return None
         
-        domain = TrashAuditService._extract_domain(sender_email)
+        domain = FolderAuditService._extract_domain(sender_email)
         domain_normalized = normalize_homoglyphs(domain)
         name_normalized = normalize_homoglyphs(sender_name) if sender_name else ""
         
@@ -1627,7 +1627,7 @@ class TrashAuditService:
         sender_name = decode_mime_header(info.sender_name) if info.sender_name else ""
         subject_lower = subject.lower()
         sender_lower = info.sender.lower() if info.sender else ""
-        sender_domain = TrashAuditService._extract_domain(info.sender) if info.sender else ""
+        sender_domain = FolderAuditService._extract_domain(info.sender) if info.sender else ""
         
         # Aktualisiere die dekodierten Werte im Info-Objekt
         info.subject = subject
@@ -1766,7 +1766,7 @@ class TrashAuditService:
             
             if provider_trusted:
                 # Nutze strukturierte Auth-Prüfung
-                auth = TrashAuditService._parse_auth_results(info.auth_results)
+                auth = FolderAuditService._parse_auth_results(info.auth_results)
                 
                 if auth['is_forged']:
                     score += 1.0  # Auth fehlgeschlagen = verdächtig (Scam-Erkennung separat)
@@ -1898,7 +1898,7 @@ class TrashAuditService:
         )
         
         # 3. Prüfe globale Trusted Swiss Domains (hardcoded fallback)
-        is_trusted = is_user_trusted or is_db_trusted or TrashAuditService._is_trusted_domain(info.sender)
+        is_trusted = is_user_trusted or is_db_trusted or FolderAuditService._is_trusted_domain(info.sender)
         if is_trusted and score < 1.0:  # Kein Scam erkannt
             # Trusted + Marketing = sicher löschbar (Newsletter)
             if is_marketing:
@@ -2009,7 +2009,7 @@ class TrashAuditService:
         # --- SCAM DETECTION (finale Prüfung mit kombiniertem Score) ---
         # Übergebe trusted_domains aus DB-Config für bessere Whitelist
         trusted_domains = audit_config.get('trusted_domains', set()) if audit_config else set()
-        scam_signals, scam_reasons = TrashAuditService._calculate_scam_score(info, trusted_domains)
+        scam_signals, scam_reasons = FolderAuditService._calculate_scam_score(info, trusted_domains)
         
         # Scam-Signale erhöhen auch den Score (für 2-Signal-Fälle wichtig)
         if scam_signals >= 1 and not never_scam:
@@ -2054,7 +2054,7 @@ class TrashAuditService:
         user_id: Optional[int] = None,
         account_id: Optional[int] = None,
         folder: Optional[str] = None
-    ) -> TrashAuditResult:
+    ) -> FolderAuditResult:
         """Holt Emails aus einem Ordner und analysiert sie.
         
         Args:
@@ -2066,17 +2066,17 @@ class TrashAuditService:
             folder: Optionaler Ordnername (default: Trash-Folder)
             
         Returns:
-            TrashAuditResult mit kategorisierten Emails
+            FolderAuditResult mit kategorisierten Emails
         """
         import time
         start_time = time.time()
-        result = TrashAuditResult()
+        result = FolderAuditResult()
         
         # Account-Domain ermitteln für Auth-Results trust
         # Validierung: Nur extrahieren wenn @ vorhanden
         account_domain = None
         if fetcher.username and '@' in fetcher.username:
-            account_domain = TrashAuditService._extract_domain(fetcher.username)
+            account_domain = FolderAuditService._extract_domain(fetcher.username)
         
         try:
             conn = fetcher.connection
@@ -2173,7 +2173,7 @@ class TrashAuditService:
                     attachment_names = []
                     content_summary = ""
                     if bodystructure:
-                        has_attachments, attachment_names, content_summary = TrashAuditService._extract_attachment_info(bodystructure)
+                        has_attachments, attachment_names, content_summary = FolderAuditService._extract_attachment_info(bodystructure)
                     
                     # Power-Header parsen
                     has_list_unsubscribe = False
@@ -2203,7 +2203,7 @@ class TrashAuditService:
                             
                             # Extrahiere In-Reply-To Message-ID für DB-Lookup
                             # Nutze _extract_folded_header um sicherzugehen dass wir die ganze ID erwischen
-                            irt_header = TrashAuditService._extract_folded_header(header_text, 'in-reply-to:')
+                            irt_header = FolderAuditService._extract_folded_header(header_text, 'in-reply-to:')
                             if irt_header:
                                 # Extrahiere <id@server> aus dem Header
                                 msgid_match = re.search(r'<([^>]+)>', irt_header)
@@ -2212,7 +2212,7 @@ class TrashAuditService:
                             
                             # Fallback zu References wenn kein In-Reply-To
                             if not in_reply_to_msgid:
-                                ref_header = TrashAuditService._extract_folded_header(header_text, 'references:')
+                                ref_header = FolderAuditService._extract_folded_header(header_text, 'references:')
                                 if ref_header:
                                     # Nimm die LETZTE ID aus References (meist der direkte Vorgänger)
                                     msgids = re.findall(r'<([^>]+)>', ref_header)
@@ -2236,13 +2236,13 @@ class TrashAuditService:
                             # Authentication-Results (SPF/DKIM/DMARC)
                             # WICHTIG: Header können über mehrere Zeilen "gefoldet" sein
                             if 'authentication-results:' in header_lower:
-                                auth_results = TrashAuditService._extract_folded_header(
+                                auth_results = FolderAuditService._extract_folded_header(
                                     header_text, 'authentication-results:'
                                 )
                             
                             # Reply-To Header (für Scam-Detection: From ≠ Reply-To)
                             if 'reply-to:' in header_lower:
-                                reply_to_header = TrashAuditService._extract_folded_header(
+                                reply_to_header = FolderAuditService._extract_folded_header(
                                     header_text, 'reply-to:'
                                 )
                                 if reply_to_header:
@@ -2276,7 +2276,7 @@ class TrashAuditService:
                     )
                     
                     # Analysieren
-                    email_info = TrashAuditService.analyze_email(
+                    email_info = FolderAuditService.analyze_email(
                         email_info, 
                         db_session=db_session, 
                         user_id=user_id,
@@ -2297,18 +2297,18 @@ class TrashAuditService:
             result.scam_count = sum(1 for e in result.emails if e.category == TrashCategory.SCAM)
             
             # Clustering für bessere Übersicht
-            result.clusters = TrashAuditService.build_clusters(result.emails)
+            result.clusters = FolderAuditService.build_clusters(result.emails)
             
             result.scan_duration_ms = int((time.time() - start_time) * 1000)
             
             logger.info(
-                f"✅ Trash-Audit: {result.total} Emails analysiert in {result.scan_duration_ms}ms "
+                f"✅ Folder-Audit: {result.total} Emails analysiert in {result.scan_duration_ms}ms "
                 f"(🟢 {result.safe_count} safe, 🟡 {result.review_count} review, 🔴 {result.important_count} important, "
                 f"🚨 {result.scam_count} scam, 📦 {len(result.clusters)} Cluster)"
             )
             
         except Exception as e:
-            logger.error(f"Trash-Audit Fehler: {type(e).__name__}: {e}")
+            logger.error(f"Folder-Audit Fehler: {type(e).__name__}: {e}")
         
         return result
     
@@ -2321,7 +2321,7 @@ class TrashAuditService:
         user_id: Optional[int] = None,
         account_id: Optional[int] = None,
         exclude_folders: Optional[List[str]] = None
-    ) -> TrashAuditResult:
+    ) -> FolderAuditResult:
         """Scannt ALLE Ordner eines Accounts und analysiert Emails.
         
         Args:
@@ -2334,11 +2334,11 @@ class TrashAuditService:
             exclude_folders: Ordner die übersprungen werden sollen
             
         Returns:
-            TrashAuditResult mit kategorisierten Emails aus allen Ordnern
+            FolderAuditResult mit kategorisierten Emails aus allen Ordnern
         """
         import time
         start_time = time.time()
-        result = TrashAuditResult()
+        result = FolderAuditResult()
         
         # Standard-Ausschlüsse
         if exclude_folders is None:
@@ -2386,7 +2386,7 @@ class TrashAuditService:
                 
                 try:
                     # Einzelnen Ordner scannen (ohne Clustering, das machen wir am Ende)
-                    folder_result = TrashAuditService.fetch_and_analyze_trash(
+                    folder_result = FolderAuditService.fetch_and_analyze_trash(
                         fetcher=fetcher,
                         limit=folder_limit,
                         db_session=db_session,
@@ -2414,7 +2414,7 @@ class TrashAuditService:
             result.scam_count = sum(1 for e in all_emails if e.category == TrashCategory.SCAM)
             
             # Clustering über ALLE Emails (nicht pro Ordner!)
-            result.clusters = TrashAuditService.build_clusters(all_emails)
+            result.clusters = FolderAuditService.build_clusters(all_emails)
             
             result.scan_duration_ms = int((time.time() - start_time) * 1000)
             
@@ -2539,7 +2539,7 @@ class TrashAuditService:
     @staticmethod
     def _has_attachments(bodystructure) -> bool:
         """Prüft ob BODYSTRUCTURE Attachments enthält (Legacy-Wrapper)."""
-        has_att, _ = TrashAuditService._extract_attachment_info(bodystructure)
+        has_att, _ = FolderAuditService._extract_attachment_info(bodystructure)
         return has_att
     @staticmethod
     def _extract_folded_header(header_text: str, header_name: str) -> Optional[str]:

@@ -20,7 +20,7 @@ from flask_login import login_required
 import importlib
 
 from src.helpers import get_db_session, get_current_user_model
-from src.services.trash_audit_service import AuditConfigCache
+from src.services.folder_audit_service import AuditConfigCache
 
 logger = logging.getLogger(__name__)
 
