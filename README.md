@@ -49,9 +49,9 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
   - Filter-Dropdown und Badges in Listenansicht
 - **Ordner-Audit** – Analyse von Papierkorb-Ordnern auf potenziell wichtige Emails
   - Mehrsprachige Keywords (CH/DE/IT/FR) für Behörden, Finanzen, Verträge
-  - UI-Konfiguration für Domains, Keywords, Patterns, VIP-Absender, Auto-Löschregeln
+  - UI-Konfiguration für Domains, Keywords, Patterns, VIP-Absender, Auto-Regeln
   - Wildcard (*@firma.ch) und Regex-Unterstützung für VIP-Absender
-  - Auto-Löschregeln: Automatische Disposition (DELETABLE/PROTECTED/JUNK) nach Sender/Betreff-Pattern
+  - Auto-Regeln: Automatische Disposition (SAFE/IMPORTANT/SCAM/REVIEW) nach Sender/Betreff-Pattern
 
 ---
 
@@ -75,7 +75,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ UI-Konfiguration: Vertrauenswürdige Domains, Keywords, Patterns, VIP-Absender
 - ✅ Mehrsprachige Defaults: CH/DE/IT/FR Keywords und Patterns
 - ✅ VIP-Absender: Wildcard (*@firma.ch) und Regex-Unterstützung
-- ✅ Auto-Löschregeln: Pattern-basierte Disposition (DELETABLE/PROTECTED/JUNK)
+- ✅ Auto-Regeln: Pattern-basierte Disposition (SAFE/IMPORTANT/SCAM/REVIEW)
 - ✅ Cluster-Dropdown: Einheitliches UI für alle 6 Konfigurationslisten
 
 **v2.2.1 Highlights (Januar 2026):**

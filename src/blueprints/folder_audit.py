@@ -224,10 +224,10 @@ def scan_trash():
             # "Alle Ordner" oder einzelner Ordner?
             if folder == "__ALL__":
                 # Alle Ordner scannen
-                # Pro Ordner bis zu 2000 Emails, aber Gesamt-Limit aus UI
+                # Pro Ordner bis zu 500 Emails (Exchange/O365 Rate-Limiting!)
                 result = FolderAuditService.fetch_and_analyze_all_folders(
                     fetcher,
-                    limit_per_folder=2000,
+                    limit_per_folder=500,
                     max_total=limit,  # User-Limit als Gesamt-Limit
                     db_session=db,
                     user_id=user.id,

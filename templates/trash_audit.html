@@ -1,6 +1,6 @@
 ﻿{% extends "base.html" %}
 
-{% block title %}Ordner-Audit - Mail Helper{% endblock %}
+{% block title %}Papierkorb-Audit - Mail Helper{% endblock %}
 
 {% block content %}
 <style nonce="{{ csp_nonce() }}">
@@ -78,13 +78,8 @@
     .email-item.selected {
         outline: 2px solid #0d6efd;
     }
-    .email-item .btn-group-sm .btn {
-        font-size: 0.75rem;
-        padding: 0.2rem 0.4rem;
-    }
-    .email-item .email-select-btn {
-        font-size: 0.75rem;
-        padding: 0.25rem 0.5rem;
+    .email-item .select-area {
+        cursor: pointer;
     }
     
     .email-subject {
@@ -148,10 +143,6 @@
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         display: none;
         color: white;
-        /* Performance: GPU-Layer für smooth scrolling */
-        will-change: transform;
-        transform: translateZ(0);
-        z-index: 1000;
     }
     #actionBar.show {
         display: flex;
@@ -634,7 +625,7 @@
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#autoDeleteSection">
                         <i class="bi bi-trash3 me-2 text-info"></i>
-                        Auto-Regeln
+                        Auto-Löschregeln
                         <span class="badge bg-info ms-2" id="autoDeleteBadge">0</span>
                     </button>
                 </h2>
@@ -680,10 +671,9 @@
                                     <div class="col-md-2">
                                         <label class="form-label small mb-1">Aktion</label>
                                         <select class="form-select form-select-sm" id="newRuleDisposition">
-                                            <option value="SAFE">🗑️ Sicher löschbar</option>
-                                            <option value="IMPORTANT">🛡️ Wichtig/Geschützt</option>
-                                            <option value="SCAM">⚠️ Scam/Spam</option>
-                                            <option value="REVIEW">🔍 Manuell prüfen</option>
+                                            <option value="DELETABLE">🗑️ Löschbar</option>
+                                            <option value="PROTECTED">🛡️ Geschützt</option>
+                                            <option value="JUNK">⚠️ Junk</option>
                                         </select>
                                     </div>
                                     <div class="col-md-1">
@@ -705,10 +695,9 @@
                                 <div class="row mt-2">
                                     <div class="col-12">
                                         <small class="text-muted">
-                                            <strong>SAFE:</strong> Nach X Tagen löschbar | 
-                                            <strong>IMPORTANT:</strong> Nie löschen | 
-                                            <strong>SCAM:</strong> Betrug/Spam |
-                                            <strong>REVIEW:</strong> Manuell prüfen
+                                            <strong>DELETABLE:</strong> Nach X Tagen löschbar | 
+                                            <strong>PROTECTED:</strong> Nie löschen | 
+                                            <strong>JUNK:</strong> Sofort löschbar
                                         </small>
                                     </div>
                                 </div>
@@ -762,14 +751,13 @@
                 <div class="mb-3" id="addToListDispositionGroup" style="display: none;">
                     <label class="form-label">Aktion</label>
                     <select id="addToListDisposition" class="form-select">
-                        <option value="SAFE">🗑️ Sicher löschbar (nach X Tagen)</option>
-                        <option value="IMPORTANT">🛡️ Wichtig/Geschützt (nie löschen)</option>
-                        <option value="SCAM">⚠️ Scam/Spam (Betrug)</option>
-                        <option value="REVIEW">🔍 Manuell prüfen</option>
+                        <option value="DELETABLE">🗑️ Löschbar (nach X Tagen)</option>
+                        <option value="PROTECTED">🛡️ Geschützt (nie löschen)</option>
+                        <option value="JUNK">⚠️ Junk (sofort löschbar)</option>
                     </select>
                 </div>
                 
-                <!-- Max Age für SAFE -->
+                <!-- Max Age für DELETABLE -->
                 <div class="mb-3" id="addToListMaxAgeGroup" style="display: none;">
                     <label class="form-label">Nach wie vielen Tagen löschbar?</label>
                     <input type="number" id="addToListMaxAge" class="form-control" value="14" min="0">
@@ -854,7 +842,7 @@
         folderSelect.disabled = true;
         
         try {
-            const response = await fetch(`/folder-audit/folders/${accountId}`);
+            const response = await fetch(`/trash-audit/folders/${accountId}`);
             const data = await response.json();
             
             if (data.success && data.folders) {
@@ -899,7 +887,7 @@
         showLoading(`Scanne ${folder}...`);
         
         try {
-            const response = await fetch('/folder-audit/scan', {
+            const response = await fetch('/trash-audit/scan', {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
@@ -1021,46 +1009,12 @@
                             </div>
                             <div class="email-reasons">${escapeHtml(reasons)}</div>
                         </div>
-                        <div class="text-end d-flex flex-column gap-1" style="min-width: 120px;">
-                            <div class="email-date small text-muted">${date}</div>
-                            <button class="btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline-secondary'} email-select-btn"
-                                    data-uid="${email.uid}">
-                                ${isSelected ? '✓ Ausgewählt' : 'Auswählen'}
-                            </button>
-                            <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-secondary dropdown-toggle email-add-btn" 
-                                        type="button"
-                                        data-bs-toggle="dropdown" 
-                                        aria-expanded="false"
-                                        data-sender="${escapeHtml(email.sender || '')}"
-                                        data-domain="${escapeHtml(email.sender ? email.sender.split('@')[1] || '' : '')}"
-                                        data-subject="${escapeHtml(email.subject || '')}"
-                                        data-category="${email.category}"
-                                        title="Zu Konfigurationsliste hinzufügen">
-                                    <i class="bi bi-plus-circle"></i> Hinzufügen
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end">
-                                    <li><h6 class="dropdown-header">Zur Liste hinzufügen</h6></li>
-                                    <li><a class="dropdown-item email-add-action" href="#" data-action="trusted-domain">
-                                        <i class="bi bi-shield-check text-success"></i> Trusted Domain
-                                    </a></li>
-                                    <li><a class="dropdown-item email-add-action" href="#" data-action="important-keyword">
-                                        <i class="bi bi-exclamation-triangle text-danger"></i> Wichtiges Keyword
-                                    </a></li>
-                                    <li><a class="dropdown-item email-add-action" href="#" data-action="safe-subject">
-                                        <i class="bi bi-envelope-check text-warning"></i> Safe Betreff-Pattern
-                                    </a></li>
-                                    <li><a class="dropdown-item email-add-action" href="#" data-action="safe-sender">
-                                        <i class="bi bi-person-check text-warning"></i> Safe Absender-Pattern
-                                    </a></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item email-add-action" href="#" data-action="vip-sender">
-                                        <i class="bi bi-star-fill text-warning"></i> VIP Absender
-                                    </a></li>
-                                    <li><a class="dropdown-item email-add-action" href="#" data-action="auto-rule">
-                                        <i class="bi bi-lightning text-info"></i> Auto-Regel
-                                    </a></li>
-                                </ul>
+                        <div class="text-end select-area" style="min-width: 100px;">
+                            <div class="email-date">${date}</div>
+                            <div>
+                                <input type="checkbox" class="form-check-input email-checkbox" 
+                                       data-uid="${email.uid}"
+                                       ${isSelected ? 'checked' : ''}>
                             </div>
                         </div>
                     </div>
@@ -1070,39 +1024,18 @@
         
         container.innerHTML = html;
         
-        // Event Handler für Auswählen-Buttons
-        container.querySelectorAll('.email-select-btn').forEach(function(btn) {
-            btn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                const uid = parseInt(this.dataset.uid);
+        // Event Delegation für Checkbox-Bereich (nicht ganzes Item, damit Text selektierbar)
+        container.querySelectorAll('.select-area').forEach(function(area) {
+            area.addEventListener('click', function(e) {
+                if (e.target.classList.contains('email-checkbox')) return;
+                const uid = parseInt(this.closest('.email-item').dataset.uid);
                 toggleSelect(uid);
             });
         });
-        
-        // Event Handler für Hinzufügen-Dropdown-Aktionen
-        container.querySelectorAll('.email-add-action').forEach(function(item) {
-            item.addEventListener('click', function(e) {
-                e.preventDefault();
+        container.querySelectorAll('.email-checkbox').forEach(function(checkbox) {
+            checkbox.addEventListener('click', function(e) {
                 e.stopPropagation();
-                const action = this.dataset.action;
-                const btn = this.closest('.btn-group').querySelector('.email-add-btn');
-                
-                // Daten als Objekt sammeln (wie bei Cluster-Aktionen)
-                const data = {
-                    sender: btn.dataset.sender || '',
-                    domain: btn.dataset.domain || '',
-                    subject: btn.dataset.subject || '',
-                    pattern: btn.dataset.subject || '',  // Für Auto-Regel
-                    category: btn.dataset.category || ''
-                };
-                
-                currentAddAction = action;
-                currentClusterData = data;
-                
-                prepareAddToListModal(action, data);
-                
-                // Modal öffnen
-                new bootstrap.Modal(document.getElementById('addToListModal')).show();
+                toggleSelect(parseInt(this.dataset.uid));
             });
         });
         
@@ -1351,7 +1284,7 @@
                                         <i class="bi bi-star-fill text-warning"></i> VIP Absender
                                     </a></li>
                                     <li><a class="dropdown-item cluster-add-action" href="#" data-action="auto-rule">
-                                        <i class="bi bi-lightning text-info"></i> Auto-Regel
+                                        <i class="bi bi-lightning text-info"></i> Auto-Löschregel
                                     </a></li>
                                 </ul>
                             </div>
@@ -1370,7 +1303,7 @@
                                 </div>
                                 <div class="cluster-email-meta">
                                     ${email.folder ? `<span class="badge bg-secondary me-2" title="Ordner">📁 ${escapeHtml(email.folder)}</span>` : ''}
-                                    ${email.date ? new Date(email.date).toLocaleDateString('de-DE') + ' ' + new Date(email.date).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : ''}
+                                    ${email.date ? new Date(email.date).toLocaleDateString('de-DE') : ''}
                                     ${email.size ? ` · ${Math.round(email.size/1024)} KB` : ''}
                                 </div>
                             </div>
@@ -1386,9 +1319,8 @@
         container.querySelectorAll('.cluster-expand-btn').forEach(btn => {
             btn.addEventListener('click', function(e) {
                 e.stopPropagation();
-                // Finde die Email-Liste im selben cluster-card Container
-                const clusterCard = this.closest('.cluster-card');
-                const list = clusterCard ? clusterCard.querySelector('.cluster-emails-list') : null;
+                const key = this.dataset.clusterKey;
+                const list = container.querySelector(`.cluster-emails-list[data-cluster-key="${CSS.escape(key)}"]`);
                 if (list) {
                     list.classList.toggle('show');
                     this.classList.toggle('expanded');
@@ -1514,7 +1446,7 @@
                 break;
                 
             case 'auto-rule':
-                title.textContent = '⚡ Auto-Regel erstellen';
+                title.textContent = '⚡ Auto-Löschregel erstellen';
                 info.innerHTML = '<i class="bi bi-lightning text-info"></i> Erstellt eine Regel für automatisches Löschen/Schützen basierend auf Absender und Betreff.';
                 valueLabel.textContent = 'Absender-Pattern';
                 valueInput.value = `@${data.domain}` || '';
@@ -1528,7 +1460,7 @@
                 
                 // Disposition + Max Age
                 dispositionGroup.style.display = 'block';
-                document.getElementById('addToListDisposition').value = 'SAFE';
+                document.getElementById('addToListDisposition').value = 'DELETABLE';
                 maxAgeGroup.style.display = 'block';
                 document.getElementById('addToListMaxAge').value = '14';
                 
@@ -1556,7 +1488,7 @@
     // Disposition-Änderung: Max Age anzeigen/verstecken
     document.getElementById('addToListDisposition')?.addEventListener('change', function() {
         document.getElementById('addToListMaxAgeGroup').style.display = 
-            this.value === 'SAFE' ? 'block' : 'none';
+            this.value === 'DELETABLE' ? 'block' : 'none';
     });
     
     // Modal: Bestätigen
@@ -1603,15 +1535,15 @@
                 
             case 'auto-rule':
                 endpoint = '/api/audit-config/auto-delete-rules';
-                if (disposition === 'SAFE' && !maxAge) {
-                    alert('Bei "Sicher löschbar" muss eine Anzahl Tage angegeben werden!');
+                if (disposition === 'DELETABLE' && !maxAge) {
+                    alert('Bei "Löschbar" muss eine Anzahl Tage angegeben werden!');
                     return;
                 }
                 body = {
                     sender_pattern: value || null,
                     subject_pattern: value2 || null,
                     disposition: disposition,
-                    max_age_days: disposition === 'SAFE' ? parseInt(maxAge) : null,
+                    max_age_days: disposition === 'DELETABLE' ? parseInt(maxAge) : null,
                     description: desc || null
                 };
                 break;
@@ -1638,7 +1570,7 @@
                     'safe-subject': 'Safe Betreff-Pattern',
                     'safe-sender': 'Safe Absender-Pattern',
                     'vip-sender': 'VIP Absender',
-                    'auto-rule': 'Auto-Regel'
+                    'auto-rule': 'Auto-Löschregel'
                 };
                 alert(`✅ ${actionNames[currentAddAction]} hinzugefügt!`);
             } else {
@@ -1665,7 +1597,7 @@
         showLoading(`Lösche ${selectedUids.size} Emails...`);
         
         try {
-            const response = await fetch('/folder-audit/delete', {
+            const response = await fetch('/trash-audit/delete', {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
@@ -1952,14 +1884,12 @@
                     
                     // Disposition Styling
                     let dispBadge = '';
-                    if (rule.disposition === 'SAFE') {
-                        dispBadge = '<span class="badge bg-info">🗑️ Sicher löschbar</span>';
-                    } else if (rule.disposition === 'IMPORTANT') {
-                        dispBadge = '<span class="badge bg-success">🛡️ Wichtig</span>';
-                    } else if (rule.disposition === 'SCAM') {
-                        dispBadge = '<span class="badge bg-danger">⚠️ Scam</span>';
-                    } else if (rule.disposition === 'REVIEW') {
-                        dispBadge = '<span class="badge bg-warning text-dark">🔍 Prüfen</span>';
+                    if (rule.disposition === 'DELETABLE') {
+                        dispBadge = '<span class="badge bg-info">🗑️ Löschbar</span>';
+                    } else if (rule.disposition === 'PROTECTED') {
+                        dispBadge = '<span class="badge bg-success">🛡️ Geschützt</span>';
+                    } else if (rule.disposition === 'JUNK') {
+                        dispBadge = '<span class="badge bg-warning text-dark">⚠️ Junk</span>';
                     }
                     
                     tr.innerHTML = `
@@ -2008,8 +1938,8 @@
             return;
         }
         
-        if (disposition === 'SAFE' && !maxAge) {
-            alert('Bei "Sicher löschbar" muss eine Anzahl Tage angegeben werden!');
+        if (disposition === 'DELETABLE' && !maxAge) {
+            alert('Bei "Löschbar" muss eine Anzahl Tage angegeben werden!');
             return;
         }
         
@@ -2079,7 +2009,7 @@
     // Disposition-Änderung: Tage-Feld aktivieren/deaktivieren
     document.getElementById('newRuleDisposition').addEventListener('change', function() {
         const maxAgeInput = document.getElementById('newRuleMaxAge');
-        if (this.value === 'SAFE') {
+        if (this.value === 'DELETABLE') {
             maxAgeInput.disabled = false;
             maxAgeInput.placeholder = '14';
         } else {
