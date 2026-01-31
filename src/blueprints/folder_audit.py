@@ -1,10 +1,10 @@
 ﻿"""
-Trash Audit Blueprint - Papierkorb-Analyse und Aufräum-Tool
+Folder Audit Blueprint - Papierkorb-Analyse und Aufräum-Tool
 
 Endpoints:
-    GET  /trash-audit         - Haupt-UI für Trash-Audit
-    POST /trash-audit/scan    - Startet Scan des Papierkorbs
-    POST /trash-audit/delete  - Löscht ausgewählte Emails permanent
+    GET  /folder-audit         - Haupt-UI für Folder-Audit
+    POST /folder-audit/scan    - Startet Scan des Papierkorbs
+    POST /folder-audit/delete  - Löscht ausgewählte Emails permanent
 """
 
 import logging
@@ -13,11 +13,11 @@ from flask_login import login_required
 import importlib
 
 from src.helpers import get_db_session, get_current_user_model
-from src.services.trash_audit_service import TrashAuditService, TrashCategory
+from src.services.folder_audit_service import FolderAuditService, TrashCategory
 
 logger = logging.getLogger(__name__)
 
-trash_audit_bp = Blueprint("trash_audit", __name__)
+folder_audit_bp = Blueprint("folder_audit", __name__)
 
 
 # =============================================================================
@@ -78,10 +78,10 @@ def _get_imap_fetcher(account, master_key):
 # Routes
 # =============================================================================
 
-@trash_audit_bp.route("/trash-audit")
+@folder_audit_bp.route("/folder-audit")
 @login_required
-def trash_audit_page():
-    """Hauptseite für Trash-Audit"""
+def folder_audit_page():
+    """Hauptseite für Folder-Audit"""
     with get_db_session() as db:
         user = get_current_user_model(db)
         if not user:
@@ -105,12 +105,12 @@ def trash_audit_page():
         ]
         
         return render_template(
-            "trash_audit.html",
+            "folder_audit.html",
             accounts=account_list,
         )
 
 
-@trash_audit_bp.route("/trash-audit/folders/<int:account_id>", methods=["GET"])
+@folder_audit_bp.route("/folder-audit/folders/<int:account_id>", methods=["GET"])
 @login_required
 def get_folders(account_id):
     """Holt IMAP-Ordnerliste für einen Account"""
@@ -177,7 +177,7 @@ def get_folders(account_id):
                 fetcher.disconnect()
 
 
-@trash_audit_bp.route("/trash-audit/scan", methods=["POST"])
+@folder_audit_bp.route("/folder-audit/scan", methods=["POST"])
 @login_required
 def scan_trash():
     """Scannt Ordner und kategorisiert Emails"""
@@ -224,10 +224,10 @@ def scan_trash():
             # "Alle Ordner" oder einzelner Ordner?
             if folder == "__ALL__":
                 # Alle Ordner scannen
-                # Pro Ordner bis zu 2000 Emails, aber Gesamt-Limit aus UI
-                result = TrashAuditService.fetch_and_analyze_all_folders(
+                # Pro Ordner bis zu 500 Emails (Exchange/O365 Rate-Limiting!)
+                result = FolderAuditService.fetch_and_analyze_all_folders(
                     fetcher,
-                    limit_per_folder=2000,
+                    limit_per_folder=500,
                     max_total=limit,  # User-Limit als Gesamt-Limit
                     db_session=db,
                     user_id=user.id,
@@ -236,7 +236,7 @@ def scan_trash():
                 scan_folder = "Alle Ordner"
             else:
                 # Einzelner Ordner
-                result = TrashAuditService.fetch_and_analyze_trash(
+                result = FolderAuditService.fetch_and_analyze_trash(
                     fetcher, 
                     limit, 
                     db_session=db, 
@@ -260,7 +260,7 @@ def scan_trash():
                 fetcher.disconnect()
 
 
-@trash_audit_bp.route("/trash-audit/delete", methods=["POST"])
+@folder_audit_bp.route("/folder-audit/delete", methods=["POST"])
 @login_required
 def delete_trash_emails():
     """Löscht ausgewählte Emails permanent"""
@@ -306,7 +306,7 @@ def delete_trash_emails():
             if not fetcher.connection:
                 return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
             
-            success, failed = TrashAuditService.delete_safe_emails(fetcher, uids, folder)
+            success, failed = FolderAuditService.delete_safe_emails(fetcher, uids, folder)
             
             return jsonify({
                 "success": True,

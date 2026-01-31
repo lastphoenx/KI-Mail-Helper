@@ -625,7 +625,7 @@ Das **Ordner-Audit** (Trash-Audit) analysiert Papierkorb-Ordner auf potenziell w
 
 ### Zugang
 
-- **URL:** `/trash-audit` oder in der Ordner-Ansicht über "🗂️ Ordner-Audit"
+- **URL:** `/folder-audit` oder in der Ordner-Ansicht über "🗂️ Ordner-Audit"
 - **Voraussetzung:** Angemeldeter Benutzer mit mindestens einem Mail-Account
 
 ### Funktionsweise
@@ -658,7 +658,7 @@ Im Ordner-Audit-Dialog gibt es einen **"Konfiguration"**-Tab mit **6 konfigurier
 | 3 | 🔇 Sichere Patterns (Betreff) | Newsletter, Marketing |
 | 4 | 🔇 Sichere Patterns (Absender) | noreply@, @newsletter. |
 | 5 | ⭐ VIP-Absender | Wichtige Kontakte |
-| 6 | 🗑️ Auto-Löschregeln | Automatische Disposition |
+| 6 | ⚡ Auto-Regeln | Automatische Disposition |
 
 #### 🏛️ Vertrauenswürdige Domains
 
@@ -726,15 +726,16 @@ Die Defaults enthalten auch mehrsprachige Keywords für:
 - ⚠️ Mahnungen/Fristen
 - 🏛️ Behördliche Korrespondenz
 
-### 🗑️ Auto-Löschregeln
+### ⚡ Auto-Regeln
 
 Automatisiere die Bewertung von Emails anhand von Sender/Betreff-Patterns:
 
 | Disposition | Beschreibung | Score-Auswirkung |
 |-------------|--------------|------------------|
-| **DELETABLE** | Nach X Tagen löschbar | +1.5 (wenn älter als max_age_days) |
-| **PROTECTED** | Niemals automatisch löschen | Kategorie = WICHTIG |
-| **JUNK** | Sofort als unwichtig markiert | +2.0 |
+| **SAFE** | Nach X Tagen sicher löschbar | +1.5 (wenn älter als max_age_days) |
+| **IMPORTANT** | Niemals automatisch löschen | Kategorie = WICHTIG |
+| **SCAM** | Betrug/Spam | Kategorie = SCAM |
+| **REVIEW** | Manuell prüfen | Kategorie = REVIEW |
 
 #### Pattern-Format
 
@@ -742,7 +743,7 @@ Automatisiere die Bewertung von Emails anhand von Sender/Betreff-Patterns:
 |------|----------|--------------|
 | **Sender-Pattern** | `newsletter@` | Matcht alle Absender die mit "newsletter@" beginnen |
 | **Betreff-Pattern** | `backup success` | Matcht Betreffs die "backup success" enthalten |
-| **Max-Age (Tage)** | `14` | Nur für DELETABLE: Erst nach 14 Tagen löschbar |
+| **Max-Age (Tage)** | `14` | Nur für SAFE: Erst nach 14 Tagen löschbar |
 
 > 💡 Mind. ein Pattern (Sender ODER Betreff) ist erforderlich. Beide können kombiniert werden (UND-Verknüpfung).
 
@@ -750,11 +751,11 @@ Automatisiere die Bewertung von Emails anhand von Sender/Betreff-Patterns:
 
 | Sender-Pattern | Betreff-Pattern | Disposition | Max-Age |
 |----------------|-----------------|-------------|---------|
-| `newsletter@` | — | DELETABLE | 7 |
-| `mailchimp@` | — | DELETABLE | 14 |
-| `cron@` | — | JUNK | — |
-| `root@` | `backup success` | JUNK | — |
-| `@estv.admin.ch` | — | PROTECTED | — |
+| `newsletter@` | — | SAFE | 7 |
+| `mailchimp@` | — | SAFE | 14 |
+| `cron@` | — | SAFE | — |
+| `root@` | `backup success` | SAFE | — |
+| `@estv.admin.ch` | — | IMPORTANT | — |
 
 ### Cluster-Dropdown (Schnellzugriff)
 
@@ -767,7 +768,7 @@ Bei jedem Cluster in der Scan-Ergebnis-Liste gibt es einen **Dropdown-Button** m
 | 📧 **Als sicherer Betreff** | Betreff-Pattern zur Safe-Patterns-Liste |
 | 👤 **Als sicherer Absender** | Absender-Pattern zur Safe-Patterns-Liste |
 | ⭐ **Als VIP Absender** | Absender zur VIP-Liste hinzufügen |
-| 🗑️ **Als Auto-Regel** | Neue Auto-Löschregel erstellen |
+| ⚡ **Als Auto-Regel** | Neue Auto-Regel erstellen |
 
 Das Modal passt sich automatisch dem gewählten Listentyp an und befüllt die Felder mit Daten aus dem Cluster.
 
