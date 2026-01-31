@@ -2205,16 +2205,17 @@ class AuditVIPSender(Base):
 
 class AuditAutoDeleteRule(Base):
     """
-    Regeln für automatisches Löschen im Ordner-Audit.
+    Auto-Regeln für Ordner-Audit.
     Kombination aus Sender + Subject Pattern mit Disposition.
     
     Logik: Beide Patterns (sender UND subject) müssen matchen (falls gesetzt).
     Keine Priorisierung - erste matchende Regel gewinnt.
     
-    Dispositions:
-    - DELETABLE: Nach max_age_days Tagen sicher löschbar
-    - PROTECTED: Nie automatisch löschen (übersteuert alles)
-    - JUNK: Sofort als Müll markieren (max_age_days ignoriert)
+    Dispositions (entsprechen TrashCategory):
+    - SAFE: Nach max_age_days Tagen sicher löschbar
+    - IMPORTANT: Nie automatisch löschen (übersteuert alles)
+    - SCAM: Sofort als Betrug/Spam markieren
+    - REVIEW: Manuell prüfen
     """
     __tablename__ = "audit_auto_delete_rules"
 
@@ -2229,10 +2230,10 @@ class AuditAutoDeleteRule(Base):
     """Pattern für Betreff (Regex), z.B. 'rechnung', 'empfehl|tipp', 'backup.*success'. NULL = alle Betreffs"""
     
     disposition = Column(String(20), nullable=False)
-    """DELETABLE, PROTECTED, JUNK"""
+    """SAFE, IMPORTANT, SCAM, REVIEW (entspricht TrashCategory)"""
     
     max_age_days = Column(Integer, nullable=True)
-    """Mindest-Alter in Tagen für DELETABLE. NULL bei PROTECTED/JUNK."""
+    """Mindest-Alter in Tagen für SAFE. NULL bei IMPORTANT/SCAM/REVIEW."""
     
     description = Column(String(255), nullable=True)
     """Optionale Beschreibung der Regel"""
@@ -2248,7 +2249,7 @@ class AuditAutoDeleteRule(Base):
         UniqueConstraint("user_id", "account_id", "sender_pattern", "subject_pattern", name="uq_audit_auto_delete_rule"),
         Index("idx_audit_auto_delete_user", "user_id", "account_id"),
         CheckConstraint(
-            "disposition IN ('DELETABLE', 'PROTECTED', 'JUNK')",
+            "disposition IN ('SAFE', 'IMPORTANT', 'SCAM', 'REVIEW')",
             name='ck_audit_auto_delete_disposition'
         ),
         CheckConstraint(

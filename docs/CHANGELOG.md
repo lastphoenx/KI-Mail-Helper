@@ -10,12 +10,13 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ### 🗂️ Ordner-Audit System mit UI-Konfiguration
 
-#### Neues Feature: Auto-Löschregeln
+#### Neues Feature: Auto-Regeln
 - **Automatische Disposition** basierend auf Sender/Betreff-Patterns
-- **Drei Disposition-Typen:**
-  - `DELETABLE`: Email nach X Tagen löschbar (max_age_days)
-  - `PROTECTED`: Email niemals automatisch löschen (wichtig!)
-  - `JUNK`: Sofort als unwichtig markiert
+- **Vier Disposition-Typen (entsprechen TrashCategory):**
+  - `SAFE`: Email nach X Tagen sicher löschbar (max_age_days)
+  - `IMPORTANT`: Email niemals automatisch löschen (wichtig!)
+  - `SCAM`: Betrug/Spam
+  - `REVIEW`: Manuell prüfen
 - **Pattern-Matching:** Sender-Pattern UND/ODER Betreff-Pattern
 - **Neue Datenbank-Tabelle:** `audit_auto_delete_rules`
 - **API-Endpoints:** GET/POST/DELETE für `/api/audit-config/auto-delete-rules`
@@ -29,9 +30,25 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
   - 📧 Sicherer Betreff-Pattern
   - 👤 Sicherer Absender-Pattern
   - ⭐ VIP Absender
-  - 🗑️ Auto-Löschregel
+  - ⚡ Auto-Regel
 - **Universelles Modal** passt sich dem gewählten Listentyp an
 - **Intelligente Vorbefüllung** aus Cluster-Daten (Sender, Domain, Subject)
+
+#### Performance & Stabilität (Alle-Ordner-Scan)
+- **Batch-Fetch**: IMAP-Fetch in 200er-Batches statt alle UIDs auf einmal
+  - Verhindert "BAD Command Error" bei Exchange/O365
+  - 100ms Pause zwischen Batches für Rate-Limiting
+- **Nicht-Mail-Ordner ausgeschlossen**: Calendar, Contacts, Tasks, Notes, Journal
+  - Inkl. Unterordner (z.B. "Kalender/Geburtstage")
+- **Connection-Error-Handling**: Scan bricht bei fatalen Fehlern sofort ab
+  - Erkennt: BYE, connection closed, EOF, socket error, BAD, command error
+  - Keine Endlosschleifen mehr bei verlorener Verbindung
+
+#### Clustering-Fix
+- **Cluster-Key**: Jetzt nach `sender_email|subject` statt `domain|subject`
+  - Verschiedene Absender derselben Domain werden nicht mehr gemischt!
+- **Zeit-Anzeige**: Cluster-Emails zeigen Datum + Uhrzeit (z.B. "3.12.2025 09:02")
+- **Aufklapp-Fix**: HTML-Struktur korrigiert für zuverlässiges Auf/Zuklappen
 
 #### Neues Feature: Ordner-Audit (Trash-Audit)
 - **Analyse von Papierkorb-Ordnern** auf potenziell wichtige Emails
@@ -59,7 +76,7 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - `audit_important_keywords` – Wichtige Betreff-Keywords
 - `audit_safe_patterns` – Sichere Lösch-Patterns (subject/sender)
 - `audit_vip_senders` – VIP-Absender mit Wildcard/Regex
-- `audit_auto_delete_rules` – Auto-Löschregeln mit Disposition
+- `audit_auto_delete_rules` – Auto-Regeln mit Disposition (SAFE/IMPORTANT/SCAM/REVIEW)
 - `audit_list_sources` – Tracking für geladene Default-Listen
 
 #### API-Endpoints
@@ -67,7 +84,7 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - `GET/POST /api/audit-config/important-keywords` – Keyword-Liste verwalten
 - `GET/POST /api/audit-config/safe-patterns` – Pattern-Liste verwalten
 - `GET/POST /api/audit-config/vip-senders` – VIP-Liste verwalten
-- `GET/POST/DELETE /api/audit-config/auto-delete-rules` – Auto-Löschregeln verwalten
+- `GET/POST/DELETE /api/audit-config/auto-delete-rules` – Auto-Regeln verwalten
 - `POST /api/audit-config/load-defaults` – Mehrsprachige Defaults laden
 - `GET /api/audit-config/stats` – Statistiken über konfigurierte Einträge
 
