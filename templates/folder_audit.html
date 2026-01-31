@@ -1,0 +1,2123 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Ordner-Audit - Mail Helper{% endblock %}
+
+{% block content %}
+<style nonce="{{ csp_nonce() }}">
+    /* Category Colors */
+    .category-safe { 
+        background-color: rgba(25, 135, 84, 0.1); 
+        border-left: 4px solid #198754;
+    }
+    .category-review { 
+        background-color: rgba(255, 193, 7, 0.1); 
+        border-left: 4px solid #ffc107;
+    }
+    .category-important { 
+        background-color: rgba(220, 53, 69, 0.1); 
+        border-left: 4px solid #dc3545;
+    }
+    .category-scam { 
+        background-color: rgba(128, 0, 0, 0.15); 
+        border-left: 4px solid #800000;
+        animation: scam-pulse 2s infinite;
+    }
+    @keyframes scam-pulse {
+        0%, 100% { background-color: rgba(128, 0, 0, 0.15); }
+        50% { background-color: rgba(128, 0, 0, 0.25); }
+    }
+    
+    /* Stats Cards */
+    .stat-card {
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        transition: transform 0.2s;
+    }
+    .stat-card:hover {
+        transform: translateY(-2px);
+    }
+    .stat-card .number {
+        font-size: 2.5rem;
+        font-weight: bold;
+    }
+    .stat-card.safe { background: linear-gradient(135deg, #198754 0%, #20c997 100%); color: white; }
+    .stat-card.review { background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%); color: #212529; }
+    .stat-card.important { background: linear-gradient(135deg, #dc3545 0%, #e35d6a 100%); color: white; }
+    .stat-card.scam { background: linear-gradient(135deg, #800000 0%, #b22222 100%); color: white; animation: scam-card-pulse 1.5s infinite; }
+    @keyframes scam-card-pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.02); }
+    }
+    .stat-card.total { background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; }
+    .stat-card.cluster { background: linear-gradient(135deg, #0dcaf0 0%, #6f42c1 100%); color: white; }
+    .stat-card.cluster .breakdown {
+        font-size: 0.75rem;
+        margin-top: 8px;
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+    }
+    .stat-card.cluster .breakdown span {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    
+    /* Email List */
+    .email-item {
+        padding: 12px 16px;
+        margin-bottom: 4px;
+        border-radius: 8px;
+        transition: all 0.2s;
+        user-select: text;
+    }
+    .email-item:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .email-item.selected {
+        outline: 2px solid #0d6efd;
+    }
+    .email-item .btn-group-sm .btn {
+        font-size: 0.75rem;
+        padding: 0.2rem 0.4rem;
+    }
+    .email-item .email-select-btn {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    .email-subject {
+        font-weight: 500;
+        max-width: 500px;
+    }
+    .email-sender-name {
+        color: #495057;
+        font-size: 0.9rem;
+    }
+    .email-sender-address {
+        color: #6c757d;
+        font-size: 0.85rem;
+        font-family: monospace;
+    }
+    .email-date {
+        color: #6c757d;
+        font-size: 0.85rem;
+    }
+    .email-reasons {
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+    
+    /* Loading Overlay */
+    #loadingOverlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.7);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 2000;
+        flex-direction: column;
+        gap: 20px;
+    }
+    #loadingOverlay.show {
+        display: flex;
+    }
+    
+    /* Filter Tabs */
+    .filter-tabs .nav-link {
+        border-radius: 20px;
+        padding: 8px 20px;
+        margin-right: 8px;
+    }
+    .filter-tabs .nav-link.active {
+        font-weight: bold;
+    }
+    
+    /* Action Bar */
+    #actionBar {
+        position: sticky;
+        bottom: 20px;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        border-radius: 12px;
+        padding: 16px 24px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        display: none;
+        color: white;
+        /* Performance: GPU-Layer für smooth scrolling */
+        will-change: transform;
+        transform: translateZ(0);
+        z-index: 1000;
+    }
+    #actionBar.show {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    /* Cluster View Styles */
+    .cluster-card {
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 12px;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        transition: all 0.2s;
+    }
+    .cluster-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .cluster-card.category-safe { border-left: 4px solid #198754; }
+    .cluster-card.category-review { border-left: 4px solid #ffc107; }
+    .cluster-card.category-important { border-left: 4px solid #dc3545; }
+    .cluster-pattern {
+        font-family: monospace;
+        background: #f8f9fa;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.85rem;
+    }
+    .cluster-count {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #495057;
+    }
+    .cluster-meta {
+        font-size: 0.85rem;
+        color: #6c757d;
+    }
+    
+    /* Aufklappbare Email-Liste im Cluster */
+    .cluster-expand-btn {
+        cursor: pointer;
+        color: #6c757d;
+        transition: transform 0.2s;
+    }
+    .cluster-expand-btn:hover {
+        color: #495057;
+    }
+    .cluster-expand-btn.expanded {
+        transform: rotate(180deg);
+    }
+    .cluster-emails-list {
+        display: none;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px dashed #dee2e6;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    .cluster-emails-list.show {
+        display: block;
+    }
+    .cluster-email-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 8px;
+        margin-bottom: 4px;
+        background: #f8f9fa;
+        border-radius: 6px;
+        font-size: 0.85rem;
+    }
+    .cluster-email-item:hover {
+        background: #e9ecef;
+    }
+    .cluster-email-subject {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        margin-right: 8px;
+    }
+    .cluster-email-meta {
+        font-size: 0.75rem;
+        color: #6c757d;
+        white-space: nowrap;
+    }
+    .cluster-email-attachment {
+        color: #0d6efd;
+        margin-left: 6px;
+    }
+</style>
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h3">
+                <i class="bi bi-folder-check me-2"></i>
+                Ordner-Audit
+            </h1>
+            <p class="text-muted">
+                Analysiere Ordner und lösche sicher unwichtige Emails.
+            </p>
+        </div>
+    </div>
+    
+    <!-- Main Tabs: Scan vs Config -->
+    <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="scan-tab" data-bs-toggle="tab" data-bs-target="#scanPane" type="button" role="tab">
+                <i class="bi bi-search me-2"></i>Ordner scannen
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="config-tab" data-bs-toggle="tab" data-bs-target="#configPane" type="button" role="tab">
+                <i class="bi bi-gear me-2"></i>Konfiguration
+            </button>
+        </li>
+    </ul>
+    
+    <div class="tab-content" id="mainTabsContent">
+    <!-- ==================== SCAN TAB ==================== -->
+    <div class="tab-pane fade show active" id="scanPane" role="tabpanel">
+    
+    <!-- Account Selection & Scan -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row align-items-end g-3">
+                <div class="col-md-4">
+                    <label class="form-label">E-Mail Account</label>
+                    <select id="accountSelect" class="form-select">
+                        <option value="">-- Account wählen --</option>
+                        {% for account in accounts %}
+                        <option value="{{ account.id }}">{{ account.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Ordner</label>
+                    <select id="folderSelect" class="form-select" disabled>
+                        <option value="">-- Erst Account wählen --</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Limit</label>
+                    <select id="limitSelect" class="form-select">
+                        <option value="500">500</option>
+                        <option value="1000">1.000</option>
+                        <option value="2000">2.000</option>
+                        <option value="5000" selected>5.000</option>
+                        <option value="10000">10.000</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button id="scanBtn" class="btn btn-primary w-100">
+                        <i class="bi bi-search me-2"></i>
+                        Ordner scannen
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Stats (hidden until scan) -->
+    <div id="statsSection" class="row mb-4 g-3" style="display: none;">
+        <div class="col">
+            <div class="stat-card total" data-filter="all" style="cursor: pointer;">
+                <div class="number" id="statTotal">0</div>
+                <div>Gesamt</div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="stat-card scam" data-filter="scam" style="cursor: pointer;">
+                <div class="number" id="statScam">0</div>
+                <div>🚨 Scam/Betrug</div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="stat-card safe" data-filter="safe" style="cursor: pointer;">
+                <div class="number" id="statSafe">0</div>
+                <div>🟢 Sicher löschbar</div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="stat-card review" data-filter="review" style="cursor: pointer;">
+                <div class="number" id="statReview">0</div>
+                <div>🟡 Prüfen</div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="stat-card important" data-filter="important" style="cursor: pointer;">
+                <div class="number" id="statImportant">0</div>
+                <div>🔴 Möglicherweise wichtig</div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="stat-card cluster" data-filter="clusters" style="cursor: pointer;">
+                <div class="number" id="statClustered">0</div>
+                <div>📦 In Clustern</div>
+                <div class="breakdown">
+                    <span>🚨 <span id="clusterScam">0</span></span>
+                    <span>🟢 <span id="clusterSafe">0</span></span>
+                    <span>🟡 <span id="clusterReview">0</span></span>
+                    <span>🔴 <span id="clusterImportant">0</span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Filter Tabs -->
+    <div id="filterSection" class="mb-3" style="display: none;">
+        <div class="d-flex justify-content-between align-items-center">
+            <ul class="nav filter-tabs">
+                <li class="nav-item">
+                    <a class="nav-link active" href="#" data-filter="all">
+                        Alle
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#" data-filter="scam" style="color: #800000; font-weight: bold;">
+                        🚨 Scam/Betrug
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link btn-outline-success" href="#" data-filter="safe">
+                        🟢 Sicher löschbar
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link btn-outline-warning" href="#" data-filter="review">
+                        🟡 Prüfen
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link btn-outline-danger" href="#" data-filter="important">
+                        🔴 Wichtig
+                    </a>
+                </li>
+                <li class="nav-item ms-3">
+                    <a class="nav-link btn-outline-info" href="#" data-filter="clusters" id="clusterViewTab">
+                        📦 Cluster-Ansicht
+                    </a>
+                </li>
+            </ul>
+            <div class="d-flex gap-2">
+                <button id="selectAllVisibleBtn" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-check-all me-1"></i> Alle sichtbaren auswählen
+                </button>
+                <button id="deselectAllBtn" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-x-lg me-1"></i> Auswahl aufheben
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Cluster View (hidden by default) -->
+    <div id="clusterView" class="mb-5" style="display: none;">
+        <!-- Filled by JavaScript -->
+    </div>
+    
+    <!-- Email List -->
+    <div id="emailList" class="mb-5">
+        <!-- Filled by JavaScript -->
+    </div>
+    
+    <!-- Action Bar -->
+    <div id="actionBar">
+        <div>
+            <span id="selectedCount">0</span> ausgewählt
+        </div>
+        <div class="d-flex gap-2">
+            <button id="selectAllSafeBtn" class="btn btn-outline-light">
+                <i class="bi bi-check-all me-1"></i>
+                Alle "Sicher" auswählen
+            </button>
+            <button id="deleteSelectedBtn" class="btn btn-danger">
+                <i class="bi bi-trash3 me-1"></i>
+                Ausgewählte permanent löschen
+            </button>
+        </div>
+    </div>
+    
+    </div><!-- End scanPane -->
+    
+    <!-- ==================== CONFIG TAB ==================== -->
+    <div class="tab-pane fade" id="configPane" role="tabpanel">
+        
+        <!-- Config Stats -->
+        <div class="row mb-4 g-3" id="configStats">
+            <div class="col-6 col-md">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <h4 class="text-success mb-0" id="configTrustedCount">-</h4>
+                        <small class="text-muted">Trusted Domains</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <h4 class="text-primary mb-0" id="configKeywordsCount">-</h4>
+                        <small class="text-muted">Keywords</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <h4 class="text-warning mb-0" id="configSafeCount">-</h4>
+                        <small class="text-muted">Safe Patterns</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <h4 class="text-danger mb-0" id="configVipCount">-</h4>
+                        <small class="text-muted">VIP Absender</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <h4 class="text-info mb-0" id="configAutoDeleteCount">-</h4>
+                        <small class="text-muted">Auto-Regeln</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Load Defaults Button -->
+        <div class="mb-4">
+            <button id="loadDefaultsBtn" class="btn btn-outline-primary">
+                <i class="bi bi-cloud-download me-2"></i>
+                System-Defaults laden (CH, DE, IT, FR Keywords & Domains)
+            </button>
+            <span class="text-muted ms-2">Lädt vordefinierte Listen für mehrsprachige Erkennung</span>
+        </div>
+        
+        <!-- Config Sections -->
+        <div class="accordion" id="configAccordion">
+            
+            <!-- Trusted Domains -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#trustedDomainsSection">
+                        <i class="bi bi-shield-check me-2 text-success"></i>
+                        Vertrauenswürdige Domains
+                        <span class="badge bg-success ms-2" id="trustedBadge">0</span>
+                    </button>
+                </h2>
+                <div id="trustedDomainsSection" class="accordion-collapse collapse show" data-bs-parent="#configAccordion">
+                    <div class="accordion-body">
+                        <p class="text-muted mb-3">
+                            Emails von diesen Domains werden <strong>nicht</strong> als Scam/Spam markiert.
+                            Beispiele: ubs.com, admin.ch, iliad.it
+                        </p>
+                        <textarea id="trustedDomainsInput" class="form-control font-monospace" rows="5" 
+                            placeholder="ubs.com, credit-suisse.com, admin.ch, iliad.it, estraprometeo.it..."></textarea>
+                        <div class="mt-2 d-flex justify-content-between">
+                            <small class="text-muted">Komma-getrennt oder eine Domain pro Zeile</small>
+                            <button class="btn btn-sm btn-primary" id="saveTrustedDomainsBtn">
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Important Keywords -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#keywordsSection">
+                        <i class="bi bi-exclamation-triangle me-2 text-danger"></i>
+                        Wichtige Betreff-Keywords
+                        <span class="badge bg-danger ms-2" id="keywordsBadge">0</span>
+                    </button>
+                </h2>
+                <div id="keywordsSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                    <div class="accordion-body">
+                        <p class="text-muted mb-3">
+                            Emails mit diesen Keywords im Betreff werden als <strong>wichtig</strong> markiert.
+                            Mehrsprachig: DE, EN, IT, FR
+                        </p>
+                        <textarea id="importantKeywordsInput" class="form-control font-monospace" rows="5" 
+                            placeholder="rechnung, fattura, bolletta, invoice, mahnung, kündigung, contratto..."></textarea>
+                        <div class="mt-2 d-flex justify-content-between">
+                            <small class="text-muted">Komma-getrennt oder ein Keyword pro Zeile</small>
+                            <button class="btn btn-sm btn-primary" id="saveImportantKeywordsBtn">
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Safe Patterns (Subject) -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#safeSubjectSection">
+                        <i class="bi bi-envelope-check me-2 text-success"></i>
+                        Newsletter/Marketing Betreff-Patterns
+                        <span class="badge bg-warning text-dark ms-2" id="safeSubjectBadge">0</span>
+                    </button>
+                </h2>
+                <div id="safeSubjectSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                    <div class="accordion-body">
+                        <p class="text-muted mb-3">
+                            Emails mit diesen Patterns im Betreff werden als <strong>sicher löschbar</strong> markiert.
+                        </p>
+                        <textarea id="safeSubjectInput" class="form-control font-monospace" rows="4" 
+                            placeholder="newsletter, weekly digest, rabatt, sale, gutschein, unsubscribe..."></textarea>
+                        <div class="mt-2 d-flex justify-content-between">
+                            <small class="text-muted">Komma-getrennt</small>
+                            <button class="btn btn-sm btn-primary" id="saveSafeSubjectBtn">
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Safe Patterns (Sender) -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#safeSenderSection">
+                        <i class="bi bi-person-check me-2 text-success"></i>
+                        Newsletter/Marketing Absender-Patterns
+                        <span class="badge bg-warning text-dark ms-2" id="safeSenderBadge">0</span>
+                    </button>
+                </h2>
+                <div id="safeSenderSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                    <div class="accordion-body">
+                        <p class="text-muted mb-3">
+                            Emails von Absendern mit diesen Patterns werden als <strong>sicher löschbar</strong> markiert.
+                        </p>
+                        <textarea id="safeSenderInput" class="form-control font-monospace" rows="4" 
+                            placeholder="newsletter@, noreply@, marketing@, @mailchimp., @sendgrid...."></textarea>
+                        <div class="mt-2 d-flex justify-content-between">
+                            <small class="text-muted">Komma-getrennt</small>
+                            <button class="btn btn-sm btn-primary" id="saveSafeSenderBtn">
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- VIP Senders -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#vipSection">
+                        <i class="bi bi-star-fill me-2 text-warning"></i>
+                        VIP Absender
+                        <span class="badge bg-danger ms-2" id="vipBadge">0</span>
+                    </button>
+                </h2>
+                <div id="vipSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                    <div class="accordion-body">
+                        <p class="text-muted mb-3">
+                            Emails von VIP-Absendern werden immer als <strong>wichtig</strong> markiert.
+                            Format: Email (chef@firma.de), Domain (@firma.de) oder nur Domain (firma.de)
+                        </p>
+                        <textarea id="vipSendersInput" class="form-control font-monospace" rows="4" 
+                            placeholder="chef@firma.de, @wichtiger-kunde.de, partner-firma.com..."></textarea>
+                        <div class="mt-2 d-flex justify-content-between">
+                            <small class="text-muted">Komma-getrennt</small>
+                            <button class="btn btn-sm btn-primary" id="saveVipSendersBtn">
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Auto-Delete Rules -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#autoDeleteSection">
+                        <i class="bi bi-trash3 me-2 text-info"></i>
+                        Auto-Regeln
+                        <span class="badge bg-info ms-2" id="autoDeleteBadge">0</span>
+                    </button>
+                </h2>
+                <div id="autoDeleteSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                    <div class="accordion-body">
+                        <p class="text-muted mb-3">
+                            Regeln für automatisches Löschen/Schützen. Wenn <strong>beide</strong> Patterns matchen (falls gesetzt), wird die Aktion ausgeführt.
+                        </p>
+                        
+                        <!-- Regeln Tabelle -->
+                        <div class="table-responsive mb-3">
+                            <table class="table table-sm table-hover" id="autoDeleteTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 25%">Absender-Pattern</th>
+                                        <th style="width: 25%">Betreff-Pattern</th>
+                                        <th style="width: 15%">Aktion</th>
+                                        <th style="width: 10%">Tage</th>
+                                        <th style="width: 20%">Beschreibung</th>
+                                        <th style="width: 5%"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="autoDeleteRulesBody">
+                                    <!-- Dynamisch befüllt -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Neue Regel Form -->
+                        <div class="card bg-light">
+                            <div class="card-body py-2">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-1">Absender</label>
+                                        <input type="text" class="form-control form-control-sm font-monospace" 
+                                               id="newRuleSender" placeholder="@newsletter.">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-1">Betreff (Regex)</label>
+                                        <input type="text" class="form-control form-control-sm font-monospace" 
+                                               id="newRuleSubject" placeholder="backup.*success">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-1">Aktion</label>
+                                        <select class="form-select form-select-sm" id="newRuleDisposition">
+                                            <option value="SAFE">🗑️ Sicher löschbar</option>
+                                            <option value="IMPORTANT">🛡️ Wichtig/Geschützt</option>
+                                            <option value="SCAM">⚠️ Scam/Spam</option>
+                                            <option value="REVIEW">🔍 Manuell prüfen</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-1">
+                                        <label class="form-label small mb-1">Tage</label>
+                                        <input type="number" class="form-control form-control-sm" 
+                                               id="newRuleMaxAge" placeholder="14" min="0">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small mb-1">Beschreibung</label>
+                                        <input type="text" class="form-control form-control-sm" 
+                                               id="newRuleDescription" placeholder="Newsletter älter als 14 Tage">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <button class="btn btn-sm btn-success w-100" id="addAutoDeleteRuleBtn">
+                                            <i class="bi bi-plus-lg me-1"></i>Hinzufügen
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-12">
+                                        <small class="text-muted">
+                                            <strong>SAFE:</strong> Nach X Tagen löschbar | 
+                                            <strong>IMPORTANT:</strong> Nie löschen | 
+                                            <strong>SCAM:</strong> Betrug/Spam |
+                                            <strong>REVIEW:</strong> Manuell prüfen
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+        </div><!-- End Accordion -->
+        
+    </div><!-- End configPane -->
+    
+    </div><!-- End tab-content -->
+</div><!-- End container-fluid -->
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay">
+    <div class="spinner-border text-light" style="width: 4rem; height: 4rem;"></div>
+    <div class="text-light fs-5" id="loadingText">Scanne Papierkorb...</div>
+    <div class="text-light-50" id="loadingSubtext">Dies kann bei vielen Emails einige Sekunden dauern</div>
+</div>
+
+<!-- Universelles Hinzufügen-Modal für alle Konfigurationslisten -->
+<div class="modal fade" id="addToListModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addToListModalTitle">Zur Liste hinzufügen</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Info über gewählte Liste -->
+                <div class="alert alert-secondary py-2 mb-3" id="addToListInfo"></div>
+                
+                <!-- Wert der hinzugefügt wird -->
+                <div class="mb-3">
+                    <label class="form-label" id="addToListValueLabel">Wert</label>
+                    <input type="text" id="addToListValue" class="form-control font-monospace">
+                    <small class="text-muted" id="addToListValueHint"></small>
+                </div>
+                
+                <!-- Optionales zweites Feld (für Auto-Rules: Subject Pattern) -->
+                <div class="mb-3" id="addToListValue2Group" style="display: none;">
+                    <label class="form-label" id="addToListValue2Label">Zweiter Wert</label>
+                    <input type="text" id="addToListValue2" class="form-control font-monospace">
+                    <small class="text-muted" id="addToListValue2Hint"></small>
+                </div>
+                
+                <!-- Disposition für Auto-Rules -->
+                <div class="mb-3" id="addToListDispositionGroup" style="display: none;">
+                    <label class="form-label">Aktion</label>
+                    <select id="addToListDisposition" class="form-select">
+                        <option value="SAFE">🗑️ Sicher löschbar (nach X Tagen)</option>
+                        <option value="IMPORTANT">🛡️ Wichtig/Geschützt (nie löschen)</option>
+                        <option value="SCAM">⚠️ Scam/Spam (Betrug)</option>
+                        <option value="REVIEW">🔍 Manuell prüfen</option>
+                    </select>
+                </div>
+                
+                <!-- Max Age für SAFE -->
+                <div class="mb-3" id="addToListMaxAgeGroup" style="display: none;">
+                    <label class="form-label">Nach wie vielen Tagen löschbar?</label>
+                    <input type="number" id="addToListMaxAge" class="form-control" value="14" min="0">
+                </div>
+                
+                <!-- Beschreibung (optional) -->
+                <div class="mb-3" id="addToListDescGroup" style="display: none;">
+                    <label class="form-label">Beschreibung (optional)</label>
+                    <input type="text" id="addToListDesc" class="form-control" placeholder="z.B. Newsletter Heise">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                <button type="button" class="btn btn-primary" id="addToListConfirmBtn">
+                    <i class="bi bi-plus-lg me-1"></i> Hinzufügen
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+    let scanResult = null;
+    let selectedUids = new Set();
+    let currentFilter = 'all';
+    let currentAddAction = null;  // Aktuell gewählte Aktion (trusted-domain, vip-sender, etc.)
+    let currentClusterData = null; // Cluster-Daten für das Modal
+    
+    // Event Listeners (CSP-konform)
+    document.addEventListener('DOMContentLoaded', function() {
+        // Scan Button
+        document.getElementById('scanBtn').addEventListener('click', startScan);
+        
+        // Account-Auswahl: Ordner laden
+        document.getElementById('accountSelect').addEventListener('change', loadFolders);
+        
+        // Filter Tabs
+        document.querySelectorAll('.filter-tabs .nav-link').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                filterEmails(this.dataset.filter, this);
+            });
+        });
+        
+        // Stat Cards als Filter
+        document.querySelectorAll('.stat-card[data-filter]').forEach(function(card) {
+            card.addEventListener('click', function() {
+                const filter = this.dataset.filter;
+                const tabLink = document.querySelector(`.filter-tabs .nav-link[data-filter="${filter}"]`);
+                if (tabLink) {
+                    filterEmails(filter, tabLink);
+                }
+            });
+        });
+        
+        // Action Buttons
+        document.getElementById('selectAllSafeBtn').addEventListener('click', selectAllSafe);
+        document.getElementById('deleteSelectedBtn').addEventListener('click', deleteSelected);
+        document.getElementById('selectAllVisibleBtn').addEventListener('click', selectAllVisible);
+        document.getElementById('deselectAllBtn').addEventListener('click', deselectAll);
+        
+        // Config Save Buttons (CSP-konform)
+        document.getElementById('saveTrustedDomainsBtn').addEventListener('click', saveTrustedDomains);
+        document.getElementById('saveImportantKeywordsBtn').addEventListener('click', saveImportantKeywords);
+        document.getElementById('saveSafeSubjectBtn').addEventListener('click', function() { saveSafePatterns('subject'); });
+        document.getElementById('saveSafeSenderBtn').addEventListener('click', function() { saveSafePatterns('sender'); });
+        document.getElementById('saveVipSendersBtn').addEventListener('click', saveVipSenders);
+    });
+    
+    // Ordner laden wenn Account gewählt
+    async function loadFolders() {
+        const accountId = document.getElementById('accountSelect').value;
+        const folderSelect = document.getElementById('folderSelect');
+        
+        if (!accountId) {
+            folderSelect.innerHTML = '<option value="">-- Erst Account wählen --</option>';
+            folderSelect.disabled = true;
+            return;
+        }
+        
+        folderSelect.innerHTML = '<option value="">Lade Ordner...</option>';
+        folderSelect.disabled = true;
+        
+        try {
+            const response = await fetch(`/folder-audit/folders/${accountId}`);
+            const data = await response.json();
+            
+            if (data.success && data.folders) {
+                // "Alle Ordner" als erste Option + alle verfügbaren Ordner
+                const folderOptions = data.folders.map(f => 
+                    `<option value="${escapeHtml(f)}" ${f.toLowerCase().includes('trash') || f.toLowerCase().includes('deleted') || f.toLowerCase() === 'papierkorb' ? 'selected' : ''}>${escapeHtml(f)}</option>`
+                ).join('');
+                folderSelect.innerHTML = '<option value="__ALL__">📁 Alle Ordner scannen</option>' + folderOptions;
+                folderSelect.disabled = false;
+            } else {
+                folderSelect.innerHTML = '<option value="">Fehler beim Laden</option>';
+            }
+        } catch (e) {
+            folderSelect.innerHTML = '<option value="">Fehler: ' + e.message + '</option>';
+        }
+    }
+    
+    // CSRF Token Helper
+    function getCsrfToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute('content') : '';
+    }
+    
+    let currentFolder = null;  // Aktuell gescannter Ordner
+    
+    async function startScan() {
+        const accountId = document.getElementById('accountSelect').value;
+        const folder = document.getElementById('folderSelect').value;
+        const limit = parseInt(document.getElementById('limitSelect').value);
+        
+        if (!accountId) {
+            alert('Bitte wähle einen Account');
+            return;
+        }
+        
+        if (!folder) {
+            alert('Bitte wähle einen Ordner');
+            return;
+        }
+        
+        currentFolder = folder;
+        showLoading(`Scanne ${folder}...`);
+        
+        try {
+            const response = await fetch('/folder-audit/scan', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ 
+                    account_id: parseInt(accountId), 
+                    limit,
+                    folder: folder
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.error || 'Scan fehlgeschlagen');
+            }
+            
+            scanResult = data.result;
+            displayResults();
+            
+        } catch (error) {
+            alert('Fehler: ' + error.message);
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    function displayResults() {
+        if (!scanResult) return;
+        
+        // Stats
+        document.getElementById('statTotal').textContent = scanResult.total.toLocaleString();
+        document.getElementById('statScam').textContent = (scanResult.scam_count || 0).toLocaleString();
+        document.getElementById('statSafe').textContent = scanResult.safe_count.toLocaleString();
+        document.getElementById('statReview').textContent = scanResult.review_count.toLocaleString();
+        document.getElementById('statImportant').textContent = scanResult.important_count.toLocaleString();
+        
+        // Cluster Stats - nur Cluster mit 2+ Emails zählen
+        let clusteredTotal = 0, clusterScam = 0, clusterSafe = 0, clusterReview = 0, clusterImportant = 0;
+        let clusterCount = 0;
+        if (scanResult.clusters) {
+            scanResult.clusters.forEach(c => {
+                if (c.count >= 2) {  // Singles ausschließen
+                    clusterCount++;
+                    clusteredTotal += c.count;
+                    clusterScam += c.scam_count || 0;
+                    clusterSafe += c.safe_count || 0;
+                    clusterReview += c.review_count || 0;
+                    clusterImportant += c.important_count || 0;
+                }
+            });
+        }
+        document.getElementById('statClustered').textContent = clusteredTotal.toLocaleString();
+        document.getElementById('clusterScam').textContent = clusterScam.toLocaleString();
+        document.getElementById('clusterSafe').textContent = clusterSafe.toLocaleString();
+        document.getElementById('clusterReview').textContent = clusterReview.toLocaleString();
+        document.getElementById('clusterImportant').textContent = clusterImportant.toLocaleString();
+        // Zeige Cluster-Anzahl im Titel
+        const clusterCard = document.querySelector('.stat-card.cluster');
+        if (clusterCard) {
+            clusterCard.querySelector('div:nth-child(2)').innerHTML = `📦 In ${clusterCount} Clustern`;
+        }
+        
+        // Scam-Warnung anzeigen wenn Scam-Emails gefunden
+        if (scanResult.scam_count > 0) {
+            showScamWarning(scanResult.scam_count);
+        }
+        
+        document.getElementById('statsSection').style.display = 'flex';
+        document.getElementById('filterSection').style.display = 'block';
+        document.getElementById('actionBar').classList.add('show');
+        
+        // Render based on current filter
+        if (currentFilter === 'clusters') {
+            document.getElementById('emailList').style.display = 'none';
+            document.getElementById('clusterView').style.display = 'block';
+            renderClusters();
+        } else {
+            document.getElementById('clusterView').style.display = 'none';
+            document.getElementById('emailList').style.display = 'block';
+            renderEmails();
+        }
+    }
+    
+    function renderEmails() {
+        const container = document.getElementById('emailList');
+        const emails = scanResult.emails.filter(e => 
+            currentFilter === 'all' || e.category === currentFilter
+        );
+        
+        if (emails.length === 0) {
+            container.innerHTML = '<div class="text-center text-muted py-5">Keine Emails in dieser Kategorie</div>';
+            return;
+        }
+        
+        let html = '';
+        for (const email of emails) {
+            const isSelected = selectedUids.has(email.uid);
+            const categoryClass = `category-${email.category}`;
+            const date = email.date ? new Date(email.date).toLocaleDateString('de-DE') : '';
+            const reasons = email.reasons.join(', ');
+            
+            // Zeige sowohl Name als auch E-Mail-Adresse
+            const senderDisplay = email.sender_name 
+                ? `<span class="email-sender-name">${escapeHtml(email.sender_name)}</span><br><span class="email-sender-address">&lt;${escapeHtml(email.sender)}&gt;</span>`
+                : `<span class="email-sender-address">${escapeHtml(email.sender)}</span>`;
+            
+            html += `
+                <div class="email-item ${categoryClass} ${isSelected ? 'selected' : ''}" 
+                     data-uid="${email.uid}" 
+                     data-category="${email.category}">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1" style="min-width: 0;">
+                            <div class="email-subject">${escapeHtml(email.subject || '(Kein Betreff)')}</div>
+                            <div class="email-sender">
+                                ${senderDisplay}
+                                ${email.folder ? `<span class="badge bg-secondary ms-2" style="font-size: 0.7em; vertical-align: middle;">📁 ${escapeHtml(email.folder)}</span>` : ''}
+                            </div>
+                            <div class="email-reasons">${escapeHtml(reasons)}</div>
+                        </div>
+                        <div class="text-end d-flex flex-column gap-1" style="min-width: 120px;">
+                            <div class="email-date small text-muted">${date}</div>
+                            <button class="btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline-secondary'} email-select-btn"
+                                    data-uid="${email.uid}">
+                                ${isSelected ? '✓ Ausgewählt' : 'Auswählen'}
+                            </button>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-secondary dropdown-toggle email-add-btn" 
+                                        type="button"
+                                        data-bs-toggle="dropdown" 
+                                        aria-expanded="false"
+                                        data-sender="${escapeHtml(email.sender || '')}"
+                                        data-domain="${escapeHtml(email.sender ? email.sender.split('@')[1] || '' : '')}"
+                                        data-subject="${escapeHtml(email.subject || '')}"
+                                        data-category="${email.category}"
+                                        title="Zu Konfigurationsliste hinzufügen">
+                                    <i class="bi bi-plus-circle"></i> Hinzufügen
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><h6 class="dropdown-header">Zur Liste hinzufügen</h6></li>
+                                    <li><a class="dropdown-item email-add-action" href="#" data-action="trusted-domain">
+                                        <i class="bi bi-shield-check text-success"></i> Trusted Domain
+                                    </a></li>
+                                    <li><a class="dropdown-item email-add-action" href="#" data-action="important-keyword">
+                                        <i class="bi bi-exclamation-triangle text-danger"></i> Wichtiges Keyword
+                                    </a></li>
+                                    <li><a class="dropdown-item email-add-action" href="#" data-action="safe-subject">
+                                        <i class="bi bi-envelope-check text-warning"></i> Safe Betreff-Pattern
+                                    </a></li>
+                                    <li><a class="dropdown-item email-add-action" href="#" data-action="safe-sender">
+                                        <i class="bi bi-person-check text-warning"></i> Safe Absender-Pattern
+                                    </a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item email-add-action" href="#" data-action="vip-sender">
+                                        <i class="bi bi-star-fill text-warning"></i> VIP Absender
+                                    </a></li>
+                                    <li><a class="dropdown-item email-add-action" href="#" data-action="auto-rule">
+                                        <i class="bi bi-lightning text-info"></i> Auto-Regel
+                                    </a></li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        container.innerHTML = html;
+        
+        // Event Handler für Auswählen-Buttons
+        container.querySelectorAll('.email-select-btn').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const uid = parseInt(this.dataset.uid);
+                toggleSelect(uid);
+            });
+        });
+        
+        // Event Handler für Hinzufügen-Dropdown-Aktionen
+        container.querySelectorAll('.email-add-action').forEach(function(item) {
+            item.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const action = this.dataset.action;
+                const btn = this.closest('.btn-group').querySelector('.email-add-btn');
+                
+                // Daten als Objekt sammeln (wie bei Cluster-Aktionen)
+                const data = {
+                    sender: btn.dataset.sender || '',
+                    domain: btn.dataset.domain || '',
+                    subject: btn.dataset.subject || '',
+                    pattern: btn.dataset.subject || '',  // Für Auto-Regel
+                    category: btn.dataset.category || ''
+                };
+                
+                currentAddAction = action;
+                currentClusterData = data;
+                
+                prepareAddToListModal(action, data);
+                
+                // Modal öffnen
+                new bootstrap.Modal(document.getElementById('addToListModal')).show();
+            });
+        });
+        
+        updateSelectedCount();
+    }
+    
+    function toggleSelect(uid) {
+        if (selectedUids.has(uid)) {
+            selectedUids.delete(uid);
+        } else {
+            selectedUids.add(uid);
+        }
+        renderEmails();
+    }
+    
+    function selectAllSafe() {
+        if (!scanResult) return;
+        
+        const safeEmails = scanResult.emails.filter(e => e.category === 'safe');
+        for (const email of safeEmails) {
+            selectedUids.add(email.uid);
+        }
+        renderEmails();
+    }
+    
+    function selectAllVisible() {
+        if (!scanResult) return;
+        
+        if (currentFilter === 'clusters') {
+            // Bei Cluster-Ansicht: Alle Emails aus sichtbaren Clustern (2+) auswählen
+            const visibleClusters = scanResult.clusters.filter(c => c.count >= 2);
+            for (const cluster of visibleClusters) {
+                for (const uid of cluster.uids) {
+                    selectedUids.add(uid);
+                }
+            }
+            renderClusters();
+        } else {
+            // Nur Emails der aktuell angezeigten Kategorie auswählen
+            const visibleEmails = scanResult.emails.filter(e => 
+                currentFilter === 'all' || e.category === currentFilter
+            );
+            for (const email of visibleEmails) {
+                selectedUids.add(email.uid);
+            }
+            renderEmails();
+        }
+        updateSelectedCount();
+    }
+    
+    function deselectAll() {
+        selectedUids.clear();
+        if (currentFilter === 'clusters') {
+            renderClusters();
+        } else {
+            renderEmails();
+        }
+        updateSelectedCount();
+    }
+    
+    function updateSelectedCount() {
+        document.getElementById('selectedCount').textContent = selectedUids.size.toLocaleString();
+    }
+    
+    function filterEmails(filter, element) {
+        currentFilter = filter;
+        
+        // Update active tab
+        document.querySelectorAll('.filter-tabs .nav-link').forEach(el => {
+            el.classList.remove('active');
+        });
+        element.classList.add('active');
+        
+        // Toggle between cluster view and email list
+        if (filter === 'clusters') {
+            document.getElementById('emailList').style.display = 'none';
+            document.getElementById('clusterView').style.display = 'block';
+            renderClusters();
+        } else {
+            document.getElementById('emailList').style.display = 'block';
+            document.getElementById('clusterView').style.display = 'none';
+            renderEmails();
+        }
+    }
+    
+    // Rebuild clusters from remaining emails (after delete)
+    function rebuildClusters() {
+        if (!scanResult || !scanResult.emails) return;
+        
+        const clusterMap = {};
+        
+        for (const email of scanResult.emails) {
+            // Cluster-Key: domain + normalisierter Betreff (vereinfacht)
+            const domain = email.sender.includes('@') ? email.sender.split('@')[1].toLowerCase() : 'unknown';
+            const normalizedSubject = normalizeSubjectForClustering(email.subject || '');
+            const key = `${domain}|${normalizedSubject}`;
+            
+            if (!clusterMap[key]) {
+                clusterMap[key] = {
+                    cluster_key: key,
+                    display_name: normalizedSubject || '(Kein Betreff)',
+                    sender_domain: domain,
+                    count: 0,
+                    category: email.category,
+                    uids: [],
+                    sample_subject: email.subject,
+                    sample_sender: email.sender,
+                    safe_count: 0,
+                    review_count: 0,
+                    important_count: 0,
+                    oldest_date: email.date,
+                    newest_date: email.date,
+                    total_size_kb: 0
+                };
+            }
+            
+            const cluster = clusterMap[key];
+            cluster.count++;
+            cluster.uids.push(email.uid);
+            cluster.total_size_kb += (email.size || 0) / 1024;
+            
+            if (email.category === 'safe') cluster.safe_count++;
+            else if (email.category === 'review') cluster.review_count++;
+            else if (email.category === 'important') cluster.important_count++;
+            
+            // Update dominant category
+            if (email.category === 'important') cluster.category = 'important';
+            else if (email.category === 'review' && cluster.category === 'safe') cluster.category = 'review';
+        }
+        
+        // Sort by count descending
+        scanResult.clusters = Object.values(clusterMap).sort((a, b) => b.count - a.count);
+    }
+    
+    // Simplified client-side subject normalization
+    function normalizeSubjectForClustering(subject) {
+        if (!subject) return '';
+        let s = subject.toLowerCase().trim();
+        s = s.replace(/^(re:|aw:|fwd:|wg:|fw:)\s*/i, '');
+        s = s.replace(/\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/g, '<DATE>');
+        s = s.replace(/\d+\s+(package|update|message|item|file|error|warning)/gi, '<N> $1');
+        s = s.replace(/\b\d{2,}\b/g, '<N>');
+        s = s.replace(/\b[\w-]+\.[\w-]+\.(li|ch|de|at|com|net|org|io|local)\b/gi, '<HOST>');
+        s = s.replace(/\s+/g, ' ').trim();
+        return s.substring(0, 80);
+    }
+    
+    function renderClusters() {
+        const container = document.getElementById('clusterView');
+        if (!scanResult || !scanResult.clusters) {
+            container.innerHTML = '<div class="text-center text-muted py-5">Keine Cluster-Daten verfügbar</div>';
+            return;
+        }
+        
+        // Nur Cluster mit 2+ Emails anzeigen
+        const clusters = scanResult.clusters.filter(c => c.count >= 2);
+        
+        // Summary
+        const totalClusters = clusters.length;
+        const largeClusters = clusters.filter(c => c.count >= 5).length;
+        const totalEmails = clusters.reduce((sum, c) => sum + c.count, 0);
+        
+        let html = `
+            <div class="alert alert-info mb-4">
+                <strong>📦 ${totalClusters} Cluster</strong> mit insgesamt ${totalEmails.toLocaleString()} Emails - 
+                davon ${largeClusters} mit 5+ Emails. 
+                <br><small class="text-muted">Einzelne Mails (1×) werden hier nicht angezeigt, sind aber in der normalen Liste.</small>
+            </div>
+        `;
+        
+        // Cluster-Karten
+        for (const cluster of clusters) {
+            const categoryClass = `category-${cluster.category}`;
+            const categoryBadge = cluster.category === 'safe' 
+                ? '<span class="badge bg-success">Sicher löschbar</span>'
+                : cluster.category === 'important'
+                ? '<span class="badge bg-danger">Wichtig</span>'
+                : '<span class="badge bg-warning text-dark">Prüfen</span>';
+            
+            const dateRange = cluster.oldest_date && cluster.newest_date
+                ? `${new Date(cluster.oldest_date).toLocaleDateString('de-DE')} - ${new Date(cluster.newest_date).toLocaleDateString('de-DE')}`
+                : '';
+            
+            const isAllSelected = cluster.uids.every(uid => selectedUids.has(uid));
+            const isSomeSelected = cluster.uids.some(uid => selectedUids.has(uid));
+            
+            // Emails für diesen Cluster sammeln
+            const clusterEmails = cluster.uids.map(uid => 
+                scanResult.emails.find(e => e.uid === uid)
+            ).filter(e => e).sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            html += `
+                <div class="cluster-card ${categoryClass}" data-cluster-key="${escapeHtml(cluster.cluster_key)}">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <span class="cluster-count">${cluster.count}×</span>
+                                ${categoryBadge}
+                                <span class="cluster-expand-btn" title="Emails anzeigen" data-cluster-key="${escapeHtml(cluster.cluster_key)}">▼</span>
+                            </div>
+                            <div class="cluster-pattern mb-2">${escapeHtml(cluster.display_name)}</div>
+                            <div class="cluster-meta">
+                                <strong>Domain:</strong> ${escapeHtml(cluster.sender_domain)}
+                                ${dateRange ? ` | <strong>Zeitraum:</strong> ${dateRange}` : ''}
+                                ${cluster.total_size_kb ? ` | <strong>Größe:</strong> ${cluster.total_size_kb} KB` : ''}
+                            </div>
+                            <div class="mt-2 text-muted small">
+                                <em>Beispiel: ${escapeHtml(cluster.sample_subject || '(Kein Betreff)')}</em>
+                                <br><small>Von: ${escapeHtml(cluster.sample_sender || cluster.sender_domain)}</small>
+                            </div>
+                        </div>
+                        <div class="text-end d-flex flex-column gap-1">
+                            <button class="btn btn-sm ${isAllSelected ? 'btn-primary' : isSomeSelected ? 'btn-outline-primary' : 'btn-outline-secondary'} cluster-select-btn"
+                                    data-uids="${cluster.uids.join(',')}">
+                                ${isAllSelected ? '✓ Ausgewählt' : isSomeSelected ? 'Teilweise' : 'Auswählen'}
+                            </button>
+                            <div class="btn-group btn-group-sm mt-1">
+                                <button class="btn btn-outline-secondary dropdown-toggle cluster-add-btn" 
+                                        type="button"
+                                        data-bs-toggle="dropdown" 
+                                        aria-expanded="false"
+                                        data-sender="${escapeHtml(cluster.sample_sender || '')}"
+                                        data-domain="${escapeHtml(cluster.sender_domain)}"
+                                        data-pattern="${escapeHtml(cluster.display_name)}"
+                                        data-subject="${escapeHtml(cluster.sample_subject || '')}"
+                                        data-category="${cluster.category}"
+                                        title="Zu Konfigurationsliste hinzufügen">
+                                    <i class="bi bi-plus-circle"></i> Hinzufügen
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><h6 class="dropdown-header">Zur Liste hinzufügen</h6></li>
+                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="trusted-domain">
+                                        <i class="bi bi-shield-check text-success"></i> Trusted Domain
+                                    </a></li>
+                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="important-keyword">
+                                        <i class="bi bi-exclamation-triangle text-danger"></i> Wichtiges Keyword
+                                    </a></li>
+                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="safe-subject">
+                                        <i class="bi bi-envelope-check text-warning"></i> Safe Betreff-Pattern
+                                    </a></li>
+                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="safe-sender">
+                                        <i class="bi bi-person-check text-warning"></i> Safe Absender-Pattern
+                                    </a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="vip-sender">
+                                        <i class="bi bi-star-fill text-warning"></i> VIP Absender
+                                    </a></li>
+                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="auto-rule">
+                                        <i class="bi bi-lightning text-info"></i> Auto-Regel
+                                    </a></li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Aufklappbare Email-Liste -->
+                    <div class="cluster-emails-list" data-cluster-key="${escapeHtml(cluster.cluster_key)}">
+                        ${clusterEmails.map(email => `
+                            <div class="cluster-email-item">
+                                <div class="cluster-email-subject">
+                                    ${email.has_attachments ? `<span class="cluster-email-attachment" title="${email.attachment_names?.length ? escapeHtml(email.attachment_names.join(', ')) : 'Hat Anhänge'}">📎</span>` : ''}
+                                    ${escapeHtml(email.subject || '(Kein Betreff)')}
+                                    ${email.attachment_names?.length ? `<span class="text-muted small ms-2">[${escapeHtml(email.attachment_names.join(', '))}]</span>` : ''}
+                                    ${!email.subject && email.content_summary ? `<span class="text-info small ms-2">• ${escapeHtml(email.content_summary)}</span>` : ''}
+                                </div>
+                                <div class="cluster-email-meta">
+                                    ${email.folder ? `<span class="badge bg-secondary me-2" title="Ordner">📁 ${escapeHtml(email.folder)}</span>` : ''}
+                                    ${email.date ? new Date(email.date).toLocaleDateString('de-DE') + ' ' + new Date(email.date).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : ''}
+                                    ${email.size ? ` · ${Math.round(email.size/1024)} KB` : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        container.innerHTML = html;
+        
+        // Event Listeners für Cluster-Expand (Aufklappen)
+        container.querySelectorAll('.cluster-expand-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                // Finde die Email-Liste im selben cluster-card Container
+                const clusterCard = this.closest('.cluster-card');
+                const list = clusterCard ? clusterCard.querySelector('.cluster-emails-list') : null;
+                if (list) {
+                    list.classList.toggle('show');
+                    this.classList.toggle('expanded');
+                }
+            });
+        });
+        
+        // Event Listeners für Cluster-Buttons
+        container.querySelectorAll('.cluster-select-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const uids = this.dataset.uids.split(',').map(u => parseInt(u));
+                const allSelected = uids.every(uid => selectedUids.has(uid));
+                
+                if (allSelected) {
+                    // Deselect all in cluster
+                    uids.forEach(uid => selectedUids.delete(uid));
+                } else {
+                    // Select all in cluster
+                    uids.forEach(uid => selectedUids.add(uid));
+                }
+                
+                renderClusters();
+                updateSelectedCount();
+            });
+        });
+        
+        // Dropdown-Aktionen für Hinzufügen zu Listen
+        container.querySelectorAll('.cluster-add-action').forEach(action => {
+            action.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                // Finde den übergeordneten Dropdown-Button für Cluster-Daten
+                const dropdownBtn = this.closest('.btn-group').querySelector('.cluster-add-btn');
+                
+                currentClusterData = {
+                    sender: dropdownBtn.dataset.sender,
+                    domain: dropdownBtn.dataset.domain,
+                    pattern: dropdownBtn.dataset.pattern,
+                    subject: dropdownBtn.dataset.subject,
+                    category: dropdownBtn.dataset.category
+                };
+                currentAddAction = this.dataset.action;
+                
+                // Modal vorbereiten basierend auf Aktion
+                prepareAddToListModal(currentAddAction, currentClusterData);
+                
+                // Modal öffnen
+                new bootstrap.Modal(document.getElementById('addToListModal')).show();
+            });
+        });
+    }
+    
+    // Modal vorbereiten basierend auf gewählter Aktion
+    function prepareAddToListModal(action, data) {
+        const modal = document.getElementById('addToListModal');
+        const title = document.getElementById('addToListModalTitle');
+        const info = document.getElementById('addToListInfo');
+        const valueLabel = document.getElementById('addToListValueLabel');
+        const valueInput = document.getElementById('addToListValue');
+        const valueHint = document.getElementById('addToListValueHint');
+        const value2Group = document.getElementById('addToListValue2Group');
+        const value2Label = document.getElementById('addToListValue2Label');
+        const value2Input = document.getElementById('addToListValue2');
+        const value2Hint = document.getElementById('addToListValue2Hint');
+        const dispositionGroup = document.getElementById('addToListDispositionGroup');
+        const maxAgeGroup = document.getElementById('addToListMaxAgeGroup');
+        const descGroup = document.getElementById('addToListDescGroup');
+        const confirmBtn = document.getElementById('addToListConfirmBtn');
+        
+        // Alles zurücksetzen
+        value2Group.style.display = 'none';
+        dispositionGroup.style.display = 'none';
+        maxAgeGroup.style.display = 'none';
+        descGroup.style.display = 'none';
+        valueInput.readOnly = false;
+        
+        switch (action) {
+            case 'trusted-domain':
+                title.textContent = '🛡️ Trusted Domain hinzufügen';
+                info.innerHTML = '<i class="bi bi-shield-check text-success"></i> Emails von dieser Domain werden <strong>nicht als Scam</strong> markiert.';
+                valueLabel.textContent = 'Domain';
+                valueInput.value = data.domain || '';
+                valueHint.textContent = 'z.B. example.com oder subdomain.example.com';
+                confirmBtn.className = 'btn btn-success';
+                break;
+                
+            case 'important-keyword':
+                title.textContent = '⚠️ Wichtiges Keyword hinzufügen';
+                info.innerHTML = '<i class="bi bi-exclamation-triangle text-danger"></i> Emails mit diesem Keyword im Betreff werden als <strong>wichtig</strong> markiert.';
+                valueLabel.textContent = 'Keyword';
+                // Aus Betreff ein Keyword extrahieren
+                valueInput.value = extractKeyword(data.subject || data.pattern || '');
+                valueHint.textContent = 'z.B. rechnung, mahnung, termin';
+                confirmBtn.className = 'btn btn-danger';
+                break;
+                
+            case 'safe-subject':
+                title.textContent = '📧 Safe Betreff-Pattern hinzufügen';
+                info.innerHTML = '<i class="bi bi-envelope-check text-warning"></i> Emails mit diesem Pattern im Betreff werden als <strong>löschbar</strong> markiert.';
+                valueLabel.textContent = 'Betreff-Pattern';
+                valueInput.value = extractKeyword(data.pattern || data.subject || '');
+                valueHint.textContent = 'z.B. newsletter, weekly digest, sale';
+                confirmBtn.className = 'btn btn-warning';
+                break;
+                
+            case 'safe-sender':
+                title.textContent = '👤 Safe Absender-Pattern hinzufügen';
+                info.innerHTML = '<i class="bi bi-person-check text-warning"></i> Emails von Absendern mit diesem Pattern werden als <strong>löschbar</strong> markiert.';
+                valueLabel.textContent = 'Absender-Pattern';
+                // Domain als Pattern vorschlagen
+                valueInput.value = `@${data.domain}` || '';
+                valueHint.textContent = 'z.B. newsletter@, @mailchimp., noreply@';
+                confirmBtn.className = 'btn btn-warning';
+                break;
+                
+            case 'vip-sender':
+                title.textContent = '⭐ VIP Absender hinzufügen';
+                info.innerHTML = '<i class="bi bi-star-fill text-warning"></i> Emails von diesem Absender werden immer als <strong>wichtig</strong> markiert.';
+                valueLabel.textContent = 'Absender/Domain';
+                valueInput.value = data.sender || `@${data.domain}` || '';
+                valueHint.textContent = 'Exakte Email oder @domain für alle Emails dieser Domain';
+                confirmBtn.className = 'btn btn-warning';
+                break;
+                
+            case 'auto-rule':
+                title.textContent = '⚡ Auto-Regel erstellen';
+                info.innerHTML = '<i class="bi bi-lightning text-info"></i> Erstellt eine Regel für automatisches Löschen/Schützen basierend auf Absender und Betreff.';
+                valueLabel.textContent = 'Absender-Pattern';
+                valueInput.value = `@${data.domain}` || '';
+                valueHint.textContent = 'z.B. @newsletter., cron@, @mailchimp.';
+                
+                // Zweites Feld für Subject
+                value2Group.style.display = 'block';
+                value2Label.textContent = 'Betreff-Pattern (optional, Regex möglich)';
+                value2Input.value = extractKeyword(data.pattern || '');
+                value2Hint.textContent = 'z.B. package update, backup.*success';
+                
+                // Disposition + Max Age
+                dispositionGroup.style.display = 'block';
+                document.getElementById('addToListDisposition').value = 'SAFE';
+                maxAgeGroup.style.display = 'block';
+                document.getElementById('addToListMaxAge').value = '14';
+                
+                // Beschreibung
+                descGroup.style.display = 'block';
+                document.getElementById('addToListDesc').value = `${data.domain}: ${extractKeyword(data.pattern || '')}`.substring(0, 50);
+                
+                confirmBtn.className = 'btn btn-info';
+                break;
+        }
+    }
+    
+    // Hilfsfunktion: Keyword aus Betreff/Pattern extrahieren
+    function extractKeyword(text) {
+        if (!text) return '';
+        // Entferne Platzhalter
+        let clean = text.replace(/<HOST>/g, '').replace(/<N>/g, '').replace(/<ID>/g, '');
+        clean = clean.replace(/<DATE>/g, '').replace(/<TIME>/g, '').replace(/<PATH>/g, '');
+        clean = clean.replace(/[:\s]+/g, ' ').trim();
+        // Nimm die ersten aussagekräftigen Wörter
+        const words = clean.split(' ').filter(w => w.length > 2);
+        return words.slice(0, 3).join(' ').toLowerCase();
+    }
+    
+    // Disposition-Änderung: Max Age anzeigen/verstecken
+    document.getElementById('addToListDisposition')?.addEventListener('change', function() {
+        document.getElementById('addToListMaxAgeGroup').style.display = 
+            this.value === 'SAFE' ? 'block' : 'none';
+    });
+    
+    // Modal: Bestätigen
+    document.getElementById('addToListConfirmBtn')?.addEventListener('click', async function() {
+        const value = document.getElementById('addToListValue').value.trim();
+        const value2 = document.getElementById('addToListValue2').value.trim();
+        const disposition = document.getElementById('addToListDisposition').value;
+        const maxAge = document.getElementById('addToListMaxAge').value;
+        const desc = document.getElementById('addToListDesc').value.trim();
+        
+        if (!value) {
+            alert('Bitte einen Wert eingeben!');
+            return;
+        }
+        
+        let endpoint = '';
+        let body = {};
+        
+        switch (currentAddAction) {
+            case 'trusted-domain':
+                endpoint = '/api/audit-config/trusted-domains';
+                body = { domains: value };
+                break;
+                
+            case 'important-keyword':
+                endpoint = '/api/audit-config/important-keywords';
+                body = { keywords: value };
+                break;
+                
+            case 'safe-subject':
+                endpoint = '/api/audit-config/safe-patterns';
+                body = { patterns: value, pattern_type: 'subject' };
+                break;
+                
+            case 'safe-sender':
+                endpoint = '/api/audit-config/safe-patterns';
+                body = { patterns: value, pattern_type: 'sender' };
+                break;
+                
+            case 'vip-sender':
+                endpoint = '/api/audit-config/vip-senders';
+                body = { senders: value };
+                break;
+                
+            case 'auto-rule':
+                endpoint = '/api/audit-config/auto-delete-rules';
+                if (disposition === 'SAFE' && !maxAge) {
+                    alert('Bei "Sicher löschbar" muss eine Anzahl Tage angegeben werden!');
+                    return;
+                }
+                body = {
+                    sender_pattern: value || null,
+                    subject_pattern: value2 || null,
+                    disposition: disposition,
+                    max_age_days: disposition === 'SAFE' ? parseInt(maxAge) : null,
+                    description: desc || null
+                };
+                break;
+        }
+        
+        try {
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify(body)
+            });
+            const data = await response.json();
+            
+            if (data.success || data.added >= 0 || data.action) {
+                bootstrap.Modal.getInstance(document.getElementById('addToListModal')).hide();
+                
+                // Erfolgsmeldung
+                const actionNames = {
+                    'trusted-domain': 'Trusted Domain',
+                    'important-keyword': 'Wichtiges Keyword',
+                    'safe-subject': 'Safe Betreff-Pattern',
+                    'safe-sender': 'Safe Absender-Pattern',
+                    'vip-sender': 'VIP Absender',
+                    'auto-rule': 'Auto-Regel'
+                };
+                alert(`✅ ${actionNames[currentAddAction]} hinzugefügt!`);
+            } else {
+                alert('Fehler: ' + (data.error || 'Unbekannt'));
+            }
+        } catch (e) {
+            alert('Fehler: ' + e.message);
+        }
+    });
+    
+    async function deleteSelected() {
+        if (selectedUids.size === 0) {
+            alert('Keine Emails ausgewählt');
+            return;
+        }
+        
+        const confirm_msg = `${selectedUids.size} Emails PERMANENT löschen?\n\nDies kann nicht rückgängig gemacht werden!`;
+        if (!confirm(confirm_msg)) {
+            return;
+        }
+        
+        const accountId = document.getElementById('accountSelect').value;
+        
+        showLoading(`Lösche ${selectedUids.size} Emails...`);
+        
+        try {
+            const response = await fetch('/folder-audit/delete', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ 
+                    account_id: parseInt(accountId), 
+                    uids: Array.from(selectedUids),
+                    folder: currentFolder  // NEU: Ordner mitsenden
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.error || 'Löschen fehlgeschlagen');
+            }
+            
+            alert(`✅ ${data.deleted} Emails permanent gelöscht`);
+            
+            // Entferne gelöschte Emails aus dem Result
+            const deletedUids = new Set(selectedUids);
+            scanResult.emails = scanResult.emails.filter(e => !deletedUids.has(e.uid));
+            scanResult.total = scanResult.emails.length;
+            scanResult.safe_count = scanResult.emails.filter(e => e.category === 'safe').length;
+            scanResult.review_count = scanResult.emails.filter(e => e.category === 'review').length;
+            scanResult.important_count = scanResult.emails.filter(e => e.category === 'important').length;
+            
+            // Clusters neu berechnen
+            rebuildClusters();
+            
+            selectedUids.clear();
+            displayResults();
+            
+        } catch (error) {
+            alert('Fehler: ' + error.message);
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    function showLoading(text) {
+        document.getElementById('loadingText').textContent = text;
+        document.getElementById('loadingOverlay').classList.add('show');
+    }
+    
+    function hideLoading() {
+        document.getElementById('loadingOverlay').classList.remove('show');
+    }
+    
+    function showScamWarning(count) {
+        // Alert-Box für Scam-Warnung einfügen (falls nicht vorhanden)
+        let alertDiv = document.getElementById('scamWarningAlert');
+        if (!alertDiv) {
+            alertDiv = document.createElement('div');
+            alertDiv.id = 'scamWarningAlert';
+            alertDiv.className = 'alert alert-danger d-flex align-items-center justify-content-between mb-3';
+            alertDiv.setAttribute('role', 'alert');
+            document.getElementById('statsSection').insertAdjacentElement('afterend', alertDiv);
+        }
+        
+        alertDiv.innerHTML = `
+            <div>
+                <strong>🚨 ${count} Scam/Betrugs-Email${count > 1 ? 's' : ''} erkannt!</strong>
+                Diese Emails zeigen starke Anzeichen für Betrug (gefälschte Absender, Auth-Failures, verdächtige Domains).
+            </div>
+            <button class="btn btn-danger btn-sm" id="deleteAllScamBtn">
+                🗑️ Alle Scam-Emails löschen
+            </button>
+        `;
+        alertDiv.style.display = 'flex';
+        
+        // Event Listener für dynamisch erstellten Button
+        document.getElementById('deleteAllScamBtn').addEventListener('click', deleteAllScam);
+    }
+    
+    async function deleteAllScam() {
+        const scamEmails = scanResult.emails.filter(e => e.category === 'scam');
+        if (scamEmails.length === 0) return;
+        
+        if (!confirm(`Möchtest du wirklich ${scamEmails.length} Scam-Email(s) unwiderruflich löschen?`)) {
+            return;
+        }
+        
+        // Alle Scam-UIDs auswählen
+        scamEmails.forEach(e => selectedUids.add(e.uid));
+        updateSelectedCount();
+        
+        // Löschen
+        await deleteSelected();
+    }
+    
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // =================================================================
+    // CONFIG TAB FUNCTIONS
+    // =================================================================
+    
+    // Load config stats when config tab is shown
+    document.getElementById('config-tab').addEventListener('shown.bs.tab', function() {
+        loadConfigStats();
+        loadAllConfigs();
+    });
+    
+    async function loadConfigStats() {
+        try {
+            const response = await fetch('/api/audit-config/stats');
+            if (!response.ok) throw new Error('Failed to load stats');
+            const data = await response.json();
+            
+            document.getElementById('configTrustedCount').textContent = data.trusted_domains;
+            document.getElementById('configKeywordsCount').textContent = data.important_keywords;
+            document.getElementById('configSafeCount').textContent = data.safe_patterns;
+            document.getElementById('configVipCount').textContent = data.vip_senders;
+            
+            document.getElementById('trustedBadge').textContent = data.trusted_domains;
+            document.getElementById('keywordsBadge').textContent = data.important_keywords;
+            document.getElementById('vipBadge').textContent = data.vip_senders;
+            document.getElementById('autoDeleteBadge').textContent = data.auto_delete_rules || 0;
+            document.getElementById('configAutoDeleteCount').textContent = data.auto_delete_rules || 0;
+        } catch (error) {
+            console.error('Error loading config stats:', error);
+        }
+    }
+    
+    async function loadAllConfigs() {
+        // Load Trusted Domains
+        try {
+            const resp = await fetch('/api/audit-config/trusted-domains');
+            const data = await resp.json();
+            document.getElementById('trustedDomainsInput').value = data.comma_separated || '';
+        } catch (e) { console.error(e); }
+        
+        // Load Important Keywords
+        try {
+            const resp = await fetch('/api/audit-config/important-keywords');
+            const data = await resp.json();
+            document.getElementById('importantKeywordsInput').value = data.comma_separated || '';
+        } catch (e) { console.error(e); }
+        
+        // Load Safe Patterns (Subject)
+        try {
+            const resp = await fetch('/api/audit-config/safe-patterns?pattern_type=subject');
+            const data = await resp.json();
+            const subjectPatterns = data.patterns.filter(p => p.pattern_type === 'subject').map(p => p.pattern);
+            document.getElementById('safeSubjectInput').value = subjectPatterns.join(', ');
+            document.getElementById('safeSubjectBadge').textContent = subjectPatterns.length;
+        } catch (e) { console.error(e); }
+        
+        // Load Safe Patterns (Sender)
+        try {
+            const resp = await fetch('/api/audit-config/safe-patterns?pattern_type=sender');
+            const data = await resp.json();
+            const senderPatterns = data.patterns.filter(p => p.pattern_type === 'sender').map(p => p.pattern);
+            document.getElementById('safeSenderInput').value = senderPatterns.join(', ');
+            document.getElementById('safeSenderBadge').textContent = senderPatterns.length;
+        } catch (e) { console.error(e); }
+        
+        // Load VIP Senders
+        try {
+            const resp = await fetch('/api/audit-config/vip-senders');
+            const data = await resp.json();
+            document.getElementById('vipSendersInput').value = data.comma_separated || '';
+        } catch (e) { console.error(e); }
+        
+        // Load Auto-Delete Rules
+        loadAutoDeleteRules();
+    }
+    
+    async function saveTrustedDomains() {
+        const domains = document.getElementById('trustedDomainsInput').value;
+        try {
+            const response = await fetch('/api/audit-config/trusted-domains', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ domains: domains })
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ Trusted Domains gespeichert!\n\n${data.total || 'Unbekannt'} Domains aktiv\n(${data.added} neu, ${data.removed} deaktiviert)`);
+                loadConfigStats();
+            } else {
+                throw new Error(data.error);
+            }
+        } catch (error) {
+            alert('Fehler: ' + error.message);
+        }
+    }
+    
+    async function saveImportantKeywords() {
+        const keywords = document.getElementById('importantKeywordsInput').value;
+        try {
+            const response = await fetch('/api/audit-config/important-keywords', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ keywords: keywords })
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ Wichtige Keywords gespeichert!\n\n${data.total || 'Unbekannt'} Keywords aktiv\n(${data.added} neu, ${data.removed} deaktiviert)`);
+                loadConfigStats();
+            } else {
+                throw new Error(data.error);
+            }
+        } catch (error) {
+            alert('Fehler: ' + error.message);
+        }
+    }
+    
+    async function saveSafePatterns(patternType) {
+        const inputId = patternType === 'subject' ? 'safeSubjectInput' : 'safeSenderInput';
+        const patterns = document.getElementById(inputId).value;
+        try {
+            const response = await fetch('/api/audit-config/safe-patterns', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ patterns: patterns, pattern_type: patternType })
+            });
+            const data = await response.json();
+            if (data.success) {
+                const typeName = patternType === 'subject' ? 'Betreff-Patterns' : 'Absender-Patterns';
+                alert(`✅ ${typeName} gespeichert!\n\n${data.total} Patterns aktiv\n(${data.added} neu hinzugefügt, ${data.removed} deaktiviert)`);
+                loadConfigStats();
+            } else {
+                throw new Error(data.error);
+            }
+        } catch (error) {
+            alert('Fehler: ' + error.message);
+        }
+    }
+    
+    async function saveVipSenders() {
+        const senders = document.getElementById('vipSendersInput').value;
+        try {
+            const response = await fetch('/api/audit-config/vip-senders', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ senders: senders })
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ VIP Absender gespeichert!\n\n${data.total || 'Unbekannt'} VIPs aktiv\n(${data.added} neu, ${data.removed} deaktiviert)`);
+                loadConfigStats();
+            } else {
+                throw new Error(data.error);
+            }
+        } catch (error) {
+            alert('Fehler: ' + error.message);
+        }
+    }
+    
+    // =================================================================
+    // Auto-Delete Rules
+    // =================================================================
+    
+    async function loadAutoDeleteRules() {
+        try {
+            const response = await fetch('/api/audit-config/auto-delete-rules');
+            const data = await response.json();
+            
+            const tbody = document.getElementById('autoDeleteRulesBody');
+            tbody.innerHTML = '';
+            
+            if (data.rules && data.rules.length > 0) {
+                data.rules.forEach(rule => {
+                    const tr = document.createElement('tr');
+                    
+                    // Disposition Styling
+                    let dispBadge = '';
+                    if (rule.disposition === 'SAFE') {
+                        dispBadge = '<span class="badge bg-info">🗑️ Sicher löschbar</span>';
+                    } else if (rule.disposition === 'IMPORTANT') {
+                        dispBadge = '<span class="badge bg-success">🛡️ Wichtig</span>';
+                    } else if (rule.disposition === 'SCAM') {
+                        dispBadge = '<span class="badge bg-danger">⚠️ Scam</span>';
+                    } else if (rule.disposition === 'REVIEW') {
+                        dispBadge = '<span class="badge bg-warning text-dark">🔍 Prüfen</span>';
+                    }
+                    
+                    tr.innerHTML = `
+                        <td class="font-monospace small">${rule.sender_pattern || '<span class="text-muted">-</span>'}</td>
+                        <td class="font-monospace small">${rule.subject_pattern || '<span class="text-muted">-</span>'}</td>
+                        <td>${dispBadge}</td>
+                        <td class="text-center">${rule.max_age_days !== null ? rule.max_age_days : '-'}</td>
+                        <td class="small text-muted">${rule.description || ''}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-danger py-0 px-1" 
+                                    data-rule-id="${rule.id}" title="Löschen">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </td>
+                    `;
+                    
+                    // Delete Button Event
+                    tr.querySelector('button').addEventListener('click', function() {
+                        deleteAutoDeleteRule(rule.id, rule.description || `${rule.sender_pattern || ''}/${rule.subject_pattern || ''}`);
+                    });
+                    
+                    tbody.appendChild(tr);
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">Keine Regeln konfiguriert</td></tr>';
+            }
+            
+            // Badge aktualisieren
+            document.getElementById('autoDeleteBadge').textContent = data.count || 0;
+            
+        } catch (error) {
+            console.error('Fehler beim Laden der Auto-Delete Rules:', error);
+        }
+    }
+    
+    async function addAutoDeleteRule() {
+        const sender = document.getElementById('newRuleSender').value.trim();
+        const subject = document.getElementById('newRuleSubject').value.trim();
+        const disposition = document.getElementById('newRuleDisposition').value;
+        const maxAge = document.getElementById('newRuleMaxAge').value;
+        const description = document.getElementById('newRuleDescription').value.trim();
+        
+        // Validierung
+        if (!sender && !subject) {
+            alert('Mindestens Absender oder Betreff muss angegeben werden!');
+            return;
+        }
+        
+        if (disposition === 'SAFE' && !maxAge) {
+            alert('Bei "Sicher löschbar" muss eine Anzahl Tage angegeben werden!');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/audit-config/auto-delete-rules', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    sender_pattern: sender || null,
+                    subject_pattern: subject || null,
+                    disposition: disposition,
+                    max_age_days: maxAge ? parseInt(maxAge) : null,
+                    description: description || null
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                // Form zurücksetzen
+                document.getElementById('newRuleSender').value = '';
+                document.getElementById('newRuleSubject').value = '';
+                document.getElementById('newRuleMaxAge').value = '';
+                document.getElementById('newRuleDescription').value = '';
+                
+                // Tabelle neu laden
+                loadAutoDeleteRules();
+                loadConfigStats();
+            } else {
+                throw new Error(data.error);
+            }
+        } catch (error) {
+            alert('Fehler: ' + error.message);
+        }
+    }
+    
+    async function deleteAutoDeleteRule(ruleId, ruleName) {
+        if (!confirm(`Regel löschen?\n\n${ruleName}`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/audit-config/auto-delete-rules/${ruleId}`, {
+                method: 'DELETE',
+                headers: { 
+                    'X-CSRFToken': getCsrfToken()
+                }
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                loadAutoDeleteRules();
+                loadConfigStats();
+            } else {
+                throw new Error(data.error);
+            }
+        } catch (error) {
+            alert('Fehler: ' + error.message);
+        }
+    }
+    
+    // Event Listener für Add-Button
+    document.getElementById('addAutoDeleteRuleBtn').addEventListener('click', addAutoDeleteRule);
+    
+    // Disposition-Änderung: Tage-Feld aktivieren/deaktivieren
+    document.getElementById('newRuleDisposition').addEventListener('change', function() {
+        const maxAgeInput = document.getElementById('newRuleMaxAge');
+        if (this.value === 'SAFE') {
+            maxAgeInput.disabled = false;
+            maxAgeInput.placeholder = '14';
+        } else {
+            maxAgeInput.disabled = true;
+            maxAgeInput.value = '';
+            maxAgeInput.placeholder = '-';
+        }
+    });
+    
+    // Load Defaults Button
+    document.getElementById('loadDefaultsBtn').addEventListener('click', async function() {
+        if (!confirm('System-Defaults laden?\n\nDies fügt vordefinierte Listen für CH, DE, IT, FR hinzu.\nBestehende eigene Einträge bleiben erhalten.')) {
+            return;
+        }
+        
+        showLoading('Lade System-Defaults...');
+        try {
+            const response = await fetch('/api/audit-config/load-defaults', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({})
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ ${data.message}`);
+                loadConfigStats();
+                loadAllConfigs();
+            } else {
+                throw new Error(data.error);
+            }
+        } catch (error) {
+            alert('Fehler: ' + error.message);
+        } finally {
+            hideLoading();
+        }
+    });
+</script>
+{% endblock %}

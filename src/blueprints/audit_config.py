@@ -20,7 +20,7 @@ from flask_login import login_required
 import importlib
 
 from src.helpers import get_db_session, get_current_user_model
-from src.services.trash_audit_service import AuditConfigCache
+from src.services.folder_audit_service import AuditConfigCache
 
 logger = logging.getLogger(__name__)
 
@@ -692,7 +692,7 @@ def save_vip_senders():
 def get_auto_delete_rules():
     """Lädt Auto-Delete Rules"""
     account_id = request.args.get("account_id", type=int)
-    disposition = request.args.get("disposition")  # DELETABLE, PROTECTED, JUNK
+    disposition = request.args.get("disposition")  # SAFE, IMPORTANT, SCAM, REVIEW
     
     with get_db_session() as db:
         user = get_current_user_model(db)
@@ -722,7 +722,7 @@ def get_auto_delete_rules():
         ).all()
         
         # Gruppiert nach Disposition
-        by_disposition = {"DELETABLE": [], "PROTECTED": [], "JUNK": []}
+        by_disposition = {"SAFE": [], "IMPORTANT": [], "SCAM": [], "REVIEW": []}
         for r in rules:
             if r.disposition in by_disposition:
                 by_disposition[r.disposition].append({
@@ -769,15 +769,15 @@ def save_auto_delete_rule():
     account_id = data.get("account_id")
     
     # Validierung
-    if not disposition or disposition not in ("DELETABLE", "PROTECTED", "JUNK"):
-        return jsonify({"error": "Ungültige disposition (DELETABLE, PROTECTED, JUNK)"}), 400
+    if not disposition or disposition not in ("SAFE", "IMPORTANT", "SCAM", "REVIEW"):
+        return jsonify({"error": "Ungültige disposition (SAFE, IMPORTANT, SCAM, REVIEW)"}), 400
     
     if not sender_pattern and not subject_pattern:
         return jsonify({"error": "Mindestens sender_pattern oder subject_pattern erforderlich"}), 400
     
-    # DELETABLE braucht max_age_days
-    if disposition == "DELETABLE" and max_age_days is None:
-        return jsonify({"error": "DELETABLE benötigt max_age_days"}), 400
+    # SAFE braucht max_age_days
+    if disposition == "SAFE" and max_age_days is None:
+        return jsonify({"error": "SAFE benötigt max_age_days"}), 400
     
     with get_db_session() as db:
         user = get_current_user_model(db)
@@ -888,7 +888,7 @@ def save_auto_delete_rules_bulk():
             description = rule.get("description")
             
             # Validierung
-            if not disposition or disposition not in ("DELETABLE", "PROTECTED", "JUNK"):
+            if not disposition or disposition not in ("SAFE", "IMPORTANT", "SCAM", "REVIEW"):
                 errors.append(f"Ungültige disposition: {disposition}")
                 continue
             
@@ -896,8 +896,8 @@ def save_auto_delete_rules_bulk():
                 errors.append("Regel ohne Pattern übersprungen")
                 continue
             
-            if disposition == "DELETABLE" and max_age_days is None:
-                errors.append(f"DELETABLE ohne max_age_days: {sender_pattern}/{subject_pattern}")
+            if disposition == "SAFE" and max_age_days is None:
+                errors.append(f"SAFE ohne max_age_days: {sender_pattern}/{subject_pattern}")
                 continue
             
             # Prüfen ob existiert
