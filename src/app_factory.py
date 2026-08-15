@@ -112,7 +112,11 @@ def create_app(config_name="production"):
         )
         logger.info("🔄 ProxyFix aktiviert - App läuft hinter Reverse Proxy")
     
-    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
+    secret_key = os.getenv("SECRET_KEY") or os.getenv("FLASK_SECRET_KEY")
+    if not secret_key:
+        secret_key = "dev-secret-key-change-in-production"
+        logger.warning("SECRET_KEY nicht gesetzt — nur für Entwicklung verwenden")
+    app.config["SECRET_KEY"] = secret_key
     app.config["SESSION_TYPE"] = "filesystem"
     
     session_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".flask_sessions")
@@ -191,6 +195,11 @@ def create_app(config_name="production"):
     )
     app.limiter = limiter
     logger.info("🛡️  Rate Limiting aktiviert")
+
+    from .blueprints.auth import login, register, verify_2fa
+    limiter.limit("5 per minute")(login)
+    limiter.limit("3 per minute")(register)
+    limiter.limit("5 per minute")(verify_2fa)
     
     @app.before_request
     def generate_csp_nonce():
@@ -199,15 +208,20 @@ def create_app(config_name="production"):
     
     @app.before_request
     def csrf_protect_ajax():
-        """CSRF protection for AJAX"""
-        if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
-            if request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest":
-                csrf_token = request.headers.get("X-CSRFToken") or request.headers.get("X-CSRF-Token")
-                if csrf_token:
-                    try:
-                        validate_csrf(csrf_token)
-                    except Exception:
-                        pass
+        """CSRF protection for AJAX/JSON requests (fail-closed)."""
+        if request.method not in ["POST", "PUT", "DELETE", "PATCH"]:
+            return None
+        if not (request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest"):
+            return None
+
+        csrf_token = request.headers.get("X-CSRFToken") or request.headers.get("X-CSRF-Token")
+        if not csrf_token:
+            return jsonify({"error": "CSRF token missing"}), 400
+        try:
+            validate_csrf(csrf_token)
+        except Exception:
+            return jsonify({"error": "CSRF token invalid"}), 400
+        return None
     
     @app.after_request
     def set_security_headers(response):

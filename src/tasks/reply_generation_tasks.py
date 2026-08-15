@@ -169,11 +169,13 @@ def generate_reply_draft(
                 )
             
             # 6. Anonymisierungs-Logik
-            cloud_providers = ["openai", "anthropic", "google"]
-            is_cloud_provider = selected_provider in cloud_providers
-            
-            if use_anonymization is None:
-                use_anonymization = is_cloud_provider
+            from src.security_constants import is_cloud_ai_provider
+            is_cloud_provider = is_cloud_ai_provider(selected_provider)
+
+            if is_cloud_provider:
+                use_anonymization = True
+            elif use_anonymization is None:
+                use_anonymization = False
             
             content_for_ai_subject = decrypted_subject
             content_for_ai_body = decrypted_body
@@ -188,7 +190,10 @@ def generate_reply_draft(
             )
             
             if use_anonymization:
-                from src.services.sanitization_helper import get_or_create_sanitized_content
+                from src.services.sanitization_helper import (
+                    get_or_create_sanitized_content,
+                    SanitizationError,
+                )
                 san_result = get_or_create_sanitized_content(
                     raw_email=raw_email,
                     master_key=master_key,
@@ -199,7 +204,8 @@ def generate_reply_draft(
                     recipient=user.username,
                     original_subject=decrypted_subject,
                     original_body=decrypted_body,
-                    logger_prefix="Reply"
+                    logger_prefix="Reply",
+                    require_anonymization=is_cloud_provider,
                 )
                 content_for_ai_subject = san_result.subject
                 content_for_ai_body = san_result.body
@@ -207,6 +213,12 @@ def generate_reply_draft(
                 entity_map = san_result.entity_map
                 if was_anonymized:
                     sender_for_ai = "[ABSENDER]"
+
+                if is_cloud_provider and not was_anonymized:
+                    raise Reject(
+                        "Cloud-Provider erfordert Anonymisierung, aber keine anonymisierten Daten verfügbar",
+                        requeue=False,
+                    )
             
             # Progress-Update
             self.update_state(
@@ -222,7 +234,8 @@ def generate_reply_draft(
                     session=db,
                     raw_email=raw_email,
                     master_key=master_key,
-                    max_context_emails=3
+                    max_context_emails=3,
+                    anonymize=is_cloud_provider,
                 )
             except Exception as ctx_err:
                 logger.warning(f"Thread-Context build failed: {ctx_err}")
@@ -267,7 +280,7 @@ def generate_reply_draft(
             
     except Reject:
         raise  # Permanent error
-    
+
     except SoftTimeLimitExceeded:
         # Timeout - sauber ans Frontend melden, kein Retry
         logger.error(
@@ -280,8 +293,11 @@ def generate_reply_draft(
             meta={'error': 'Zeitüberschreitung - Antwort-Generierung dauerte zu lange.'}
         )
         return {"status": "failed", "error": "Timeout - Antwort-Generierung zu langsam"}
-        
+
     except Exception as exc:
+        from src.services.sanitization_helper import SanitizationError
+        if isinstance(exc, SanitizationError):
+            raise Reject(str(exc), requeue=False)
         logger.error(
             f"❌ [Task {self.request.id}] Reply generation fehlgeschlagen: "
             f"{type(exc).__name__}: {exc}"

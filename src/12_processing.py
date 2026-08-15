@@ -23,7 +23,8 @@ def build_thread_context(
     session,
     raw_email,
     master_key: str,
-    max_context_emails: int = 5
+    max_context_emails: int = 5,
+    anonymize: bool = False,
 ) -> str:
     """Build conversation context from previous emails in the same thread.
     
@@ -101,6 +102,30 @@ def build_thread_context(
                 body = encryption_mod.EmailDataManager.decrypt_email_body(
                     email.encrypted_body or "", master_key
                 )
+
+                if anonymize:
+                    try:
+                        from src.services.content_sanitizer import get_sanitizer
+                        sanitizer = get_sanitizer()
+                        san_result = sanitizer.sanitize(
+                            subject=subject or "",
+                            body=body or "",
+                            level=2,
+                        )
+                        subject = san_result.subject
+                        body = san_result.body
+                        if sender:
+                            sender_result = sanitizer.sanitize(
+                                subject="",
+                                body=sender,
+                                level=1,
+                            )
+                            sender = sender_result.body or "[ABSENDER]"
+                    except Exception as san_err:
+                        logger.error(
+                            f"Thread-Context Anonymisierung fehlgeschlagen für Email {email.id}: {san_err}"
+                        )
+                        return ""
                 
                 # Format timestamp
                 timestamp = email.received_at.strftime("%Y-%m-%d %H:%M") if email.received_at else "unknown"
@@ -757,8 +782,8 @@ def process_pending_raw_emails(
                 should_anonymize = False  # Anonymisierung ist unabhängig vom Analyse-Modus
             
                 # 🛡️ KRITISCH: Cloud-Provider MÜSSEN immer anonymisierte Daten erhalten!
-                # Unabhängig von Account-Einstellungen (GDPR/Datenschutz)
-                is_cloud_provider = ai_provider in ["openai", "anthropic", "google"]
+                from src.security_constants import is_cloud_ai_provider
+                is_cloud_provider = is_cloud_ai_provider(ai_provider)
                 if is_cloud_provider:
                     should_anonymize = True
                     logger.info(f"🛡️ Cloud-Provider '{ai_provider}' erkannt → Anonymisierung erzwungen")

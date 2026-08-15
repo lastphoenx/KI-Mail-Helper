@@ -23,9 +23,9 @@ class TestEnvironmentValidator(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self.original_env)
 
-    def test_flask_secret_key_optional(self):
-        """Teste dass gültige Umgebung mit FLASK_SECRET_KEY validiert wird"""
-        os.environ['FLASK_SECRET_KEY'] = 'test-secret-key-12345'
+    def test_secret_key_optional(self):
+        """Teste dass gültige Umgebung mit SECRET_KEY validiert wird"""
+        os.environ['SECRET_KEY'] = 'test-secret-key-12345'
         os.environ['OLLAMA_BASE_URL'] = 'http://localhost:11434'
         os.environ['OLLAMA_MODEL'] = 'mistral:7b'
         os.environ['AI_BACKEND'] = 'ollama'
@@ -38,7 +38,7 @@ class TestEnvironmentValidator(unittest.TestCase):
 
     def test_valid_environment(self):
         """Teste dass gültige Umgebung akzeptiert wird"""
-        os.environ['FLASK_SECRET_KEY'] = 'test-secret-key-12345'
+        os.environ['SECRET_KEY'] = 'test-secret-key-12345'
         os.environ['OLLAMA_BASE_URL'] = 'http://localhost:11434'
         os.environ['OLLAMA_MODEL'] = 'mistral:7b'
         os.environ['AI_BACKEND'] = 'ollama'

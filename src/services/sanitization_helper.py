@@ -25,6 +25,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class SanitizationError(Exception):
+    """Raised when required anonymization cannot be completed."""
+
+
 @dataclass
 class SanitizationResult:
     """Ergebnis der get_or_create_sanitized_content Funktion."""
@@ -47,7 +51,8 @@ def get_or_create_sanitized_content(
     recipient: Optional[str] = None,
     original_subject: Optional[str] = None,
     original_body: Optional[str] = None,
-    logger_prefix: str = "Sanitize"
+    logger_prefix: str = "Sanitize",
+    require_anonymization: bool = False,
 ) -> SanitizationResult:
     """
     Zentrale Funktion für Anonymisierung mit Cache-Support.
@@ -213,8 +218,13 @@ def get_or_create_sanitized_content(
     except Exception as anon_err:
         logger.error(f"❌ {logger_prefix}: On-the-fly Anonymisierung fehlgeschlagen: {anon_err}")
         db_session.rollback()
-        
-        # Fallback: Original-Content ohne Anonymisierung
+
+        if require_anonymization:
+            raise SanitizationError(
+                f"{logger_prefix}: Anonymisierung erforderlich aber fehlgeschlagen"
+            ) from anon_err
+
+        # Lokale Verarbeitung: Fallback auf Original (fail-open)
         return SanitizationResult(
             subject=original_subject,
             body=original_body,

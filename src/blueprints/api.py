@@ -615,6 +615,10 @@ def api_generate_reply(raw_email_id):
             
             if not raw_email:
                 return jsonify({"success": False, "error": "Email nicht gefunden"}), 404
+
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"success": False, "error": "Master-Key nicht verfügbar"}), 401
             
             # ═══════════════════════════════════════════════════════════════
             # CELERY PATH (Standard) - Async Processing
@@ -643,10 +647,12 @@ def api_generate_reply(raw_email_id):
                     optimize_model = getattr(user, 'preferred_ai_model_optimize', None) or getattr(user, 'preferred_ai_model', None)
                     resolved_model = ai_client.resolve_model(provider, optimize_model, kind="optimize")
                 
-                # Anonymisierungs-Default ermitteln
-                if use_anonymization is None:
-                    cloud_providers = ["openai", "anthropic", "google"]
-                    use_anonymization = provider in cloud_providers
+                # Anonymisierungs-Default ermitteln (Cloud: immer erzwungen)
+                from src.security_constants import is_cloud_ai_provider
+                if is_cloud_ai_provider(provider):
+                    use_anonymization = True
+                elif use_anonymization is None:
+                    use_anonymization = False
                 
                 # Task starten (ASYNC!)
                 task = generate_reply_draft.delay(

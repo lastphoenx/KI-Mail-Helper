@@ -1,5 +1,5 @@
 aiohappyeyeballs==2.6.1
-aiohttp==3.13.3
+aiohttp==3.13.4
 aiosignal==1.4.0
 alembic==1.17.2
 amqp==5.3.1
@@ -29,7 +29,7 @@ click-repl==0.3.0
 cloudpathlib==0.23.0
 confection==0.1.5
 coverage==7.13.0
-cryptography==44.0.3
+cryptography==46.0.6
 cymem==2.0.13
 de_core_news_md @ https://github.com/explosion/spacy-models/releases/download/de_core_news_md-3.8.0/de_core_news_md-3.8.0-py3-none-any.whl#sha256=b903f59220f1e76dd672acdaa7fa454d6703fe056c5ccd6457820e70874116d0
 de_core_news_sm @ https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl#sha256=fec69fec52b1780f2d269d5af7582a5e28028738bd3190532459aeb473bfa3e7
@@ -40,7 +40,7 @@ docstring_parser==0.17.0
 eval_type_backport==0.3.1
 filelock==3.20.1
 flake8==6.1.0
-Flask==3.0.0
+Flask==3.1.3
 Flask-Limiter==3.5.0
 Flask-Login==0.6.3
 Flask-Session==0.8.0
@@ -176,7 +176,7 @@ vine==5.1.0
 wasabi==1.1.3
 wcwidth==0.2.14
 weasel==0.4.3
-Werkzeug==3.1.5
+Werkzeug==3.1.6
 wrapt==2.0.1
 WTForms==3.2.1
 yarl==1.22.0

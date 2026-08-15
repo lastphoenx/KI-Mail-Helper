@@ -2,7 +2,7 @@
 
 **Version:** 2.0.0 (Multi-User Edition)  
 **Stand:** Januar 2026  
-**Security Score:** 98/100 (Production-Hardened)
+**Security Score:** siehe Threat Model unten (kein numerischer Score)
 
 ---
 
@@ -147,29 +147,16 @@ SESSION_COOKIE_SAMESITE = "Lax"   # CSRF-Schutz
 ### Flask-Limiter Konfiguration
 
 ```python
-# Globale Limits
-DEFAULT_LIMITS = ["200 per day", "50 per hour"]
+# Keine globalen Default-Limits — nur explizit gesetzte Endpoints
+default_limits = []
 
-# Endpoint-spezifisch
-@limiter.limit("5 per minute")
-def login(): ...
-
-@limiter.limit("5 per minute")
-def verify_2fa(): ...
-
-@limiter.limit("3 per minute")
-def register(): ...
-
-@limiter.limit("10 per minute")
-def password_reset(): ...
+# Auth-Endpoints (in app_factory.py nach Limiter-Init)
+limiter.limit("5 per minute")(login)
+limiter.limit("3 per minute")(register)
+limiter.limit("5 per minute")(verify_2fa)
 ```
 
-### Bypass für authentifizierte Requests
-
-```python
-@limiter.limit("60 per minute", exempt_when=lambda: current_user.is_authenticated)
-def api_endpoint(): ...
-```
+Zusätzlich empfohlen: nginx `limit_req` auf dem Reverse Proxy (CT 108).
 
 ---
 

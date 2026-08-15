@@ -488,6 +488,7 @@ def logout():
     # SECURITY FIX: Lösche ALLE aktiven ServiceTokens des Users
     # Verhindert Token-Leak nach Logout (DEK liegt in Token-DB!)
     if user_id:
+        models = _get_models()
         try:
             with get_db_session() as db:
                 deleted_count = db.query(models.ServiceToken).filter_by(

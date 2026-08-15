@@ -11,10 +11,11 @@ class EnvironmentValidator:
     """Validiert Umgebungsvariablen intelligent basierend auf Konfiguration"""
 
     CRITICAL_VARS = {
-        "FLASK_SECRET_KEY": {
+        "SECRET_KEY": {
             "description": "Flask Session-Verschlüsselung (PRODUKTION erforderlich!)",
             "hint": 'Generiere mit: python -c "import secrets; print(secrets.token_hex(32))"',
             "required": False,
+            "legacy_aliases": ["FLASK_SECRET_KEY"],
         },
     }
 
@@ -63,6 +64,11 @@ class EnvironmentValidator:
 
         for var, info in EnvironmentValidator.CRITICAL_VARS.items():
             value = os.getenv(var)
+            if not value and info.get("legacy_aliases"):
+                for alias in info["legacy_aliases"]:
+                    value = os.getenv(alias)
+                    if value:
+                        break
             if not value or value.startswith("your-"):
                 errors.append(
                     {

@@ -14,6 +14,7 @@ Datum: 2026-01-21
 import asyncio
 import logging
 from flask import Blueprint, render_template, request, jsonify, g
+from flask_login import login_required
 from functools import wraps
 
 from src.services.translator_service import TranslatorService, LANGUAGE_NAMES, SUPPORTED_TARGET_LANGUAGES
@@ -40,6 +41,7 @@ def async_route(f):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @translator_bp.route('/translator')
+@login_required
 def translator_page():
     """Translator UI Seite."""
     return render_template(
@@ -54,6 +56,7 @@ def translator_page():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @translator_bp.route('/api/translate/detect', methods=['POST'])
+@login_required
 def detect_language():
     """
     Erkennt die Sprache eines Textes.
@@ -108,6 +111,7 @@ def detect_language():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @translator_bp.route('/api/translate/execute', methods=['POST'])
+@login_required
 @async_route
 async def execute_translation():
     """
@@ -187,6 +191,7 @@ async def execute_translation():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @translator_bp.route('/api/translate/languages', methods=['GET'])
+@login_required
 def get_languages():
     """
     Gibt alle unterstützten Sprachen zurück.
