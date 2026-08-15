@@ -356,8 +356,7 @@ def register():
 
                 logger.info(f"✅ User registriert (ID: {user.id}, DEK/KEK erstellt)")
 
-                # Phase 8c: Security Hardening - Mandatory 2FA Setup
-                # User wird automatisch zu 2FA-Setup weitergeleitet
+                login_user(UserWrapper(user), remember=False)
                 session["mandatory_2fa_setup"] = True
                 session["new_user_id"] = user.id
                 flash(
@@ -527,7 +526,7 @@ def setup_2fa():
                 return redirect(url_for("accounts.settings"))
 
             if request.method == "POST":
-                token = request.form.get("token", "").strip()
+                token = request.form.get("token", "").strip().replace(" ", "")
 
                 totp_secret = session.get("totp_setup_secret")
                 if not totp_secret:
@@ -535,10 +534,28 @@ def setup_2fa():
 
                 try:
                     if not auth.AuthManager.verify_totp(totp_secret, token):
-                        return render_template("setup_2fa.html", error="Ungültiger Code"), 401
+                        qr_code = auth.AuthManager.generate_qr_code(user.email, totp_secret)
+                        return (
+                            render_template(
+                                "setup_2fa.html",
+                                error="Ungültiger Code — denselben QR nochmal scannen, Uhr prüfen.",
+                                qr_code=qr_code,
+                                totp_secret=totp_secret,
+                            ),
+                            401,
+                        )
                 except Exception as e:
                     logger.error(f"setup_2fa: TOTP-Verifikation fehlgeschlagen: {e}")
-                    return render_template("setup_2fa.html", error="Verifikation fehlgeschlagen"), 500
+                    qr_code = auth.AuthManager.generate_qr_code(user.email, totp_secret)
+                    return (
+                        render_template(
+                            "setup_2fa.html",
+                            error="Verifikation fehlgeschlagen",
+                            qr_code=qr_code,
+                            totp_secret=totp_secret,
+                        ),
+                        500,
+                    )
 
                 try:
                     user.totp_secret = totp_secret
@@ -562,10 +579,11 @@ def setup_2fa():
                     "setup_2fa_success.html", recovery_codes=recovery_codes
                 )
 
-            totp_secret = auth.AuthManager.generate_totp_secret()
+            totp_secret = session.get("totp_setup_secret")
+            if not totp_secret:
+                totp_secret = auth.AuthManager.generate_totp_secret()
+                session["totp_setup_secret"] = totp_secret
             qr_code = auth.AuthManager.generate_qr_code(user.email, totp_secret)
-
-            session["totp_setup_secret"] = totp_secret
 
             return render_template(
                 "setup_2fa.html", qr_code=qr_code, totp_secret=totp_secret
