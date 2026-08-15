@@ -103,6 +103,28 @@ def upgrade() -> None:
     sa.UniqueConstraint('user_id', 'account_id', 'sender_pattern', name='uq_audit_vip_sender')
     )
     op.create_index('idx_audit_vip_user', 'audit_vip_senders', ['user_id', 'account_id'], unique=False)
+    # Was previously only created by standalone migrations/add_audit_auto_delete_rules.py
+    # (never in the Alembic chain). Original dispositions; f1a2b3c4d5e6 renames them.
+    op.create_table('audit_auto_delete_rules',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('account_id', sa.Integer(), nullable=True),
+    sa.Column('sender_pattern', sa.String(length=255), nullable=True),
+    sa.Column('subject_pattern', sa.String(length=255), nullable=True),
+    sa.Column('disposition', sa.String(length=20), nullable=False),
+    sa.Column('max_age_days', sa.Integer(), nullable=True),
+    sa.Column('description', sa.String(length=255), nullable=True),
+    sa.Column('source', sa.String(length=20), nullable=False),
+    sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.CheckConstraint("disposition IN ('DELETABLE', 'PROTECTED', 'JUNK')", name='ck_audit_auto_delete_disposition'),
+    sa.CheckConstraint('sender_pattern IS NOT NULL OR subject_pattern IS NOT NULL', name='ck_audit_auto_delete_has_pattern'),
+    sa.ForeignKeyConstraint(['account_id'], ['mail_accounts.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('user_id', 'account_id', 'sender_pattern', 'subject_pattern', name='uq_audit_auto_delete_rule')
+    )
+    op.create_index('idx_audit_auto_delete_user', 'audit_auto_delete_rules', ['user_id', 'account_id'], unique=False)
     op.drop_index(op.f('ix_email_tags_learned_embedding_model'), table_name='email_tags')
     op.alter_column('raw_emails', 'processing_warnings',
                existing_type=postgresql.JSONB(astext_type=sa.Text()),
@@ -122,6 +144,8 @@ def downgrade() -> None:
                comment='Non-fatal warnings during processing (JSON array)',
                existing_nullable=True)
     op.create_index(op.f('ix_email_tags_learned_embedding_model'), 'email_tags', ['learned_embedding_model'], unique=False)
+    op.drop_index('idx_audit_auto_delete_user', table_name='audit_auto_delete_rules')
+    op.drop_table('audit_auto_delete_rules')
     op.drop_index('idx_audit_vip_user', table_name='audit_vip_senders')
     op.drop_table('audit_vip_senders')
     op.drop_index('idx_audit_trusted_domain_user', table_name='audit_trusted_domains')
