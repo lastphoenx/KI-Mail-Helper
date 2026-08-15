@@ -458,7 +458,7 @@ def verify_2fa():
                     f"SECURITY[2FA_FAILED]: user={user.username} ip={request.remote_addr} "
                     f"reason=invalid_token"
                 )
-                return render_template("verify_2fa.html", error="Ungültiger Code"), 401
+                return render_template("verify_2fa.html", error="Ungültiger Code")
 
             return render_template("verify_2fa.html")
     except Exception as e:
@@ -535,26 +535,20 @@ def setup_2fa():
                 try:
                     if not auth.AuthManager.verify_totp(totp_secret, token):
                         qr_code = auth.AuthManager.generate_qr_code(user.email, totp_secret)
-                        return (
-                            render_template(
-                                "setup_2fa.html",
-                                error="Ungültiger Code — denselben QR nochmal scannen, Uhr prüfen.",
-                                qr_code=qr_code,
-                                totp_secret=totp_secret,
-                            ),
-                            401,
+                        return render_template(
+                            "setup_2fa.html",
+                            error="Ungültiger Code — denselben QR nochmal scannen, Uhr prüfen.",
+                            qr_code=qr_code,
+                            totp_secret=totp_secret,
                         )
                 except Exception as e:
                     logger.error(f"setup_2fa: TOTP-Verifikation fehlgeschlagen: {e}")
                     qr_code = auth.AuthManager.generate_qr_code(user.email, totp_secret)
-                    return (
-                        render_template(
-                            "setup_2fa.html",
-                            error="Verifikation fehlgeschlagen",
-                            qr_code=qr_code,
-                            totp_secret=totp_secret,
-                        ),
-                        500,
+                    return render_template(
+                        "setup_2fa.html",
+                        error="Verifikation fehlgeschlagen",
+                        qr_code=qr_code,
+                        totp_secret=totp_secret,
                     )
 
                 try:
