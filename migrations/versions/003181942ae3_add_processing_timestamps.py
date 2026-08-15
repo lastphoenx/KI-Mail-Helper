@@ -40,7 +40,7 @@ def upgrade() -> None:
     op.execute("""
         UPDATE raw_emails SET
             -- Embedding: Status >= 10
-            -- (embedding_generated_at existiert bereits, nicht überschreiben)
+            -- (embedding_generated_at already exists, do not overwrite)
             
             -- Translation: Status >= 20
             translation_completed_at = CASE 
