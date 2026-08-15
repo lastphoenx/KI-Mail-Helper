@@ -132,6 +132,10 @@ def create_app(config_name="production"):
     
     app.config["WTF_CSRF_ENABLED"] = True
     app.config["WTF_CSRF_TIME_LIMIT"] = None
+    # CSRF-Token im Formular bleibt Pflicht. Referer-Check aus: nginx
+    # Referrer-Policy: no-referrer (und Privacy-Browser) senden keinen
+    # Referer — Flask-WTF antwortet sonst 400 "The referrer header is missing."
+    app.config["WTF_CSRF_SSL_STRICT"] = False
     
     csrf = CSRFProtect(app)
     Session(app)
