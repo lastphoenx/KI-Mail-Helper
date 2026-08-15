@@ -1827,10 +1827,10 @@ def get_account_mail_count(account_id):
                         messages_count = status_dict.get(b'MESSAGES', 0)
                         unseen_count = status_dict.get(b'UNSEEN', 0)
                         
-                        # SINCE-Search nur für include_folders
+                        # SINCE-Search: alle Ordner, oder nur explizite Include-Liste
                         since_count = None
-                        if since_date and include_folders_set is not None:
-                            if folder_display in include_folders_set:
+                        if since_date:
+                            if include_folders_set is None or folder_display in include_folders_set:
                                 try:
                                     fetcher.connection.select_folder(folder_name, readonly=True)
                                     date_str = since_date.strftime("%d-%b-%Y")

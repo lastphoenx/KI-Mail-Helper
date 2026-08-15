@@ -1804,6 +1804,20 @@ let currentMailCountRequest = null;
 let loadFoldersDebounceTimer = null;
 let lastLoadedAccountId = null;
 
+/** Include-Ordner für mail-count API: null = alle Ordner, Array = Teilmenge */
+function getIncludeFoldersForMailCount() {
+    const all = document.querySelectorAll('input[name="include_folders"]');
+    if (all.length === 0) {
+        const saved = window.accountFilterData?.include_folders;
+        return saved && saved.length > 0 ? saved : null;
+    }
+    const checked = document.querySelectorAll('input[name="include_folders"]:checked');
+    if (checked.length === 0 || checked.length === all.length) {
+        return null;
+    }
+    return Array.from(checked).map(cb => cb.value);
+}
+
 async function loadFoldersForFilter() {
     const accountId = document.getElementById('folderAccountSelect').value;
     if (!accountId) {
@@ -1844,14 +1858,7 @@ async function loadFoldersForFilter() {
         const sinceDate = sinceDateInput ? sinceDateInput.value : '';
         const unseenOnly = document.getElementById('unseenOnly')?.checked || false;
         
-        // 🎯 Lade gespeicherte include_folders vom Account
-        let includeFolders = [];
-        if (window.accountFilterData && window.accountFilterData.include_folders) {
-            includeFolders = window.accountFilterData.include_folders;
-        }
-        // ⚠️ WICHTIG: Wenn keine include_folders gespeichert, nehme ALLE (Default-Verhalten)
-        // Das passiert beim ersten Laden eines Accounts ohne gespeicherte Filter
-        const sendIncludeFolders = includeFolders.length > 0;
+        const includeFoldersForApi = getIncludeFoldersForMailCount();
         
         let url = `/account/${accountId}/mail-count`;
         const params = [];
@@ -1859,14 +1866,13 @@ async function loadFoldersForFilter() {
             params.push(`since_date=${encodeURIComponent(sinceDate)}`);
         }
         if (unseenOnly) {
-            params.push(`unseen_only=true`);
+            params.push('unseen_only=true');
         }
-        // 🎯 Schicke include_folders mit (nur diese werden für SINCE gezählt!)
-        if (sendIncludeFolders) {
-            params.push(`include_folders=${encodeURIComponent(JSON.stringify(includeFolders))}`);
-            console.log(`🎯 SINCE-Count nur für ${includeFolders.length} ausgewählte Ordner`);
+        if (includeFoldersForApi && includeFoldersForApi.length > 0) {
+            params.push(`include_folders=${encodeURIComponent(JSON.stringify(includeFoldersForApi))}`);
+            console.log(`🎯 SINCE-Count für ${includeFoldersForApi.length} Include-Ordner`);
         } else {
-            console.log('📂 Keine Filter gespeichert - zeige nur STATUS (ohne SINCE)');
+            console.log('📂 SINCE-Count für alle Ordner (kein Include-Subset)');
         }
         if (params.length > 0) {
             url += '?' + params.join('&');
@@ -2121,13 +2127,19 @@ function updateFetchPreview(data) {
     console.log('⚙️ Settings:', { mailsPerFolder, maxTotal, unseenOnly, sinceDate });
     
     // Welche Ordner werden gefetcht?
+    const allIncludeBoxes = document.querySelectorAll('input[name="include_folders"]');
     const includeCheckboxes = document.querySelectorAll('input[name="include_folders"]:checked');
     const excludeCheckboxes = document.querySelectorAll('input[name="exclude_folders"]:checked');
     
-    let includeFolders = Array.from(includeCheckboxes).map(cb => cb.value);
+    const checkedIncludes = Array.from(includeCheckboxes).map(cb => cb.value);
     let excludeFolders = Array.from(excludeCheckboxes).map(cb => cb.value);
     
-    console.log('📁 Folders:', { includeFolders, excludeFolders });
+    // Semantik wie beim Fetch: alle / keine / alle angehakt = alle Ordner
+    const includeAllFolders = allIncludeBoxes.length === 0
+        || checkedIncludes.length === 0
+        || checkedIncludes.length === allIncludeBoxes.length;
+    
+    console.log('📁 Folders:', { includeAllFolders, checkedIncludes, excludeFolders });
     
     // Berechne Summe UND sammle ALLE Ordner-Infos
     let totalEstimate = 0;
@@ -2141,19 +2153,18 @@ function updateFetchPreview(data) {
         const sinceCount = (folderData && folderData.since !== null && folderData.since !== undefined) ? parseInt(folderData.since) : null;
         
         // Prüfe ob dieser Ordner durch Filter kommt
-        const isIncluded = (includeFolders.length === 0 || includeFolders.includes(folderName)) && !excludeFolders.includes(folderName);
+        const isIncluded = (includeAllFolders || checkedIncludes.includes(folderName))
+            && !excludeFolders.includes(folderName);
         
         if (isIncluded) {
             // Wenn UNSEEN-Only, nutze unseen count statt total
             let baseCount = unseenOnly ? unseenCount : totalCount;
             
-            // Phase 13C Part 6+: Wenn sinceDate gesetzt UND Server hat since_count geliefert → nutze das!
+            // Wenn sinceDate gesetzt UND Server lieferte since_count → exakte Zahl
             if (sinceDate && sinceCount !== null) {
                 baseCount = sinceCount;
-            } else if (sinceDate && sinceCount === null) {
-                // Fallback: 50% Schätzung (Server konnte SINCE nicht ermitteln)
-                baseCount = Math.floor(baseCount * 0.5);
             }
+            // Kein 50%-Fallback mehr — ohne since_count bleibt total/unseen (Hinweis unten)
             
             // Für Fetch-Schätzung: Mit mailsPerFolder Limit
             let folderEstimate = Math.min(baseCount, mailsPerFolder);
@@ -2195,6 +2206,7 @@ function updateFetchPreview(data) {
     
     // Details mit HTML-Struktur für bessere Lesbarkeit
     let detailsHtml = '<div style="font-size: 0.9em;">';
+    const includedFolders = allFolderDetails.filter(fd => fd.included);
     
     // Filter-Info direkt nach der Zahl anzeigen (c)
     let filterInfoParts = [];
@@ -2211,19 +2223,36 @@ function updateFetchPreview(data) {
     if (maxTotal > 0) filterInfoParts.push(`max ${maxTotal}`);
     
     if (filterInfoParts.length > 0) {
-        // Zeige Filter-Info neben der Badge
+        const existingFilterInfo = previewCount.parentElement.querySelector('.fetch-filter-info');
+        if (existingFilterInfo) {
+            existingFilterInfo.remove();
+        }
         const filterSpan = document.createElement('span');
-        filterSpan.className = 'text-muted ms-2';
+        filterSpan.className = 'text-muted ms-2 fetch-filter-info';
         filterSpan.textContent = `(${filterInfoParts.join(', ')})`;
         previewCount.parentElement.appendChild(filterSpan);
     }
     
-    // Remote (Server): NUR gefilterte Ordner anzeigen (a - ausblenden statt durchstreichen)
-    const includedFolders = allFolderDetails.filter(fd => fd.included);
+    if (sinceDate) {
+        const hasSinceData = includedFolders.some(fd => {
+            const fc = folderCounts[fd.name];
+            return fc && fc.since !== null && fc.since !== undefined;
+        });
+        if (!hasSinceData && includedFolders.length > 0) {
+            detailsHtml += '<div class="text-warning small mt-1">⚠️ SINCE-Zählung nicht verfügbar — zeige Ordner-Gesamtzahlen. „Ordner laden“ erneut klicken.</div>';
+        }
+    }
+    
+    // Remote (Server): NUR gefilterte Ordner anzeigen
     if (includedFolders.length > 0) {
         detailsHtml += '<strong>Remote (Server):</strong><ul style="margin: 5px 0; padding-left: 20px;">';
         includedFolders.forEach(fd => {
-            detailsHtml += `<li>${fd.name}: <strong>${fd.total}</strong> Mails (<strong>${fd.unseen}</strong> ungelesen)</li>`;
+            const fc = folderCounts[fd.name] || {};
+            const sinceVal = fc.since;
+            const countLabel = (sinceDate && sinceVal !== null && sinceVal !== undefined)
+                ? `${sinceVal} seit Filter (${fd.total} total)`
+                : `${fd.total} Mails (${fd.unseen} ungelesen)`;
+            detailsHtml += `<li>${fd.name}: <strong>${countLabel}</strong></li>`;
         });
         detailsHtml += '</ul>';
     }

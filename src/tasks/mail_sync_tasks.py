@@ -178,9 +178,17 @@ def _fetch_raw_emails(
         mailboxes = fetcher.connection.list_folders()
         
         # mailboxes ist Liste von (flags, delimiter, name) Tuples
+        # Speichere (raw IMAP name, dekodierter Anzeigename) — Filter nutzen UTF-8-Namen
+        mail_fetcher_mod = importlib.import_module(".06_mail_fetcher", "src")
         folders = []
         for flags, delimiter, folder_name in mailboxes:
-            folders.append(folder_name)
+            if b'\\Noselect' in flags or '\\Noselect' in [
+                f.decode() if isinstance(f, bytes) else f for f in flags
+            ]:
+                continue
+            raw_name = folder_name.decode() if isinstance(folder_name, bytes) else folder_name
+            display_name = mail_fetcher_mod.decode_imap_folder_name(raw_name)
+            folders.append((raw_name, display_name))
         
         # Phase 13C Part 4: User Fetch-Einstellungen laden (global)
         user_use_delta = getattr(account.user, 'fetch_use_delta_sync', True)
@@ -256,18 +264,18 @@ def _fetch_raw_emails(
             folder_max_uids = {folder: max_uid for folder, max_uid in results if max_uid}
             logger.info(f"  📊 Max UIDs: {folder_max_uids}")
         
-        # Part 5: Ordner filtern
+        # Part 5: Ordner filtern (Include/Exclude nutzen dekodierte Anzeigenamen)
         filtered_folders = []
-        for folder_name in folders:
-            if include_folders and folder_name not in include_folders:
-                logger.debug(f"  ⏭️  {folder_name}: Nicht in Include-Liste")
+        for folder_raw, folder_display in folders:
+            if include_folders and folder_display not in include_folders:
+                logger.debug(f"  ⏭️  {folder_display}: Nicht in Include-Liste")
                 continue
             
-            if exclude_folders and folder_name in exclude_folders:
-                logger.debug(f"  ⏭️  {folder_name}: In Exclude-Liste")
+            if exclude_folders and folder_display in exclude_folders:
+                logger.debug(f"  ⏭️  {folder_display}: In Exclude-Liste")
                 continue
             
-            filtered_folders.append(folder_name)
+            filtered_folders.append((folder_raw, folder_display))
         
         logger.info(f"  📂 {len(filtered_folders)}/{len(folders)} Ordner nach Filter")
         
@@ -286,13 +294,14 @@ def _fetch_raw_emails(
         existing_msgids = set(r[0] for r in existing_msgids_result if r[0])
         logger.debug(f"  📊 {len(existing_msgids)} message_ids bereits in DB (Account-Ebene)")
         
-        for folder_idx, folder_name in enumerate(filtered_folders, 1):
+        for folder_idx, (folder_raw, folder_display) in enumerate(filtered_folders, 1):
+            folder_name = folder_raw
             try:
                 # Progress-Callback
                 if progress_callback:
                     progress_callback(
                         phase='fetch_folder', 
-                        message=f"Lade '{folder_name}'...", 
+                        message=f"Lade '{folder_display}'...", 
                         folder_idx=folder_idx, 
                         total_folders=len(filtered_folders)
                     )
