@@ -22,6 +22,7 @@ import importlib
 import logging
 
 from src.helpers import get_db_session, get_current_user_model
+from src.helpers.task_ownership import track_celery_task, verify_celery_task_access
 
 rules_bp = Blueprint("rules", __name__)
 logger = logging.getLogger(__name__)
@@ -437,11 +438,14 @@ def api_apply_rules():
                     
                     if email_ids:
                         # Spezifische E-Mails
-                        task = apply_rules_to_emails.delay(
+                        task = track_celery_task(
+                            apply_rules_to_emails.delay(
                             user_id=user.id,
                             email_ids=email_ids,
                             service_token_id=service_token_id,
                             dry_run=False
+                            ),
+                            user.id,
                         )
                         
                         logger.info(f"✅ [CELERY] Rule task enqueued: {task.id}")
@@ -456,11 +460,14 @@ def api_apply_rules():
                         
                     else:
                         # Batch: Alle neuen E-Mails
-                        task = apply_rules_to_new_emails.delay(
+                        task = track_celery_task(
+                            apply_rules_to_new_emails.delay(
                             user_id=user.id,
                             service_token_id=service_token_id,
                             since_minutes=10080,  # 7 days
                             limit=500
+                            ),
+                            user.id,
                         )
                         
                         logger.info(f"✅ [CELERY] Batch rule task enqueued: {task.id}")
@@ -495,6 +502,10 @@ def api_rule_task_status(task_id: str):
     try:
         from src.celery_app import celery_app
         from celery.result import AsyncResult
+        from flask_login import current_user
+
+        if not verify_celery_task_access(celery_app, task_id, current_user.id):
+            return jsonify({"error": "Task nicht gefunden"}), 404
         
         task = AsyncResult(task_id, app=celery_app)
         

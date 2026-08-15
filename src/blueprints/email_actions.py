@@ -23,6 +23,7 @@ import importlib
 import logging
 
 from src.helpers import get_db_session, get_current_user_model
+from src.helpers.task_ownership import track_celery_task
 from src.services.email_action_service import EmailActionService
 
 email_actions_bp = Blueprint("email_actions", __name__)
@@ -184,10 +185,13 @@ def reprocess_email(raw_email_id):
                 )
                 
                 # Task starten (ASYNC!)
-                task = reprocess_email_base.delay(
+                task = track_celery_task(
+                    reprocess_email_base.delay(
                     user_id=user.id,
                     raw_email_id=raw_email_id,
                     service_token_id=service_token.id
+                    ),
+                    user.id,
                 )
                 
                 logger.info(f"✅ Reprocess Task {task.id} gequeued für Email {raw_email_id}")
@@ -264,10 +268,13 @@ def optimize_email(raw_email_id):
                 )
                 
                 # Task starten (ASYNC!)
-                task = optimize_email_processing.delay(
+                task = track_celery_task(
+                    optimize_email_processing.delay(
                     user_id=user.id,
                     raw_email_id=raw_email_id,
                     service_token_id=service_token.id
+                    ),
+                    user.id,
                 )
                 
                 logger.info(f"✅ Optimize Task {task.id} gequeued für Email {raw_email_id}")

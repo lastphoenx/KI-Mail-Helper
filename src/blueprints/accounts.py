@@ -37,6 +37,8 @@ import importlib
 import logging
 
 from src.helpers import get_db_session, get_current_user_model
+from src.helpers.task_ownership import track_celery_task, verify_celery_task_access
+from src.helpers.http import external_request_scheme
 from src.app_factory import limiter
 
 accounts_bp = Blueprint("accounts", __name__)
@@ -616,7 +618,11 @@ def google_oauth_setup():
             session["google_oauth_client_secret"] = client_secret
             session["google_oauth_state"] = auth.AuthManager.generate_totp_secret()[:16]
 
-            redirect_uri = url_for("accounts.google_oauth_callback", _external=True, _scheme="http")
+            redirect_uri = url_for(
+                "accounts.google_oauth_callback",
+                _external=True,
+                _scheme=external_request_scheme(),
+            )
 
             auth_url = google_oauth.GoogleOAuthManager.get_auth_url(
                 client_id=client_id,
@@ -675,7 +681,11 @@ def google_oauth_callback():
                 flash("Session-Daten fehlen. Bitte erneut versuchen.", "danger")
                 return redirect(url_for("accounts.google_oauth_setup"))
             
-            redirect_uri = url_for("accounts.google_oauth_callback", _external=True, _scheme="http")
+            redirect_uri = url_for(
+                "accounts.google_oauth_callback",
+                _external=True,
+                _scheme=external_request_scheme(),
+            )
 
             try:
                 tokens = google_oauth.GoogleOAuthManager.exchange_code(
@@ -1341,11 +1351,14 @@ def fetch_mails(account_id):
                 service_token_id = service_token.id
             
             # Queue Celery Task (asynchron, skalierbar)
-            task = sync_user_emails.delay(
+            task = track_celery_task(
+                sync_user_emails.delay(
                 user_id=user.id,
                 account_id=account_id,
                 service_token_id=service_token_id,
                 max_emails=fetch_limit
+                ),
+                user.id,
             )
             
             logger.info(f"fetch_mails: Celery Task {task.id} für Account {account_id} gequeued")
@@ -1641,9 +1654,7 @@ def task_status(task_id):
         RETRY:    Task wird wiederholt nach Fehler
     
     Security:
-        ✅ Task-Results sind nicht user-spezifisch gechecked!
-        ✅ Aber: Tasks selbst prüfen user_id bei Ausführung
-        ❌ TODO: Task-Result mit user_id taggen für extra Security
+        Task-Ownership wird per Redis + Celery-Metadaten geprüft.
     """
     # Validate task_id format (UUID-like)
     if not task_id or len(task_id) > 100:
@@ -1651,6 +1662,10 @@ def task_status(task_id):
     
     try:
         from src.celery_app import celery_app
+
+        user_id = current_user.id
+        if not verify_celery_task_access(celery_app, task_id, user_id):
+            return jsonify({"error": "Task nicht gefunden"}), 404
         
         # Get task result
         result = celery_app.AsyncResult(task_id)

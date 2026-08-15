@@ -15,6 +15,8 @@ import time
 import re
 
 from src.helpers import get_db_session, get_current_user_model
+from src.helpers.task_ownership import track_celery_task
+from src.helpers.task_ownership import track_celery_task, verify_celery_task_access
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 logger = logging.getLogger(__name__)
@@ -655,7 +657,8 @@ def api_generate_reply(raw_email_id):
                     use_anonymization = False
                 
                 # Task starten (ASYNC!)
-                task = generate_reply_draft.delay(
+                task = track_celery_task(
+                    generate_reply_draft.delay(
                     user_id=user.id,
                     raw_email_id=raw_email_id,
                     service_token_id=service_token.id,
@@ -663,6 +666,8 @@ def api_generate_reply(raw_email_id):
                     provider=provider,
                     model=resolved_model,
                     use_anonymization=use_anonymization
+                    ),
+                    user.id,
                 )
                 
                 logger.info(f"✅ Reply Task {task.id} gequeued für Email {raw_email_id} ({provider}/{resolved_model})")
@@ -768,10 +773,13 @@ def api_reprocess_email(raw_email_id):
                 )
                 
                 # Task starten (ASYNC!)
-                task = reprocess_email_base.delay(
+                task = track_celery_task(
+                    reprocess_email_base.delay(
                     user_id=user.id,
                     raw_email_id=raw_email_id,
                     service_token_id=service_token.id
+                    ),
+                    user.id,
                 )
                 
                 logger.info(f"✅ ReprocessEmail Task {task.id} gequeued für Email {raw_email_id}")
@@ -2073,11 +2081,14 @@ def api_batch_reprocess_embeddings():
                     service_token_id = service_token.id
                 
                 # Enqueue Celery Task
-                task = batch_reprocess_emails.delay(
+                task = track_celery_task(
+                    batch_reprocess_emails.delay(
                     user_id=user.id,
                     service_token_id=service_token_id,
                     provider=provider_embedding,
                     model=model_embedding
+                    ),
+                    user.id,
                 )
                 
                 logger.info(f"✅ [CELERY] Batch-reprocess task enqueued: {task.id}")
@@ -3849,11 +3860,14 @@ def api_auto_fetch_mails():
                         service_token_id = service_token.id
                     
                     # 4. Celery Task queuen (EXAKT wie Button)
-                    task = sync_user_emails.delay(
+                    task = track_celery_task(
+                        sync_user_emails.delay(
                         user_id=user.id,
                         account_id=account.id,
                         service_token_id=service_token_id,
                         max_emails=fetch_limit
+                        ),
+                        user.id,
                     )
                     
                     tasks_queued.append({

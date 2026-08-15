@@ -1,14 +1,15 @@
 ﻿# 🔐 KI-Mail-Helper – Security
 
 **Version:** 2.0.0 (Multi-User Edition)  
-**Stand:** Januar 2026  
-**Security Score:** siehe Threat Model unten (kein numerischer Score)
+**Stand:** August 2026
 
 ---
 
 ## Übersicht
 
-KI-Mail-Helper implementiert eine **Zero-Knowledge-Architektur**, bei der der Server niemals Zugriff auf Klartext-Daten hat. Alle sensiblen Informationen werden clientseitig verschlüsselt.
+KI-Mail-Helper implementiert **Zero-Knowledge at rest**: Mail-Inhalte und Credentials liegen in PostgreSQL verschlüsselt (DEK/AES-GCM). Der Server kann Klartext nur entschlüsseln, solange der Nutzer eingeloggt ist (DEK in Session-RAM bzw. Session-Dateien).
+
+Siehe [Abschnitt 14 – Threat Model](#14-threat-model) für ehrliche Grenzen (Session-DEK, ServiceTokens, Cloud-PII).
 
 ---
 
@@ -127,18 +128,21 @@ RETURNING failed_login_count
 ### Server-Side Sessions
 
 ```python
-SESSION_TYPE = "filesystem"  # Nicht in Cookie
-SESSION_FILE_DIR = ".flask_sessions"
-PERMANENT_SESSION_LIFETIME = timedelta(minutes=30)
+SESSION_TYPE = "filesystem"  # Nicht im Cookie
+SESSION_FILE_DIR = ".flask_sessions"  # chmod 700
+SESSION_USE_SIGNER = False
+PERMANENT_SESSION_LIFETIME = timedelta(minutes=60)  # via SESSION_LIFETIME_MINUTES
 SESSION_COOKIE_SECURE = True      # Nur HTTPS
 SESSION_COOKIE_HTTPONLY = True    # Kein JS-Zugriff
 SESSION_COOKIE_SAMESITE = "Lax"   # CSRF-Schutz
 ```
 
+**Wichtig:** Nach Login wird `session["master_key"]` (DEK) in der Filesystem-Session gespeichert. Wer Lesezugriff auf `.flask_sessions` oder Backups davon hat, kann den DEK extrahieren. Das ist kein DB-Zero-Knowledge-Szenario, sondern Host-/Backup-Kompromittierung.
+
 ### Session-Timeout
 
-- **Inaktivität:** 30 Minuten → Auto-Logout
-- **Absolute:** 8 Stunden → Erneuter Login erforderlich
+- Konfigurierbar über `SESSION_LIFETIME_MINUTES` (Standard: 60 Minuten)
+- Nach Timeout: erneuter Login + DEK aus Passwort
 
 ---
 
@@ -360,22 +364,27 @@ pg_dump -U mail_helper mail_helper | gzip > backup_$(date +%Y%m%d).sql.gz
 | Limitierung | Beschreibung | Mitigation |
 |-------------|--------------|------------|
 | **Passwort-Verlust** | Daten unwiederbringlich | Recovery Codes, Dokumentation |
-| **RAM-Exposure** | DEK in Server-RAM | Server-Hardening, Secure Memory |
-| **Timing Attacks** | Login-Enumeration | Constant-Time Comparison |
-| **Brute Force** | Passwort-Raten | Rate Limiting, Account Lockout |
+| **RAM-/Session-Exposure** | DEK in RAM und `.flask_sessions` | Kurze Session-TTL, Server-Hardening, verschlüsselte Backups |
+| **ServiceToken DEK** | Celery-Token speichern DEK plaintext in DB (TTL) | Kurze TTL, Löschung bei Logout, kein DB-Dump während aktiver Tokens |
+| **TOTP-Secret** | `totp_secret` in DB unverschlüsselt | DB-Zugriff = 2FA bypass möglich; Postgres nur localhost |
+| **Timing Attacks** | Login-Enumeration erschwert | Dummy-Hash bei unbekanntem User |
+| **Brute Force** | Passwort-Raten | Rate Limiting (Login/2FA), Account Lockout |
+| **Celery Flower** | Task-Results können PII enthalten | **Nicht** in Produktion deployen (nur Dev, localhost) |
 
 ---
 
 ## 12. Security Checklist für Deployment
 
+- [ ] `SECRET_KEY` gesetzt (nicht leer)
+- [ ] `BEHIND_REVERSE_PROXY=true` hinter nginx
 - [ ] HTTPS mit gültigem Zertifikat (Let's Encrypt)
 - [ ] Reverse Proxy (Nginx/Caddy) mit Rate Limiting
-- [ ] Firewall: Nur 80/443 von außen erreichbar
+- [ ] Firewall: App-Port nur vom Reverse Proxy (UFW auf App-CT)
 - [ ] PostgreSQL: Nur localhost, kein Remote-Zugriff
 - [ ] Redis: Nur localhost, kein Remote-Zugriff
-- [ ] Regelmäßige Backups (verschlüsselt)
+- [ ] **Kein** Flower/Celery-UI öffentlich
+- [ ] Regelmäßige Backups (verschlüsselte DB — ohne Passwort nutzlos)
 - [ ] Log-Rotation konfiguriert
-- [ ] Fail2ban für SSH und Web
 - [ ] Automatische Security-Updates (unattended-upgrades)
 - [ ] Secrets nicht in Git (.env in .gitignore)
 
@@ -389,6 +398,40 @@ Falls du eine Sicherheitslücke findest:
 2. Kontaktiere den Maintainer direkt
 3. Beschreibe die Lücke detailliert
 4. Warte auf Bestätigung bevor du veröffentlichst
+
+---
+
+## 14. Threat Model
+
+### Was ist geschützt?
+
+| Angriffsszenario | Geschützt? | Mechanismus |
+|------------------|------------|-------------|
+| DB-Dump ohne Login | **Ja** (Mail-Inhalte) | AES-GCM, DEK mit PBKDF2 aus Passwort |
+| Anderer User sieht meine Mails | **Ja** | `user_id`-Filter auf allen Queries |
+| Brute-Force Login | **Teilweise** | 2FA, Lockout, IP Rate-Limits |
+| Cloud-Provider sieht Roh-PII | **Ja** (wenn konfiguriert) | Anonymisierung fail-closed für Cloud |
+| Fremde Celery-Task-ID abfragen | **Ja** | Task-Ownership in Redis + Metadaten |
+
+### Was ist nicht vollständig geschützt?
+
+| Szenario | Risiko | Hinweis |
+|----------|--------|---------|
+| Host root auf App-Server | Hoch | `.flask_sessions` enthält DEK |
+| DB-Dump + aktiver ServiceToken | Hoch | `encrypted_dek`-Spalte = plaintext DEK (TTL) |
+| Kompromittierte Session-Cookie | Hoch | Wie eingeloggter User |
+| Mail-HTML Tracking/Phishing | Mittel | CSP/Sandbox, kein HTML-Sanitizer |
+
+### ServiceToken (Celery)
+
+Background-Tasks benötigen den DEK ohne Flask-Session. Dafür werden kurzlebige `service_tokens` mit **plaintext DEK** in der DB gespeichert (Spaltenname historisch `encrypted_dek`). Tokens werden beim Logout gelöscht.
+
+### Produktion vs. Entwicklung
+
+| Komponente | Produktion (CT 134) | Entwicklung |
+|------------|---------------------|-------------|
+| Gunicorn + Celery Worker + Beat | ✅ | ✅ |
+| Flower (Port 5555) | ❌ nicht deployen | nur `127.0.0.1` + Auth |
 
 ---
 
