@@ -1565,6 +1565,7 @@ class AutoRule(Base):
     # - move_to_folder: "Spam"
     # - mark_as_read: true
     # - mark_as_flagged: true
+    # - mark_as_done: true
     # - apply_tag: "Newsletter"
     # - set_priority: "low"
     # - delete: true (VORSICHT!)

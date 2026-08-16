@@ -400,6 +400,16 @@ select#rule-ai-tag-value option {
                         </label>
                     </div>
                     
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="rule-mark-done">
+                        <label class="form-check-label" for="rule-mark-done">
+                            Als erledigt markieren
+                        </label>
+                        <small class="form-text text-muted d-block ms-4">
+                            Nur in der App (DB) — Mail verschwindet aus „Offen“ / Dashboard, bleibt in der Liste unter Filter „Erledigt“
+                        </small>
+                    </div>
+                    
                     <div class="mb-3">
                         <label for="rule-apply-tag" class="form-label">Tag zuweisen</label>
                         <select class="form-select" id="rule-apply-tag">
@@ -739,6 +749,7 @@ const RulesManager = {
             document.getElementById('rule-move-to').value = actions.move_to_folder || '';
             document.getElementById('rule-mark-read').checked = actions.mark_as_read || false;
             document.getElementById('rule-mark-flagged').checked = actions.mark_as_flagged || false;
+            document.getElementById('rule-mark-done').checked = actions.mark_as_done || false;
             document.getElementById('rule-apply-tag').value = actions.apply_tag || '';
             document.getElementById('rule-stop-processing').checked = actions.stop_processing || false;
             
@@ -849,6 +860,10 @@ const RulesManager = {
         
         if (document.getElementById('rule-mark-flagged').checked) {
             actions.mark_as_flagged = true;
+        }
+        
+        if (document.getElementById('rule-mark-done').checked) {
+            actions.mark_as_done = true;
         }
         
         const applyTag = document.getElementById('rule-apply-tag').value.trim();

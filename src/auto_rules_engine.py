@@ -6,7 +6,7 @@ Automatische E-Mail-Verarbeitung basierend auf benutzerdefinierten Regeln.
 
 Features:
 - Conditional Matching (Sender, Subject, Body, Attachments, etc.)
-- Actions (Move, Flag, Mark Read, Apply Tags, Set Priority)
+- Actions (Move, Flag, Mark Read, Mark Done, Apply Tags, Set Priority)
 - Priority-based Execution
 - Statistics Tracking
 - Dry-Run Mode für Testing
@@ -530,6 +530,7 @@ class AutoRulesEngine:
         - move_to_folder: Verschieben in IMAP-Ordner
         - mark_as_read: Als gelesen markieren
         - mark_as_flagged: Als wichtig markieren
+        - mark_as_done: Als erledigt markieren (ProcessedEmail, nur DB)
         - apply_tag: Tag zuweisen (lokal in DB)
         - set_priority: Priorität setzen (low/high)
         - delete: In Papierkorb verschieben
@@ -675,6 +676,27 @@ class AutoRulesEngine:
                         logger.info(f"⚡ Set priority '{priority}' for email {raw_email.id}")
                 except Exception as prio_err:
                     logger.error(f"Set priority failed: {prio_err}")
+            
+            # Action: Mark as Done (ProcessedEmail, DB-only — kein IMAP)
+            if actions.get('mark_as_done'):
+                try:
+                    processed = self.db.query(ProcessedEmail).filter_by(
+                        raw_email_id=raw_email.id
+                    ).first()
+
+                    if processed:
+                        if not processed.done:
+                            processed.done = True
+                            processed.done_at = datetime.now(UTC)
+                        executed.append("mark_as_done")
+                        logger.info(f"✅ Marked email {raw_email.id} as done")
+                    else:
+                        logger.warning(
+                            f"⚠️ mark_as_done übersprungen – keine ProcessedEmail für raw_email {raw_email.id}"
+                        )
+                        executed.append("mark_as_done [SKIPPED - no ProcessedEmail]")
+                except Exception as done_err:
+                    logger.error(f"Mark as done failed: {done_err}")
             
             # Action: Delete (Soft-Delete)
             if actions.get('delete'):
