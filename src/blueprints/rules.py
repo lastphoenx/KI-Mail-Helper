@@ -669,16 +669,63 @@ def rules_execution_log():
             if not user:
                 return redirect(url_for("auth.login"))
             
-            # Validate and sanitize inputs
+            # Pagination (ersetzt altes limit mit hartem 500er-Cap)
             try:
-                limit = min(int(request.args.get('limit', 100)), 500)  # Cap at 500
+                page = int(request.args.get('page', 1))
             except (ValueError, TypeError):
-                limit = 100
-            
+                page = 1
+
+            per_page_param = request.args.get('per_page', request.args.get('limit', '100'))
+            if per_page_param == 'all':
+                per_page = 500
+            else:
+                try:
+                    per_page = int(per_page_param)
+                except (ValueError, TypeError):
+                    per_page = 100
+                if per_page not in (50, 100, 250, 500):
+                    per_page = 100
+                per_page_param = str(per_page)
+
             rule_id = request.args.get('rule_id')
             success_filter = request.args.get('success')
             
             try:
+                base_log_query = db.query(models.RuleExecutionLog).filter(
+                    models.RuleExecutionLog.user_id == user.id
+                )
+
+                if rule_id:
+                    try:
+                        base_log_query = base_log_query.filter(
+                            models.RuleExecutionLog.rule_id == int(rule_id)
+                        )
+                    except (ValueError, TypeError):
+                        pass
+
+                if success_filter == 'true':
+                    base_log_query = base_log_query.filter(
+                        models.RuleExecutionLog.success == True
+                    )
+                elif success_filter == 'false':
+                    base_log_query = base_log_query.filter(
+                        models.RuleExecutionLog.success == False
+                    )
+
+                total_count = base_log_query.count()
+                success_count = base_log_query.filter(
+                    models.RuleExecutionLog.success == True
+                ).count()
+                error_count = base_log_query.filter(
+                    models.RuleExecutionLog.success == False
+                ).count()
+
+                total_pages = max(1, (total_count + per_page - 1) // per_page)
+                if page < 1:
+                    page = 1
+                if page > total_pages:
+                    page = total_pages
+
                 query = db.query(
                     models.RuleExecutionLog,
                     models.AutoRule,
@@ -696,21 +743,24 @@ def rules_execution_log():
                 ).filter(
                     models.RuleExecutionLog.user_id == user.id
                 )
-                
+
                 if rule_id:
                     try:
                         query = query.filter(models.RuleExecutionLog.rule_id == int(rule_id))
                     except (ValueError, TypeError):
-                        pass  # Ignoriere ungültige rule_id
-                
+                        pass
+
                 if success_filter == 'true':
                     query = query.filter(models.RuleExecutionLog.success == True)
                 elif success_filter == 'false':
                     query = query.filter(models.RuleExecutionLog.success == False)
-                
-                logs = query.order_by(
-                    models.RuleExecutionLog.executed_at.desc()
-                ).limit(limit).all()
+
+                logs = (
+                    query.order_by(models.RuleExecutionLog.executed_at.desc())
+                    .offset((page - 1) * per_page)
+                    .limit(per_page)
+                    .all()
+                )
                 
                 all_rules = db.query(models.AutoRule).filter_by(
                     user_id=user.id
@@ -719,6 +769,13 @@ def rules_execution_log():
                 logger.error(f"rules_execution_log: DB-Fehler: {type(e).__name__}: {e}")
                 logs = []
                 all_rules = []
+                total_count = 0
+                success_count = 0
+                error_count = 0
+                total_pages = 1
+                page = 1
+                per_page = 100
+                per_page_param = '100'
                 flash("Fehler beim Laden der Logs", "warning")
             
             master_key = session.get("master_key")
@@ -746,7 +803,13 @@ def rules_execution_log():
                 user=user,
                 logs=decrypted_logs,
                 all_rules=all_rules,
-                limit=limit,
+                per_page=per_page,
+                per_page_param=per_page_param,
+                page=page,
+                total_pages=total_pages,
+                total_count=total_count,
+                success_count=success_count,
+                error_count=error_count,
                 rule_id=rule_id,
                 success_filter=success_filter
             )

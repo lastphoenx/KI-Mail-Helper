@@ -3,6 +3,10 @@
 {% block title %}Regel-Ausführungslog - Mail Helper{% endblock %}
 
 {% block content %}
+{% macro log_query(page_num) -%}
+?page={{ page_num }}{% if rule_id %}&rule_id={{ rule_id }}{% endif %}{% if success_filter %}&success={{ success_filter }}{% endif %}{% if per_page_param != '100' %}&per_page={{ per_page_param }}{% endif %}
+{%- endmacro %}
+
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>📊 Regel-Ausführungslog</h1>
@@ -15,6 +19,7 @@
     <div class="card mb-4">
         <div class="card-body">
             <form method="GET" action="/rules/execution-log">
+                <input type="hidden" name="page" value="1">
                 <div class="row g-3 align-items-end">
                     <div class="col-md-3">
                         <label class="form-label small">Regel filtern</label>
@@ -38,12 +43,13 @@
                     </div>
 
                     <div class="col-md-2">
-                        <label class="form-label small">Anzahl</label>
-                        <select name="limit" class="form-select form-select-sm">
-                            <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
-                            <option value="100" {% if limit == 100 %}selected{% endif %}>100</option>
-                            <option value="250" {% if limit == 250 %}selected{% endif %}>250</option>
-                            <option value="500" {% if limit == 500 %}selected{% endif %}>500</option>
+                        <label class="form-label small">Pro Seite</label>
+                        <select name="per_page" class="form-select form-select-sm">
+                            <option value="50" {% if per_page_param == '50' %}selected{% endif %}>50</option>
+                            <option value="100" {% if per_page_param == '100' %}selected{% endif %}>100</option>
+                            <option value="250" {% if per_page_param == '250' %}selected{% endif %}>250</option>
+                            <option value="500" {% if per_page_param == '500' %}selected{% endif %}>500</option>
+                            <option value="all" {% if per_page_param == 'all' %}selected{% endif %}>Alle (500/Seite)</option>
                         </select>
                     </div>
 
@@ -64,15 +70,13 @@
     </div>
 
     <!-- Statistics Card -->
-    {% if logs %}
-    {% set success_count = logs|selectattr('log.success', 'equalto', True)|list|length %}
-    {% set error_count = logs|selectattr('log.success', 'equalto', False)|list|length %}
+    {% if total_count > 0 %}
     <div class="row mb-4">
         <div class="col-md-4">
             <div class="card bg-light">
                 <div class="card-body text-center">
-                    <h5 class="mb-1">{{ logs|length }}</h5>
-                    <small class="text-muted">Einträge gesamt</small>
+                    <h5 class="mb-1">{{ total_count }}</h5>
+                    <small class="text-muted">Einträge gesamt (Filter)</small>
                 </div>
             </div>
         </div>
@@ -92,6 +96,32 @@
                 </div>
             </div>
         </div>
+    </div>
+    {% endif %}
+
+    <!-- Pagination Top -->
+    {% if total_count > 0 %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <span class="text-muted">
+            <strong>{{ total_count }}</strong> Einträge insgesamt
+            {% if total_pages > 1 %}
+            &mdash; Seite <strong>{{ page }}</strong> von <strong>{{ total_pages }}</strong>
+            {% endif %}
+            <span class="text-muted">({{ logs|length }} auf dieser Seite)</span>
+        </span>
+        {% if total_pages > 1 %}
+        <nav aria-label="Log pagination top">
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ log_query(page - 1) }}" {% if page <= 1 %}tabindex="-1" aria-disabled="true"{% endif %}>&laquo;</a>
+                </li>
+                <li class="page-item disabled"><span class="page-link">{{ page }}/{{ total_pages }}</span></li>
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ log_query(page + 1) }}" {% if page >= total_pages %}tabindex="-1" aria-disabled="true"{% endif %}>&raquo;</a>
+                </li>
+            </ul>
+        </nav>
+        {% endif %}
     </div>
     {% endif %}
 
@@ -163,6 +193,50 @@
         </div>
     </div>
 
+    <!-- Pagination Bottom -->
+    {% if total_pages > 1 %}
+    <nav aria-label="Log pagination" class="mt-3">
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="text-muted small">
+                Seite {{ page }} von {{ total_pages }} ({{ total_count }} Einträge insgesamt)
+            </div>
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ log_query(page - 1) }}" {% if page <= 1 %}tabindex="-1" aria-disabled="true"{% endif %}>&laquo; Zurück</a>
+                </li>
+
+                {% if page > 3 %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ log_query(1) }}">1</a>
+                </li>
+                {% if page > 4 %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+                {% endif %}
+
+                {% for p in range([page - 2, 1]|max, [page + 2, total_pages]|min + 1) %}
+                <li class="page-item {% if p == page %}active{% endif %}">
+                    <a class="page-link" href="{{ log_query(p) }}">{{ p }}</a>
+                </li>
+                {% endfor %}
+
+                {% if page < total_pages - 2 %}
+                {% if page < total_pages - 3 %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ log_query(total_pages) }}">{{ total_pages }}</a>
+                </li>
+                {% endif %}
+
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ log_query(page + 1) }}" {% if page >= total_pages %}tabindex="-1" aria-disabled="true"{% endif %}>Weiter &raquo;</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+    {% endif %}
+
     <!-- Help Text -->
     <div class="alert alert-info mt-4">
         <strong>💡 Info:</strong> Dieser Log zeigt alle Ausführungen von Auto-Rules.
@@ -170,6 +244,7 @@
             <li><strong>✅ Erfolg:</strong> Regel wurde erfolgreich auf E-Mail angewendet</li>
             <li><strong>❌ Fehler:</strong> Regel-Ausführung fehlgeschlagen (siehe Fehlermeldung)</li>
             <li><strong>Aktion:</strong> Art der durchgeführten Aktion (move_to, mark_as_read, mark_as_done, apply_tag, etc.)</li>
+            <li><strong>Alle (500/Seite):</strong> Gesamtes gefiltertes Protokoll durchblättern, max. 500 Einträge pro Seite</li>
         </ul>
     </div>
 </div>
