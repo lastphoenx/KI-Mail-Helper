@@ -530,10 +530,11 @@ REGELN:
                         f"Opus-MT benötigt PyTorch auf dem Server. "
                         f"Installiere: pip install torch --index-url https://download.pytorch.org/whl/cpu"
                     ) from e
+                detail = str(e).strip() or type(e).__name__
                 raise RuntimeError(
-                    f"Opus-MT Modell {model_name} nicht verfügbar "
-                    f"(Download fehlgeschlagen oder offline). "
-                    f"Nutze LLM/Ollama oder lade das Modell manuell von Hugging Face."
+                    f"Opus-MT Modell {model_name} nicht verfügbar: {detail}. "
+                    f"Modelle vorab laden: bash scripts/install-opus-mt-models.sh "
+                    f"(benötigt huggingface.co). Alternativ: LLM/Ollama."
                 ) from e
         
         # Move to end (LRU)

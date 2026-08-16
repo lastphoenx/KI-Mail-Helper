@@ -321,11 +321,8 @@
         <button type="button" class="btn btn-sm bulk-bar-btn bulk-action-btn" data-bulk-action="mark_undone">↩ Offen</button>
         <button type="button" class="btn btn-sm bulk-bar-btn bulk-action-btn" data-bulk-action="mark_read">👁 Gelesen</button>
         <button type="button" class="btn btn-sm bulk-bar-btn bulk-action-btn" data-bulk-action="mark_unread">👁 Ungelesen</button>
-        <select class="form-select form-select-sm" id="bulkMoveFolderSelect" style="width: auto; min-width: 140px;">
-            <option value="">📁 Zielordner…</option>
-            {% for folder in available_folders|default([]) %}
-            <option value="{{ folder }}">{{ folder }}</option>
-            {% endfor %}
+        <select class="form-select form-select-sm" id="bulkMoveFolderSelect" style="width: auto; min-width: 180px;" disabled>
+            <option value="">📁 Erst Account wählen</option>
         </select>
         <button type="button" class="btn btn-sm bulk-bar-btn" id="bulkMoveFolderBtn">Verschieben</button>
         {% if all_tags %}
@@ -556,47 +553,85 @@ document.addEventListener('DOMContentLoaded', function() {
     const accountSelect = document.getElementById('accountSelect');
     const folderSelect = document.getElementById('folderSelect');
     const perPageSelect = document.getElementById('perPageSelect');
+    const bulkMoveFolderSelect = document.getElementById('bulkMoveFolderSelect');
+
+    function folderNameFromApi(folder) {
+        return typeof folder === 'string' ? folder : (folder && folder.name) || '';
+    }
+
+    /** Gleiche Logik wie Filter-Ordner: Select mit IMAP-Ordnern füllen */
+    function fillFolderSelect(selectEl, folders, options = {}) {
+        const {
+            placeholder = 'Alle Ordner',
+            disabled = false,
+            preserveValue = true,
+        } = options;
+        if (!selectEl) return;
+        const previous = preserveValue ? selectEl.value : '';
+        selectEl.innerHTML = '';
+        const placeholderOpt = document.createElement('option');
+        placeholderOpt.value = '';
+        placeholderOpt.textContent = placeholder;
+        selectEl.appendChild(placeholderOpt);
+        folders.forEach(folder => {
+            const folderName = folderNameFromApi(folder);
+            if (!folderName) return;
+            const option = document.createElement('option');
+            option.value = folderName;
+            option.textContent = folderName;
+            if (folderName === previous) option.selected = true;
+            selectEl.appendChild(option);
+        });
+        selectEl.disabled = disabled;
+    }
 
     async function updateFolderDropdown(accountId) {
         if (!accountId || !folderSelect) {
-            folderSelect.disabled = true;
-            folderSelect.innerHTML = '<option value="">Erst Account wählen</option>';
+            fillFolderSelect(folderSelect, [], {
+                placeholder: 'Erst Account wählen',
+                disabled: true,
+            });
+            fillFolderSelect(bulkMoveFolderSelect, [], {
+                placeholder: '📁 Erst Account wählen',
+                disabled: true,
+            });
             return;
         }
-        
+
         try {
             const response = await fetch(`/account/${accountId}/folders`, {
                 method: 'GET',
                 headers: { 'X-Requested-With': 'XMLHttpRequest' },
                 credentials: 'include'
             });
-            
+
             if (!response.ok) {
                 console.error('Fehler beim Laden von Ordnern:', response.status);
-                folderSelect.disabled = true;
-                folderSelect.innerHTML = '<option value="">Fehler beim Laden</option>';
+                fillFolderSelect(folderSelect, [], {
+                    placeholder: 'Fehler beim Laden',
+                    disabled: true,
+                });
+                fillFolderSelect(bulkMoveFolderSelect, [], {
+                    placeholder: '📁 Fehler beim Laden',
+                    disabled: true,
+                });
                 return;
             }
-            
+
             const data = await response.json();
             const folders = data.folders || [];
-            const currentValue = folderSelect.value;
-            
-            folderSelect.disabled = false;
-            folderSelect.innerHTML = '<option value="">Alle Ordner</option>';
-            folders.forEach(folder => {
-                const option = document.createElement('option');
-                // API gibt {name: "INBOX"} zur\u00fcck, nicht nur String
-                const folderName = typeof folder === 'string' ? folder : folder.name;
-                option.value = folderName;
-                option.textContent = folderName;
-                if (folderName === currentValue) option.selected = true;
-                folderSelect.appendChild(option);
-            });
+            fillFolderSelect(folderSelect, folders, { placeholder: 'Alle Ordner' });
+            fillFolderSelect(bulkMoveFolderSelect, folders, { placeholder: '📁 Zielordner…' });
         } catch (error) {
             console.error('Fehler beim Abrufen von Ordnern:', error);
-            folderSelect.disabled = true;
-            folderSelect.innerHTML = '<option value="">Fehler beim Laden</option>';
+            fillFolderSelect(folderSelect, [], {
+                placeholder: 'Fehler beim Laden',
+                disabled: true,
+            });
+            fillFolderSelect(bulkMoveFolderSelect, [], {
+                placeholder: '📁 Fehler beim Laden',
+                disabled: true,
+            });
         }
     }
 
@@ -772,8 +807,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 initBulkToolbar();
             }
             const accountSel = document.getElementById('accountSelect');
-            if (accountSel && accountSel.value && typeof refreshBulkFolderOptions === 'function') {
-                refreshBulkFolderOptions(accountSel.value);
+            if (accountSel && accountSel.value && typeof updateFolderDropdown === 'function') {
+                updateFolderDropdown(accountSel.value);
             }
             }
 
@@ -895,7 +930,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 const accountId = this.value;
                 if (accountId) {
                     await updateFolderDropdown(accountId);
-                    await refreshBulkFolderOptions(accountId);
                 }
             }
             updateFilters();
@@ -1106,29 +1140,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    async function refreshBulkFolderOptions(accountId) {
-        const select = document.getElementById('bulkMoveFolderSelect');
-        if (!select || !accountId) return;
-        try {
-            const response = await fetch(`/account/${accountId}/folders`, {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                credentials: 'include'
-            });
-            if (!response.ok) return;
-            const data = await response.json();
-            const folders = data.folders || [];
-            const current = select.value;
-            select.innerHTML = '<option value="">📁 Zielordner…</option>' +
-                folders.map(f => {
-                    const esc = f.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-                    return `<option value="${esc}">${esc}</option>`;
-                }).join('');
-            if (current) select.value = current;
-        } catch (e) {
-            console.warn('Bulk folder load failed', e);
-        }
-    }
-
     function initBulkToolbar() {
         document.querySelectorAll('.email-bulk-checkbox').forEach(cb => {
             cb.removeEventListener('change', updateBulkToolbar);
@@ -1201,7 +1212,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (accountSelect && accountSelect.value) {
         updateFolderDropdown(accountSelect.value);
-        refreshBulkFolderOptions(accountSelect.value);
     }
 });
 </script>
