@@ -15,9 +15,10 @@ Datum: 2026-01-23
 """
 
 import os
+import re
 import logging
 import asyncio
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, List
 from dataclasses import dataclass
 from pathlib import Path
 from collections import OrderedDict
@@ -131,6 +132,21 @@ LANGUAGE_NAMES = {
 
 # Unterstützte Zielsprachen für DACH-Kontext
 SUPPORTED_TARGET_LANGUAGES = ['de', 'en', 'fr', 'it', 'es', 'pt', 'nl', 'pl']
+
+# Opus-MT: kein direktes de↔pt-Modell → Pivot über Englisch
+# Format: (src, tgt) -> [(model_id, optional_input_prefix), ...]
+OPUS_MT_HOPS: Dict[Tuple[str, str], List[Tuple[str, Optional[str]]]] = {
+    ("de", "pt"): [
+        ("Helsinki-NLP/opus-mt-de-en", None),
+        ("Helsinki-NLP/opus-mt-tc-big-en-pt", ">>por<< "),
+    ],
+    ("pt", "de"): [
+        ("Helsinki-NLP/opus-mt-ROMANCE-en", ">>por<< "),
+        ("Helsinki-NLP/opus-mt-en-de", None),
+    ],
+}
+
+_OPUS_LANG_TAG_RE = re.compile(r'^>>\w+<<\s*')
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -438,36 +454,63 @@ REGELN:
         Cached in ~/.cache/huggingface/hub/
         """
         import asyncio
-        
-        # Mapping für Opus-MT Modell-Namen
-        # Format: Helsinki-NLP/opus-mt-{src}-{tgt}
-        model_name = f"Helsinki-NLP/opus-mt-{source_lang}-{target_lang}"
-        
+
+        hops = self._opus_hops(source_lang, target_lang)
+
         try:
-            # Synchrone Transformers-Aufrufe in Thread-Pool
             loop = asyncio.get_event_loop()
-            translated = await loop.run_in_executor(
+            translated, models_used = await loop.run_in_executor(
                 None,
-                lambda: self._run_opus_translation(model_name, text)
+                lambda: self._run_opus_hops(hops, text)
             )
-            
+
             return TranslationResult(
                 translated_text=translated,
                 source_language=source_lang,
                 target_language=target_lang,
                 engine='local',
-                model_used=model_name.split('/')[-1]  # z.B. 'opus-mt-en-de'
+                model_used=models_used,
             )
-            
+
         except Exception as e:
             logger.error(f"Local translation error: {e}")
-            # Fallback-Info für User
             if "does not appear to have a file named" in str(e):
                 raise ValueError(
                     f"Kein Opus-MT Modell für {source_lang}→{target_lang} verfügbar. "
                     f"Bitte Cloud-Übersetzung verwenden."
                 )
             raise
+
+    @staticmethod
+    def _opus_hops(source_lang: str, target_lang: str) -> List[Tuple[str, Optional[str]]]:
+        key = (source_lang, target_lang)
+        if key in OPUS_MT_HOPS:
+            return OPUS_MT_HOPS[key]
+        return [(f"Helsinki-NLP/opus-mt-{source_lang}-{target_lang}", None)]
+
+    @staticmethod
+    def _strip_opus_lang_tags(text: str) -> str:
+        cleaned = text.strip()
+        while True:
+            next_text = _OPUS_LANG_TAG_RE.sub('', cleaned, count=1).strip()
+            if next_text == cleaned:
+                break
+            cleaned = next_text
+        return cleaned
+
+    def _run_opus_hops(
+        self,
+        hops: List[Tuple[str, Optional[str]]],
+        text: str,
+    ) -> Tuple[str, str]:
+        current = text
+        models_used: List[str] = []
+        for model_name, prefix in hops:
+            if prefix:
+                current = f"{prefix}{current}"
+            current = self._run_opus_translation(model_name, current)
+            models_used.append(model_name.split('/')[-1])
+        return self._strip_opus_lang_tags(current), '+'.join(models_used)
     
     def _run_opus_translation(self, model_name: str, text: str) -> str:
         """

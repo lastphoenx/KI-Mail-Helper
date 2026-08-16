@@ -33,6 +33,14 @@ MODELS=(
     Helsinki-NLP/opus-mt-it-en
     Helsinki-NLP/opus-mt-en-fr
     Helsinki-NLP/opus-mt-fr-en
+    Helsinki-NLP/opus-mt-de-es
+    Helsinki-NLP/opus-mt-es-de
+    Helsinki-NLP/opus-mt-de-nl
+    Helsinki-NLP/opus-mt-nl-de
+    Helsinki-NLP/opus-mt-de-pl
+    Helsinki-NLP/opus-mt-pl-de
+    Helsinki-NLP/opus-mt-tc-big-en-pt
+    Helsinki-NLP/opus-mt-ROMANCE-en
 )
 
 if [[ ! -x "$VENV_DIR/bin/python" ]]; then
