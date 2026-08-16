@@ -149,6 +149,13 @@
     #advancedToggle[aria-expanded="true"] #advancedToggleIcon {
         transform: rotate(180deg);
     }
+    li.list-item-unread {
+        border-left: 3px solid #0d6efd;
+        background-color: #f8fbff;
+    }
+    li.list-item-unread .email-subject-link {
+        font-weight: 700;
+    }
 </style>
 
 {% set advanced_filters_open = search_term or filter_date_from or filter_date_to or filter_color or filter_done or (filter_tag_ids and filter_tag_ids|length > 0) %}
@@ -474,7 +481,7 @@
         {% for email in mails|default([]) %}
         {% set raw = email.raw_email %}
         {% set tag_list = email._decrypted_tags.split(',') if email._decrypted_tags else [] %}
-        <li class="list-group-item" data-email-id="{{ email.raw_email_id }}">
+        <li class="list-group-item{% if raw and raw.imap_is_seen == False %} list-item-unread{% endif %}" data-email-id="{{ email.raw_email_id }}">
             <div class="row align-items-center">
                 <div class="col-auto">
                     <input type="checkbox" class="form-check-input email-bulk-checkbox"
@@ -494,6 +501,9 @@
                 </div>
                 <div class="col-md-7">
                     <h6 class="mb-1">
+                        {% if raw and raw.imap_is_seen == False %}
+                        <span class="badge bg-primary me-1" title="Ungelesen" style="font-size: 0.65rem;">●</span>
+                        {% endif %}
                         {% if raw and raw.is_calendar_invite %}
                             {% if raw.calendar_method == 'REPLY' %}
                                 <span class="badge bg-success me-1" title="Terminantwort (Zusage/Absage)" style="font-size: 0.75em;">✅ Antwort</span>
@@ -503,7 +513,7 @@
                                 <span class="badge bg-primary me-1" title="Termineinladung" style="font-size: 0.75em;">📅 Termin</span>
                             {% endif %}
                         {% endif %}
-                        <a href="/email/{{ email.raw_email_id }}" class="text-decoration-none">
+                        <a href="/email/{{ email.raw_email_id }}" class="text-decoration-none email-subject-link">
                             {{ email._decrypted_subject|default("(ohne Betreff)") }}
                         </a>
                         {% if raw and raw.attachments|length > 0 %}

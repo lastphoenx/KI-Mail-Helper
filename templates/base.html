@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    {% block meta_extra %}{% endblock %}
     <!-- CSP Header wird via Python gesetzt (siehe src/app_factory.py @app.after_request) -->
     <title>{% block title %}Mail Helper{% endblock %}</title>
     
@@ -32,9 +33,10 @@
     </style>
 </head>
 <body>
+    {% if current_user.is_authenticated %}
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/">📧 Mail Helper</a>
+            <a class="navbar-brand" href="/dashboard">📧 Mail Helper</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -58,7 +60,6 @@
                     <a class="nav-link" href="/settings">⚙️ Einstellungen</a>
                 </div>
                 <div class="navbar-nav ms-auto">
-                    {% if current_user.is_authenticated %}
                     <div class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="userMenu" role="button" data-bs-toggle="dropdown">
                             👤 {{ current_user.user_model.username }}
@@ -69,11 +70,11 @@
                             <li><a class="dropdown-item" href="/logout">Abmelden</a></li>
                         </ul>
                     </div>
-                    {% endif %}
                 </div>
             </div>
         </div>
     </nav>
+    {% endif %}
     
     <main class="container-xxl mt-4">
         {% with flashes = get_flashed_messages(with_categories=true) %}
