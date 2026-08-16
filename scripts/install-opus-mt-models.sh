@@ -5,8 +5,11 @@
 # Usage on CT 134:
 #   sudo -u mailhelper bash scripts/install-opus-mt-models.sh
 #
-# Einzelnes Modell nachladen:
-#   MODELS="Helsinki-NLP/opus-mt-tc-big-en-pt" sudo -u mailhelper bash scripts/install-opus-mt-models.sh
+# Einzelnes Modell (sudo übergibt env mit -E oder env):
+#   sudo -u mailhelper env MODELS="Helsinki-NLP/opus-mt-tc-big-en-pt" bash scripts/install-opus-mt-models.sh
+#
+# Speicher bereinigen (redundante rust/tf-Gewichte, ~10+ GB):
+#   sudo bash scripts/cleanup-opus-mt-cache.sh
 
 set -euo pipefail
 
@@ -101,7 +104,23 @@ def is_cached(repo_id: str) -> bool:
     snaps = Path(HF_HOME) / "hub" / slug / "snapshots"
     if not snaps.is_dir():
         return False
-    return any((p / "config.json").exists() for p in snaps.iterdir() if p.is_dir())
+    for p in snaps.iterdir():
+        if not p.is_dir():
+            continue
+        if (p / "pytorch_model.bin").exists() or (p / "model.safetensors").exists():
+            return True
+    return False
+
+# Nur PyTorch + Tokenizer (~300 MB statt ~1.2 GB pro Modell)
+ALLOW_PATTERNS = [
+    "config.json",
+    "generation_config.json",
+    "tokenizer_config.json",
+    "vocab.json",
+    "*.spm",
+    "pytorch_model.bin",
+    "model.safetensors",
+]
 
 from huggingface_hub import snapshot_download
 
@@ -109,12 +128,12 @@ skipped = downloaded = failed = 0
 for repo_id in models:
     print(f"\n➡️  {repo_id}")
     if is_cached(repo_id):
-        print("   ⏭️  bereits im Cache")
+        print("   ⏭️  bereits im Cache (PyTorch-Gewichte)")
         skipped += 1
         continue
     try:
-        snapshot_download(repo_id=repo_id)
-        print("   ✅ heruntergeladen")
+        snapshot_download(repo_id=repo_id, allow_patterns=ALLOW_PATTERNS)
+        print("   ✅ heruntergeladen (nur PyTorch)")
         downloaded += 1
     except Exception as exc:
         tag = "optional, übersprungen" if repo_id in OPTIONAL else "fehlgeschlagen"
