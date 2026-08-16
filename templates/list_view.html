@@ -135,7 +135,23 @@
         opacity: 0.5;
         pointer-events: none;
     }
+    #advancedToggle.active {
+        background-color: #e7f1ff;
+        border-color: #9ec5fe;
+        color: #052c65;
+    }
+    #advancedToggleIcon {
+        display: inline-block;
+        font-size: 0.7rem;
+        line-height: 1;
+        transition: transform 0.2s ease;
+    }
+    #advancedToggle[aria-expanded="true"] #advancedToggleIcon {
+        transform: rotate(180deg);
+    }
 </style>
+
+{% set advanced_filters_open = search_term or filter_date_from or filter_date_to or filter_color or filter_done or (filter_tag_ids and filter_tag_ids|length > 0) %}
 
 <div class="mb-4">
 <h1 class="mb-4">📝 E-Mail Liste</h1>
@@ -237,14 +253,16 @@
                     <a href="/list" class="btn btn-sm btn-outline-danger" id="resetFiltersBtn" title="Alle Filter zurücksetzen">
                         🔄 Reset
                     </a>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="advancedToggle" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
-                        ⚙️ Erweitert
+                    <button type="button" class="btn btn-sm btn-outline-secondary{% if advanced_filters_open %} active{% endif %}"
+                            id="advancedToggle" data-bs-toggle="collapse" data-bs-target="#advancedFilters"
+                            aria-expanded="{{ 'true' if advanced_filters_open else 'false' }}" aria-controls="advancedFilters">
+                        ⚙️ Erweitert <span class="ms-1" id="advancedToggleIcon" aria-hidden="true">▼</span>
                     </button>
                 </div>
             </div>
 
-            <!-- Erweiterte Filter (zusammengeklappt) -->
-            <div class="collapse mt-3" id="advancedFilters">
+            <!-- Erweiterte Filter (Toggle bleibt über Reloads offen) -->
+            <div class="collapse mt-3{% if advanced_filters_open %} show{% endif %}" id="advancedFilters">
                 <div class="row g-2 align-items-end">
                     <!-- Suche -->
                     <div class="col-md-3">
@@ -839,6 +857,74 @@ document.addEventListener('DOMContentLoaded', function() {
         return div.innerHTML;
     }
 
+    const ADVANCED_FILTERS_STORAGE_KEY = 'listAdvancedFiltersOpen';
+
+    function hasAdvancedFiltersInUrl() {
+        const p = new URLSearchParams(window.location.search);
+        return !!(
+            p.get('search') ||
+            p.get('date_from') ||
+            p.get('date_to') ||
+            p.get('farbe') ||
+            p.get('done') ||
+            p.get('tags')
+        );
+    }
+
+    function isAdvancedFiltersPanelOpen() {
+        const panel = document.getElementById('advancedFilters');
+        return !!(panel && panel.classList.contains('show'));
+    }
+
+    function persistAdvancedFiltersOpen(open) {
+        try {
+            sessionStorage.setItem(ADVANCED_FILTERS_STORAGE_KEY, open ? '1' : '0');
+        } catch (e) {
+            /* sessionStorage nicht verfügbar */
+        }
+    }
+
+    function shouldOpenAdvancedFilters() {
+        if (hasAdvancedFiltersInUrl()) return true;
+        try {
+            return sessionStorage.getItem(ADVANCED_FILTERS_STORAGE_KEY) === '1';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function syncAdvancedToggleUi(open) {
+        const toggleBtn = document.getElementById('advancedToggle');
+        if (!toggleBtn) return;
+        toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggleBtn.classList.toggle('active', open);
+    }
+
+    function initAdvancedFiltersPanel() {
+        const panel = document.getElementById('advancedFilters');
+        const toggleBtn = document.getElementById('advancedToggle');
+        if (!panel || !toggleBtn || typeof bootstrap === 'undefined') return;
+
+        const collapse = bootstrap.Collapse.getOrCreateInstance(panel, { toggle: false });
+
+        if (shouldOpenAdvancedFilters() && !panel.classList.contains('show')) {
+            collapse.show();
+        }
+        syncAdvancedToggleUi(panel.classList.contains('show'));
+        if (panel.classList.contains('show')) {
+            persistAdvancedFiltersOpen(true);
+        }
+
+        panel.addEventListener('shown.bs.collapse', () => {
+            syncAdvancedToggleUi(true);
+            persistAdvancedFiltersOpen(true);
+        });
+        panel.addEventListener('hidden.bs.collapse', () => {
+            syncAdvancedToggleUi(false);
+            persistAdvancedFiltersOpen(false);
+        });
+    }
+
     function updateFilters() {
         // Phase F.1: Check if semantic search mode is active
         const searchInput = document.getElementById('searchInput');
@@ -879,7 +965,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
-        
+
+        persistAdvancedFiltersOpen(isAdvancedFiltersPanelOpen());
+
         // Full page reload for reliable filter application
         window.location.href = newUrl;
     }
@@ -1309,6 +1397,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     attachActionFormListeners();
     initBulkToolbar();
+    initAdvancedFiltersPanel();
 
     const params = new URLSearchParams(window.location.search);
     updateActiveFilterBadge(params);
