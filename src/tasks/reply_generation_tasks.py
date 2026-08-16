@@ -18,6 +18,7 @@ from celery.exceptions import Reject, SoftTimeLimitExceeded
 
 from src.celery_app import celery_app
 from src.helpers.database import get_session_factory
+from src.ollama_timeouts import OLLAMA_LLM_TASK_HARD_LIMIT, OLLAMA_LLM_TASK_SOFT_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +65,8 @@ def _get_dek_from_service_token(service_token_id: int, user_id: int, db) -> str:
     name="tasks.reply_generation.generate_reply_draft",
     max_retries=3,
     default_retry_delay=60,
-    time_limit=300,       # 5 Minuten hard limit (lokale LLMs können langsam sein)
-    soft_time_limit=240,  # 4 Minuten soft limit
+    time_limit=OLLAMA_LLM_TASK_HARD_LIMIT,
+    soft_time_limit=OLLAMA_LLM_TASK_SOFT_LIMIT,
     acks_late=True,
     reject_on_worker_lost=True
 )

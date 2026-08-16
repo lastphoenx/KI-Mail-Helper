@@ -10,6 +10,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
+from .ollama_timeouts import OLLAMA_EMBEDDING_TIMEOUT
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,6 +60,7 @@ class OllamaEmbeddingClient(EmbeddingClient):
     ):
         self.model = model
         self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+        self.timeout = OLLAMA_EMBEDDING_TIMEOUT
         self._dimension: Optional[int] = None
     
     @property
@@ -90,7 +93,7 @@ class OllamaEmbeddingClient(EmbeddingClient):
                     "prompt": text.strip(),
                     "keep_alive": "30m"  # Modell 30 Min im RAM halten
                 },
-                timeout=30
+                timeout=self.timeout
             )
             
             if response.status_code != 200:

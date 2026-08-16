@@ -1804,18 +1804,57 @@ let currentMailCountRequest = null;
 let loadFoldersDebounceTimer = null;
 let lastLoadedAccountId = null;
 
-/** Include-Ordner für mail-count API: null = alle Ordner, Array = Teilmenge */
-function getIncludeFoldersForMailCount() {
-    const all = document.querySelectorAll('input[name="include_folders"]');
-    if (all.length === 0) {
-        const saved = window.accountFilterData?.include_folders;
-        return saved && saved.length > 0 ? saved : null;
-    }
-    const checked = document.querySelectorAll('input[name="include_folders"]:checked');
-    if (checked.length === 0 || checked.length === all.length) {
+function getFetchFilterSettings() {
+    return {
+        sinceDate: document.getElementById('sinceDate')?.value || '',
+        unseenOnly: document.getElementById('unseenOnly')?.checked || false,
+    };
+}
+
+function parseFolderSince(folderData) {
+    if (!folderData || folderData.since === null || folderData.since === undefined) {
         return null;
     }
-    return Array.from(checked).map(cb => cb.value);
+    const n = parseInt(folderData.since, 10);
+    return Number.isFinite(n) ? n : null;
+}
+
+/** Eine Zählweise für Summe, Badges und Vorschau-Liste */
+function getEffectiveFolderCount(folderData, { sinceDate, unseenOnly }) {
+    const total = folderData?.total ? parseInt(folderData.total, 10) : 0;
+    const unseen = folderData?.unseen ? parseInt(folderData.unseen, 10) : 0;
+    const since = parseFolderSince(folderData);
+    if (sinceDate && since !== null) {
+        return since;
+    }
+    return unseenOnly ? unseen : total;
+}
+
+function formatFolderCountBadge(folderData, filterSettings) {
+    const total = folderData?.total || 0;
+    const unseen = folderData?.unseen || 0;
+    const since = parseFolderSince(folderData);
+    const effective = getEffectiveFolderCount(folderData, filterSettings);
+
+    if (filterSettings.sinceDate && since !== null) {
+        return {
+            text: `${effective} (gefiltert)`,
+            className: 'badge bg-primary ms-1',
+            title: `${effective} Mails mit aktuellem Filter (${total} gesamt, ${unseen} ungelesen)`,
+        };
+    }
+    if (filterSettings.unseenOnly) {
+        return {
+            text: `${effective}/${total}`,
+            className: 'badge bg-primary ms-1',
+            title: `${effective} ungelesen von ${total} gesamt`,
+        };
+    }
+    return {
+        text: `${total}/${unseen}`,
+        className: 'badge bg-secondary ms-1',
+        title: `${total} gesamt, ${unseen} ungelesen`,
+    };
 }
 
 async function loadFoldersForFilter() {
@@ -1854,12 +1893,9 @@ async function loadFoldersForFilter() {
     
     try {
         // Phase 13C Part 6+: since_date + unseen_only Parameter übergeben für exakte Schätzung
-        const sinceDateInput = document.getElementById('sinceDate');
-        const sinceDate = sinceDateInput ? sinceDateInput.value : '';
-        const unseenOnly = document.getElementById('unseenOnly')?.checked || false;
-        
-        const includeFoldersForApi = getIncludeFoldersForMailCount();
-        
+        const filterSettings = getFetchFilterSettings();
+        const { sinceDate, unseenOnly } = filterSettings;
+
         let url = `/account/${accountId}/mail-count`;
         const params = [];
         if (sinceDate) {
@@ -1867,12 +1903,6 @@ async function loadFoldersForFilter() {
         }
         if (unseenOnly) {
             params.push('unseen_only=true');
-        }
-        if (includeFoldersForApi && includeFoldersForApi.length > 0) {
-            params.push(`include_folders=${encodeURIComponent(JSON.stringify(includeFoldersForApi))}`);
-            console.log(`🎯 SINCE-Count für ${includeFoldersForApi.length} Include-Ordner`);
-        } else {
-            console.log('📂 SINCE-Count für alle Ordner (kein Include-Subset)');
         }
         if (params.length > 0) {
             url += '?' + params.join('&');
@@ -1944,9 +1974,6 @@ async function loadFoldersForFilter() {
             const checked = savedInclude.length === 0 || savedInclude.includes(folderName);
             const safeFolderId = String(folderName).replace(/[^a-zA-Z0-9]/g, '_');
             const folderData = data.folders[folderName] || {};
-            const mailCount = folderData.total || 0;
-            const unseenCount = folderData.unseen || 0;
-            const sinceCount = folderData.since; // kann null/undefined sein
             
             // Berechne Einrückung basierend auf Slashes
             const depth = (folderName.match(/\//g) || []).length;
@@ -1975,18 +2002,12 @@ async function loadFoldersForFilter() {
             label.textContent = displayName + ' ';
             label.title = folderName; // Tooltip mit vollem Pfad
             
+            const badgeInfo = formatFolderCountBadge(folderData, filterSettings);
             const badge = document.createElement('span');
-            badge.className = 'badge bg-secondary ms-1';
+            badge.className = badgeInfo.className;
             badge.style.fontSize = '0.75rem';
-            // Zeige SINCE-Count wenn vorhanden, sonst total/unseen
-            if (sinceCount !== null && sinceCount !== undefined) {
-                badge.className = 'badge bg-primary ms-1'; // Blau für SINCE-Filtered
-                badge.textContent = sinceCount + ' (gefiltert)';
-                badge.title = `${sinceCount} Mails seit Filter (${mailCount} total, ${unseenCount} ungelesen)`;
-            } else {
-                badge.textContent = mailCount + '/' + unseenCount;
-                badge.title = `${mailCount} gesamt, ${unseenCount} ungelesen`;
-            }
+            badge.textContent = badgeInfo.text;
+            badge.title = badgeInfo.title;
             label.appendChild(badge);
             
             formCheck.appendChild(checkbox);
@@ -2016,8 +2037,6 @@ async function loadFoldersForFilter() {
             const checked = savedExclude.includes(folderName);
             const safeFolderId = String(folderName).replace(/[^a-zA-Z0-9]/g, '_');
             const folderData = data.folders[folderName] || {};
-            const mailCount = folderData.total || 0;
-            const unseenCount = folderData.unseen || 0;
             
             // Berechne Einrückung basierend auf Slashes
             const depth = (folderName.match(/\//g) || []).length;
@@ -2046,11 +2065,12 @@ async function loadFoldersForFilter() {
             label.textContent = displayName + ' ';
             label.title = folderName; // Tooltip mit vollem Pfad
             
+            const badgeInfo = formatFolderCountBadge(folderData, filterSettings);
             const badge = document.createElement('span');
-            badge.className = 'badge bg-secondary ms-1';
+            badge.className = badgeInfo.className;
             badge.style.fontSize = '0.75rem';
-            badge.textContent = mailCount + '/' + unseenCount;
-            badge.title = `${mailCount} gesamt, ${unseenCount} ungelesen`;
+            badge.textContent = badgeInfo.text;
+            badge.title = badgeInfo.title;
             label.appendChild(badge);
             
             formCheck.appendChild(checkbox);
@@ -2121,8 +2141,8 @@ function updateFetchPreview(data) {
     const maxTotalInput = document.querySelector('input[name="max_total_mails"]');
     const mailsPerFolder = mailsPerFolderInput ? parseInt(mailsPerFolderInput.value) || 100 : 100;
     const maxTotal = maxTotalInput ? parseInt(maxTotalInput.value) || 0 : 0;
-    const unseenOnly = document.getElementById('unseenOnly')?.checked || false;
-    const sinceDate = document.getElementById('sinceDate')?.value || '';
+    const filterSettings = getFetchFilterSettings();
+    const { sinceDate, unseenOnly } = filterSettings;
     
     console.log('⚙️ Settings:', { mailsPerFolder, maxTotal, unseenOnly, sinceDate });
     
@@ -2148,39 +2168,26 @@ function updateFetchPreview(data) {
     let allFolderDetails = [];
     
     Object.entries(folderCounts).forEach(([folderName, folderData]) => {
-        const totalCount = (folderData && folderData.total) ? parseInt(folderData.total) : 0;
-        const unseenCount = (folderData && folderData.unseen) ? parseInt(folderData.unseen) : 0;
-        const sinceCount = (folderData && folderData.since !== null && folderData.since !== undefined) ? parseInt(folderData.since) : null;
+        const totalCount = (folderData && folderData.total) ? parseInt(folderData.total, 10) : 0;
+        const unseenCount = (folderData && folderData.unseen) ? parseInt(folderData.unseen, 10) : 0;
+        const effectiveCount = getEffectiveFolderCount(folderData, filterSettings);
         
         // Prüfe ob dieser Ordner durch Filter kommt
         const isIncluded = (includeAllFolders || checkedIncludes.includes(folderName))
             && !excludeFolders.includes(folderName);
         
         if (isIncluded) {
-            // Wenn UNSEEN-Only, nutze unseen count statt total
-            let baseCount = unseenOnly ? unseenCount : totalCount;
-            
-            // Wenn sinceDate gesetzt UND Server lieferte since_count → exakte Zahl
-            if (sinceDate && sinceCount !== null) {
-                baseCount = sinceCount;
-            }
-            // Kein 50%-Fallback mehr — ohne since_count bleibt total/unseen (Hinweis unten)
-            
-            // Für Fetch-Schätzung: Mit mailsPerFolder Limit
-            let folderEstimate = Math.min(baseCount, mailsPerFolder);
+            const folderEstimate = Math.min(effectiveCount, mailsPerFolder);
             totalEstimate += folderEstimate;
-            
-            // Für Delta: OHNE mailsPerFolder Limit (echte Remote-Zahl)
-            filteredRemoteTotal += baseCount;
-            
+            filteredRemoteTotal += effectiveCount;
             includedFolderCount++;
         }
         
-        // Sammle ALLE Ordner für die Anzeige (auch die gefilterten)
         allFolderDetails.push({
             name: String(folderName),
             total: totalCount,
             unseen: unseenCount,
+            effective: effectiveCount,
             included: isIncluded
         });
     });
@@ -2248,10 +2255,15 @@ function updateFetchPreview(data) {
         detailsHtml += '<strong>Remote (Server):</strong><ul style="margin: 5px 0; padding-left: 20px;">';
         includedFolders.forEach(fd => {
             const fc = folderCounts[fd.name] || {};
-            const sinceVal = fc.since;
-            const countLabel = (sinceDate && sinceVal !== null && sinceVal !== undefined)
-                ? `${sinceVal} seit Filter (${fd.total} total)`
-                : `${fd.total} Mails (${fd.unseen} ungelesen)`;
+            const effective = getEffectiveFolderCount(fc, filterSettings);
+            let countLabel;
+            if (sinceDate && parseFolderSince(fc) !== null) {
+                countLabel = `${effective} (gefiltert)`;
+            } else if (unseenOnly) {
+                countLabel = `${effective} ungelesen (${fd.total} gesamt)`;
+            } else {
+                countLabel = `${effective} Mails`;
+            }
             detailsHtml += `<li>${fd.name}: <strong>${countLabel}</strong></li>`;
         });
         detailsHtml += '</ul>';

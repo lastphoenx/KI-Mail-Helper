@@ -20,6 +20,7 @@ except ImportError:
 from .known_newsletters import (
     classify_newsletter_confidence,
 )
+from .ollama_timeouts import OLLAMA_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -384,7 +385,7 @@ class LocalOllamaClient(AIClient):
         self.base_url = base_url or os.getenv(
             "OLLAMA_BASE_URL", "http://127.0.0.1:11434"
         )
-        self.timeout = int(os.getenv("OLLAMA_TIMEOUT", "600"))
+        self.timeout = OLLAMA_TIMEOUT
         self.model = (model or os.getenv("OLLAMA_MODEL") or self.DEFAULT_MODEL).strip()
         self._available_models = self._fetch_available_models()
         normalized_model = self.model.split(":", 1)[0].strip()

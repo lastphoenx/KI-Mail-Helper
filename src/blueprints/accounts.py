@@ -1737,17 +1737,13 @@ def get_account_mail_count(account_id):
     # Optional: unseen_only für kombinierte Filter
     unseen_only = request.args.get('unseen_only', '').lower() == 'true'
     
-    # include_folders als JSON-Array
+    # include_folders (legacy query param) — nur noch Cache-Key, SINCE zählt immer alle Ordner
     include_folders_param = request.args.get('include_folders')
-    include_folders_set = None
     if include_folders_param:
         try:
-            include_folders_list = json.loads(include_folders_param)
-            include_folders_set = set(include_folders_list) if include_folders_list else None
-            logger.info(f"🎯 SINCE-Search nur für {len(include_folders_set)} Include-Ordner")
-        except (json.JSONDecodeError, TypeError) as e:
-            logger.warning(f"Ungültiges include_folders Format: {e}")
-            include_folders_set = None
+            json.loads(include_folders_param)
+        except (json.JSONDecodeError, TypeError):
+            pass
     
     # 🔧 FIX: Cache-Key muss Filter-Parameter enthalten!
     # Sonst werden bei Filter-Änderung alte Daten zurückgegeben
@@ -1827,23 +1823,22 @@ def get_account_mail_count(account_id):
                         messages_count = status_dict.get(b'MESSAGES', 0)
                         unseen_count = status_dict.get(b'UNSEEN', 0)
                         
-                        # SINCE-Search: alle Ordner, oder nur explizite Include-Liste
+                        # SINCE-Search: immer für alle Ordner (UI zeigt pro Ordner dieselbe Zahl)
                         since_count = None
                         if since_date:
-                            if include_folders_set is None or folder_display in include_folders_set:
-                                try:
-                                    fetcher.connection.select_folder(folder_name, readonly=True)
-                                    date_str = since_date.strftime("%d-%b-%Y")
-                                    
-                                    search_criteria = ['SINCE', date_str]
-                                    if unseen_only:
-                                        search_criteria.append('UNSEEN')
-                                    
-                                    since_messages = fetcher.connection.search(search_criteria)
-                                    since_count = len(since_messages) if since_messages else 0
-                                except Exception as search_err:
-                                    logger.debug(f"SINCE search failed für {folder_display}: {search_err}")
-                                    since_count = None
+                            try:
+                                fetcher.connection.select_folder(folder_name, readonly=True)
+                                date_str = since_date.strftime("%d-%b-%Y")
+
+                                search_criteria = ['SINCE', date_str]
+                                if unseen_only:
+                                    search_criteria.append('UNSEEN')
+
+                                since_messages = fetcher.connection.search(search_criteria)
+                                since_count = len(since_messages) if since_messages else 0
+                            except Exception as search_err:
+                                logger.debug(f"SINCE search failed für {folder_display}: {search_err}")
+                                since_count = None
                         
                         folder_counts[folder_display] = {
                             "total": messages_count,
