@@ -30,14 +30,24 @@ echo "🐍 Python ${PY_MM} in ${VENV_DIR}"
 
 patch_fasttext_sources() {
     local srcdir="$1"
-    local args_h="${srcdir}/src/args.h"
-    if [[ ! -f "$args_h" ]]; then
-        echo "❌ fastText source layout unexpected (missing src/args.h)" >&2
+    local patched=0
+    for rel in src/args.h src/args.cc; do
+        local target="${srcdir}/${rel}"
+        if [[ ! -f "$target" ]]; then
+            continue
+        fi
+        if grep -q '#include <cstdint>' "$target"; then
+            continue
+        fi
+        if grep -q '#include <unordered_map>' "$target"; then
+            sed -i '/#include <unordered_map>/a #include <cstdint>' "$target"
+            echo "🩹 Patched ${rel} (#include <cstdint> for GCC 13+)"
+            patched=1
+        fi
+    done
+    if [[ "$patched" -eq 0 ]]; then
+        echo "❌ Could not patch fastText sources (args.h/args.cc)" >&2
         exit 1
-    fi
-    if ! grep -q '#include <cstdint>' "$args_h"; then
-        sed -i '/#include <unordered_map>/a #include <cstdint>' "$args_h"
-        echo "🩹 Patched src/args.h (#include <cstdint> for GCC 13+)"
     fi
 }
 
@@ -76,7 +86,7 @@ install_from_patched_source() {
     fi
 
     patch_fasttext_sources "$srcdir"
-    CC="$cc" CXX="$cxx" pip install --no-cache-dir "$srcdir"
+    CC="$cc" CXX="$cxx" pip install --no-build-isolation --no-cache-dir "$srcdir"
     echo "✅ fasttext-wheel built from patched source"
 }
 
