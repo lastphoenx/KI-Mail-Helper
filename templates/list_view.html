@@ -17,6 +17,28 @@
     li:has(form[action*="/undo"]) .badge {
         opacity: 0.7;
     }
+    #listBulkActionBar {
+        position: sticky;
+        bottom: 16px;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        border-radius: 12px;
+        padding: 12px 16px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        display: none;
+        color: white;
+        z-index: 1000;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+    }
+    #listBulkActionBar.show {
+        display: flex;
+    }
+    #listBulkActionBar .form-select,
+    #listBulkActionBar .btn {
+        font-size: 0.85rem;
+    }
 </style>
 
 <div class="mb-5 pb-5">
@@ -275,7 +297,11 @@
 
 <!-- E-Mail-Liste -->
 <div class="card" id="emailListCard">
-    <div class="card-header">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <input type="checkbox" class="form-check-input mt-0" id="selectAllPageCheckbox"
+                   title="Alle E-Mails auf dieser Seite auswählen" aria-label="Alle auf dieser Seite">
+            <div>
         <strong id="emailListCount">{{ mails|length }}</strong>
         {% if search_term %}Treffer{% else %}Mails{% endif %}
         {% if sort_by != 'score' or sort_order == 'asc' %}
@@ -283,13 +309,27 @@
         {% else %}
         <small class="text-muted">(sortiert nach Score)</small>
         {% endif %}
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="bulkSelectAllVisibleBtn">
+                Alle sichtbaren
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="bulkDeselectAllBtn">
+                Auswahl aufheben
+            </button>
+        </div>
     </div>
     <ul class="list-group list-group-flush">
         {% for email in mails|default([]) %}
         {% set raw = email.raw_email %}
         {% set tag_list = email._decrypted_tags.split(',') if email._decrypted_tags else [] %}
-        <li class="list-group-item">
+        <li class="list-group-item" data-email-id="{{ email.raw_email_id }}">
             <div class="row align-items-center">
+                <div class="col-auto">
+                    <input type="checkbox" class="form-check-input email-bulk-checkbox"
+                           value="{{ email.raw_email_id }}" aria-label="E-Mail auswählen">
+                </div>
                 <div class="col-md-1 text-center">
                     {# Score-Anzeige: Immer email.score verwenden (wird bei Korrektur aktualisiert) #}
                     {% if email.optimization_status == 'done' and email.optimize_score is not none and email.optimization_completed_at and email.processed_at and email.optimization_completed_at > email.processed_at %}
@@ -302,7 +342,7 @@
                     </span>
                     {% endif %}
                 </div>
-                <div class="col-md-8">
+                <div class="col-md-7">
                     <h6 class="mb-1">
                         {% if raw and raw.is_calendar_invite %}
                             {% if raw.calendar_method == 'REPLY' %}
@@ -457,6 +497,37 @@
     </div>
 </nav>
 {% endif %}
+
+<!-- Bulk-Aktionsleiste -->
+<div id="listBulkActionBar" role="toolbar" aria-label="Massenaktionen">
+    <div class="fw-semibold">
+        <span id="bulkSelectedCount">0</span> ausgewählt
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        <button type="button" class="btn btn-sm btn-success bulk-action-btn" data-bulk-action="mark_done">✓ Erledigt</button>
+        <button type="button" class="btn btn-sm btn-outline-light bulk-action-btn" data-bulk-action="mark_undone">↩ Offen</button>
+        <button type="button" class="btn btn-sm btn-outline-light bulk-action-btn" data-bulk-action="mark_read">👁 Gelesen</button>
+        <button type="button" class="btn btn-sm btn-outline-light bulk-action-btn" data-bulk-action="mark_unread">👁 Ungelesen</button>
+        <select class="form-select form-select-sm" id="bulkMoveFolderSelect" style="width: auto; min-width: 140px;">
+            <option value="">📁 Zielordner…</option>
+            {% for folder in available_folders|default([]) %}
+            <option value="{{ folder }}">{{ folder }}</option>
+            {% endfor %}
+        </select>
+        <button type="button" class="btn btn-sm btn-outline-light" id="bulkMoveFolderBtn">Verschieben</button>
+        {% if all_tags %}
+        <select class="form-select form-select-sm" id="bulkTagSelect" style="width: auto; min-width: 120px;">
+            <option value="">🏷 Tag…</option>
+            {% for tag in all_tags %}
+            <option value="{{ tag.id }}">{{ tag.name }}</option>
+            {% endfor %}
+        </select>
+        <button type="button" class="btn btn-sm btn-outline-light" id="bulkTagBtn">Tag setzen</button>
+        {% endif %}
+        <button type="button" class="btn btn-sm btn-warning bulk-action-btn" data-bulk-action="move_trash">🗑 Papierkorb</button>
+        <button type="button" class="btn btn-sm btn-danger bulk-action-btn" data-bulk-action="delete_permanent">⛔ Endgültig löschen</button>
+    </div>
+</div>
 
 </div><!-- end mb-5 pb-5 wrapper -->
 
@@ -681,6 +752,13 @@ document.addEventListener('DOMContentLoaded', function() {
             if (newListHtml && oldListHtml) {
                 oldListHtml.replaceWith(newListHtml);
                 attachActionFormListeners();
+            if (typeof initBulkToolbar === 'function') {
+                initBulkToolbar();
+            }
+            const accountSel = document.getElementById('accountSelect');
+            if (accountSel && accountSel.value && typeof refreshBulkFolderOptions === 'function') {
+                refreshBulkFolderOptions(accountSel.value);
+            }
             }
 
             // Update TOP pagination info
@@ -800,8 +878,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (this === accountSelect) {
                 const accountId = this.value;
                 if (accountId) {
-                    // Warten bis Folder-Dropdown aktualisiert ist, bevor Seite neu lädt
                     await updateFolderDropdown(accountId);
+                    await refreshBulkFolderOptions(accountId);
                 }
             }
             updateFilters();
@@ -944,13 +1022,170 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     // ===== End Sync Action Buttons =====
 
+    // ===== Bulk Toolbar =====
+    function getSelectedEmailIds() {
+        return Array.from(document.querySelectorAll('.email-bulk-checkbox:checked'))
+            .map(cb => parseInt(cb.value, 10))
+            .filter(id => !Number.isNaN(id));
+    }
+
+    function updateBulkToolbar() {
+        const ids = getSelectedEmailIds();
+        const bar = document.getElementById('listBulkActionBar');
+        const countEl = document.getElementById('bulkSelectedCount');
+        const selectAll = document.getElementById('selectAllPageCheckbox');
+        const checkboxes = document.querySelectorAll('.email-bulk-checkbox');
+        if (countEl) countEl.textContent = ids.length;
+        if (bar) bar.classList.toggle('show', ids.length > 0);
+        if (selectAll && checkboxes.length) {
+            selectAll.checked = ids.length > 0 && ids.length === checkboxes.length;
+            selectAll.indeterminate = ids.length > 0 && ids.length < checkboxes.length;
+        }
+    }
+
+    async function runBulkAction(action, extra = {}) {
+        const emailIds = getSelectedEmailIds();
+        if (!emailIds.length) {
+            alert('Bitte mindestens eine E-Mail auswählen.');
+            return;
+        }
+        if (emailIds.length > 150) {
+            alert('Maximal 150 E-Mails pro Massenaktion.');
+            return;
+        }
+
+        const confirmMsgs = {
+            mark_done: `${emailIds.length} E-Mail(s) als erledigt markieren?`,
+            mark_undone: `${emailIds.length} E-Mail(s) wieder als offen markieren?`,
+            mark_read: `${emailIds.length} E-Mail(s) als gelesen markieren?`,
+            mark_unread: `${emailIds.length} E-Mail(s) als ungelesen markieren?`,
+            move_trash: `${emailIds.length} E-Mail(s) in den Papierkorb verschieben?`,
+            delete_permanent: `${emailIds.length} E-Mail(s) PERMANENT löschen? Nicht rückgängig!`,
+            move_to_folder: `${emailIds.length} E-Mail(s) nach "${extra.target_folder}" verschieben?`,
+            assign_tag: `${emailIds.length} E-Mail(s) mit Tag versehen?`,
+        };
+        if (!confirm(confirmMsgs[action] || 'Aktion ausführen?')) return;
+
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+        try {
+            const response = await fetch('/emails/bulk-action', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrf
+                },
+                credentials: 'include',
+                body: JSON.stringify({ action, email_ids: emailIds, ...extra })
+            });
+            const data = await response.json();
+            if (!response.ok && response.status !== 207) {
+                throw new Error(data.error || 'Bulk-Aktion fehlgeschlagen');
+            }
+            const msg = `Fertig: ${data.succeeded}/${data.total} erfolgreich` +
+                (data.failed ? `, ${data.failed} Fehler` : '');
+            alert('✅ ' + msg);
+            window.location.reload();
+        } catch (err) {
+            alert('❌ ' + err.message);
+        }
+    }
+
+    async function refreshBulkFolderOptions(accountId) {
+        const select = document.getElementById('bulkMoveFolderSelect');
+        if (!select || !accountId) return;
+        try {
+            const response = await fetch(`/account/${accountId}/folders`, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'include'
+            });
+            if (!response.ok) return;
+            const data = await response.json();
+            const folders = data.folders || [];
+            const current = select.value;
+            select.innerHTML = '<option value="">📁 Zielordner…</option>' +
+                folders.map(f => {
+                    const esc = f.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+                    return `<option value="${esc}">${esc}</option>`;
+                }).join('');
+            if (current) select.value = current;
+        } catch (e) {
+            console.warn('Bulk folder load failed', e);
+        }
+    }
+
+    function initBulkToolbar() {
+        document.querySelectorAll('.email-bulk-checkbox').forEach(cb => {
+            cb.removeEventListener('change', updateBulkToolbar);
+            cb.addEventListener('change', updateBulkToolbar);
+        });
+
+        const selectAll = document.getElementById('selectAllPageCheckbox');
+        if (selectAll) {
+            selectAll.onchange = function() {
+                const checked = this.checked;
+                document.querySelectorAll('.email-bulk-checkbox').forEach(cb => {
+                    cb.checked = checked;
+                });
+                updateBulkToolbar();
+            };
+        }
+
+        const visBtn = document.getElementById('bulkSelectAllVisibleBtn');
+        const desBtn = document.getElementById('bulkDeselectAllBtn');
+        if (visBtn) {
+            visBtn.onclick = () => {
+                document.querySelectorAll('.email-bulk-checkbox').forEach(cb => { cb.checked = true; });
+                updateBulkToolbar();
+            };
+        }
+        if (desBtn) {
+            desBtn.onclick = () => {
+                document.querySelectorAll('.email-bulk-checkbox').forEach(cb => { cb.checked = false; });
+                updateBulkToolbar();
+            };
+        }
+
+        document.querySelectorAll('.bulk-action-btn').forEach(btn => {
+            btn.onclick = () => runBulkAction(btn.dataset.bulkAction);
+        });
+
+        const moveBtn = document.getElementById('bulkMoveFolderBtn');
+        if (moveBtn) {
+            moveBtn.onclick = () => {
+                const folder = document.getElementById('bulkMoveFolderSelect')?.value;
+                if (!folder) {
+                    alert('Bitte Zielordner wählen.');
+                    return;
+                }
+                runBulkAction('move_to_folder', { target_folder: folder });
+            };
+        }
+
+        const tagBtn = document.getElementById('bulkTagBtn');
+        if (tagBtn) {
+            tagBtn.onclick = () => {
+                const tagId = document.getElementById('bulkTagSelect')?.value;
+                if (!tagId) {
+                    alert('Bitte Tag wählen.');
+                    return;
+                }
+                runBulkAction('assign_tag', { tag_id: parseInt(tagId, 10) });
+            };
+        }
+
+        updateBulkToolbar();
+    }
+    // ===== End Bulk Toolbar =====
+
     attachActionFormListeners();
+    initBulkToolbar();
 
     const params = new URLSearchParams(window.location.search);
     updateActiveFilterBadge(params);
 
     if (accountSelect && accountSelect.value) {
         updateFolderDropdown(accountSelect.value);
+        refreshBulkFolderOptions(accountSelect.value);
     }
 });
 </script>

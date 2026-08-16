@@ -619,7 +619,16 @@ def bulk_email_action():
             ]
         }
     """
-    VALID_ACTIONS = ["mark_done", "mark_undone", "move_trash", "delete_permanent"]
+    VALID_ACTIONS = [
+        "mark_done",
+        "mark_undone",
+        "move_trash",
+        "delete_permanent",
+        "mark_read",
+        "mark_unread",
+        "move_to_folder",
+        "assign_tag",
+    ]
     
     with get_db_session() as db:
         user = get_current_user_model(db)
@@ -645,8 +654,8 @@ def bulk_email_action():
         if not email_ids or not isinstance(email_ids, list):
             return jsonify({"error": "email_ids muss eine nicht-leere Liste sein"}), 400
         
-        # Limit für Bulk-Operationen (Sicherheit)
-        MAX_BULK_SIZE = 100
+        # Limit für Bulk-Operationen (Sicherheit, max. eine Listen-Seite)
+        MAX_BULK_SIZE = 150
         if len(email_ids) > MAX_BULK_SIZE:
             return jsonify({
                 "error": f"Maximal {MAX_BULK_SIZE} Emails pro Bulk-Aktion erlaubt"
@@ -678,6 +687,38 @@ def bulk_email_action():
             if not master_key:
                 return jsonify({"error": "Master-Key erforderlich. Bitte neu einloggen."}), 401
             result = EmailActionService.delete_permanent(db, user.id, email_ids, master_key)
+
+        elif action in ("mark_read", "mark_unread", "move_to_folder"):
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Master-Key erforderlich. Bitte neu einloggen."}), 401
+            if action == "mark_read":
+                result = EmailActionService.mark_read_bulk(
+                    db, user.id, email_ids, master_key
+                )
+            elif action == "mark_unread":
+                result = EmailActionService.mark_unread_bulk(
+                    db, user.id, email_ids, master_key
+                )
+            else:
+                target_folder = data.get("target_folder")
+                if not target_folder:
+                    return jsonify({"error": "target_folder ist erforderlich"}), 400
+                result = EmailActionService.move_to_folder_bulk(
+                    db, user.id, email_ids, target_folder, master_key
+                )
+
+        elif action == "assign_tag":
+            tag_id = data.get("tag_id")
+            if not tag_id:
+                return jsonify({"error": "tag_id ist erforderlich"}), 400
+            try:
+                tag_id = int(tag_id)
+            except (ValueError, TypeError):
+                return jsonify({"error": "tag_id muss eine Zahl sein"}), 400
+            result = EmailActionService.assign_tag_bulk(
+                db, user.id, email_ids, tag_id
+            )
         
         else:
             # Sollte nicht passieren wegen VALID_ACTIONS check

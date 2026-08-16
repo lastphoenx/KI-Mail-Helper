@@ -830,6 +830,113 @@ class EmailActionService:
         return _execute_single_imap_action(
             db, user_id, raw_email_id, master_key, action, "mark_read"
         )
+
+    @staticmethod
+    def mark_unread(
+        db,
+        user_id: int,
+        raw_email_id: int,
+        master_key: str
+    ) -> ActionResult:
+        """Markiert eine Email als ungelesen (IMAP + DB)."""
+
+        def action(synchronizer, processed, raw):
+            folder = raw.imap_folder or "INBOX"
+            success, message = synchronizer.mark_as_unread(raw.imap_uid, folder)
+
+            if success:
+                raw.imap_is_seen = False
+                logger.info(f"👁️ Email {raw.id} als ungelesen markiert")
+                return ActionResult(raw.id, True, message)
+            return ActionResult(raw.id, False, error=message)
+
+        return _execute_single_imap_action(
+            db, user_id, raw_email_id, master_key, action, "mark_unread"
+        )
+
+    @staticmethod
+    def _merge_single_into_bulk(bulk: BulkActionResult, single: ActionResult):
+        if single.success:
+            bulk.add_success(single.raw_email_id, single.message or "OK")
+        else:
+            bulk.add_failure(single.raw_email_id, single.error or single.message or "Fehler")
+
+    @staticmethod
+    def mark_read_bulk(db, user_id: int, raw_email_ids: List[int], master_key: str) -> BulkActionResult:
+        result = BulkActionResult()
+        for eid in raw_email_ids:
+            single = EmailActionService.mark_read(db, user_id, eid, master_key)
+            EmailActionService._merge_single_into_bulk(result, single)
+        return result
+
+    @staticmethod
+    def mark_unread_bulk(db, user_id: int, raw_email_ids: List[int], master_key: str) -> BulkActionResult:
+        result = BulkActionResult()
+        for eid in raw_email_ids:
+            single = EmailActionService.mark_unread(db, user_id, eid, master_key)
+            EmailActionService._merge_single_into_bulk(result, single)
+        return result
+
+    @staticmethod
+    def move_to_folder_bulk(
+        db,
+        user_id: int,
+        raw_email_ids: List[int],
+        target_folder: str,
+        master_key: str,
+    ) -> BulkActionResult:
+        result = BulkActionResult()
+        for eid in raw_email_ids:
+            single = EmailActionService.move_to_folder(
+                db, user_id, eid, target_folder, master_key
+            )
+            EmailActionService._merge_single_into_bulk(result, single)
+        return result
+
+    @staticmethod
+    def assign_tag_bulk(
+        db,
+        user_id: int,
+        raw_email_ids: List[int],
+        tag_id: int,
+    ) -> BulkActionResult:
+        from src.services.tag_manager import TagManager
+
+        models = _get_models()
+        result = BulkActionResult()
+
+        tag = db.query(models.EmailTag).filter_by(id=tag_id, user_id=user_id).first()
+        if not tag:
+            for eid in raw_email_ids:
+                result.add_failure(eid, "Tag nicht gefunden")
+            return result
+
+        emails, invalid_ids = _validate_email_ownership(db, user_id, raw_email_ids)
+        for invalid_id in invalid_ids:
+            result.add_failure(invalid_id, "Email nicht gefunden oder kein Zugriff")
+
+        for processed, raw in emails:
+            try:
+                if TagManager.assign_tag(
+                    db, processed.id, tag_id, user_id, auto_assigned=False
+                ):
+                    result.add_success(raw.id, f"Tag '{tag.name}' zugewiesen")
+                else:
+                    result.add_failure(raw.id, "Tag bereits zugewiesen")
+            except Exception as e:
+                result.add_failure(raw.id, str(e))
+
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error(f"assign_tag_bulk commit failed: {e}")
+            for eid in raw_email_ids:
+                if not any(r.raw_email_id == eid for r in result.results):
+                    result.add_failure(eid, f"DB-Fehler: {e}")
+
+        logger.info(f"🏷️ assign_tag_bulk: {result.succeeded}/{result.total} erfolgreich")
+        return result
     
     @staticmethod
     def toggle_flag(
