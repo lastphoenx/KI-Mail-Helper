@@ -28,10 +28,11 @@
         background: #fff;
     }
     #listBulkActionBar .list-bulk-row {
-        display: flex;
-        align-items: center;
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
         gap: 0.45rem;
-        flex-wrap: nowrap;
+        flex-wrap: nowrap !important;
         width: 100%;
         overflow-x: auto;
     }
@@ -85,11 +86,34 @@
         display: inline-block !important;
         flex: 0 0 auto !important;
         min-width: 0 !important;
+        max-width: 11rem;
+    }
+  /* Kompakt wie Filter-Leiste: auto-Breite statt Bootstrap 100% */
+    .compact-folder-select,
+    #filterBar #folderSelect,
+    #filterBar #accountSelect.filter-has-value {
+        width: auto !important;
+        max-width: 11rem;
+        min-width: 6.5rem;
+        display: inline-block !important;
+        flex: 0 0 auto !important;
+    }
+    #filterBar #accountSelect.filter-has-value,
+    #filterBar #folderSelect.folder-select-ready:not(:disabled),
+    #listBulkActionBar #bulkMoveFolderSelect.folder-select-ready:not(:disabled) {
+        background-color: #cfe2ff;
+        border-color: #9ec5fe;
+        color: #052c65;
+    }
+    #listBulkActionBar #bulkMoveFolderSelect:disabled {
+        background-color: #e9ecef;
+        border-color: #ced4da;
+        color: #6c757d;
     }
     #listBulkActionBar #bulkMoveFolderSelect {
-        width: 7.5rem !important;
-        min-width: 7.5rem !important;
-        max-width: 7.5rem !important;
+        width: auto !important;
+        min-width: 6.5rem !important;
+        max-width: 11rem !important;
         font-size: 0.8125rem;
         padding-right: 1.5rem;
         text-overflow: ellipsis;
@@ -394,7 +418,7 @@
             <button type="button" class="btn btn-sm btn-danger bulk-action-btn" data-bulk-action="delete_permanent">⛔ Löschen</button>
             <span class="list-bulk-sep" aria-hidden="true"></span>
             <span class="list-bulk-folder-group">
-                <select class="form-select form-select-sm bulk-folder-select" id="bulkMoveFolderSelect" disabled title="Zielordner">
+                <select class="form-select form-select-sm compact-folder-select bulk-folder-select" id="bulkMoveFolderSelect" disabled title="Zielordner">
                     <option value="">Ordner…</option>
                 </select>
                 <button type="button" class="btn btn-sm btn-primary" id="bulkMoveFolderBtn">📁 Verschieben</button>
@@ -649,6 +673,19 @@ document.addEventListener('DOMContentLoaded', function() {
         selectEl.disabled = disabled;
     }
 
+    function updateFolderSelectAppearance() {
+        const hasAccount = !!(accountSelect && accountSelect.value);
+        if (accountSelect) {
+            accountSelect.classList.toggle('filter-has-value', hasAccount);
+        }
+        if (folderSelect) {
+            folderSelect.classList.toggle('folder-select-ready', hasAccount);
+        }
+        if (bulkMoveFolderSelect) {
+            bulkMoveFolderSelect.classList.toggle('folder-select-ready', hasAccount);
+        }
+    }
+
     async function updateFolderDropdown(accountId) {
         if (!accountId || !folderSelect) {
             fillFolderSelect(folderSelect, [], {
@@ -659,6 +696,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 placeholder: 'Ordner…',
                 disabled: true,
             });
+            updateFolderSelectAppearance();
             return;
         }
 
@@ -679,13 +717,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     placeholder: 'Ordner…',
                     disabled: true,
                 });
+                updateFolderSelectAppearance();
                 return;
             }
 
             const data = await response.json();
             const folders = data.folders || [];
             fillFolderSelect(folderSelect, folders, { placeholder: 'Alle Ordner' });
-            fillFolderSelect(bulkMoveFolderSelect, folders, { placeholder: 'Zielordner…' });
+            fillFolderSelect(bulkMoveFolderSelect, folders, { placeholder: 'Ordner…' });
+            updateFolderSelectAppearance();
         } catch (error) {
             console.error('Fehler beim Abrufen von Ordnern:', error);
             fillFolderSelect(folderSelect, [], {
@@ -696,6 +736,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 placeholder: 'Ordner…',
                 disabled: true,
             });
+            updateFolderSelectAppearance();
         }
     }
 
@@ -992,9 +1033,7 @@ document.addEventListener('DOMContentLoaded', function() {
         select.addEventListener('change', async function() {
             if (this === accountSelect) {
                 const accountId = this.value;
-                if (accountId) {
-                    await updateFolderDropdown(accountId);
-                }
+                await updateFolderDropdown(accountId || null);
             }
             updateFilters();
         });
@@ -1276,6 +1315,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (accountSelect && accountSelect.value) {
         updateFolderDropdown(accountSelect.value);
+    } else {
+        updateFolderSelectAppearance();
     }
 });
 </script>
