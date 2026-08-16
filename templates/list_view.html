@@ -35,6 +35,16 @@
         width: 100%;
         overflow-x: auto;
     }
+    #listBulkActionBar .list-bulk-row > * {
+        flex-shrink: 0;
+    }
+    #listBulkActionBar .list-bulk-folder-group {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
     #listBulkActionBar .list-bulk-count {
         flex: 0 0 auto;
         font-weight: 600;
@@ -70,16 +80,24 @@
         font-size: 0.8125rem;
         white-space: nowrap;
     }
+    #listBulkActionBar .form-select {
+        width: auto !important;
+        display: inline-block !important;
+        flex: 0 0 auto !important;
+        min-width: 0 !important;
+    }
     #listBulkActionBar #bulkMoveFolderSelect {
-        flex: 0 0 auto;
-        width: 9.5rem !important;
-        max-width: 9.5rem;
+        width: 7.5rem !important;
+        min-width: 7.5rem !important;
+        max-width: 7.5rem !important;
         font-size: 0.8125rem;
+        padding-right: 1.5rem;
+        text-overflow: ellipsis;
     }
     #listBulkActionBar #bulkTagSelect {
-        flex: 0 0 auto;
-        width: 6.5rem !important;
-        max-width: 6.5rem;
+        width: 5.5rem !important;
+        min-width: 5.5rem !important;
+        max-width: 5.5rem !important;
         font-size: 0.8125rem;
     }
     #listBulkActionBar #bulkMoveFolderBtn {
@@ -375,10 +393,12 @@
             <button type="button" class="btn btn-sm btn-warning bulk-action-btn" data-bulk-action="move_trash">🗑 Papierkorb</button>
             <button type="button" class="btn btn-sm btn-danger bulk-action-btn" data-bulk-action="delete_permanent">⛔ Löschen</button>
             <span class="list-bulk-sep" aria-hidden="true"></span>
-            <select class="form-select form-select-sm" id="bulkMoveFolderSelect" disabled>
-                <option value="">Zielordner…</option>
-            </select>
-            <button type="button" class="btn btn-sm btn-primary" id="bulkMoveFolderBtn">📁 Verschieben</button>
+            <span class="list-bulk-folder-group">
+                <select class="form-select form-select-sm bulk-folder-select" id="bulkMoveFolderSelect" disabled title="Zielordner">
+                    <option value="">Ordner…</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-primary" id="bulkMoveFolderBtn">📁 Verschieben</button>
+            </span>
         </div>
     </div>
 </div>
@@ -636,7 +656,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 disabled: true,
             });
             fillFolderSelect(bulkMoveFolderSelect, [], {
-                placeholder: 'Zielordner…',
+                placeholder: 'Ordner…',
                 disabled: true,
             });
             return;
@@ -656,7 +676,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     disabled: true,
                 });
                 fillFolderSelect(bulkMoveFolderSelect, [], {
-                    placeholder: 'Zielordner…',
+                    placeholder: 'Ordner…',
                     disabled: true,
                 });
                 return;
@@ -673,7 +693,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 disabled: true,
             });
             fillFolderSelect(bulkMoveFolderSelect, [], {
-                placeholder: 'Zielordner…',
+                placeholder: 'Ordner…',
                 disabled: true,
             });
         }
