@@ -925,26 +925,13 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function updateFilters() {
-        // Phase F.1: Check if semantic search mode is active
-        const searchInput = document.getElementById('searchInput');
-        console.log('[DEBUG] updateFilters called, searchMode:', window.searchMode, 'value:', searchInput?.value);
-        
-        if (window.searchMode === 'semantic' && searchInput && searchInput.value.trim()) {
-            console.log('[DEBUG] Triggering semantic search for:', searchInput.value.trim());
-            performSemanticSearch(searchInput.value.trim());
-            return;
-        }
-        
-        console.log('[DEBUG] Using normal text-based filtering');
-        // Normal text-based filtering
+    function buildFilterParams() {
         const params = new URLSearchParams();
 
         filterSelects.forEach(select => {
             const value = select.value.trim();
             if (value) {
-                const filterName = select.dataset.filter;
-                params.set(filterName, value);
+                params.set(select.dataset.filter, value);
             }
         });
 
@@ -959,22 +946,51 @@ document.addEventListener('DOMContentLoaded', function() {
         const currentOrder = sortOrderBtn?.dataset.order || 'desc';
         params.set('order', currentOrder);
 
-        // Per-page selection
         if (perPageSelect && perPageSelect.value && perPageSelect.value !== '50') {
             params.set('per_page', perPageSelect.value);
         }
 
-        const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
-
-        persistAdvancedFiltersOpen(isAdvancedFiltersPanelOpen());
-
-        // Full page reload for reliable filter application
-        window.location.href = newUrl;
+        return params;
     }
 
-    function applyFiltersViaAjax(params) {
+    let filterFetchController = null;
+    let filterFetchSeq = 0;
+
+    function updateFilters(options = {}) {
+        const { preserveSearchFocus = false } = options;
+        const searchInput = document.getElementById('searchInput');
+        console.log('[DEBUG] updateFilters called, searchMode:', window.searchMode, 'value:', searchInput?.value);
+
+        if (window.searchMode === 'semantic' && searchInput && searchInput.value.trim()) {
+            console.log('[DEBUG] Triggering semantic search for:', searchInput.value.trim());
+            performSemanticSearch(searchInput.value.trim());
+            return;
+        }
+
+        console.log('[DEBUG] Using normal text-based filtering (AJAX)');
+        const params = buildFilterParams();
+        persistAdvancedFiltersOpen(isAdvancedFiltersPanelOpen());
+
+        const focusState = (preserveSearchFocus && searchInput) ? {
+            el: searchInput,
+            start: searchInput.selectionStart,
+            end: searchInput.selectionEnd,
+        } : null;
+
+        applyFiltersViaAjax(params, focusState);
+    }
+
+    function applyFiltersViaAjax(params, focusState = null) {
         const url = '/list?' + params.toString();
-        
+        const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        history.replaceState(null, '', newUrl);
+
+        if (filterFetchController) {
+            filterFetchController.abort();
+        }
+        filterFetchController = new AbortController();
+        const fetchSeq = ++filterFetchSeq;
+
         const resultCount = document.getElementById('resultCount');
         if (resultCount) resultCount.textContent = '⏳...';
 
@@ -982,91 +998,90 @@ document.addEventListener('DOMContentLoaded', function() {
             method: 'GET',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest'
-            }
+            },
+            signal: filterFetchController.signal,
         })
         .then(response => response.text())
         .then(html => {
+            if (fetchSeq !== filterFetchSeq) return;
+
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
-            
-            // Update email list card
+
             const newListHtml = doc.querySelector('#emailListCard');
             const oldListHtml = document.querySelector('#emailListCard');
-            
+
             if (newListHtml && oldListHtml) {
                 oldListHtml.replaceWith(newListHtml);
                 attachActionFormListeners();
-            if (typeof initBulkToolbar === 'function') {
-                initBulkToolbar();
-            }
-            const accountSel = document.getElementById('accountSelect');
-            if (accountSel && accountSel.value && typeof updateFolderDropdown === 'function') {
-                updateFolderDropdown(accountSel.value);
-            }
+                if (typeof initBulkToolbar === 'function') {
+                    initBulkToolbar();
+                }
+                const accountSel = document.getElementById('accountSelect');
+                if (accountSel && accountSel.value && typeof updateFolderDropdown === 'function') {
+                    updateFolderDropdown(accountSel.value);
+                }
             }
 
-            // Update TOP pagination info
             const newTopPagination = doc.querySelector('#topPaginationBar');
             const oldTopPagination = document.querySelector('#topPaginationBar');
             if (newTopPagination && oldTopPagination) {
                 oldTopPagination.replaceWith(newTopPagination);
-                // Re-attach perPageSelect listener
                 const newPerPageSelect = document.getElementById('perPageSelect');
                 if (newPerPageSelect) {
                     newPerPageSelect.addEventListener('change', function() {
-                        const params = new URLSearchParams(window.location.search);
+                        const p = buildFilterParams();
                         const newPerPage = this.value;
                         if (newPerPage === '50') {
-                            params.delete('per_page');
+                            p.delete('per_page');
                         } else {
-                            params.set('per_page', newPerPage);
+                            p.set('per_page', newPerPage);
                         }
-                        params.delete('page');
-                        window.location.href = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+                        p.delete('page');
+                        applyFiltersViaAjax(p);
                     });
                 }
             }
 
-            // Update bottom pagination
             const newBottomPagination = doc.querySelector('nav[aria-label="Email pagination"]');
             const oldBottomPagination = document.querySelector('nav[aria-label="Email pagination"]');
             if (newBottomPagination) {
                 if (oldBottomPagination) {
                     oldBottomPagination.replaceWith(newBottomPagination);
                 } else {
-                    // Insert after email list if pagination didn't exist before
                     const listCard = document.querySelector('#emailListCard');
                     if (listCard) {
                         listCard.after(newBottomPagination);
                     }
                 }
             } else if (oldBottomPagination) {
-                // Remove pagination if no longer needed
                 oldBottomPagination.remove();
             }
 
-            // Update total count in top bar
-            const newTotalCount = doc.querySelector('#topPaginationBar strong');
-            const oldTotalCount = document.querySelector('#topPaginationBar strong');
-            if (newTotalCount && oldTotalCount) {
-                oldTotalCount.textContent = newTotalCount.textContent;
+            const newResultCount = doc.querySelector('#resultCount');
+            if (newResultCount && resultCount) {
+                resultCount.textContent = newResultCount.textContent;
             }
 
-            const emailCount = doc.querySelector('.card-header');
-            if (emailCount && resultCount) {
-                const countMatch = emailCount.textContent.match(/(\d+)\s+Mails/);
-                if (countMatch) {
-                    resultCount.textContent = countMatch[1];
-                    const newListCount = document.querySelector('#emailListCount');
-                    if (newListCount) {
-                        newListCount.textContent = countMatch[1];
-                    }
-                }
+            const newListCount = doc.querySelector('#emailListCount');
+            const oldListCount = document.querySelector('#emailListCount');
+            if (newListCount && oldListCount) {
+                oldListCount.textContent = newListCount.textContent;
             }
 
             updateActiveFilterBadge(params);
+
+            if (focusState && focusState.el && document.body.contains(focusState.el)) {
+                focusState.el.focus({ preventScroll: true });
+                try {
+                    focusState.el.setSelectionRange(focusState.start, focusState.end);
+                } catch (e) {
+                    /* setSelectionRange nicht überall verfügbar */
+                }
+            }
         })
         .catch(error => {
+            if (error.name === 'AbortError') return;
             console.error('Filter-Fehler:', error);
             if (resultCount) resultCount.textContent = 'Fehler';
         });
@@ -1131,7 +1146,7 @@ document.addEventListener('DOMContentLoaded', function() {
         let searchTimeout;
         filterSearch.addEventListener('input', function() {
             clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(updateFilters, 500);
+            searchTimeout = setTimeout(() => updateFilters({ preserveSearchFocus: true }), 400);
         });
     }
 
@@ -1139,19 +1154,18 @@ document.addEventListener('DOMContentLoaded', function() {
         sortBySelect.addEventListener('change', updateFilters);
     }
 
-    // Per-page selection - triggers full page reload to recalculate pagination
+    // Per-page selection
     if (perPageSelect) {
         perPageSelect.addEventListener('change', function() {
-            const params = new URLSearchParams(window.location.search);
+            const p = buildFilterParams();
             const newPerPage = this.value;
             if (newPerPage === '50') {
-                params.delete('per_page');
+                p.delete('per_page');
             } else {
-                params.set('per_page', newPerPage);
+                p.set('per_page', newPerPage);
             }
-            // Reset to page 1 when changing per_page
-            params.delete('page');
-            window.location.href = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+            p.delete('page');
+            applyFiltersViaAjax(p);
         });
     }
 
