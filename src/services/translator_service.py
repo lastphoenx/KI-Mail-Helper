@@ -123,8 +123,14 @@ class TranslatorService:
         """Lazy-Load des fastText Modells (lädt automatisch herunter wenn nötig)."""
         if TranslatorService._model is not None:
             return TranslatorService._model
-        
-        import fasttext
+
+        try:
+            import fasttext
+        except ImportError as exc:
+            raise ImportError(
+                "fasttext is not installed. Run: pip install fasttext-wheel==0.9.2 "
+                "or bash scripts/install-fasttext.sh"
+            ) from exc
         
         if not self.model_path.exists():
             self._download_model()
