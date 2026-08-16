@@ -25,6 +25,19 @@ from collections import OrderedDict
 logger = logging.getLogger(__name__)
 
 
+def configure_hf_cache() -> str:
+    """HF-Cache unter App-Verzeichnis (Dienst-User mailhelper liest nicht /root/.cache)."""
+    if os.environ.get("HF_HOME"):
+        return os.environ["HF_HOME"]
+    app_dir = os.environ.get("APP_DIR")
+    if not app_dir:
+        app_dir = str(Path(__file__).resolve().parents[2])
+    hf_home = os.path.join(app_dir, ".cache", "huggingface")
+    os.makedirs(hf_home, exist_ok=True)
+    os.environ["HF_HOME"] = hf_home
+    return hf_home
+
+
 def _apply_fasttext_numpy2_compat() -> None:
     """Patch fasttext-wheel 0.9.2 for NumPy 2.x (np.array(..., copy=False) breaks)."""
     try:
@@ -465,7 +478,8 @@ REGELN:
         if not text or not text.strip():
             return text
 
-        from transformers import MarianMTModel, MarianTokenizer
+        configure_hf_cache()
+        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
         import os
         
         # KRITISCH: Trailing Spaces pro Zeile entfernen (inscriptis lässt die stehen)
@@ -491,39 +505,25 @@ REGELN:
             
             logger.info(f"📥 Lade Opus-MT Modell: {model_name}")
             
-            # FIX Phase 27: Timeout + Local-first + Error Handling
             try:
-                # Prüfe ob Modell bereits lokal vorhanden (verhindert Download-Hänger)
-                cache_dir = os.path.expanduser("~/.cache/huggingface/hub")
-                model_cache = f"models--{model_name.replace('/', '--')}"
-                local_path = os.path.join(cache_dir, model_cache)
-                
-                # Local-first: Wenn vorhanden, erzwinge lokales Laden
-                if os.path.exists(local_path):
-                    logger.info(f"✅ Modell lokal gefunden: {local_path}")
-                    tokenizer = MarianTokenizer.from_pretrained(model_name, local_files_only=True)
-                    model = MarianMTModel.from_pretrained(model_name, local_files_only=True)
-                else:
-                    # Download mit Timeout (verhindert ewiges Hängen)
-                    logger.warning(f"⚠️ Modell nicht lokal, Download nötig: {model_name}")
-                    # transformers nutzt REQUESTS_TIMEOUT env var
-                    os.environ['REQUESTS_TIMEOUT'] = '60'  # 60s Timeout
-                    tokenizer = MarianTokenizer.from_pretrained(model_name, resume_download=True)
-                    model = MarianMTModel.from_pretrained(model_name, resume_download=True)
+                try:
+                    tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
+                    model = AutoModelForSeq2SeqLM.from_pretrained(model_name, local_files_only=True)
+                    logger.info(f"✅ Opus-MT Modell aus lokalem Cache geladen: {model_name}")
+                except Exception as local_err:
+                    logger.warning(
+                        f"⚠️ Lokaler Cache für {model_name} nicht nutzbar ({local_err}), versuche Download..."
+                    )
+                    os.environ['REQUESTS_TIMEOUT'] = '60'
+                    tokenizer = AutoTokenizer.from_pretrained(model_name)
+                    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
                 
                 self._opus_models[model_name] = (tokenizer, model)
                 logger.info(f"✅ Opus-MT Modell geladen: {model_name}")
                 
             except Exception as e:
                 logger.error(f"❌ Opus-MT Modell konnte nicht geladen werden: {model_name} - {e}")
-                # Cleanup: Entferne .incomplete Files
-                if os.path.exists(local_path):
-                    incomplete_files = [f for f in os.listdir(os.path.join(local_path, 'blobs')) 
-                                       if f.endswith('.incomplete')]
-                    if incomplete_files:
-                        logger.warning(f"🗑️ Entferne {len(incomplete_files)} .incomplete Files")
-                        for f in incomplete_files:
-                            os.remove(os.path.join(local_path, 'blobs', f))
+                hf_home = configure_hf_cache()
                 err_text = str(e).lower()
                 if 'torch' in err_text or 'no module named' in err_text:
                     raise RuntimeError(
@@ -533,8 +533,8 @@ REGELN:
                 detail = str(e).strip() or type(e).__name__
                 raise RuntimeError(
                     f"Opus-MT Modell {model_name} nicht verfügbar: {detail}. "
-                    f"Modelle vorab laden: bash scripts/install-opus-mt-models.sh "
-                    f"(benötigt huggingface.co). Alternativ: LLM/Ollama."
+                    f"Cache-Verzeichnis: {hf_home}. "
+                    f"Als mailhelper ausführen: sudo -u mailhelper bash scripts/install-opus-mt-models.sh"
                 ) from e
         
         # Move to end (LRU)

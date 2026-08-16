@@ -15,6 +15,8 @@ WorkingDirectory=/opt/KI-Mail-Helper
 # Environment (lade .env Datei)
 EnvironmentFile=/opt/KI-Mail-Helper/.env
 
+Environment=HF_HOME=/opt/KI-Mail-Helper/.cache/huggingface
+
 # Gunicorn mit App Factory
 # WICHTIG: Pfade anpassen!
 ExecStart=/opt/KI-Mail-Helper/venv/bin/gunicorn \
