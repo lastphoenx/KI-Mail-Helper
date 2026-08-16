@@ -144,6 +144,15 @@ OPUS_MT_HOPS: Dict[Tuple[str, str], List[Tuple[str, Optional[str]]]] = {
         ("Helsinki-NLP/opus-mt-ROMANCE-en", ">>por<< "),
         ("Helsinki-NLP/opus-mt-en-de", None),
     ],
+    # Kein opus-mt-nl-de / opus-mt-pl-de auf Hugging Face → Pivot über Englisch
+    ("nl", "de"): [
+        ("Helsinki-NLP/opus-mt-nl-en", None),
+        ("Helsinki-NLP/opus-mt-en-de", None),
+    ],
+    ("pl", "de"): [
+        ("Helsinki-NLP/opus-mt-pl-en", None),
+        ("Helsinki-NLP/opus-mt-en-de", None),
+    ],
 }
 
 _OPUS_LANG_TAG_RE = re.compile(r'^>>\w+<<\s*')
