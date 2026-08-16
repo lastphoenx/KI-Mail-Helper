@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Install fastText language detection (lid.176.bin) for TranslatorService.
 #
-# PyPI: fasttext-wheel==0.9.2 is the latest published release (pre-built wheels
-# for Linux x86_64 + Python 3.11/3.12). Source builds need GCC 12 on GCC 13+ hosts.
+# PyPI fasttext-wheel==0.9.2 ships pre-built wheels for Python 3.11/3.12 on Linux x86_64.
+# Python 3.13+ has no wheel → patched source build (adds #include <cstdint> for GCC 13+).
 #
-# Usage (production CT 134):
+# Usage on CT 134 (as root in pct enter):
 #   cd /opt/KI-Mail-Helper
-#   sudo -u mailhelper bash scripts/install-fasttext.sh
+#   source venv/bin/activate
+#   bash scripts/install-fasttext.sh
+#   chown -R mailhelper:mailhelper venv models
 
 set -euo pipefail
 
@@ -23,24 +25,77 @@ fi
 source "$VENV_DIR/bin/activate"
 cd "$APP_DIR"
 
+PY_MM="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+echo "🐍 Python ${PY_MM} in ${VENV_DIR}"
+
+patch_fasttext_sources() {
+    local srcdir="$1"
+    local args_h="${srcdir}/src/args.h"
+    if [[ ! -f "$args_h" ]]; then
+        echo "❌ fastText source layout unexpected (missing src/args.h)" >&2
+        exit 1
+    fi
+    if ! grep -q '#include <cstdint>' "$args_h"; then
+        sed -i '/#include <unordered_map>/a #include <cstdint>' "$args_h"
+        echo "🩹 Patched src/args.h (#include <cstdint> for GCC 13+)"
+    fi
+}
+
+install_from_patched_source() {
+    local build_dir cc cxx
+    build_dir="$(mktemp -d)"
+    trap 'rm -rf "$build_dir"' RETURN
+
+    if command -v gcc-12 >/dev/null 2>&1 && command -v g++-12 >/dev/null 2>&1; then
+        cc=gcc-12
+        cxx=g++-12
+        echo "🔧 Building with ${cc}/${cxx}"
+    else
+        cc=gcc
+        cxx=g++
+        echo "🔧 Building with default ${cc}/${cxx} (patched sources)"
+    fi
+
+    pip install --upgrade pip setuptools wheel pybind11
+    pip download --no-deps --no-binary fasttext-wheel \
+        "fasttext-wheel==${FASTTEXT_VERSION}" -d "$build_dir"
+
+    local archive
+    archive="$(find "$build_dir" -maxdepth 1 -name 'fasttext*.tar.gz' | head -1)"
+    if [[ -z "$archive" ]]; then
+        echo "❌ Could not download fasttext-wheel source archive" >&2
+        exit 1
+    fi
+
+    tar -xzf "$archive" -C "$build_dir"
+    local srcdir
+    srcdir="$(find "$build_dir" -maxdepth 1 -type d -name 'fasttext*' ! -path "$build_dir" | head -1)"
+    if [[ -z "$srcdir" ]]; then
+        echo "❌ Could not extract fasttext-wheel sources" >&2
+        exit 1
+    fi
+
+    patch_fasttext_sources "$srcdir"
+    CC="$cc" CXX="$cxx" pip install --no-cache-dir "$srcdir"
+    echo "✅ fasttext-wheel built from patched source"
+}
+
 install_fasttext_wheel() {
     pip install --upgrade "fasttext-wheel==${FASTTEXT_VERSION}"
 }
 
-echo "📦 Installing fasttext-wheel==${FASTTEXT_VERSION} into $VENV_DIR ..."
-if install_fasttext_wheel; then
-    echo "✅ fasttext-wheel installed (binary wheel)"
-else
-    echo "⚠️  Wheel install failed — trying source build with GCC 12 if available ..."
-    if command -v gcc-12 >/dev/null 2>&1 && command -v g++-12 >/dev/null 2>&1; then
-        CC=gcc-12 CXX=g++-12 pip install --no-cache-dir --no-binary=:all: "fasttext-wheel==${FASTTEXT_VERSION}"
-        echo "✅ fasttext-wheel built from source with gcc-12"
+echo "📦 Installing fasttext-wheel==${FASTTEXT_VERSION} ..."
+
+if python -c 'import sys; raise SystemExit(0 if sys.version_info < (3, 13) else 1)'; then
+    if install_fasttext_wheel; then
+        echo "✅ fasttext-wheel installed (binary wheel)"
     else
-        echo "❌ fasttext-wheel install failed." >&2
-        echo "   Install build deps: apt install gcc-12 g++-12 python3-dev" >&2
-        echo "   Or ensure Python 3.11/3.12 on x86_64 can use the PyPI wheel." >&2
-        exit 1
+        echo "⚠️  Wheel install failed — trying patched source build ..."
+        install_from_patched_source
     fi
+else
+    echo "ℹ️  Python 3.13+: no PyPI wheel — using patched source build"
+    install_from_patched_source
 fi
 
 echo "🔍 Verifying import ..."
@@ -54,5 +109,12 @@ translator = get_translator()
 result = translator.detect_language("Guten Tag, dies ist ein kurzer Test.")
 print(f"✅ Language detection: {result.language} ({result.confidence:.2f}) — {result.language_name}")
 PY
+
+if [[ "$(id -u)" -eq 0 ]]; then
+    if id mailhelper &>/dev/null; then
+        chown -R mailhelper:mailhelper "$VENV_DIR" "${APP_DIR}/models" 2>/dev/null || true
+        echo "🔐 Ownership: mailhelper on venv/ and models/"
+    fi
+fi
 
 echo "✅ fastText ready."
