@@ -2515,7 +2515,7 @@ def api_delete_rule(rule_id):
 @api_bp.route("/rules/<int:rule_id>/test", methods=["POST"])
 @login_required
 def api_test_rule(rule_id):
-    """Delegiert an rules_bp — 500 klassifizierte Mails, keine 20er-Duplikat-Logik."""
+    """Delegiert an rules_bp — prüft alle klassifizierten Mails."""
     from src.blueprints.rules import api_test_rule as rules_test_rule
     return rules_test_rule(rule_id)
 

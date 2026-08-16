@@ -355,7 +355,9 @@ def api_test_rule(rule_id):
                             "actions_would_execute": result.actions_executed
                         })
                 else:
-                    recent_emails = (
+                    encryption = _get_encryption()
+                    # Alle klassifizierten Mails prüfen (kein 500er-Stichproben-Limit)
+                    classified_emails = (
                         db.query(models.RawEmail)
                         .filter(
                             models.RawEmail.user_id == user.id,
@@ -363,20 +365,31 @@ def api_test_rule(rule_id):
                             models.RawEmail.ai_classification_completed_at.isnot(None),
                         )
                         .order_by(models.RawEmail.received_at.desc())
-                        .limit(500)
                         .all()
                     )
-                    
-                    for email in recent_emails:
+
+                    for email in classified_emails:
                         results = engine.process_email(email.id, dry_run=True, rule_id=rule_id)
-                        
+
                         if results and any(r.success for r in results):
+                            try:
+                                subject = encryption.EmailDataManager.decrypt_email_subject(
+                                    email.encrypted_subject or "", master_key
+                                )
+                            except Exception:
+                                subject = "(Betreff nicht lesbar)"
                             matches.append({
                                 "email_id": email.id,
                                 "matched": True,
-                                "actions_would_execute": results[0].actions_executed
+                                "subject": subject,
+                                "received_at": (
+                                    email.received_at.strftime("%Y-%m-%d %H:%M")
+                                    if email.received_at
+                                    else None
+                                ),
+                                "actions_would_execute": results[0].actions_executed,
                             })
-                    total_tested = len(recent_emails)
+                    total_tested = len(classified_emails)
                 
                 logger.info(f"🧪 Regel '{rule.name}' getestet: {len(matches)} Matches")
                 

@@ -1032,6 +1032,12 @@ const RulesManager = {
     },
     
     async testRule(ruleId) {
+        const btn = document.querySelector(`.btn-test-rule[data-rule-id="${ruleId}"]`);
+        const originalHtml = btn?.innerHTML;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        }
         try {
             const response = await fetch(`/api/rules/${ruleId}/test`, {
                 method: 'POST',
@@ -1043,22 +1049,35 @@ const RulesManager = {
             });
             
             const data = await response.json();
+            if (!response.ok) {
+                alert(data.error || 'Fehler beim Testen');
+                return;
+            }
+
+            const escapeHtml = (s) => String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
             
             const modal = new bootstrap.Modal(document.getElementById('modal-test-results'));
             const content = document.getElementById('test-results-content');
             
             content.innerHTML = `
                 <div class="alert alert-info border border-primary">
-                    <div class="mb-2"><span class="text-primary fw-bold">Regel:</span> <span class="text-primary fw-semibold">${data.rule_name}</span></div>
-                    <div class="mb-2"><span class="text-primary fw-bold">Getestet:</span> <span class="text-primary fw-semibold">${data.total_tested} klassifizierte E-Mail(s)</span></div>
+                    <div class="mb-2"><span class="text-primary fw-bold">Regel:</span> <span class="text-primary fw-semibold">${escapeHtml(data.rule_name)}</span></div>
+                    <div class="mb-2"><span class="text-primary fw-bold">Geprüft:</span> <span class="text-primary fw-semibold">${data.total_tested} klassifizierte E-Mail(s)</span></div>
                     <div><span class="text-primary fw-bold">Matches:</span> <span class="text-primary fw-semibold fs-5">${data.total_matches}</span></div>
-                    <small class="text-muted d-block mt-2">Dry-Run prüft die ${data.total_tested} zuletzt klassifizierten Mails (nicht den gesamten Posteingang).</small>
+                    <small class="text-muted d-block mt-2">Dry-Run prüft den gesamten klassifizierten Bestand (nicht nur eine Stichprobe).</small>
                 </div>
                 ${data.matches.length > 0 ? `
                     <h6>Würde auf folgende E-Mails angewendet werden:</h6>
-                    <ul>
+                    <ul class="list-unstyled mb-0" style="max-height: 360px; overflow-y: auto;">
                         ${data.matches.map(m => `
-                            <li>E-Mail ID ${m.email_id}: ${m.actions_would_execute.join(', ')}</li>
+                            <li class="border-bottom py-2">
+                                <div class="fw-semibold text-primary">${escapeHtml(m.subject || 'Ohne Betreff')}</div>
+                                <small class="text-muted">ID ${m.email_id}${m.received_at ? ' · ' + escapeHtml(m.received_at) : ''}</small>
+                            </li>
                         `).join('')}
                     </ul>
                 ` : '<p class="text-muted">Keine Matches gefunden.</p>'}
@@ -1068,6 +1087,11 @@ const RulesManager = {
         } catch (error) {
             console.error('Test rule failed:', error);
             alert('Fehler beim Testen');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
         }
     },
     
