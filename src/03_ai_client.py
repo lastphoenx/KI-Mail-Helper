@@ -20,7 +20,12 @@ except ImportError:
 from .known_newsletters import (
     classify_newsletter_confidence,
 )
-from .ollama_timeouts import OLLAMA_TIMEOUT
+from .ollama_timeouts import (
+    OLLAMA_CHAT_KEEP_ALIVE,
+    OLLAMA_TIMEOUT,
+    ollama_chat_request_options,
+    truncate_for_classification,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -342,16 +347,47 @@ def _parse_model_json(response_text: str) -> Dict[str, Any]:
         return {}
 
 
+def _coerce_llm_text_field(value: Any, fallback: str = "") -> str:
+    """Ensure LLM JSON text fields are strings before encryption."""
+    if value is None:
+        return fallback
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def _normalize_tag_list(tags: Any) -> List[str]:
+    if not isinstance(tags, list):
+        return []
+    normalized: List[str] = []
+    for tag in tags:
+        if tag is None:
+            continue
+        if isinstance(tag, str):
+            text = tag.strip()
+        elif isinstance(tag, (dict, list)):
+            text = json.dumps(tag, ensure_ascii=False)
+        else:
+            text = str(tag).strip()
+        if text:
+            normalized.append(text)
+    return normalized
+
+
 def _validate_ai_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
     validated: Dict[str, Any] = {
         "dringlichkeit": _clamp(parsed.get("dringlichkeit", 2), 1, 3),
         "wichtigkeit": _clamp(parsed.get("wichtigkeit", 2), 1, 3),
         "kategorie_aktion": parsed.get("kategorie_aktion", "aktion_erforderlich"),
-        "tags": parsed.get("tags", []) if isinstance(parsed.get("tags"), list) else [],
-        "suggested_tags": parsed.get("suggested_tags", []) if isinstance(parsed.get("suggested_tags"), list) else [],
+        "tags": _normalize_tag_list(parsed.get("tags")),
+        "suggested_tags": _normalize_tag_list(parsed.get("suggested_tags")),
         "spam_flag": bool(parsed.get("spam_flag", False)),
-        "summary_de": parsed.get("summary_de", "Keine Zusammenfassung verfügbar"),
-        "text_de": parsed.get("text_de", ""),
+        "summary_de": _coerce_llm_text_field(
+            parsed.get("summary_de"), "Keine Zusammenfassung verfügbar"
+        ),
+        "text_de": _coerce_llm_text_field(parsed.get("text_de"), ""),
     }
     return validated
 
@@ -1022,6 +1058,7 @@ class LocalOllamaClient(AIClient):
         # Security: Sanitize inputs before API calls
         subject = _sanitize_email_input(subject, max_length=500)
         body = _sanitize_email_input(body, max_length=50000)
+        body = truncate_for_classification(body)
         if context:
             context = _sanitize_email_input(context, max_length=5000)
 
@@ -1118,15 +1155,24 @@ class LocalOllamaClient(AIClient):
             subject=subject, body=body, language=language, context=context
         )
 
+        return self._post_chat_json(messages, subject=subject)
+
+    def _post_chat_json(
+        self, messages: List[Dict[str, str]], *, subject: str = ""
+    ) -> Dict[str, Any]:
+        """POST /api/chat with bounded inference options for email classification."""
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "format": "json",
+            "keep_alive": OLLAMA_CHAT_KEEP_ALIVE,
+            "options": ollama_chat_request_options(),
+        }
         try:
             response = requests.post(
                 self.chat_url,
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "stream": False,
-                    "format": "json",
-                },
+                json=payload,
                 timeout=self.timeout,
             )
         except requests.exceptions.Timeout:

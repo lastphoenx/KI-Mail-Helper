@@ -14,6 +14,7 @@ import logging
 import importlib
 import json
 import gc
+import os
 from datetime import datetime, UTC
 from typing import Dict, Any, Callable, Optional
 from sqlalchemy import text as sa_text  # 🆕 Für raw SQL queries
@@ -28,6 +29,23 @@ logger = logging.getLogger(__name__)
 
 # Layer 4 Security: Resource Exhaustion Prevention
 MAX_EMAILS_PER_REQUEST = 1000
+
+
+def _sync_lock_timeout_seconds() -> int:
+    try:
+        return int(os.getenv("MAIL_SYNC_LOCK_TIMEOUT", "7200"))
+    except (TypeError, ValueError):
+        return 7200
+
+
+def _renew_sync_lock(redis_client, lock_key: str, task_id: str, ttl: int) -> None:
+    """Extend account sync lock while the Celery task is still running."""
+    try:
+        current = redis_client.get(lock_key)
+        if current and current.decode() == task_id:
+            redis_client.expire(lock_key, ttl)
+    except Exception as exc:
+        logger.debug("Sync-Lock renewal skipped: %s", exc)
 
 
 def _get_dek_from_service_token(service_token_id: int, session) -> str:
@@ -928,13 +946,13 @@ def sync_user_emails(self, user_id: int, account_id: int, service_token_id: int,
     
     CONCURRENCY PROTECTION:
     - Verhindert parallele Sync-Tasks für denselben Account via Redis-Lock
-    - Timeout 3600s (1h) - wenn Task länger dauert, wird Lock automatisch freigegeben
+    - Lock TTL default 7200s, erneuert bei jedem Progress-Update (MAIL_SYNC_LOCK_TIMEOUT)
     """
     from celery.exceptions import Reject
     
     # Redis-Lock: Verhindert parallele Syncs desselben Accounts
     lock_key = f"mail_sync_lock:user_{user_id}:account_{account_id}"
-    lock_timeout = 600  # 10 Minuten max (auto-expire bei Worker-Crash)
+    lock_timeout = _sync_lock_timeout_seconds()
     
     # Versuche Lock zu bekommen
     redis_client = celery_app.backend.client  # Redis connection von Celery
@@ -968,8 +986,13 @@ def sync_user_emails(self, user_id: int, account_id: int, service_token_id: int,
             if not lock_acquired:
                 raise Reject("Account sync already in progress", requeue=False)
     
+    def lock_renew() -> None:
+        _renew_sync_lock(redis_client, lock_key, self.request.id, lock_timeout)
+
     try:
-        _execute_sync_with_lock(self, user_id, account_id, service_token_id, max_emails)
+        _execute_sync_with_lock(
+            self, user_id, account_id, service_token_id, max_emails, lock_renew=lock_renew
+        )
     finally:
         # Lock freigeben (nur wenn wir ihn haben!)
         current_lock = redis_client.get(lock_key)
@@ -978,8 +1001,23 @@ def sync_user_emails(self, user_id: int, account_id: int, service_token_id: int,
             logger.info(f"🔓 Lock freigegeben für Account {account_id}")
 
 
-def _execute_sync_with_lock(self, user_id: int, account_id: int, service_token_id: int, max_emails: int | None = None):
+def _execute_sync_with_lock(
+    self,
+    user_id: int,
+    account_id: int,
+    service_token_id: int,
+    max_emails: int | None = None,
+    lock_renew: Optional[Callable[[], None]] = None,
+):
     """Eigentliche Sync-Logik (nach Lock-Acquisition)"""
+    original_update_state = self.update_state
+    if lock_renew:
+        def renewing_update_state(*args, **kwargs):
+            lock_renew()
+            return original_update_state(*args, **kwargs)
+
+        self.update_state = renewing_update_state
+
     session = get_session()
     saved = 0
     processed = 0
@@ -1265,6 +1303,8 @@ def _execute_sync_with_lock(self, user_id: int, account_id: int, service_token_i
             raise
         
     finally:
+        if lock_renew:
+            self.update_state = original_update_state
         # 🔒 Security: Sichere Master-Key Bereinigung aus RAM
         if 'master_key' in locals() and master_key is not None:
             master_key = '\x00' * len(master_key)
