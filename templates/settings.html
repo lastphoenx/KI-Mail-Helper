@@ -341,8 +341,8 @@
                         
                         <div class="col-12">
                             <div class="alert alert-info mb-0 small">
-                                <strong>💡 Tipp:</strong> Nutze "Quick Count" (siehe Mail-Accounts unten) um zu sehen wie viele Mails remote sind, 
-                                bevor du fetchst. Bei vielen Tausend Mails empfiehlt sich Delta-Sync!
+                                <strong>💡 Tipp:</strong> „Quick Count“ (Mail-Accounts) nutzt die <strong>gespeicherten</strong> Fetch-Filter des Accounts.
+                                Die Vorschau oben zeigt die Formular-Einstellung (auch vor „Speichern“). Bei vielen Mails: Delta-Sync!
                             </div>
                         </div>
                         
@@ -351,7 +351,7 @@
                             <div class="alert alert-success mb-0">
                                 <strong>📊 Geschätzte Mails mit aktuellen Filtern:</strong>
                                 <span id="fetchPreviewCount" class="badge bg-success fs-5 ms-2">0</span>
-                                <small class="d-block text-muted mt-1" id="fetchPreviewDetails"></small>
+                                <small class="d-block text-muted mt-1" id="fetchPreviewDetails" style="max-height: 280px; overflow-y: auto;"></small>
                             </div>
                         </div>
                         
@@ -546,6 +546,24 @@
             
             <div>
                 <a href="/dashboard" class="btn btn-secondary">Zurück zum Dashboard</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Count: scrollbares Modal statt alert() -->
+<div class="modal fade" id="quickCountModal" tabindex="-1" aria-labelledby="quickCountModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="quickCountModalLabel">📊 Mail-Zählung</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+            </div>
+            <div class="modal-body" id="quickCountModalBody">
+                <p class="text-muted mb-0">Lade…</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Schließen</button>
             </div>
         </div>
     </div>
@@ -956,7 +974,112 @@ function pollJobStatus(jobId, accountName, btn, originalLabel, attempt = 0, star
         });
 }
 
-function quickCount(evt, accountId, accountName) {
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function summarizeMailCountForFilters(data, filterSettings, includeFolders, excludeFolders) {
+    const folderCounts = data.folders || {};
+    const includeAllFolders = !includeFolders || includeFolders.length === 0;
+    const excludeSet = new Set(excludeFolders || []);
+    let filteredTotal = 0;
+    const rows = [];
+
+    Object.entries(folderCounts).forEach(([folderName, folderData]) => {
+        const isIncluded = (includeAllFolders || includeFolders.includes(folderName))
+            && !excludeSet.has(folderName);
+        if (!isIncluded) {
+            return;
+        }
+        const effective = getEffectiveFolderCount(folderData, filterSettings);
+        filteredTotal += effective;
+        rows.push({ name: folderName, folderData, effective });
+    });
+
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+    return { filteredTotal, rows };
+}
+
+function formatFilterSummaryLabel(filterSettings, filters) {
+    const parts = [];
+    if (filterSettings.sinceDate) {
+        const p = filterSettings.sinceDate.split('-');
+        parts.push(p.length === 3 ? `ab ${p[2]}.${p[1]}.${p[0]}` : `ab ${filterSettings.sinceDate}`);
+    }
+    if (filterSettings.unseenOnly) {
+        parts.push('nur ungelesen');
+    }
+    if (filters.include_folders && filters.include_folders.length > 0) {
+        parts.push(`${filters.include_folders.length} Include-Ordner`);
+    }
+    if (filters.exclude_folders && filters.exclude_folders.length > 0) {
+        parts.push(`${filters.exclude_folders.length} Exclude-Ordner`);
+    }
+    return parts.length > 0 ? parts.join(', ') : 'keine (Gesamtbestand)';
+}
+
+function showQuickCountModal(accountName, data, filters) {
+    const filterSettings = {
+        sinceDate: filters.since_date || '',
+        unseenOnly: !!filters.unseen_only,
+    };
+    const { filteredTotal, rows } = summarizeMailCountForFilters(
+        data,
+        filterSettings,
+        filters.include_folders || [],
+        filters.exclude_folders || []
+    );
+    const summary = data.summary || {};
+    const hasActiveFilters = !!(filterSettings.sinceDate || filterSettings.unseenOnly
+        || (filters.include_folders && filters.include_folders.length > 0)
+        || (filters.exclude_folders && filters.exclude_folders.length > 0));
+    const delta = Math.max(0, filteredTotal - (summary.total_local || 0));
+
+    let html = `<p class="mb-2"><strong>${escapeHtml(accountName)}</strong></p>`;
+    html += `<p class="small text-muted mb-3">Filter: ${escapeHtml(formatFilterSummaryLabel(filterSettings, filters))}</p>`;
+    html += '<div class="row g-2 mb-3 small">';
+    if (hasActiveFilters) {
+        html += `<div class="col-md-4"><strong>Gefiltert:</strong> ${filteredTotal} Mails</div>`;
+    }
+    html += `<div class="col-md-4"><strong>Alle Remote:</strong> ${summary.total_remote || 0} Mails</div>`;
+    html += `<div class="col-md-4"><strong>Lokal in DB:</strong> ${summary.total_local || 0}</div>`;
+    html += `<div class="col-md-4"><strong>Delta (zu fetchen):</strong> ${delta} Mails</div>`;
+    html += '</div>';
+
+    if (!hasActiveFilters) {
+        html += '<p class="small text-muted">Ohne gespeicherte Filter — zeigt Gesamtbestand pro Ordner.</p>';
+    }
+
+    html += '<div style="max-height: 55vh; overflow-y: auto;"><table class="table table-sm table-striped mb-0">';
+    html += '<thead><tr><th>Ordner</th><th class="text-end">Anzahl</th></tr></thead><tbody>';
+    rows.forEach(({ name, folderData, effective }) => {
+        const badge = formatFolderCountBadge(folderData, filterSettings);
+        html += `<tr><td><code class="small">${escapeHtml(name)}</code></td>`;
+        html += `<td class="text-end" title="${escapeHtml(badge.title)}">${escapeHtml(badge.text)}</td></tr>`;
+    });
+    html += '</tbody></table></div>';
+
+    const body = document.getElementById('quickCountModalBody');
+    const title = document.getElementById('quickCountModalLabel');
+    if (body) {
+        body.innerHTML = html;
+    }
+    if (title) {
+        title.textContent = hasActiveFilters
+            ? `📊 ${accountName} — mit gespeicherten Filtern`
+            : `📊 ${accountName} — Gesamtbestand`;
+    }
+
+    const modalEl = document.getElementById('quickCountModal');
+    if (modalEl && window.bootstrap) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+}
+
+async function quickCount(evt, accountId, accountName) {
     const btn = evt ? evt.target : null;
     const originalLabel = btn ? btn.textContent : '';
     if (btn) {
@@ -964,45 +1087,49 @@ function quickCount(evt, accountId, accountName) {
         btn.textContent = '⏳ Zähle...';
     }
 
-    fetch(`/account/${accountId}/mail-count`, {
-        method: 'GET',
-        headers: {
-            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+    try {
+        const filtersRes = await fetch(`/account/${accountId}/fetch-filters`, {
+            headers: {
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            }
+        });
+        const filters = await filtersRes.json();
+        if (filters.error) {
+            throw new Error(filters.error);
         }
-    })
-    .then(r => r.json())
-    .then(data => {
+
+        const params = [];
+        if (filters.since_date) {
+            params.push(`since_date=${encodeURIComponent(filters.since_date)}`);
+        }
+        if (filters.unseen_only) {
+            params.push('unseen_only=true');
+        }
+        let url = `/account/${accountId}/mail-count`;
+        if (params.length > 0) {
+            url += '?' + params.join('&');
+        }
+
+        const dataRes = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            }
+        });
+        const data = await dataRes.json();
         if (data.error) {
             throw new Error(data.error);
         }
-        
-        // Format folder details
-        let folderDetails = Object.entries(data.folders || {})
-            .map(([folder, counts]) => `  • ${folder}: ${counts.total} Mails (${counts.unseen} ungelesen)`)
-            .join('\n');
-        
-        const summary = data.summary || {};
-        const message = `📊 ${accountName}\n\n` +
-            `Remote (Server):\n${folderDetails}\n\n` +
-            `Gesamt Remote: ${summary.total_remote || 0} Mails\n` +
-            `Ungelesen: ${summary.total_unseen || 0}\n` +
-            `Lokal in DB: ${summary.total_local || 0}\n` +
-            `Delta: ${summary.delta || 0} Mails fehlen lokal`;
-        
-        alert(message);
-        
+
+        showQuickCountModal(accountName, data, filters);
+    } catch (err) {
+        alert(`❌ Fehler beim Zählen: ${err.message || err}`);
+    } finally {
         if (btn) {
             btn.disabled = false;
             btn.textContent = originalLabel;
         }
-    })
-    .catch(err => {
-        alert(`❌ Fehler beim Zählen: ${err}`);
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = originalLabel || '📊 Count';
-        }
-    });
+    }
 }
 
 function purgeMails(evt, accountId, accountName) {
