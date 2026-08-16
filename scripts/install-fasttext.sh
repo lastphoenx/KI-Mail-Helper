@@ -90,6 +90,15 @@ install_from_patched_source() {
     echo "✅ fasttext-wheel built from patched source"
 }
 
+patch_fasttext_numpy2_installed() {
+    local ft_py
+    ft_py="$(python -c 'import pathlib, fasttext; print(pathlib.Path(fasttext.__file__).parent / "FastText.py")')"
+    if [[ -f "$ft_py" ]] && grep -q 'np.array(probs, copy=False)' "$ft_py"; then
+        sed -i 's/np\.array(probs, copy=False)/np.asarray(probs)/g' "$ft_py"
+        echo "🩹 Patched fasttext/FastText.py for NumPy 2.x"
+    fi
+}
+
 install_fasttext_wheel() {
     pip install --upgrade "fasttext-wheel==${FASTTEXT_VERSION}"
 }
@@ -107,6 +116,8 @@ else
     echo "ℹ️  Python 3.13+: no PyPI wheel — using patched source build"
     install_from_patched_source
 fi
+
+patch_fasttext_numpy2_installed()
 
 echo "🔍 Verifying import ..."
 python -c "import fasttext; print('fasttext import OK')"

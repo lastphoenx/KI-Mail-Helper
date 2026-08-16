@@ -24,6 +24,45 @@ from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
 
+
+def _apply_fasttext_numpy2_compat() -> None:
+    """Patch fasttext-wheel 0.9.2 for NumPy 2.x (np.array(..., copy=False) breaks)."""
+    try:
+        import numpy as np
+        from fasttext.FastText import _FastText
+    except ImportError:
+        return
+
+    if getattr(_FastText, "_numpy2_compat_patched", False):
+        return
+
+    def predict(self, text, k=1, threshold=0.0, on_unicode_error="strict"):
+        def check(entry):
+            if entry.find("\n") != -1:
+                raise ValueError(
+                    "predict processes one line at a time (remove '\\n')"
+                )
+            return entry + "\n"
+
+        if isinstance(text, list):
+            text = [check(entry) for entry in text]
+            all_labels, all_probs = self.f.multilinePredict(
+                text, k, threshold, on_unicode_error
+            )
+            return all_labels, all_probs
+
+        text = check(text)
+        predictions = self.f.predict(text, k, threshold, on_unicode_error)
+        if predictions:
+            probs, labels = zip(*predictions)
+        else:
+            probs, labels = (), ()
+        return labels, np.asarray(probs)
+
+    _FastText.predict = predict
+    _FastText._numpy2_compat_patched = True
+    logger.debug("Applied fastText NumPy 2.x compatibility patch")
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Data Classes
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -131,7 +170,8 @@ class TranslatorService:
                 "fasttext is not installed. Run: pip install fasttext-wheel==0.9.2 "
                 "or bash scripts/install-fasttext.sh"
             ) from exc
-        
+
+        _apply_fasttext_numpy2_compat()
         if not self.model_path.exists():
             self._download_model()
         
