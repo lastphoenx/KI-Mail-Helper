@@ -596,7 +596,8 @@ class AutoRulesEngine:
                 ActionResult,
             )
 
-            # Action: Move to Folder (IMAP + DB via EmailActionService)
+            # Action: Move to Folder — gleicher Pfad wie POST /email/<id>/move-to-folder:
+            # IMAP COPY+DELETE auf GMX, danach imap_folder/uid in DB (EmailActionService)
             if 'move_to_folder' in actions:
                 target_folder = actions['move_to_folder']
                 result = EmailActionService.move_to_folder(

@@ -65,6 +65,14 @@
                 {% if decrypted_to %}<div class="mt-1"><strong>📬 An:</strong> {{ decrypted_to }}</div>{% endif %}
                 {% if decrypted_cc %}<div class="mt-1"><strong>📋 Cc:</strong> {{ decrypted_cc }}</div>{% endif %}
                 {% if decrypted_bcc %}<div class="mt-1"><strong>🔒 Bcc:</strong> {{ decrypted_bcc }}</div>{% endif %}
+                {% if raw and raw.imap_folder %}
+                <div class="mt-2">
+                    <strong>📁 IMAP-Ordner:</strong>
+                    <span class="badge rounded-pill bg-primary-subtle text-primary fw-semibold border border-primary-subtle px-2 ms-1"
+                          title="Aktueller Ordnerpfad auf dem Mailserver (GMX)">{{ raw.imap_folder }}</span>
+                    <small class="text-muted ms-1">UID {{ raw.imap_uid or '?' }} in diesem Ordner</small>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -598,10 +606,11 @@
                         </td>
                     </tr>
                     <tr>
-                        <td><strong>IMAP Folder:</strong></td>
+                        <td><strong>IMAP-Ordnerpfad:</strong></td>
                         <td>
                             {% if email.raw_email.imap_folder %}
-                            <code>{{ email.raw_email.imap_folder }}</code>
+                            <span class="badge rounded-pill bg-primary-subtle text-primary fw-semibold border border-primary-subtle px-2">{{ email.raw_email.imap_folder }}</span>
+                            <small class="text-muted d-block mt-1">Synchron mit GMX — wird bei Verschieben per IMAP aktualisiert</small>
                             {% else %}
                             <span class="text-muted">N/A</span>
                             {% endif %}
