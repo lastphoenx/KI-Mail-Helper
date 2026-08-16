@@ -1,19 +1,12 @@
 #!/usr/bin/env bash
 # Pre-download Helsinki-NLP Opus-MT models into the Hugging Face cache.
-# Required for offline/local translation after torch is installed.
+# Lädt NUR fehlende Modelle nach – bereits gecachte werden übersprungen.
 #
-# WICHTIG: Der Dienst läuft als User mailhelper (ProtectHome=true).
-# Cache MUSS unter /opt/KI-Mail-Helper/.cache/huggingface liegen, nicht in /root/.cache!
-#
-# Usage on CT 134 (Debian 13 / Trixie):
-#   cd /opt/KI-Mail-Helper
+# Usage on CT 134:
 #   sudo -u mailhelper bash scripts/install-opus-mt-models.sh
-#   sudo systemctl restart mail-helper mail-helper-celery-worker
 #
-# Falls du vorher als root installiert hast (ohne rsync auf Minimal-Images):
-#   mkdir -p /opt/KI-Mail-Helper/.cache/huggingface
-#   cp -a /root/.cache/huggingface/. /opt/KI-Mail-Helper/.cache/huggingface/
-#   chown -R mailhelper:mailhelper /opt/KI-Mail-Helper/.cache
+# Einzelnes Modell nachladen:
+#   MODELS="Helsinki-NLP/opus-mt-tc-big-en-pt" sudo -u mailhelper bash scripts/install-opus-mt-models.sh
 
 set -euo pipefail
 
@@ -22,8 +15,7 @@ VENV_DIR="${VENV_DIR:-$APP_DIR/venv}"
 HF_HOME="${HF_HOME:-$APP_DIR/.cache/huggingface}"
 export HF_HOME APP_DIR
 
-# Nur Modelle die auf Hugging Face existieren (kein nl-de / pl-de!)
-MODELS=(
+DEFAULT_MODELS=(
     Helsinki-NLP/opus-mt-de-en
     Helsinki-NLP/opus-mt-en-de
     Helsinki-NLP/opus-mt-de-it
@@ -41,6 +33,10 @@ MODELS=(
     Helsinki-NLP/opus-mt-en-fr
     Helsinki-NLP/opus-mt-fr-en
     Helsinki-NLP/opus-mt-tc-big-en-pt
+)
+
+# Optional: nur für PT→DE (selten gebraucht); Fehler blockiert nicht
+OPTIONAL_MODELS=(
     Helsinki-NLP/opus-mt-ROMANCE-en
 )
 
@@ -61,9 +57,9 @@ if [[ ! -x "$VENV_DIR/bin/python" ]]; then
 fi
 
 if [[ "$(id -un)" == "root" ]]; then
-    echo "⚠️  Du bist root. Besser: sudo -u mailhelper bash scripts/install-opus-mt-models.sh"
+    echo "⚠️  Besser: sudo -u mailhelper bash scripts/install-opus-mt-models.sh"
     if [[ -d /root/.cache/huggingface && ! -d "$HF_HOME/hub" ]]; then
-        echo "📦 Migriere vorhandenen root-Cache nach $HF_HOME ..."
+        echo "📦 Migriere root-Cache → $HF_HOME"
         mkdir -p "$HF_HOME"
         copy_tree /root/.cache/huggingface/ "$HF_HOME/"
     fi
@@ -74,50 +70,64 @@ source "$VENV_DIR/bin/activate"
 cd "$APP_DIR"
 mkdir -p "$HF_HOME"
 
-echo "🐍 Python: $($VENV_DIR/bin/python --version)"
-echo "📁 HF_HOME=$HF_HOME"
-echo "🔥 Checking torch..."
-python -c "import torch; print(f'   torch {torch.__version__}')" || {
-    echo "❌ torch missing. Install first:" >&2
-    echo "   pip install torch --index-url https://download.pytorch.org/whl/cpu" >&2
+# Override via env: MODELS="Helsinki-NLP/opus-mt-de-en ..."
+if [[ -n "${MODELS:-}" ]]; then
+    # shellcheck disable=SC2206
+    TARGET_MODELS=($MODELS)
+else
+    TARGET_MODELS=("${DEFAULT_MODELS[@]}" "${OPTIONAL_MODELS[@]}")
+fi
+
+echo "🐍 $($VENV_DIR/bin/python --version) | HF_HOME=$HF_HOME"
+python -c "import torch; print(f'torch {torch.__version__}')" || {
+    echo "❌ torch fehlt: pip install torch --index-url https://download.pytorch.org/whl/cpu" >&2
     exit 1
 }
 
 pip install -q "huggingface_hub>=0.26.0"
 
-echo "📥 Downloading ${#MODELS[@]} Opus-MT models (fehlende werden übersprungen) ..."
-FAILED=0
-for model in "${MODELS[@]}"; do
-    echo ""
-    echo "➡️  $model"
-    if python - <<PY
+python - "${TARGET_MODELS[@]}" <<'PY'
 import os, sys
-os.environ["HF_HOME"] = "${HF_HOME}"
+from pathlib import Path
+
+HF_HOME = os.environ["HF_HOME"]
+OPTIONAL = {
+    "Helsinki-NLP/opus-mt-ROMANCE-en",
+}
+models = sys.argv[1:]
+
+def is_cached(repo_id: str) -> bool:
+    slug = "models--" + repo_id.replace("/", "--")
+    snaps = Path(HF_HOME) / "hub" / slug / "snapshots"
+    if not snaps.is_dir():
+        return False
+    return any((p / "config.json").exists() for p in snaps.iterdir() if p.is_dir())
+
 from huggingface_hub import snapshot_download
-try:
-    snapshot_download(repo_id="${model}")
-    print("   ✅ cached")
-except Exception as exc:
-    print(f"   ⚠️  übersprungen: {exc}")
+
+skipped = downloaded = failed = 0
+for repo_id in models:
+    print(f"\n➡️  {repo_id}")
+    if is_cached(repo_id):
+        print("   ⏭️  bereits im Cache")
+        skipped += 1
+        continue
+    try:
+        snapshot_download(repo_id=repo_id)
+        print("   ✅ heruntergeladen")
+        downloaded += 1
+    except Exception as exc:
+        tag = "optional, übersprungen" if repo_id in OPTIONAL else "fehlgeschlagen"
+        print(f"   ⚠️  {tag}: {exc}")
+        failed += 1
+
+print(f"\n📊 {skipped} im Cache, {downloaded} neu, {failed} fehlgeschlagen")
+if failed and failed == len(models):
     sys.exit(1)
 PY
-    then
-        :
-    else
-        FAILED=$((FAILED + 1))
-    fi
-done
 
 if id mailhelper &>/dev/null; then
     chown -R mailhelper:mailhelper "$HF_HOME"
 fi
 
-echo ""
-if [[ "$FAILED" -gt 0 ]]; then
-    echo "⚠️  $FAILED Modell(e) fehlgeschlagen (oft: existiert nicht auf HF oder Netzwerk)."
-else
-    echo "✅ Alle Modelle gecached."
-fi
-echo "Test (als mailhelper):"
-echo "   sudo -u mailhelper env HF_HOME=$HF_HOME $VENV_DIR/bin/python -c \\"
-echo "     \"from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('Helsinki-NLP/opus-mt-de-en', local_files_only=True); print('OK')\""
+echo "✅ Fertig."
