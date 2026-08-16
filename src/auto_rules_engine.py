@@ -149,20 +149,11 @@ class AutoRulesEngine:
         self.user_id = user_id
         self.master_key = master_key
         self._db_session = db_session
-        self._mail_sync = None
     
     @property
     def db(self) -> Session:
         """DB-Session Accessor"""
         return self._db_session
-    
-    @property
-    def mail_sync(self):
-        """Lazy-Init für MailSynchronizer"""
-        if self._mail_sync is None:
-            mail_sync_module = importlib.import_module(".16_mail_sync", "src")
-            self._mail_sync = mail_sync_module.MailSynchronizer(self.user_id, self.master_key)
-        return self._mail_sync
     
     def get_active_rules(self) -> List[AutoRule]:
         """Lädt alle aktiven Regeln für den User, sortiert nach Priorität"""
@@ -595,57 +586,78 @@ class AutoRulesEngine:
         """
         actions = rule.actions
         executed = []
+        failed_actions = []
         error = None
         
         try:
-            # Action: Move to Folder
+            from src.services.email_action_service import (
+                EmailActionService,
+                _execute_single_imap_action,
+                ActionResult,
+            )
+
+            # Action: Move to Folder (IMAP + DB via EmailActionService)
             if 'move_to_folder' in actions:
                 target_folder = actions['move_to_folder']
-                try:
-                    result = self.mail_sync.move_email(
-                        uid=raw_email.imap_uid,
-                        source_folder=raw_email.imap_folder,
-                        target_folder=target_folder
-                    )
-                    if result.success:
-                        # DB aktualisieren
-                        raw_email.imap_folder = result.target_folder
-                        raw_email.imap_uid = result.target_uid
-                        raw_email.imap_uidvalidity = result.target_uidvalidity
-                        executed.append(f"move_to:{target_folder}")
-                        logger.info(f"📁 Moved email {raw_email.id} to {target_folder}")
-                except Exception as move_err:
-                    logger.error(f"Move failed: {move_err}")
+                result = EmailActionService.move_to_folder(
+                    self.db,
+                    self.user_id,
+                    raw_email.id,
+                    target_folder,
+                    self.master_key,
+                )
+                if result.success:
+                    executed.append(f"move_to:{target_folder}")
+                    logger.info(f"📁 Moved email {raw_email.id} to {target_folder}")
+                else:
+                    err_msg = result.error or result.message or "unbekannter Fehler"
+                    failed_actions.append(f"move_to:{target_folder} ({err_msg})")
                     executed.append(f"move_to:{target_folder} [FAILED]")
+                    logger.error(f"Move failed for email {raw_email.id}: {err_msg}")
             
             # Action: Mark as Read
             if actions.get('mark_as_read'):
-                try:
-                    success = self.mail_sync.mark_as_read(
-                        uid=raw_email.imap_uid,
-                        folder=raw_email.imap_folder
-                    )
-                    if success:
-                        raw_email.imap_is_seen = True
-                        executed.append("mark_as_read")
-                        logger.info(f"✅ Marked email {raw_email.id} as read")
-                except Exception as read_err:
-                    logger.error(f"Mark as read failed: {read_err}")
+                result = EmailActionService.mark_read(
+                    self.db,
+                    self.user_id,
+                    raw_email.id,
+                    self.master_key,
+                )
+                if result.success:
+                    executed.append("mark_as_read")
+                    logger.info(f"✅ Marked email {raw_email.id} as read")
+                else:
+                    err_msg = result.error or result.message or "unbekannter Fehler"
+                    failed_actions.append(f"mark_as_read ({err_msg})")
+                    executed.append("mark_as_read [FAILED]")
+                    logger.error(f"Mark as read failed for email {raw_email.id}: {err_msg}")
             
             # Action: Mark as Flagged
             if actions.get('mark_as_flagged'):
-                try:
-                    success = self.mail_sync.add_flag(
-                        uid=raw_email.imap_uid,
-                        folder=raw_email.imap_folder,
-                        flag='\\Flagged'
-                    )
+                def _flag_action(synchronizer, processed, raw):
+                    folder = raw.imap_folder or "INBOX"
+                    success, message = synchronizer.set_flag(raw.imap_uid, folder)
                     if success:
-                        raw_email.imap_is_flagged = True
-                        executed.append("mark_as_flagged")
-                        logger.info(f"🚩 Flagged email {raw_email.id}")
-                except Exception as flag_err:
-                    logger.error(f"Mark as flagged failed: {flag_err}")
+                        raw.imap_is_flagged = True
+                        return ActionResult(raw.id, True, message)
+                    return ActionResult(raw.id, False, error=message)
+
+                result = _execute_single_imap_action(
+                    self.db,
+                    self.user_id,
+                    raw_email.id,
+                    self.master_key,
+                    _flag_action,
+                    "mark_flagged",
+                )
+                if result.success:
+                    executed.append("mark_as_flagged")
+                    logger.info(f"🚩 Flagged email {raw_email.id}")
+                else:
+                    err_msg = result.error or result.message or "unbekannter Fehler"
+                    failed_actions.append(f"mark_as_flagged ({err_msg})")
+                    executed.append("mark_as_flagged [FAILED]")
+                    logger.error(f"Mark as flagged failed for email {raw_email.id}: {err_msg}")
             
             # Action: Apply Tag (lokal in DB)
             # WICHTIG: email_tag_assignments.email_id referenziert processed_emails.id, NICHT raw_emails.id!
@@ -765,17 +777,19 @@ class AutoRulesEngine:
                 except Exception as del_err:
                     logger.error(f"Delete failed: {del_err}")
             
-            # Statistik aktualisieren
-            rule.times_triggered += 1
-            rule.last_triggered_at = datetime.now(UTC)
+            overall_success = len(failed_actions) == 0
+
+            # Statistik nur bei echtem Erfolg
+            if overall_success:
+                rule.times_triggered += 1
+                rule.last_triggered_at = datetime.now(UTC)
             
-            # P2-004: Log successful execution
+            # P2-004: Ausführungslog (Erfolg nur wenn alle IMAP-Aktionen klappten)
             processed_email = self.db.query(ProcessedEmail).filter_by(
                 raw_email_id=raw_email.id
             ).first()
             
             if processed_email:
-                # Extrahiere action_type für Log (erste Action oder "multiple")
                 action_type = executed[0].split(':')[0] if executed else 'unknown'
                 if len(executed) > 1:
                     action_type = 'multiple'
@@ -785,25 +799,34 @@ class AutoRulesEngine:
                     mail_account_id=raw_email.mail_account_id,
                     rule_id=rule.id,
                     processed_email_id=processed_email.id,
-                    success=True,
-                    error_message=None,
+                    success=overall_success,
+                    error_message=(
+                        "; ".join(failed_actions)[:500] if failed_actions else None
+                    ),
                     action_type=action_type
                 )
                 self.db.add(log_entry)
             
             self.db.commit()
             
-            logger.info(
-                f"✅ Regel '{rule.name}' ausgeführt für E-Mail {raw_email.id}: "
-                f"{', '.join(executed)}"
-            )
+            if overall_success:
+                logger.info(
+                    f"✅ Regel '{rule.name}' ausgeführt für E-Mail {raw_email.id}: "
+                    f"{', '.join(executed)}"
+                )
+            else:
+                logger.warning(
+                    f"⚠️ Regel '{rule.name}' teilweise/fehlgeschlagen für E-Mail {raw_email.id}: "
+                    f"{', '.join(executed)}"
+                )
             
             return RuleExecutionResult(
                 rule_id=rule.id,
                 rule_name=rule.name,
                 email_id=raw_email.id,
-                success=True,
-                actions_executed=executed
+                success=overall_success,
+                actions_executed=executed,
+                error="; ".join(failed_actions) if failed_actions else None,
             )
             
         except Exception as e:
