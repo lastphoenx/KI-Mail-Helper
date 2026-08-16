@@ -18,7 +18,7 @@
                     <h4 class="mb-2">Text in andere Sprachen übersetzen</h4>
                     <p class="mb-0" style="max-width:520px;">
                         Automatische Spracherkennung via fastText (lokal). Übersetzung via 
-                        Opus-MT (lokal) oder Cloud-KI (OpenAI/Anthropic/Mistral).
+                        Opus-MT (lokal), Ollama oder Cloud-KI (OpenAI/Anthropic/Mistral).
                     </p>
                 </div>
                 <span class="badge bg-light text-dark px-3 py-2 align-self-start">🔍 fastText + 💻 Opus-MT</span>
@@ -118,7 +118,7 @@
                 <div class="col-auto">
                     <div class="btn-group" role="group" aria-label="Engine selection">
                         <input type="radio" class="btn-check" name="engine" id="engineCloud" value="cloud">
-                        <label class="btn btn-outline-primary btn-sm" for="engineCloud">☁️ Cloud-KI</label>
+                        <label class="btn btn-outline-primary btn-sm" for="engineCloud">🧠 LLM (Cloud/Ollama)</label>
                         
                         <input type="radio" class="btn-check" name="engine" id="engineLocal" value="local" checked>
                         <label class="btn btn-outline-success btn-sm" for="engineLocal">💻 Opus-MT (lokal)</label>
@@ -154,11 +154,12 @@
             <div>ℹ️</div>
             <div>
                 <strong>Spracherkennung:</strong> lokal via fastText (176 Sprachen). 
-                <strong>Übersetzung:</strong> Cloud-KI (OpenAI/Anthropic/Mistral) oder lokal via Opus-MT.
+                <strong>Übersetzung:</strong> Opus-MT (lokal), Ollama oder Cloud-KI (OpenAI/Anthropic/Mistral).
                 <br>
                 <small class="text-muted">
                     Zielsprachen: Deutsch, Englisch, Französisch, Italienisch, Spanisch, Portugiesisch, Niederländisch, Polnisch.
-                    Opus-MT lädt Modelle beim ersten Aufruf (~300MB pro Sprachpaar).
+                    Opus-MT lädt Modelle beim ersten Aufruf (~300&nbsp;MB pro Sprachpaar; benötigt PyTorch + Netzwerk).
+                    Für Ollama eignen sich mehrsprachige Chat-Modelle wie <code>qwen2.5:7b-instruct</code> oder <code>llama3.1:8b</code>.
                 </small>
             </div>
         </div>
@@ -208,18 +209,23 @@ async function initializeProviders() {
         const providerSelect = document.getElementById('providerSelect');
         providerSelect.innerHTML = '';
         
-        // Nur Cloud-Provider mit Chat-Fähigkeit (kein Ollama für Übersetzung)
+        // LLM-Provider: Cloud-Keys + Ollama (lokal)
         providers.forEach(p => {
-            // Für Übersetzung nur Cloud-Provider mit generate_text support
-            if (['openai', 'anthropic', 'mistral'].includes(p.id)) {
+            if (['openai', 'anthropic', 'mistral', 'ollama'].includes(p.id)) {
                 const option = document.createElement('option');
                 option.value = p.id;
-                option.textContent = `${p.name}`;
+                option.textContent = p.name;
                 providerSelect.appendChild(option);
             }
         });
         
-        // Initial: Ersten Provider wählen und Modelle laden
+        // Ollama bevorzugen wenn verfügbar, sonst erster Eintrag
+        const ollamaOpt = Array.from(providerSelect.options).find(o => o.value === 'ollama');
+        if (ollamaOpt) {
+            providerSelect.value = 'ollama';
+        }
+        
+        // Initial: Provider wählen und Modelle laden
         if (providerSelect.options.length > 0) {
             await updateModels(providerSelect.value);
         }
@@ -233,9 +239,8 @@ async function initializeProviders() {
 
 async function updateModels(providerId) {
     const modelSelect = document.getElementById('modelSelect');
+    modelSelect.innerHTML = '<option value="">Lade Modelle…</option>';
     
-    // Kuratierte Liste der besten Übersetzungsmodelle pro Provider
-    // Einfach und übersichtlich - keine API-Abfrage nötig
     const TRANSLATION_MODELS = {
         openai: [
             { id: 'gpt-4o-mini', name: '💬 GPT-4o Mini (schnell & günstig)' },
@@ -252,7 +257,40 @@ async function updateModels(providerId) {
         ]
     };
     
-    const models = TRANSLATION_MODELS[providerId] || [];
+    let models = TRANSLATION_MODELS[providerId] || [];
+    
+    if (providerId === 'ollama') {
+        try {
+            const response = await fetch('/api/available-models/ollama', { credentials: 'include' });
+            if (response.ok) {
+                const data = await response.json();
+                const chatModels = (data.models || []).filter(m => m.type !== 'embedding');
+                models = chatModels.map(m => ({
+                    id: m.id,
+                    name: m.display_name ? `🦙 ${m.display_name}` : `🦙 ${m.name || m.id}`
+                }));
+                // Empfohlene Modelle nach vorne sortieren
+                const preferred = ['qwen2.5:7b-instruct', 'qwen2.5:7b', 'llama3.1:8b', 'llama3.2:3b', 'mistral:7b'];
+                models.sort((a, b) => {
+                    const ai = preferred.indexOf(a.id);
+                    const bi = preferred.indexOf(b.id);
+                    if (ai === -1 && bi === -1) return a.id.localeCompare(b.id);
+                    if (ai === -1) return 1;
+                    if (bi === -1) return -1;
+                    return ai - bi;
+                });
+            }
+        } catch (e) {
+            console.warn('Ollama model load failed', e);
+        }
+        if (!models.length) {
+            models = [
+                { id: 'qwen2.5:7b-instruct', name: '🦙 Qwen 2.5 7B (empfohlen für Übersetzung)' },
+                { id: 'llama3.1:8b', name: '🦙 Llama 3.1 8B' },
+                { id: 'llama3.2:3b', name: '🦙 Llama 3.2 3B (schnell)' }
+            ];
+        }
+    }
     
     modelSelect.innerHTML = '';
     models.forEach((m, idx) => {
@@ -437,7 +475,9 @@ async function translateText() {
         return;
     }
     
-    const engineLabel = engine === 'cloud' ? 'Cloud' : 'Opus-MT';
+    const engineLabel = engine === 'cloud'
+        ? (provider === 'ollama' ? 'Ollama' : 'Cloud')
+        : 'Opus-MT';
     document.getElementById('translateStatus').innerHTML = 
         `<span class="spinner-border spinner-border-sm me-1"></span>Übersetze (${engineLabel})...`;
     document.getElementById('translatedText').value = '';
