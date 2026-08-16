@@ -2515,70 +2515,9 @@ def api_delete_rule(rule_id):
 @api_bp.route("/rules/<int:rule_id>/test", methods=["POST"])
 @login_required
 def api_test_rule(rule_id):
-    """Testet Rule gegen Sample-Emails"""
-    models = _get_models()
-    AutoRulesEngine = _get_auto_rules()
-    data = request.get_json() or {}
-    
-    try:
-        with get_db_session() as db:
-            user = get_current_user_model(db)
-            if not user:
-                return jsonify({"error": "Unauthorized"}), 401
-            
-            rule = db.query(models.AutoRule).filter_by(
-                id=rule_id,
-                user_id=user.id
-            ).first()
-            
-            if not rule:
-                return jsonify({"error": "Regel nicht gefunden"}), 404
-            
-            master_key = session.get("master_key")
-            if not master_key:
-                return jsonify({"error": "Master-Key nicht verfügbar"}), 401
-            
-            engine = AutoRulesEngine(user.id, master_key, db)
-            matches = []
-            email_id = data.get("email_id")
-            
-            if email_id:
-                # Teste eine spezifische E-Mail
-                results = engine.process_email(email_id, dry_run=True, rule_id=rule_id)
-                for result in results:
-                    matches.append({
-                        "email_id": result.email_id,
-                        "matched": result.success,
-                        "actions_would_execute": result.actions_executed
-                    })
-            else:
-                # Teste gegen die letzten 20 E-Mails
-                recent_emails = db.query(models.RawEmail).filter_by(
-                    user_id=user.id,
-                    deleted_at=None
-                ).order_by(models.RawEmail.received_at.desc()).limit(20).all()
-                
-                for email in recent_emails:
-                    results = engine.process_email(email.id, dry_run=True, rule_id=rule_id)
-                    if results and results[0].success:
-                        matches.append({
-                            "email_id": email.id,
-                            "matched": True,
-                            "actions_would_execute": results[0].actions_executed
-                        })
-            
-            logger.info(f"🧪 Regel '{rule.name}' getestet: {len(matches)} Matches")
-            
-            return jsonify({
-                "success": True,
-                "matches": matches,
-                "total_tested": 1 if email_id else 20,
-                "total_matches": len(matches),
-                "rule_name": rule.name
-            })
-    except Exception as e:
-        logger.error(f"api_test_rule: Fehler: {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+    """Delegiert an rules_bp — 500 klassifizierte Mails, keine 20er-Duplikat-Logik."""
+    from src.blueprints.rules import api_test_rule as rules_test_rule
+    return rules_test_rule(rule_id)
 
 
 @api_bp.route("/rules/apply", methods=["POST"])

@@ -232,7 +232,11 @@
 <div class="d-flex justify-content-between align-items-center mb-3" id="topPaginationBar">
     <div class="d-flex align-items-center">
         <span class="text-muted">
+            {% if search_term %}
+            <strong>{{ total_count }}</strong> Treffer für „{{ search_term }}“
+            {% else %}
             <strong>{{ total_count }}</strong> E-Mails insgesamt
+            {% endif %}
             {% if total_pages > 1 %}
             &mdash; Seite <strong>{{ page }}</strong> von <strong>{{ total_pages }}</strong>
             {% endif %}
@@ -272,7 +276,8 @@
 <!-- E-Mail-Liste -->
 <div class="card" id="emailListCard">
     <div class="card-header">
-        <strong id="emailListCount">{{ mails|length }}</strong> Mails
+        <strong id="emailListCount">{{ mails|length }}</strong>
+        {% if search_term %}Treffer{% else %}Mails{% endif %}
         {% if sort_by != 'score' or sort_order == 'asc' %}
         <small class="text-muted">(sortiert nach {{ sort_by|replace('score', 'Score')|replace('date', 'Datum')|replace('size', 'Größe')|replace('sender', 'Absender') }} {{ 'aufsteigend' if sort_order == 'asc' else 'absteigend' }})</small>
         {% else %}
@@ -319,7 +324,7 @@
                         Von: {{ email._decrypted_sender|default("Unbekannt") }}
                         {% if raw and raw.received_at %}| {{ raw.received_at }}{% endif %}
                         {% if raw and raw.imap_folder %}
-                        | <span class="text-secondary" title="IMAP-Ordner: {{ raw.imap_folder }}">📁 {{ raw.imap_folder }}</span>
+                        | <span class="badge rounded-pill bg-primary-subtle text-primary fw-semibold border border-primary-subtle px-2" title="IMAP-Ordner: {{ raw.imap_folder }}">📁 {{ raw.imap_folder }}</span>
                         {% endif %}
                     </small>
                     <p class="mb-2 mt-2">{{ email._decrypted_summary_de|default('Keine Zusammenfassung verfügbar')|truncate(200) }}</p>
@@ -402,7 +407,8 @@
 <nav aria-label="Email pagination" class="mt-3">
     <div class="d-flex justify-content-between align-items-center">
         <div class="text-muted small">
-            Seite {{ page }} von {{ total_pages }} ({{ total_count }} E-Mails insgesamt)
+            Seite {{ page }} von {{ total_pages }}
+            ({% if search_term %}{{ total_count }} Treffer{% else %}{{ total_count }} E-Mails insgesamt{% endif %})
         </div>
         <ul class="pagination pagination-sm mb-0">
             <!-- Previous -->

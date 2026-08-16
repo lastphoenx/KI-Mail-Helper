@@ -1048,10 +1048,11 @@ const RulesManager = {
             const content = document.getElementById('test-results-content');
             
             content.innerHTML = `
-                <div class="alert alert-info">
-                    <strong>Regel:</strong> ${data.rule_name}<br>
-                    <strong>Getestet:</strong> ${data.total_tested} E-Mail(s)<br>
-                    <strong>Matches:</strong> ${data.total_matches}
+                <div class="alert alert-info border border-primary">
+                    <div class="mb-2"><span class="text-primary fw-bold">Regel:</span> <span class="text-primary fw-semibold">${data.rule_name}</span></div>
+                    <div class="mb-2"><span class="text-primary fw-bold">Getestet:</span> <span class="text-primary fw-semibold">${data.total_tested} klassifizierte E-Mail(s)</span></div>
+                    <div><span class="text-primary fw-bold">Matches:</span> <span class="text-primary fw-semibold fs-5">${data.total_matches}</span></div>
+                    <small class="text-muted d-block mt-2">Dry-Run prüft die ${data.total_tested} zuletzt klassifizierten Mails (nicht den gesamten Posteingang).</small>
                 </div>
                 ${data.matches.length > 0 ? `
                     <h6>Würde auf folgende E-Mails angewendet werden:</h6>

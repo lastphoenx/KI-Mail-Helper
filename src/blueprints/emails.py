@@ -357,25 +357,29 @@ def list_view():
 
         # P2-007: Server-Pagination
         page = int(request.args.get('page', 1))
-        # Per-page with allowed values (50, 100, 150)
         requested_per_page = int(request.args.get('per_page', 50))
         per_page = requested_per_page if requested_per_page in [50, 100, 150] else 50
-        
-        # Count total for pagination
-        total_count = query.count()
-        total_pages = max(1, (total_count + per_page - 1) // per_page)
-        
-        # Boundary checks
-        if page < 1:
+
+        master_key = session.get("master_key")
+        # Textsuche läuft auf entschlüsselten Feldern — Paginierung erst nach dem Filtern
+        search_active = bool(search_term and master_key)
+        mails = []
+
+        if search_term and not master_key:
+            total_count = 0
+            total_pages = 1
             page = 1
-        if page > total_pages:
-            page = total_pages
-        
-        # Apply pagination
-        if sort_order == "asc":
-            mails = query.order_by(sort_col.asc()).limit(per_page).offset((page - 1) * per_page).all()
-        else:
-            mails = query.order_by(sort_col.desc()).limit(per_page).offset((page - 1) * per_page).all()
+        elif not search_active:
+            total_count = query.count()
+            total_pages = max(1, (total_count + per_page - 1) // per_page)
+            if page < 1:
+                page = 1
+            if page > total_pages:
+                page = total_pages
+            if sort_order == "asc":
+                mails = query.order_by(sort_col.asc()).limit(per_page).offset((page - 1) * per_page).all()
+            else:
+                mails = query.order_by(sort_col.desc()).limit(per_page).offset((page - 1) * per_page).all()
 
         # Lade alle User-Accounts für Filter-Dropdown
         user_accounts = (
@@ -435,35 +439,7 @@ def list_view():
             except Exception as e:
                 logger.warning(f"TagManager konnte Tags nicht laden: {e}")
 
-        # Phase 10 Fix: Eager load alle Tags für alle Emails (verhindert n+1)
-        email_ids = [mail.id for mail in mails]
-        email_tags_map = {}
-        if email_ids and tag_manager_mod:
-            try:
-                # Single query für alle Email-Tag-Assignments
-                tag_assignments = (
-                    db.query(models.EmailTagAssignment, models.EmailTag)
-                    .join(
-                        models.EmailTag,
-                        models.EmailTagAssignment.tag_id == models.EmailTag.id,
-                    )
-                    .filter(
-                        models.EmailTagAssignment.email_id.in_(email_ids),
-                        models.EmailTag.user_id == user.id,
-                    )
-                    .all()
-                )
-
-                # Group by email_id
-                for assignment, tag in tag_assignments:
-                    if assignment.email_id not in email_tags_map:
-                        email_tags_map[assignment.email_id] = []
-                    email_tags_map[assignment.email_id].append(tag)
-            except Exception as e:
-                logger.warning(f"Tag eager loading fehlgeschlagen: {e}")
-
         # Zero-Knowledge: Entschlüsselung für Anzeige und Suche
-        master_key = session.get("master_key")
         decrypted_mails = []
 
         # Dekryptiere Mail-Adressen der Accounts für Dropdown
@@ -482,20 +458,64 @@ def list_view():
                         )
                         account.decrypted_imap_username = None
 
-        if master_key:
-            for mail in mails:
+        if search_active:
+            if sort_order == "asc":
+                all_candidates = query.order_by(sort_col.asc()).all()
+            else:
+                all_candidates = query.order_by(sort_col.desc()).all()
+
+            needle = search_term.lower()
+            matched_mails = []
+            for mail in all_candidates:
                 try:
-                    # RawEmail entschlüsseln
-                    decrypted_subject = (
-                        encryption.EmailDataManager.decrypt_email_subject(
-                            mail.raw_email.encrypted_subject or "", master_key
-                        )
+                    decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
+                        mail.raw_email.encrypted_subject or "", master_key
                     )
                     decrypted_sender = encryption.EmailDataManager.decrypt_email_sender(
                         mail.raw_email.encrypted_sender or "", master_key
                     )
+                    decrypted_summary_de = encryption.EmailDataManager.decrypt_summary(
+                        mail.encrypted_summary_de or "", master_key
+                    )
+                    decrypted_tags = encryption.EmailDataManager.decrypt_summary(
+                        mail.encrypted_tags or "", master_key
+                    )
+                    haystacks = (
+                        decrypted_subject.lower(),
+                        decrypted_sender.lower(),
+                        decrypted_summary_de.lower(),
+                        decrypted_tags.lower(),
+                    )
+                    if not any(needle in h for h in haystacks):
+                        continue
 
-                    # ProcessedEmail entschlüsseln
+                    mail._decrypted_subject = decrypted_subject
+                    mail._decrypted_sender = decrypted_sender
+                    mail._decrypted_summary_de = decrypted_summary_de
+                    mail._decrypted_tags = decrypted_tags
+                    matched_mails.append(mail)
+                except (ValueError, KeyError, Exception) as e:
+                    logger.error(
+                        f"Entschlüsselung fehlgeschlagen für RawEmail {mail.raw_email.id}: {type(e).__name__}"
+                    )
+
+            total_count = len(matched_mails)
+            total_pages = max(1, (total_count + per_page - 1) // per_page)
+            if page < 1:
+                page = 1
+            if page > total_pages:
+                page = total_pages
+            start = (page - 1) * per_page
+            decrypted_mails = matched_mails[start : start + per_page]
+        elif master_key:
+            for mail in mails:
+                try:
+                    decrypted_subject = encryption.EmailDataManager.decrypt_email_subject(
+                        mail.raw_email.encrypted_subject or "", master_key
+                    )
+                    decrypted_sender = encryption.EmailDataManager.decrypt_email_sender(
+                        mail.raw_email.encrypted_sender or "", master_key
+                    )
                     decrypted_summary_de = encryption.EmailDataManager.decrypt_summary(
                         mail.encrypted_summary_de or "", master_key
                     )
@@ -503,33 +523,42 @@ def list_view():
                         mail.encrypted_tags or "", master_key
                     )
 
-                    # Suche anwenden (falls nötig)
-                    if search_term:
-                        if not (
-                            search_term.lower() in decrypted_subject.lower()
-                            or search_term.lower() in decrypted_sender.lower()
-                        ):
-                            continue  # Skip diese Mail bei Suche
-
-                    # Mail-Objekt mit entschlüsselten Daten erweitern
                     mail._decrypted_subject = decrypted_subject
                     mail._decrypted_sender = decrypted_sender
                     mail._decrypted_summary_de = decrypted_summary_de
                     mail._decrypted_tags = decrypted_tags
-
-                    # Phase 10 Fix: Tags aus pre-loaded map holen (kein n+1)
-                    mail.email_tags = email_tags_map.get(mail.id, [])
-
                     decrypted_mails.append(mail)
-
                 except (ValueError, KeyError, Exception) as e:
                     logger.error(
                         f"Entschlüsselung fehlgeschlagen für RawEmail {mail.raw_email.id}: {type(e).__name__}"
                     )
-                    continue
-        else:
-            # Ohne master_key können wir nichts anzeigen
-            decrypted_mails = []
+
+        # Phase 10 Fix: Eager load Tags für die angezeigten Mails (verhindert n+1)
+        email_ids = [mail.id for mail in decrypted_mails]
+        email_tags_map = {}
+        if email_ids and tag_manager_mod:
+            try:
+                tag_assignments = (
+                    db.query(models.EmailTagAssignment, models.EmailTag)
+                    .join(
+                        models.EmailTag,
+                        models.EmailTagAssignment.tag_id == models.EmailTag.id,
+                    )
+                    .filter(
+                        models.EmailTagAssignment.email_id.in_(email_ids),
+                        models.EmailTag.user_id == user.id,
+                    )
+                    .all()
+                )
+                for assignment, tag in tag_assignments:
+                    if assignment.email_id not in email_tags_map:
+                        email_tags_map[assignment.email_id] = []
+                    email_tags_map[assignment.email_id].append(tag)
+            except Exception as e:
+                logger.warning(f"Tag eager loading fehlgeschlagen: {e}")
+
+        for mail in decrypted_mails:
+            mail.email_tags = email_tags_map.get(mail.id, [])
 
         # Phase 13: Sammle verfügbare Ordner aus ALLEN RawEmails des Users (nicht nur sichtbare)
         available_folders_query = (
