@@ -335,6 +335,64 @@ class AutoRulesEngine:
             )
         
         return stats
+
+    def apply_rules_manual(
+        self,
+        email_ids: Optional[List[int]] = None,
+        limit: int = 50000,
+    ) -> Dict[str, Any]:
+        """
+        Wendet alle aktiven Regeln manuell an (Button „Regeln jetzt anwenden“).
+
+        Im Gegensatz zu process_new_emails():
+        - Prüft ALLE klassifizierten Mails (nicht nur auto_rules_completed_at IS NULL)
+        - Kein willkürliches 100er-Limit
+        - Für neue/geänderte Regeln auf bestehendem Bestand
+        """
+        query = (
+            self.db.query(RawEmail)
+            .filter(
+                RawEmail.user_id == self.user_id,
+                RawEmail.deleted_at.is_(None),
+                RawEmail.ai_classification_completed_at.isnot(None),
+            )
+            .order_by(RawEmail.received_at.desc())
+        )
+
+        if email_ids:
+            query = query.filter(RawEmail.id.in_(email_ids))
+
+        emails = query.limit(limit).all()
+
+        stats = {
+            "emails_checked": len(emails),
+            "emails_matched": 0,
+            "rules_triggered": 0,
+            "actions_executed": 0,
+            "errors": 0,
+        }
+
+        for email in emails:
+            try:
+                results = self.process_email(email.id, dry_run=False)
+                if results:
+                    stats["emails_matched"] += 1
+                for result in results:
+                    if result.success:
+                        stats["rules_triggered"] += 1
+                        stats["actions_executed"] += len(result.actions_executed)
+                    else:
+                        stats["errors"] += 1
+            except Exception as e:
+                logger.error(f"Manual rule apply failed for email {email.id}: {e}")
+                stats["errors"] += 1
+
+        self.db.commit()
+        logger.info(
+            f"✅ Manual rules: {stats['rules_triggered']} triggers on "
+            f"{stats['emails_matched']}/{stats['emails_checked']} mails"
+        )
+        return stats
     
     def _decrypt_email_for_matching(self, raw_email: RawEmail) -> Optional[Dict]:
         """Entschlüsselt E-Mail-Felder für Regel-Matching"""

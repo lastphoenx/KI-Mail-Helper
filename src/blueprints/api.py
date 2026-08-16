@@ -2584,74 +2584,9 @@ def api_test_rule(rule_id):
 @api_bp.route("/rules/apply", methods=["POST"])
 @login_required
 def api_apply_rules():
-    """Wendet alle aktiven Rules auf unverarbeitete Emails an"""
-    models = _get_models()
-    AutoRulesEngine = _get_auto_rules()
-    data = request.get_json() or {}
-    
-    try:
-        with get_db_session() as db:
-            user = get_current_user_model(db)
-            if not user:
-                return jsonify({"error": "Unauthorized"}), 401
-            
-            master_key = session.get("master_key")
-            if not master_key:
-                return jsonify({"error": "Master-Key nicht verfügbar"}), 401
-            
-            engine = AutoRulesEngine(user.id, master_key, db)
-            email_ids = data.get("email_ids", [])
-            
-            stats = {
-                "emails_processed": 0,
-                "rules_triggered": 0,
-                "actions_executed": 0,
-                "errors": 0
-            }
-            
-            if email_ids:
-                # Spezifische E-Mails verarbeiten
-                for email_id in email_ids:
-                    try:
-                        results = engine.process_email(email_id, dry_run=False)
-                        
-                        for result in results:
-                            if result.success:
-                                stats["rules_triggered"] += 1
-                                stats["actions_executed"] += len(result.actions_executed)
-                            else:
-                                stats["errors"] += 1
-                        
-                        stats["emails_processed"] += 1
-                    except Exception as e:
-                        logger.error(f"Fehler bei E-Mail {email_id}: {e}")
-                        stats["errors"] += 1
-            else:
-                # Alle unverarbeiteten E-Mails
-                unprocessed = db.query(models.RawEmail).filter_by(
-                    user_id=user.id,
-                    deleted_at=None
-                ).limit(100).all()
-                
-                for email in unprocessed:
-                    try:
-                        results = engine.process_email(email.id, dry_run=False)
-                        
-                        for result in results:
-                            if result.success:
-                                stats["rules_triggered"] += 1
-                                stats["actions_executed"] += len(result.actions_executed)
-                        
-                        stats["emails_processed"] += 1
-                    except Exception as e:
-                        logger.error(f"Fehler bei E-Mail {email.id}: {e}")
-                        stats["errors"] += 1
-            
-            logger.info(f"✅ Regeln angewendet: {stats}")
-            return jsonify({"success": True, "stats": stats})
-    except Exception as e:
-        logger.error(f"api_apply_rules: Fehler: {type(e).__name__}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+    """Delegiert an rules_bp — eine Implementierung, kein 100er-Zufallsbatch."""
+    from src.blueprints.rules import api_apply_rules as rules_apply_rules
+    return rules_apply_rules()
 
 
 @api_bp.route("/rules/templates", methods=["GET"])

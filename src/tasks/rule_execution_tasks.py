@@ -193,6 +193,55 @@ def apply_rules_to_emails(
 @celery_app.task(
     bind=True,
     base=BaseRuleTask,
+    name="tasks.rule_execution.apply_rules_manual_all",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    time_limit=3600,
+    soft_time_limit=3300,
+)
+def apply_rules_manual_all(
+    self,
+    user_id: int,
+    service_token_id: int,
+    email_ids: Optional[List[int]] = None,
+) -> Dict[str, Any]:
+    """
+    Manueller Regel-Lauf über alle klassifizierten Mails (oder explizite IDs).
+    """
+    if not user_id:
+        raise Reject("Invalid parameter: user_id required", requeue=False)
+    if not service_token_id:
+        raise Reject("ServiceToken ID required for rule execution", requeue=False)
+
+    logger.info(
+        f"🔧 [Task {self.request.id}] Manual rule apply: user={user_id}, "
+        f"email_ids={'all' if not email_ids else len(email_ids)}"
+    )
+
+    SessionFactory = get_session_factory()
+
+    try:
+        with SessionFactory() as db:
+            master_key = _get_dek_from_service_token(service_token_id, db)
+            from src.auto_rules_engine import AutoRulesEngine
+
+            engine = AutoRulesEngine(user_id, master_key, db)
+            stats = engine.apply_rules_manual(email_ids=email_ids or None)
+            return stats
+    except ImportError as e:
+        logger.error(f"AutoRulesEngine import failed: {e}")
+        raise Reject(f"AutoRulesEngine not available: {e}", requeue=False)
+    except SQLAlchemyError as e:
+        logger.warning(f"Database error in manual rule apply (will retry): {e}")
+        raise self.retry(exc=e, countdown=60)
+    except Exception as e:
+        logger.error(f"Unexpected error in manual rule apply: {type(e).__name__}: {e}")
+        raise Reject(f"Manual rule apply failed: {e}", requeue=False)
+
+
+@celery_app.task(
+    bind=True,
+    base=BaseRuleTask,
     name="tasks.rule_execution.apply_rules_to_new_emails",
     acks_late=True,
     reject_on_worker_lost=True,

@@ -318,6 +318,9 @@
                     <small class="text-muted">
                         Von: {{ email._decrypted_sender|default("Unbekannt") }}
                         {% if raw and raw.received_at %}| {{ raw.received_at }}{% endif %}
+                        {% if raw and raw.imap_folder %}
+                        | <span class="text-secondary" title="IMAP-Ordner: {{ raw.imap_folder }}">📁 {{ raw.imap_folder }}</span>
+                        {% endif %}
                     </small>
                     <p class="mb-2 mt-2">{{ email._decrypted_summary_de|default('Keine Zusammenfassung verfügbar')|truncate(200) }}</p>
                     <div class="small text-muted mb-2">

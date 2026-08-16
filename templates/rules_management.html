@@ -1071,7 +1071,14 @@ const RulesManager = {
     },
     
     async applyRules() {
-        if (!confirm('Regeln auf alle unverarbeiteten E-Mails anwenden?')) return;
+        if (!confirm('Regeln auf alle klassifizierten E-Mails anwenden? (kann bei vielen Mails einige Minuten dauern)')) return;
+        
+        const btn = document.getElementById('btn-apply-rules');
+        const originalLabel = btn ? btn.textContent : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Wird angewendet...';
+        }
         
         try {
             const response = await fetch('/api/rules/apply', {
@@ -1085,16 +1092,67 @@ const RulesManager = {
             
             const data = await response.json();
             
-            if (data.success) {
-                alert(`✅ Regeln angewendet!\n\n` +
-                      `E-Mails: ${data.stats.emails_processed}\n` +
-                      `Regeln ausgelöst: ${data.stats.rules_triggered}\n` +
-                      `Aktionen: ${data.stats.actions_executed}`);
+            if (!data.success) {
+                throw new Error(data.error || 'Unbekannter Fehler');
+            }
+            
+            if (data.task_id) {
+                await this.pollRuleApplyTask(data.task_id);
+                return;
+            }
+            
+            if (data.stats) {
+                this.showApplyStats(data.stats);
                 window.location.reload();
             }
         } catch (error) {
             console.error('Apply rules failed:', error);
-            alert('Fehler beim Anwenden');
+            alert('Fehler beim Anwenden: ' + error.message);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalLabel || 'Regeln jetzt anwenden';
+            }
+        }
+    },
+    
+    showApplyStats(stats) {
+        const checked = stats.emails_checked ?? stats.emails_processed ?? 0;
+        const matched = stats.emails_matched ?? '—';
+        alert(
+            `✅ Regeln angewendet!\n\n` +
+            `Geprüft: ${checked}\n` +
+            `Mails mit Treffer: ${matched}\n` +
+            `Regeln ausgelöst: ${stats.rules_triggered ?? 0}\n` +
+            `Aktionen: ${stats.actions_executed ?? 0}` +
+            (stats.errors ? `\nFehler: ${stats.errors}` : '')
+        );
+    },
+    
+    async pollRuleApplyTask(taskId, attempt = 0) {
+        const maxAttempts = 600; // ~30 min bei 3s Intervall
+        try {
+            const response = await fetch(`/api/rules/task_status/${taskId}`, {cache: 'no-store'});
+            const data = await response.json();
+            
+            if (data.ready && data.successful && data.result) {
+                this.showApplyStats(data.result);
+                window.location.reload();
+                return;
+            }
+            
+            if (data.ready && data.successful === false) {
+                throw new Error(data.error || 'Task fehlgeschlagen');
+            }
+            
+            if (attempt >= maxAttempts) {
+                throw new Error('Timeout — Task läuft noch im Hintergrund');
+            }
+            
+            await new Promise(r => setTimeout(r, 3000));
+            return this.pollRuleApplyTask(taskId, attempt + 1);
+        } catch (error) {
+            throw error;
         }
     },
     

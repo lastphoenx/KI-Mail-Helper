@@ -52,6 +52,7 @@ from src.tasks.mail_sync_tasks import (
 from src.tasks.rule_execution_tasks import (
     apply_rules_to_emails,
     apply_rules_to_new_emails,
+    apply_rules_manual_all,
     test_rule,
 )
 
@@ -80,6 +81,7 @@ __all__ = [
     "sync_all_accounts",
     "apply_rules_to_emails",
     "apply_rules_to_new_emails",
+    "apply_rules_manual_all",
     "test_rule",
     "scan_sender_patterns",
     "cleanup_old_patterns",

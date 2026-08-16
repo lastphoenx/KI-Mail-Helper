@@ -342,8 +342,10 @@ def api_test_rule(rule_id):
                 engine = AutoRulesEngine(user.id, master_key, db)
                 
                 matches = []
+                total_tested = 0
                 
                 if email_id:
+                    total_tested = 1
                     results = engine.process_email(email_id, dry_run=True, rule_id=rule_id)
                     
                     for result in results:
@@ -353,27 +355,35 @@ def api_test_rule(rule_id):
                             "actions_would_execute": result.actions_executed
                         })
                 else:
-                    recent_emails = db.query(models.RawEmail).filter_by(
-                        user_id=user.id,
-                        deleted_at=None
-                    ).order_by(models.RawEmail.received_at.desc()).limit(20).all()
+                    recent_emails = (
+                        db.query(models.RawEmail)
+                        .filter(
+                            models.RawEmail.user_id == user.id,
+                            models.RawEmail.deleted_at.is_(None),
+                            models.RawEmail.ai_classification_completed_at.isnot(None),
+                        )
+                        .order_by(models.RawEmail.received_at.desc())
+                        .limit(500)
+                        .all()
+                    )
                     
                     for email in recent_emails:
                         results = engine.process_email(email.id, dry_run=True, rule_id=rule_id)
                         
-                        if results and results[0].success:
+                        if results and any(r.success for r in results):
                             matches.append({
                                 "email_id": email.id,
                                 "matched": True,
                                 "actions_would_execute": results[0].actions_executed
                             })
+                    total_tested = len(recent_emails)
                 
                 logger.info(f"🧪 Regel '{rule.name}' getestet: {len(matches)} Matches")
                 
                 return jsonify({
                     "success": True,
                     "matches": matches,
-                    "total_tested": 1 if email_id else 20,
+                    "total_tested": total_tested,
                     "total_matches": len(matches),
                     "rule_name": rule.name
                 }), 200
@@ -421,7 +431,7 @@ def api_apply_rules():
                 import importlib
                 from src.tasks.rule_execution_tasks import (
                     apply_rules_to_emails,
-                    apply_rules_to_new_emails
+                    apply_rules_manual_all,
                 )
                 auth = importlib.import_module(".07_auth", "src")
                 ServiceTokenManager = auth.ServiceTokenManager
@@ -459,24 +469,22 @@ def api_apply_rules():
                         }), 202  # Accepted
                         
                     else:
-                        # Batch: Alle neuen E-Mails
+                        # Manuell: alle klassifizierten Mails in der DB
                         task = track_celery_task(
-                            apply_rules_to_new_emails.delay(
-                            user_id=user.id,
-                            service_token_id=service_token_id,
-                            since_minutes=10080,  # 7 days
-                            limit=500
+                            apply_rules_manual_all.delay(
+                                user_id=user.id,
+                                service_token_id=service_token_id,
                             ),
                             user.id,
                         )
                         
-                        logger.info(f"✅ [CELERY] Batch rule task enqueued: {task.id}")
+                        logger.info(f"✅ [CELERY] Manual rule apply enqueued: {task.id}")
                         
                         return jsonify({
                             "success": True,
                             "task_id": task.id,
                             "status": "processing",
-                            "message": "Regeln werden auf neue E-Mails angewendet",
+                            "message": "Regeln werden auf alle klassifizierten E-Mails angewendet",
                             "mode": "celery"
                         }), 202  # Accepted
                         
