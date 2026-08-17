@@ -370,6 +370,11 @@ class TrashEmailInfo:
     spam_score: Optional[float] = None       # X-Spam-Score vom Server
     auth_results: Optional[str] = None       # SPF/DKIM/DMARC Ergebnisse
     reply_to: Optional[str] = None           # Reply-To Header (für Mismatch-Erkennung)
+    x_mailer: Optional[str] = None           # X-Mailer (z.B. V1P3RBOX = Spam-Tool)
+    server_spam_flag: bool = False           # X-Spam-Flag: YES (GMX etc.)
+    provider_junk_score: Optional[int] = None  # UI-InboundReport junk:N (GMX)
+    is_auto_generated: bool = False          # Auto-Submitted: auto-generated
+    to_header: Optional[str] = None          # To: (Undisclosed Recipients etc.)
     
     # Analyse-Ergebnisse
     category: TrashCategory = TrashCategory.REVIEW
@@ -483,6 +488,8 @@ TRUSTED_AUTH_PROVIDER_DOMAINS = [
     "infomaniak.com",    # Schweizer Provider
     "mailbox.org",       # Deutscher Privacy Provider
     "icloud.com",        # Apple
+    "gmx.net",           # GMX / GMX.ch
+    "gmx.ch",
 ]
 
 
@@ -523,6 +530,9 @@ BRAND_DOMAIN_MAP = {
     "unibas": ["example-university.edu"],
     "ethz": ["ethz.ch"],
     "uzh": ["uzh.ch"],
+    # Swiss public media fee (häufiges Phishing-Ziel seit Billag → Serafe)
+    "serafe": ["serafe.ch"],
+    "billag": ["billag.ch"],
     
     # International Brands (häufig für Phishing missbraucht)
     "paypal": ["paypal.com", "paypal.ch"],
@@ -574,7 +584,16 @@ TYPOSQUATTING_TARGETS = {
     "raiffeisen": ["raiffeisen.ch"],
     "migros": ["migros.ch"],
     "coop": ["coop.ch"],
+    "serafe": ["serafe.ch"],
+    "billag": ["billag.ch"],
 }
+
+# Bekannte Spam-Mailer-Software (sofortiges Scam-Signal)
+KNOWN_SPAM_MAILER_PATTERNS = [
+    r"vip3rbox",
+    r"mailer-daemon.*bulk",
+    r"phpmailer.*(?:spam|bulk)",
+]
 
 # Diese Marken werden NICHT geprüft wenn sie von bekannten News/Shop-Domains kommen:
 # (um False Positives wie "heise schreibt über Apple" zu vermeiden)
@@ -635,6 +654,8 @@ TRUSTED_SWISS_DOMAINS = TRUSTED_GLOBAL_DOMAINS | TRUSTED_SWISS_BASE
 
 # Spam/Scam Domain Patterns - diese Domains sind IMMER verdächtig
 SCAM_DOMAIN_PATTERNS = [
+    r"@online\.pro$",            # Serafe-Phishing-Kampagne
+    r"@.*\.online\.pro$",        # Subdomains davon
     r"@.*\.onmicrosoft\.com$",  # Oft missbraucht für Phishing
     r"@.*shopping-infos\.com$",
     r"@.*selected-sales\.de$",
@@ -968,7 +989,7 @@ class TrashAuditService:
         return ""
     
     @staticmethod
-    def _check_brand_domain_mismatch(sender_name: str, sender_email: str, trusted_domains: Optional[set] = None) -> Optional[str]:
+    def _check_brand_domain_mismatch(sender_name: str, sender_email: str, trusted_domains: Optional[set] = None, label: str = "Absender") -> Optional[str]:
         """Prüft ob Absendername und Domain zueinander passen.
         
         Beispiel: "TWINT" von @nanayojapan.co.jp = SCAM!
@@ -1021,7 +1042,7 @@ class TrashAuditService:
                     break
             
             if not domain_valid:
-                return f"⚠️ SCAM: '{brand.upper()}' aber Domain '{domain}'"
+                return f"⚠️ SCAM: '{brand.upper()}' in {label}, aber Domain '{domain}'"
         
         return None
     
@@ -1241,6 +1262,7 @@ class TrashAuditService:
         '.xyz', '.top', '.click', '.buzz', '.loan', '.work', 
         '.gq', '.ml', '.cf', '.tk', '.ga',  # Kostenlose TLDs (Freenom)
         '.icu', '.online', '.site', '.website',
+        '.pro',  # Oft für Phishing (z.B. online.pro, serafe-ag.pro)
         '.pw', '.su', '.bid', '.stream', '.download',
         # ENTFERNT: '.cc' - legitime Firmen wie itead.cc, ewelink.cc nutzen das
         # ENTFERNT: '.club' - manche legitime Shops nutzen das
@@ -1441,8 +1463,62 @@ class TrashAuditService:
         elif 'dmarc=fail' in auth_lower:
             result['dmarc'] = 'fail'
             result['is_forged'] = True
+        elif 'dmarc=none' in auth_lower:
+            result['dmarc'] = 'none'
+        
+        if 'dkim=none' in auth_lower:
+            result['dkim'] = result['dkim'] or 'none'
         
         return result
+    
+    @staticmethod
+    def _is_gibberish_local_part(local_part: str) -> bool:
+        """Erkennt zufällige Local-Parts wie b55x6zkyrsmt3pda26xo."""
+        if not local_part or len(local_part) < 10:
+            return False
+        
+        lp = local_part.lower()
+        normal_prefixes = (
+            'newsletter', 'noreply', 'no-reply', 'info', 'mail', 'support',
+            'service', 'team', 'hello', 'contact', 'admin', 'store', 'bounces',
+        )
+        if any(lp.startswith(p) or p in lp for p in normal_prefixes):
+            return False
+        
+        letters = ''.join(c for c in lp if c.isalpha())
+        digits = sum(1 for c in lp if c.isdigit())
+        if len(letters) < 8:
+            return False
+        
+        if digits >= 2 and len(lp) >= 14:
+            vowels = sum(1 for c in letters if c in 'aeiou')
+            if vowels == 0 or (vowels > 0 and (len(letters) - vowels) / vowels > 2.0):
+                return True
+        
+        return TrashAuditService._is_gibberish_domain(lp)
+    
+    @staticmethod
+    def _check_known_spam_mailer(x_mailer: Optional[str]) -> Optional[str]:
+        if not x_mailer:
+            return None
+        mailer_lower = x_mailer.lower()
+        for pattern in KNOWN_SPAM_MAILER_PATTERNS:
+            if re.search(pattern, mailer_lower):
+                return f"🚨 Bekannter Spam-Mailer: {x_mailer[:40]}"
+        return None
+    
+    @staticmethod
+    def _check_brand_in_text_mismatch(
+        text: str,
+        sender_email: str,
+        trusted_domains: Optional[set] = None,
+        label: str = "Absender",
+    ) -> Optional[str]:
+        if not text or not sender_email:
+            return None
+        return TrashAuditService._check_brand_domain_mismatch(
+            text, sender_email, trusted_domains, label=label
+        )
     
     @staticmethod
     def _calculate_scam_score(info: 'TrashEmailInfo', trusted_domains: Optional[set] = None) -> Tuple[int, List[str]]:
@@ -1507,19 +1583,39 @@ class TrashAuditService:
             scam_signals += 1
             reasons.append(tld_issue)
         
-        # 4. Brand-Domain Mismatch - NUR auf Absender-NAME prüfen, NICHT Betreff!
-        # (News schreiben ÜBER Brands, das ist kein Scam)
-        # Nutzt auch User-konfigurierte trusted_domains aus DB
-        brand_issue = TrashAuditService._check_brand_domain_mismatch(info.sender_name, info.sender, trusted_domains)
+        # 4. Brand-Domain Mismatch - Absender-Name, Betreff und Reply-To prüfen
+        brand_issue = TrashAuditService._check_brand_domain_mismatch(
+            info.sender_name, info.sender, trusted_domains, label="Absender"
+        )
         if brand_issue:
             scam_signals += 2
             reasons.append(brand_issue)
+        elif info.subject:
+            subject_brand = TrashAuditService._check_brand_in_text_mismatch(
+                info.subject, info.sender, trusted_domains, label="Betreff"
+            )
+            if subject_brand:
+                scam_signals += 2
+                reasons.append(subject_brand)
+        
+        if info.reply_to and info.reply_to.lower() != (info.sender or '').lower():
+            reply_brand = TrashAuditService._check_brand_in_text_mismatch(
+                info.sender_name or info.subject or '', info.reply_to, trusted_domains, label="Reply-To"
+            )
+            if reply_brand:
+                scam_signals += 2
+                reasons.append(reply_brand)
         
         # 5. Gibberish Domain
         domain = TrashAuditService._extract_domain(info.sender)
         if TrashAuditService._is_gibberish_domain(domain):
             scam_signals += 1
             reasons.append("⚠️ Verdächtige Random-Domain")
+        
+        local_part = info.sender.split('@')[0] if info.sender and '@' in info.sender else ''
+        if TrashAuditService._is_gibberish_local_part(local_part):
+            scam_signals += 1
+            reasons.append("⚠️ Verdächtige Random-Absender-Adresse")
         
         # 6. Clickbait/Scam Patterns im Subject
         for pattern in CLICKBAIT_SCAM_PATTERNS:
@@ -1539,6 +1635,38 @@ class TrashAuditService:
         if typosquat:
             scam_signals += 2  # Sehr starkes Signal - bewusste Täuschung
             reasons.append(typosquat)
+        
+        # 9. Bekannter Spam-Mailer (z.B. V1P3RBOX)
+        mailer_issue = TrashAuditService._check_known_spam_mailer(info.x_mailer)
+        if mailer_issue:
+            scam_signals += 2
+            reasons.append(mailer_issue)
+        
+        # 10. Server-Spam-Flags (GMX X-Spam-Flag, UI-InboundReport junk:N)
+        if info.server_spam_flag:
+            scam_signals += 2
+            reasons.append("🚫 Provider markiert als Spam (X-Spam-Flag)")
+        if info.provider_junk_score is not None and info.provider_junk_score >= 5:
+            scam_signals += 2
+            reasons.append(f"🚫 Provider Junk-Score: {info.provider_junk_score}")
+        elif info.provider_junk_score is not None and info.provider_junk_score >= 2:
+            scam_signals += 1
+            reasons.append(f"⚠️ Provider Junk-Score: {info.provider_junk_score}")
+        
+        # 11. DKIM/DMARC fehlen bei behaupteter Marke
+        if auth.get('dkim') == 'none' and auth.get('dmarc') == 'none':
+            claimed_brand = TrashAuditService._check_brand_domain_mismatch(
+                (info.sender_name or '') + ' ' + (info.subject or ''),
+                info.sender or '',
+                trusted_domains,
+            )
+            if claimed_brand:
+                scam_signals += 1
+                reasons.append("⚠️ Keine DKIM/DMARC-Signatur trotz Marken-Behauptung")
+        
+        if info.is_auto_generated and scam_signals >= 1:
+            scam_signals += 1
+            reasons.append("⚠️ Auto-generierte Massenmail")
         
         return scam_signals, reasons
     
@@ -2006,33 +2134,30 @@ class TrashAuditService:
             score -= 0.5
             reasons.append("War als wichtig markiert")
         
-        # --- SCAM DETECTION (finale Prüfung mit kombiniertem Score) ---
-        # Übergebe trusted_domains aus DB-Config für bessere Whitelist
+        # --- SCAM DETECTION (Layer 1 Header + optional Layer 2 LLM) ---
+        from src.services.audit_scam_detection import evaluate_scam_risk
+
         trusted_domains = audit_config.get('trusted_domains', set()) if audit_config else set()
-        scam_signals, scam_reasons = TrashAuditService._calculate_scam_score(info, trusted_domains)
-        
-        # Scam-Signale erhöhen auch den Score (für 2-Signal-Fälle wichtig)
-        if scam_signals >= 1 and not never_scam:
-            score += scam_signals * 0.5  # Jedes Signal = +0.5 Score
+        scam_eval = evaluate_scam_risk(
+            info,
+            trusted_domains=trusted_domains,
+            never_scam=never_scam,
+        )
+
+        if scam_eval.is_scam:
+            info.category = TrashCategory.SCAM
+            info.confidence = scam_eval.confidence
+            info.reasons = scam_eval.reasons
+            return info
+
+        if scam_eval.needs_review_boost and not never_scam:
+            score += 0.8
+            reasons.extend(scam_eval.reasons[:3])
+        elif scam_eval.layer1_flags:
+            score += min(0.5, scam_eval.layer1_score / 200.0)
+            reasons.extend(scam_eval.reasons[:2])
         
         # --- Kategorie bestimmen ---
-        # SCAM hat höchste Priorität: 3+ Signale = definitiv bösartig
-        # ABER: never_scam überschreibt (eigene Mails, Behörden, System-Mails)
-        if scam_signals >= 3 and not never_scam:
-            info.category = TrashCategory.SCAM
-            info.confidence = min(1.0, scam_signals * 0.25)
-            # Ersetze Gründe durch Scam-Gründe (für klare Anzeige)
-            info.reasons = scam_reasons
-            return info
-        
-        # 2 Signale + zusätzliche Verdachtsmomente = SCAM
-        if scam_signals >= 2 and score >= 1.0 and not never_scam:
-            info.category = TrashCategory.SCAM
-            info.confidence = min(1.0, 0.6 + scam_signals * 0.15)
-            info.reasons = scam_reasons + [r for r in reasons if r not in scam_reasons][:2]
-            return info
-        
-        # Normale Kategorisierung
         if score >= 0.6:  # Balanciert: Newsletter (List-Unsubscribe=0.8) → SAFE
             info.category = TrashCategory.SAFE
             info.confidence = min(1.0, score)
@@ -2114,7 +2239,11 @@ class TrashAuditService:
             
             # Header fetchen inkl. Power-Header für bessere Analyse
             # BODY.PEEK vermeidet \Seen Flag zu setzen
-            power_headers = 'BODY.PEEK[HEADER.FIELDS (LIST-UNSUBSCRIBE IN-REPLY-TO REFERENCES REPLY-TO X-SPAM-STATUS X-SPAM-SCORE AUTHENTICATION-RESULTS)]'
+            power_headers = (
+                'BODY.PEEK[HEADER.FIELDS (LIST-UNSUBSCRIBE IN-REPLY-TO REFERENCES REPLY-TO '
+                'TO X-SPAM-STATUS X-SPAM-SCORE X-SPAM-FLAG UI-INBOUNDREPORT X-MAILER '
+                'AUTO-SUBMITTED AUTHENTICATION-RESULTS)]'
+            )
             
             fetch_data = conn.fetch(uids, [
                 'UID',
@@ -2181,9 +2310,12 @@ class TrashAuditService:
                     in_reply_to_msgid = None
                     spam_score = None
                     auth_results = None
-                    reply_to = None  # NEU: Für Scam-Detection (From ≠ Reply-To)
-                    
-                    # Header-Daten aus verschiedenen möglichen Keys extrahieren
+                    reply_to = None
+                    x_mailer = None
+                    server_spam_flag = False
+                    provider_junk_score = None
+                    is_auto_generated = False
+                    to_header = None
                     header_data = None
                     for key in data.keys():
                         if isinstance(key, bytes) and b'HEADER.FIELDS' in key:
@@ -2233,6 +2365,46 @@ class TrashAuditService:
                                 if 'yes' in header_lower.split('x-spam-status:')[1][:20]:
                                     spam_score = spam_score or 5.0  # Default hoher Score wenn "Yes"
                             
+                            # GMX: X-Spam-Flag: YES
+                            if 'x-spam-flag:' in header_lower:
+                                flag_line = header_lower.split('x-spam-flag:')[1][:20]
+                                if 'yes' in flag_line:
+                                    server_spam_flag = True
+                                    spam_score = spam_score or 6.0
+                            
+                            # GMX: UI-InboundReport junk:N
+                            if 'ui-inboundreport:' in header_lower:
+                                junk_match = re.search(
+                                    r'ui-inboundreport:\s*(?:unknown|junk):(\d+)',
+                                    header_lower,
+                                )
+                                if junk_match:
+                                    try:
+                                        provider_junk_score = int(junk_match.group(1))
+                                    except ValueError:
+                                        pass
+                            
+                            # X-Mailer (Spam-Tools wie V1P3RBOX)
+                            if 'x-mailer:' in header_lower:
+                                mailer_line = TrashAuditService._extract_folded_header(
+                                    header_text, 'x-mailer:'
+                                )
+                                if mailer_line:
+                                    x_mailer = mailer_line.strip()[:120]
+                            
+                            # Auto-Submitted: auto-generated
+                            if 'auto-submitted:' in header_lower:
+                                auto_line = header_lower.split('auto-submitted:')[1][:40]
+                                if 'auto-generated' in auto_line or 'auto-replied' in auto_line:
+                                    is_auto_generated = True
+
+                            if 'to:' in header_lower:
+                                to_header = TrashAuditService._extract_folded_header(
+                                    header_text, 'to:'
+                                )
+                                if to_header:
+                                    to_header = to_header.strip()[:200]
+                            
                             # Authentication-Results (SPF/DKIM/DMARC)
                             # WICHTIG: Header können über mehrere Zeilen "gefoldet" sein
                             if 'authentication-results:' in header_lower:
@@ -2272,6 +2444,11 @@ class TrashAuditService:
                         spam_score=spam_score,
                         auth_results=auth_results,
                         reply_to=reply_to,
+                        x_mailer=x_mailer,
+                        server_spam_flag=server_spam_flag,
+                        provider_junk_score=provider_junk_score,
+                        is_auto_generated=is_auto_generated,
+                        to_header=to_header,
                         folder=target_folder,
                     )
                     
