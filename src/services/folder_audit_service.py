@@ -1722,7 +1722,8 @@ class FolderAuditService:
         user_id: Optional[int] = None,
         account_id: Optional[int] = None,
         account_domain: Optional[str] = None,
-        audit_config: Optional[dict] = None
+        audit_config: Optional[dict] = None,
+        llm_enabled: bool = False,
     ) -> TrashEmailInfo:
         """Analysiert eine einzelne Email und setzt Kategorie.
         
@@ -1733,6 +1734,7 @@ class FolderAuditService:
             account_id: Account-ID für User-Trusted-Senders
             account_domain: Domain des Mail-Accounts (für Auth-Results Trust)
             audit_config: Optionale Audit-Config aus DB (via AuditConfigCache)
+            llm_enabled: Layer-2-LLM nur explizit — Bulk-Scan bleibt Layer 1 (sonst gunicorn/nginx-Timeout)
             
         Returns:
             TrashEmailInfo mit gesetzter Kategorie und Reasons
@@ -2161,6 +2163,7 @@ class FolderAuditService:
             info,
             trusted_domains=trusted_domains,
             never_scam=never_scam,
+            llm_enabled=llm_enabled,
         )
 
         if scam_eval.is_scam:

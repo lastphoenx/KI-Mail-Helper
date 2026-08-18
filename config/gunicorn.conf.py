@@ -19,7 +19,7 @@ worker_class = "sync"  # Sync workers für Flask (alternativ: gevent, eventlet)
 worker_connections = 1000  # Max connections per worker
 max_requests = 1000  # Restart worker after 1000 requests (memory leak prevention)
 max_requests_jitter = 50  # Add randomness to max_requests
-timeout = 30  # Worker timeout (seconds)
+timeout = 600  # Bulk folder-audit scan (IMAP); nginx proxy_read_timeout must be >= this
 keepalive = 2  # Keep-alive connections
 
 # SSL/TLS Configuration (HTTPS)

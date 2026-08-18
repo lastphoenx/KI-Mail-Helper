@@ -877,6 +877,21 @@
         const meta = document.querySelector('meta[name="csrf-token"]');
         return meta ? meta.getAttribute('content') : '';
     }
+
+    async function parseJsonResponse(response) {
+        const text = await response.text();
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            if (response.status === 502 || response.status === 504) {
+                throw new Error('Timeout/Proxy (HTML statt JSON). Scan kürzen oder gunicorn/nginx-Timeout prüfen.');
+            }
+            if (response.status === 401 || /login|anmelden/i.test(text)) {
+                throw new Error('Sitzung abgelaufen — bitte neu einloggen.');
+            }
+            throw new Error('Server lieferte HTML statt JSON (HTTP ' + response.status + ').');
+        }
+    }
     
     let currentFolder = null;  // Aktuell gescannter Ordner
     
@@ -912,7 +927,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await parseJsonResponse(response);
             
             if (!response.ok) {
                 throw new Error(data.error || 'Scan fehlgeschlagen');

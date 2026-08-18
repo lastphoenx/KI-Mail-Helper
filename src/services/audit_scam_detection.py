@@ -161,7 +161,10 @@ def check_dbl(domain: str) -> Tuple[bool, str]:
         import dns.resolver
 
         query = f"{domain}.dbl.spamhaus.org"
-        answers = dns.resolver.resolve(query, "A")
+        resolver = dns.resolver.Resolver()
+        resolver.lifetime = 2.0
+        resolver.timeout = 2.0
+        answers = resolver.resolve(query, "A")
         for rdata in answers:
             code = str(rdata)
             if code in ("127.0.0.2", "127.0.0.3", "127.0.0.9"):
