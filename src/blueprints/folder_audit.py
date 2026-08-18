@@ -253,8 +253,8 @@ def scan_trash():
             })
             
         except Exception as e:
-            logger.error(f"Trash scan error: {type(e).__name__}: {e}")
-            return jsonify({"error": str(e)}), 500
+            logger.exception("Folder-audit scan error: %s", e)
+            return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
         finally:
             if fetcher:
                 fetcher.disconnect()

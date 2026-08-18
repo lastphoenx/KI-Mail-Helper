@@ -2537,6 +2537,8 @@ class TrashAuditService:
             folder_names = []
             
             for flags, delimiter, name in folders:
+                if isinstance(name, bytes):
+                    name = name.decode("utf-8", "replace")
                 # Überspringen wenn:
                 # - In Exclude-Liste
                 # - Noselect-Flag (virtuelle Ordner)

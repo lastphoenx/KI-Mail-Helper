@@ -391,7 +391,7 @@ class TrashEmailInfo:
             "subject": self.subject,
             "sender": self.sender,
             "sender_name": self.sender_name,
-            "date": self.date.isoformat() if self.date else None,
+            "date": self.date.isoformat() if hasattr(self.date, "isoformat") else (str(self.date) if self.date else None),
             "has_attachments": self.has_attachments,
             "attachment_names": self.attachment_names,
             "content_summary": self.content_summary,
@@ -401,7 +401,7 @@ class TrashEmailInfo:
             "reasons": self.reasons,
             "is_reply": self.is_reply,
             "cluster_key": self.cluster_key,
-            "folder": self.folder,
+            "folder": self.folder.decode("utf-8", "replace") if isinstance(self.folder, bytes) else (self.folder or ""),
         }
 
 
@@ -2601,6 +2601,8 @@ class FolderAuditService:
             folder_names = []
             
             for flags, delimiter, name in folders:
+                if isinstance(name, bytes):
+                    name = name.decode("utf-8", "replace")
                 # Überspringen wenn:
                 # - In Exclude-Liste (exakter Match)
                 # - Noselect-Flag (virtuelle Ordner)

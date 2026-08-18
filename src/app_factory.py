@@ -96,6 +96,17 @@ def decrypt_raw_email(raw_email, master_key):
             "body": "***Entschlüsselung fehlgeschlagen***",
         }
 
+
+def _wants_json_error() -> bool:
+    """API-/AJAX-Requests sollen Fehler als JSON, nicht als HTML-Seite."""
+    if request.is_json:
+        return True
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return True
+    path = request.path or ""
+    return path.startswith(("/api/", "/folder-audit/", "/trash-audit/"))
+
+
 def create_app(config_name="production"):
     """Create and configure the Flask application."""
     
@@ -288,12 +299,19 @@ def create_app(config_name="production"):
     
     @app.errorhandler(404)
     def not_found(e):
-        return '<h1>404</h1>', 404
-    
+        if _wants_json_error():
+            return jsonify({"error": "Nicht gefunden"}), 404
+        return "<h1>404</h1>", 404
+
     @app.errorhandler(500)
     def server_error(e):
-        logger.error(f"Server error: {e}")
-        return '<h1>500 Internal Server Error</h1>', 500
+        logger.exception("Server error: %s", e)
+        if _wants_json_error():
+            orig = getattr(e, "original_exception", None) or e
+            return jsonify({
+                "error": f"{type(orig).__name__}: {orig}",
+            }), 500
+        return "<h1>500 Internal Server Error</h1>", 500
     
     from .blueprints import (
         auth_bp, emails_bp, email_actions_bp, accounts_bp,
