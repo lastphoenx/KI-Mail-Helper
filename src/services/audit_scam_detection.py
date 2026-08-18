@@ -38,7 +38,8 @@ def _bool_env(name: str, default: bool) -> bool:
 
 
 LAYER1_AUTO_SCAM = _int_env("AUDIT_SCAM_LAYER1_AUTO", 80)
-LAYER1_LLM_GATE_MIN = _int_env("AUDIT_SCAM_LAYER1_LLM_MIN", 20)
+# junk:2 von GMX ist Rauschen — Gate bewusst über diesem Wert.
+LAYER1_LLM_GATE_MIN = _int_env("AUDIT_SCAM_LAYER1_LLM_MIN", 40)
 LLM_MISMATCH_CONFIDENCE = _int_env("AUDIT_SCAM_LLM_MISMATCH_CONF", 75)
 LLM_REVIEW_CONFIDENCE = _int_env("AUDIT_SCAM_LLM_REVIEW_CONF", 40)
 LLM_ENABLED_DEFAULT = _bool_env("AUDIT_SCAM_LLM_ENABLED", True)
@@ -47,6 +48,10 @@ LLM_TIMEOUT = _int_env("AUDIT_SCAM_LLM_TIMEOUT", 90)
 # Minimale Regex-Liste: objektiv bösartige Mailer-Software (keine Brand-Liste)
 SCAM_MAILER_RE = re.compile(r"v1p3r|darkmailer|sendblaster|spam\s*mailer", re.I)
 RANDOM_FROM_RE = re.compile(r"<[a-z0-9]{16,}@", re.I)
+PERSON_NAME_RE = re.compile(
+    r"^[A-ZÄÖÜ][\w.'\-]+(?:\s+[A-ZÄÖÜ][\w.'\-]+)*,\s*[A-ZÄÖÜ][\w.'\-]+"
+    r"|^[A-ZÄÖÜ][a-zäöü]+\s+[A-ZÄÖÜ][a-zäöü]+$",
+)
 
 MARKETING_PLATFORMS = (
     "shopifyemail.com",
@@ -59,14 +64,32 @@ MARKETING_PLATFORMS = (
     "ccsend.com",
 )
 
+# Keine Marken, keine generischen Wörter wie team/support (sonst pCloud Team → LLM).
 ORG_DISPLAY_HINTS = re.compile(
-    r"\b(ag|gmbh|gmbh\s*&\s*co|sa|srl|inc|ltd|llc|ch|schweiz|swiss|"
-    r"team|service|support|official|rückerstattung|rueckerstattung|"
-    r"behörde|behoerde|bank|versicherung|post|sbb|serafe)\b",
+    r"\b(ag|gmbh|gmbh\s*&\s*co|sa|srl|inc|ltd|llc|"
+    r"rückerstattung|rueckerstattung|behörde|behoerde|"
+    r"bank|versicherung)\b",
     re.I,
 )
 
-IDENTITY_PROMPT = """Analysiere diese E-Mail-Metadaten auf Identitäts-Mismatch (Phishing/Scam).
+DISPLAY_STOPWORDS = {
+    "team", "service", "support", "newsletter", "info", "noreply", "official",
+    "customer", "the", "der", "die", "das", "und", "fur", "für", "von", "via",
+    "ag", "gmbh", "inc", "ltd", "llc", "sa", "srl",
+}
+
+CC_TLDS = {"ch", "de", "at", "it", "fr", "nl", "be", "li", "uk", "us", "eu", "es"}
+
+LLM_PLACEHOLDER_RE = re.compile(
+    r"ein satz auf deutsch|org-name oder null|eine aussage in deutsch|"
+    r"ist nicht zu finden|ein beispiel ist:|"
+    r"es wird wahrscheinlich eine typosquatting",
+    re.I,
+)
+
+IDENTITY_PROMPT = """Du prüfst NUR diese eine E-Mail auf Identitäts-Betrug.
+Erfinde nichts. Nenne keine Marken, die in den Feldern unten nicht vorkommen.
+Kopiere keine Beispieltexte.
 
 Absendername:  {display_name}
 From-Domain:   {from_domain}
@@ -74,19 +97,16 @@ Reply-To:      {replyto_domain}
 Betreff:       {subject}
 Versand über:  {mailer_platform}
 
-Frage: Passt die technische Absender-Identität zur behaupteten Identität?
-Typische Muster:
-- Anzeigename nennt bekannte Organisation, Domain ist fremd
-- Antworten gehen an andere Domain als Absender
-- Versand über Marketing-Plattform (Shopify, Mailchimp) für angebliche Behörde
-- Typosquatting: serafech.com statt serafe.ch
+mismatch=true nur wenn DIESE From- oder Reply-To-Domain nicht zu DIESEM Absendernamen passt
+(fremde Domain, zusammengeklebte Country-TLD wie name+ch als .com, Reply-To woandershin).
+mismatch=false bei normalen Firmenmails, Newslettern, Login-Hinweisen, privater Post.
 
-Antworte NUR als JSON:
+JSON, sonst nichts:
 {{
-  "mismatch": true,
-  "confidence": 85,
-  "reason": "ein Satz auf Deutsch",
-  "impersonated": "Org-Name oder null"
+  "mismatch": false,
+  "confidence": 0,
+  "reason": null,
+  "impersonated": null
 }}"""
 
 
@@ -170,14 +190,55 @@ def clear_audit_scam_caches() -> None:
     _identity_llm_cache.clear()
 
 
+def _looks_like_person_name(display_name: str) -> bool:
+    name = (display_name or "").strip()
+    if not name:
+        return False
+    return bool(PERSON_NAME_RE.match(name))
+
+
+def _significant_display_tokens(display_name: str) -> List[str]:
+    raw = (display_name or "").lower()
+    parts = re.split(r"[^a-z0-9äöü]+", raw)
+    tokens: List[str] = []
+    for part in parts:
+        if len(part) < 4 or part in DISPLAY_STOPWORDS:
+            continue
+        tokens.append(part)
+    return tokens
+
+
+def _glued_cctld_squat(display_name: str, *domains: str) -> Optional[str]:
+    """name+Ländercode als SLD unter .com/.net — z.B. serafe+ch → serafech.com."""
+    tokens = _significant_display_tokens(display_name)
+    if not tokens:
+        return None
+    for domain in domains:
+        if not domain or "." not in domain:
+            continue
+        labels = domain.lower().strip(".").split(".")
+        if len(labels) < 2:
+            continue
+        sld, tld = labels[-2], labels[-1]
+        if tld not in ("com", "net", "org", "info"):
+            continue
+        for tok in tokens:
+            if tok not in sld or sld == tok:
+                continue
+            remainder = sld.replace(tok, "", 1)
+            if remainder in CC_TLDS:
+                return f"Typosquatting: {domain} klebt '{tok}'+'{remainder}' an .{tld}"
+    return None
+
+
 def _looks_like_organization_display(display_name: str) -> bool:
     if not display_name or len(display_name.strip()) < 4:
         return False
+    if _looks_like_person_name(display_name):
+        return False
     if ORG_DISPLAY_HINTS.search(display_name):
         return True
-    # Firmenname ohne Rechtsform: mehrere Wörter, eines lang genug
-    parts = [p for p in re.split(r"[\s.\-]+", display_name) if len(p) >= 5]
-    return len(parts) >= 1 and not re.match(r"^[A-Z][a-z]+\s+[A-Z][a-z]+$", display_name.strip())
+    return len(_significant_display_tokens(display_name)) >= 2
 
 
 def _detect_mailer_platform(from_domain: str) -> str:
@@ -245,17 +306,19 @@ def quick_header_flags(meta: EmailMeta) -> Tuple[int, List[str], bool]:
         score += 30
         flags.append("Provider Spam-Flag (X-Spam-Flag)")
 
-    if meta.provider_junk_score is not None:
-        if meta.provider_junk_score >= 5:
-            score += 40
-            flags.append(f"Provider Junk-Score: {meta.provider_junk_score}")
-        elif meta.provider_junk_score >= 2:
-            score += 20
-            flags.append(f"Provider Junk-Verdacht: {meta.provider_junk_score}")
+    # GMX junk:2 ist Alltag, kein Scam-Signal. Erst ab 5 ernst nehmen.
+    if meta.provider_junk_score is not None and meta.provider_junk_score >= 5:
+        score += 40
+        flags.append(f"Provider Junk-Score: {meta.provider_junk_score}")
 
     if meta.is_auto_generated and score >= 20:
         score += 15
         flags.append("Auto-generierte Massenmail")
+
+    squat = _glued_cctld_squat(meta.sender_name or "", from_domain, reply_domain)
+    if squat:
+        score += 80
+        flags.append(squat)
 
     # --- Spamhaus DBL ---
     for dom in {from_domain, reply_domain} - {""}:
@@ -331,6 +394,48 @@ def _ollama_chat_json(prompt: str) -> Optional[dict]:
         return None
 
 
+def _llm_result_usable(llm: dict, meta: EmailMeta) -> Optional[dict]:
+    """Verwirft Prompt-Leaks und halluzinierte Beispiel-Marken."""
+    if not isinstance(llm, dict):
+        return None
+
+    reason = str(llm.get("reason") or "").strip()
+    impersonated = llm.get("impersonated")
+    if impersonated is not None:
+        impersonated = str(impersonated).strip()
+        if not impersonated or impersonated.lower() in ("null", "none", "org-name oder null"):
+            impersonated = None
+            llm = {**llm, "impersonated": None}
+
+    if reason and LLM_PLACEHOLDER_RE.search(reason):
+        logger.info("Audit LLM: Platzhalter-Reason verworfen")
+        return None
+    if impersonated and LLM_PLACEHOLDER_RE.search(impersonated):
+        logger.info("Audit LLM: Platzhalter-Impersonation verworfen")
+        return None
+
+    hay = " ".join(
+        filter(
+            None,
+            [
+                meta.sender_name,
+                meta.sender,
+                meta.reply_to,
+                meta.subject,
+            ],
+        )
+    ).lower()
+
+    leak_needles = ("serafech", "serafe.ch", "v1p3rbox")
+    blob = f"{reason} {impersonated or ''}".lower()
+    for needle in leak_needles:
+        if needle in blob and needle not in hay:
+            logger.info("Audit LLM: Beispiel-Brand '%s' nicht in der Mail – verworfen", needle)
+            return None
+
+    return llm
+
+
 def identity_llm_check(meta: EmailMeta) -> Optional[dict]:
     """Layer 2: Identitäts-Kohärenz per lokalem LLM."""
     from_domain = extract_domain(meta.sender or "")
@@ -397,9 +502,14 @@ def evaluate_scam_risk(
     if run_llm:
         llm = identity_llm_check(meta)
         out.llm_used = True
+        llm = _llm_result_usable(llm, meta) if llm else None
         out.llm_result = llm
         if llm:
-            mismatch = bool(llm.get("mismatch"))
+            mismatch_raw = llm.get("mismatch")
+            if isinstance(mismatch_raw, str):
+                mismatch = mismatch_raw.strip().lower() in ("true", "1", "yes")
+            else:
+                mismatch = bool(mismatch_raw)
             try:
                 conf = int(llm.get("confidence", 0))
             except (TypeError, ValueError):

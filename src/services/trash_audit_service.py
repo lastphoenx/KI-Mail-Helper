@@ -2153,9 +2153,7 @@ class TrashAuditService:
         if scam_eval.needs_review_boost and not never_scam:
             score += 0.8
             reasons.extend(scam_eval.reasons[:3])
-        elif scam_eval.layer1_flags:
-            score += min(0.5, scam_eval.layer1_score / 200.0)
-            reasons.extend(scam_eval.reasons[:2])
+        # Schwache Layer-1-Flags (z.B. GMX junk:2) nicht in die UI kippen.
         
         # --- Kategorie bestimmen ---
         if score >= 0.6:  # Balanciert: Newsletter (List-Unsubscribe=0.8) → SAFE
