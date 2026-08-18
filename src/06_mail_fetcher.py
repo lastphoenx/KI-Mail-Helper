@@ -311,12 +311,22 @@ class MailFetcher:
                 error_str = str(e).lower()
                 
                 # Spezifische Fehleranalyse
+                if 'too many' in error_str or 'simultaneous' in error_str or 'limit' in error_str:
+                    logger.error(f"IMAP Verbindungs-Limit für {self.username}@{self.server}: {e}")
+                    raise ConnectionError(
+                        "IMAP: zu viele Verbindungen (oft nach einem abgebrochenen Scan). "
+                        "1–2 Minuten warten, dann Seite neu laden."
+                    ) from None
+
                 if 'auth' in error_str or 'login' in error_str or 'credentials' in error_str:
                     logger.error(f"Login fehlgeschlagen für {self.username}@{self.server}: {e}")
                     print(f"❌ Authentifizierung fehlgeschlagen")
                     print(f"   💡 Überprüfe: Benutzername = {self.username}")
                     print(f"   💡 Überprüfe: Passwort korrekt? (App-Passwort bei 2FA?)")
-                    raise ConnectionError(f"Authentication failed: Wrong username or password") from None
+                    print(f"   💡 Rohfehler: {e}")
+                    raise ConnectionError(
+                        f"IMAP-Login fehlgeschlagen ({self.username}@{self.server}): {e}"
+                    ) from None
                     
                 elif 'ssl' in error_str or 'certificate' in error_str or 'tls' in error_str:
                     logger.error(f"SSL-Fehler bei {self.server}:{self.port}: {e}")

@@ -139,6 +139,10 @@ class ScamEvaluation:
 
 _dbl_cache: dict[str, tuple[bool, str]] = {}
 _identity_llm_cache: dict[str, dict] = {}
+_dbl_lookups_this_scan = 0
+_dbl_timeouts_this_scan = 0
+_dbl_circuit_open = False
+DBL_MAX_PER_SCAN = _int_env("AUDIT_SCAM_DBL_MAX", 8)
 
 
 def extract_domain(email: str) -> str:
@@ -148,22 +152,32 @@ def extract_domain(email: str) -> str:
 
 
 def check_dbl(domain: str) -> Tuple[bool, str]:
-    """Spamhaus DBL via DNS. Returns (listed, reason)."""
-    if not domain:
+    """Spamhaus DBL via DNS. Returns (listed, reason).
+
+    Darf den Gunicorn-Worker nicht blockieren: kurzes Timeout, Cap pro Scan,
+    Circuit-Breaker nach Timeouts (Spamhaus droppt oft UDP von Server-IPs).
+    """
+    global _dbl_lookups_this_scan, _dbl_timeouts_this_scan, _dbl_circuit_open
+
+    if not domain or _dbl_circuit_open:
         return False, ""
 
     domain = domain.lower().strip(".")
     if domain in _dbl_cache:
         return _dbl_cache[domain]
 
+    if _dbl_lookups_this_scan >= DBL_MAX_PER_SCAN:
+        return False, ""
+
+    _dbl_lookups_this_scan += 1
     listed, reason = False, ""
     try:
         import dns.resolver
 
         query = f"{domain}.dbl.spamhaus.org"
         resolver = dns.resolver.Resolver()
-        resolver.lifetime = 2.0
-        resolver.timeout = 2.0
+        resolver.lifetime = 1.0
+        resolver.timeout = 1.0
         answers = resolver.resolve(query, "A")
         for rdata in answers:
             code = str(rdata)
@@ -180,7 +194,12 @@ def check_dbl(domain: str) -> Tuple[bool, str]:
         logger.debug("dnspython nicht installiert – DBL-Check übersprungen")
     except Exception as exc:
         exc_name = type(exc).__name__
-        if exc_name not in ("NXDOMAIN", "NoAnswer", "NoNameservers", "LifetimeTimeout"):
+        if exc_name in ("LifetimeTimeout", "Timeout"):
+            _dbl_timeouts_this_scan += 1
+            if _dbl_timeouts_this_scan >= 2:
+                _dbl_circuit_open = True
+                logger.warning("Spamhaus DBL: Timeouts — weitere Lookups in diesem Scan übersprungen")
+        elif exc_name not in ("NXDOMAIN", "NoAnswer", "NoNameservers"):
             logger.debug("DBL lookup %s: %s", domain, exc)
 
     _dbl_cache[domain] = (listed, reason)
@@ -189,8 +208,12 @@ def check_dbl(domain: str) -> Tuple[bool, str]:
 
 def clear_audit_scam_caches() -> None:
     """Für Tests oder nach Config-Änderungen."""
+    global _dbl_lookups_this_scan, _dbl_timeouts_this_scan, _dbl_circuit_open
     _dbl_cache.clear()
     _identity_llm_cache.clear()
+    _dbl_lookups_this_scan = 0
+    _dbl_timeouts_this_scan = 0
+    _dbl_circuit_open = False
 
 
 def _looks_like_person_name(display_name: str) -> bool:
@@ -253,7 +276,7 @@ def _detect_mailer_platform(from_domain: str) -> str:
     return from_domain
 
 
-def quick_header_flags(meta: EmailMeta) -> Tuple[int, List[str], bool]:
+def quick_header_flags(meta: EmailMeta, *, skip_dbl: bool = False) -> Tuple[int, List[str], bool]:
     """
     Layer 1: deterministische Signale.
 
@@ -323,13 +346,14 @@ def quick_header_flags(meta: EmailMeta) -> Tuple[int, List[str], bool]:
         score += 80
         flags.append(squat)
 
-    # --- Spamhaus DBL ---
-    for dom in {from_domain, reply_domain} - {""}:
-        listed, dbl_reason = check_dbl(dom)
-        if listed:
-            score += 60
-            flags.append(f"Domain {dom} in {dbl_reason}")
-            break
+    # --- Spamhaus DBL (nicht im Bulk-Scan: blockiert den Worker per UDP) ---
+    if not skip_dbl:
+        for dom in {from_domain, reply_domain} - {""}:
+            listed, dbl_reason = check_dbl(dom)
+            if listed:
+                score += 60
+                flags.append(f"Domain {dom} in {dbl_reason}")
+                break
 
     # Grauzone → LLM vorschlagen
     if LAYER1_LLM_GATE_MIN <= score < LAYER1_AUTO_SCAM:
@@ -489,7 +513,10 @@ def evaluate_scam_risk(
         ):
             return out
 
-    layer1_score, layer1_flags, suggest_llm = quick_header_flags(meta)
+    layer1_score, layer1_flags, suggest_llm = quick_header_flags(
+        meta,
+        skip_dbl=(llm_enabled is False),
+    )
     out.layer1_score = layer1_score
     out.layer1_flags = list(layer1_flags)
 
