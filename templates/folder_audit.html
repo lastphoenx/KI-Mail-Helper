@@ -243,6 +243,56 @@
         color: #0d6efd;
         margin-left: 6px;
     }
+
+    .email-details-toggle {
+        font-size: 0.75rem;
+        padding: 0.1rem 0.45rem;
+        margin-top: 4px;
+    }
+    .email-details {
+        display: none;
+        margin-top: 10px;
+        padding: 10px 12px;
+        background: rgba(255, 255, 255, 0.55);
+        border: 1px dashed #ced4da;
+        border-radius: 6px;
+        font-size: 0.8rem;
+    }
+    .email-details.show {
+        display: block;
+    }
+    .email-details dl {
+        display: grid;
+        grid-template-columns: 9.5rem 1fr;
+        gap: 4px 10px;
+        margin: 0 0 10px 0;
+    }
+    .email-details dt {
+        color: #6c757d;
+        font-weight: 600;
+    }
+    .email-details dd {
+        margin: 0;
+        word-break: break-word;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.78rem;
+    }
+    .email-preview-text {
+        white-space: pre-wrap;
+        max-height: 280px;
+        overflow-y: auto;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 10px;
+        font-size: 0.8rem;
+        margin-top: 8px;
+    }
+    .email-preview-status {
+        font-size: 0.8rem;
+        color: #6c757d;
+        margin-top: 6px;
+    }
 </style>
 
 <div class="container-fluid py-4">
@@ -794,6 +844,7 @@
 <script nonce="{{ csp_nonce() }}">
     let scanResult = null;
     let selectedUids = new Set();
+    let expandedDetailKeys = new Set();
     let currentFilter = 'all';
     let currentAddAction = null;  // Aktuell gewählte Aktion (trusted-domain, vip-sender, etc.)
     let currentClusterData = null; // Cluster-Daten für das Modal
@@ -1000,6 +1051,158 @@
         }
     }
     
+    function emailRowKey(email) {
+        return (email.folder || currentFolder || '') + '::' + String(email.uid);
+    }
+
+    function formatMailSize(bytes) {
+        if (!bytes) return '';
+        if (bytes < 1024) return bytes + ' B';
+        return Math.round(bytes / 1024) + ' KB';
+    }
+
+    function headerMetaRows(email) {
+        const rows = [];
+        if (email.reply_to) rows.push(['Reply-To', email.reply_to]);
+        if (email.to_header) rows.push(['To', email.to_header]);
+        if (email.auth_results) rows.push(['Auth (SPF/DKIM/DMARC)', email.auth_results]);
+        if (email.x_mailer) rows.push(['X-Mailer', email.x_mailer]);
+        if (email.spam_score != null && email.spam_score !== '') {
+            rows.push(['Spam-Score', String(email.spam_score)]);
+        }
+        if (email.server_spam_flag) rows.push(['X-Spam-Flag', 'YES']);
+        if (email.provider_junk_score != null) {
+            rows.push(['Junk-Score', String(email.provider_junk_score)]);
+        }
+        if (email.is_auto_generated) rows.push(['Auto-Submitted', 'auto-generated']);
+        if (email.size) rows.push(['Größe', formatMailSize(email.size)]);
+        if (email.has_attachments) {
+            const names = (email.attachment_names || []).filter(Boolean).join(', ') || 'ja';
+            rows.push(['Anhänge', names]);
+        }
+        if (email.content_summary) rows.push(['Scan-Snippet', email.content_summary]);
+        return rows;
+    }
+
+    function headerDetailsHtml(email, open) {
+        const key = emailRowKey(email);
+        const rows = headerMetaRows(email);
+        const dl = rows.length
+            ? `<dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl>`
+            : '<p class="text-muted mb-2">Keine Extra-Header im Scan (nur Betreff/Absender/Flags).</p>';
+        const preview = email.preview_text
+            ? `<pre class="email-preview-text mb-0">${escapeHtml(email.preview_text)}</pre>`
+            : `<div class="email-preview-status">${email.preview_error ? escapeHtml(email.preview_error) : 'Text wurde beim Scan nicht geladen.'}</div>`;
+        const btnLabel = email.preview_text ? 'Text erneut laden' : 'Text nachladen';
+        return `
+            <div class="email-details ${open ? 'show' : ''}" data-row-key="${escapeHtml(key)}">
+                ${dl}
+                <button type="button" class="btn btn-sm btn-outline-primary email-preview-btn"
+                        data-uid="${email.uid}"
+                        data-folder="${escapeHtml(email.folder || currentFolder || '')}"
+                        data-row-key="${escapeHtml(key)}">
+                    <i class="bi bi-file-text me-1"></i>${btnLabel}
+                </button>
+                <div class="email-preview-slot">${preview}</div>
+            </div>
+        `;
+    }
+
+    function bindEmailDetailEvents(container) {
+        container.querySelectorAll('.email-details-toggle').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const key = this.dataset.rowKey;
+                const panel = container.querySelector('.email-details[data-row-key="' + CSS.escape(key) + '"]');
+                if (expandedDetailKeys.has(key)) {
+                    expandedDetailKeys.delete(key);
+                    if (panel) panel.classList.remove('show');
+                    this.textContent = this.textContent.includes('Details') ? '▼ Details' : '▼';
+                } else {
+                    expandedDetailKeys.add(key);
+                    if (panel) panel.classList.add('show');
+                    this.textContent = this.textContent.includes('Details') ? '▲ Details' : '▲';
+                }
+            });
+        });
+        container.querySelectorAll('.email-preview-btn').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                loadEmailPreview(this);
+            });
+        });
+    }
+
+    function findEmailByRowKey(rowKey) {
+        if (!scanResult || !scanResult.emails) return null;
+        return scanResult.emails.find(e => emailRowKey(e) === rowKey) || null;
+    }
+
+    async function loadEmailPreview(btn) {
+        const accountId = document.getElementById('accountSelect').value;
+        const folder = btn.dataset.folder;
+        const uid = parseInt(btn.dataset.uid, 10);
+        const rowKey = btn.dataset.rowKey;
+        const slot = btn.parentElement ? btn.parentElement.querySelector('.email-preview-slot') : null;
+
+        if (!accountId) {
+            alert('Bitte Account wählen');
+            return;
+        }
+        if (!folder || folder === '__ALL__') {
+            alert('Ordner der Mail fehlt — Scan mit konkretem Ordner oder «Alle Ordner» muss den Ordner pro Mail liefern.');
+            return;
+        }
+
+        const original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Lade Text…';
+        if (slot) {
+            slot.innerHTML = '<div class="email-preview-status">IMAP PEEK (kein Gelesen-Flag)…</div>';
+        }
+
+        try {
+            const response = await fetch('/folder-audit/preview', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    account_id: parseInt(accountId, 10),
+                    folder: folder,
+                    uid: uid
+                })
+            });
+            const data = await parseJsonResponse(response);
+            if (!response.ok) {
+                throw new Error(data.error || 'Preview fehlgeschlagen');
+            }
+            const email = findEmailByRowKey(rowKey);
+            if (email) {
+                email.preview_text = data.text || '(kein Textteil)';
+                email.preview_error = null;
+            }
+            if (slot) {
+                slot.innerHTML = `<pre class="email-preview-text mb-0">${escapeHtml(data.text || '(kein Textteil)')}</pre>`;
+            }
+            btn.innerHTML = '<i class="bi bi-file-text me-1"></i>Text erneut laden';
+        } catch (error) {
+            const email = findEmailByRowKey(rowKey);
+            if (email) {
+                email.preview_error = error.message;
+            }
+            if (slot) {
+                slot.innerHTML = `<div class="email-preview-status text-danger">${escapeHtml(error.message)}</div>`;
+            }
+            btn.innerHTML = original;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
     function renderEmails() {
         const container = document.getElementById('emailList');
         const emails = scanResult.emails.filter(e => 
@@ -1023,9 +1226,14 @@
                 ? `<span class="email-sender-name">${escapeHtml(email.sender_name)}</span><br><span class="email-sender-address">&lt;${escapeHtml(email.sender)}&gt;</span>`
                 : `<span class="email-sender-address">${escapeHtml(email.sender)}</span>`;
             
+            const rowKey = emailRowKey(email);
+            const detailsOpen = expandedDetailKeys.has(rowKey);
+            
             html += `
                 <div class="email-item ${categoryClass} ${isSelected ? 'selected' : ''}" 
                      data-uid="${email.uid}" 
+                     data-folder="${escapeHtml(email.folder || currentFolder || '')}"
+                     data-row-key="${escapeHtml(rowKey)}"
                      data-category="${email.category}">
                     <div class="d-flex justify-content-between align-items-start">
                         <div class="flex-grow-1" style="min-width: 0;">
@@ -1035,6 +1243,11 @@
                                 ${email.folder ? `<span class="badge bg-secondary ms-2" style="font-size: 0.7em; vertical-align: middle;">📁 ${escapeHtml(email.folder)}</span>` : ''}
                             </div>
                             <div class="email-reasons">${escapeHtml(reasons)}</div>
+                            <button type="button" class="btn btn-outline-secondary email-details-toggle"
+                                    data-row-key="${escapeHtml(rowKey)}">
+                                ${detailsOpen ? '▲ Details' : '▼ Details'}
+                            </button>
+                            ${headerDetailsHtml(email, detailsOpen)}
                         </div>
                         <div class="text-end d-flex flex-column gap-1" style="min-width: 120px;">
                             <div class="email-date small text-muted">${date}</div>
@@ -1084,6 +1297,8 @@
         }
         
         container.innerHTML = html;
+        
+        bindEmailDetailEvents(container);
         
         // Event Handler für Auswählen-Buttons
         container.querySelectorAll('.email-select-btn').forEach(function(btn) {
@@ -1376,18 +1591,25 @@
                     <!-- Aufklappbare Email-Liste -->
                     <div class="cluster-emails-list" data-cluster-key="${escapeHtml(cluster.cluster_key)}">
                         ${clusterEmails.map(email => `
-                            <div class="cluster-email-item">
-                                <div class="cluster-email-subject">
-                                    ${email.has_attachments ? `<span class="cluster-email-attachment" title="${email.attachment_names?.length ? escapeHtml(email.attachment_names.join(', ')) : 'Hat Anhänge'}">📎</span>` : ''}
-                                    ${escapeHtml(email.subject || '(Kein Betreff)')}
-                                    ${email.attachment_names?.length ? `<span class="text-muted small ms-2">[${escapeHtml(email.attachment_names.join(', '))}]</span>` : ''}
-                                    ${!email.subject && email.content_summary ? `<span class="text-info small ms-2">• ${escapeHtml(email.content_summary)}</span>` : ''}
+                            <div class="cluster-email-item flex-column align-items-stretch">
+                                <div class="d-flex justify-content-between align-items-center w-100">
+                                    <div class="cluster-email-subject">
+                                        ${email.has_attachments ? `<span class="cluster-email-attachment" title="${email.attachment_names?.length ? escapeHtml(email.attachment_names.join(', ')) : 'Hat Anhänge'}">📎</span>` : ''}
+                                        ${escapeHtml(email.subject || '(Kein Betreff)')}
+                                        ${email.attachment_names?.length ? `<span class="text-muted small ms-2">[${escapeHtml(email.attachment_names.join(', '))}]</span>` : ''}
+                                        ${!email.subject && email.content_summary ? `<span class="text-info small ms-2">• ${escapeHtml(email.content_summary)}</span>` : ''}
+                                    </div>
+                                    <div class="cluster-email-meta">
+                                        ${email.folder ? `<span class="badge bg-secondary me-2" title="Ordner">📁 ${escapeHtml(email.folder)}</span>` : ''}
+                                        ${email.date ? new Date(email.date).toLocaleDateString('de-DE') + ' ' + new Date(email.date).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : ''}
+                                        ${email.size ? ` · ${Math.round(email.size/1024)} KB` : ''}
+                                        <button type="button" class="btn btn-outline-secondary email-details-toggle ms-2"
+                                                data-row-key="${escapeHtml(emailRowKey(email))}">
+                                            ${expandedDetailKeys.has(emailRowKey(email)) ? '▲' : '▼'}
+                                        </button>
+                                    </div>
                                 </div>
-                                <div class="cluster-email-meta">
-                                    ${email.folder ? `<span class="badge bg-secondary me-2" title="Ordner">📁 ${escapeHtml(email.folder)}</span>` : ''}
-                                    ${email.date ? new Date(email.date).toLocaleDateString('de-DE') + ' ' + new Date(email.date).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : ''}
-                                    ${email.size ? ` · ${Math.round(email.size/1024)} KB` : ''}
-                                </div>
+                                ${headerDetailsHtml(email, expandedDetailKeys.has(emailRowKey(email)))}
                             </div>
                         `).join('')}
                     </div>
@@ -1396,6 +1618,8 @@
         }
         
         container.innerHTML = html;
+        
+        bindEmailDetailEvents(container);
         
         // Event Listeners für Cluster-Expand (Aufklappen)
         container.querySelectorAll('.cluster-expand-btn').forEach(btn => {

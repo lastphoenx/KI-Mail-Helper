@@ -11,6 +11,7 @@ Kein AI-API-Call nötig - rein lokale Analyse.
 
 import logging
 import re
+import html as html_lib
 from dataclasses import dataclass, field
 from datetime import datetime, UTC, timedelta
 from typing import List, Dict, Optional, Tuple, Set
@@ -19,6 +20,37 @@ import importlib
 from email.header import decode_header as mime_decode_header, make_header
 
 logger = logging.getLogger(__name__)
+
+
+def _bytes_to_text(raw) -> str:
+    if raw is None:
+        return ""
+    if isinstance(raw, bytes):
+        for enc in ("utf-8", "latin-1"):
+            try:
+                return raw.decode(enc)
+            except UnicodeDecodeError:
+                continue
+        return raw.decode("utf-8", "replace")
+    return str(raw)
+
+
+def preview_body_to_text(raw, max_chars: int = 4000) -> str:
+    """IMAP-Body (HTML oder Text) → sichtbarer Text, gekürzt."""
+    text = _bytes_to_text(raw)
+    text = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", text)
+    text = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", text)
+    text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?is)</p>", "\n\n", text)
+    text = re.sub(r"(?is)<[^>]+>", " ", text)
+    text = html_lib.unescape(text)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = text.strip()
+    if len(text) > max_chars:
+        return text[:max_chars].rstrip() + "\n…"
+    return text
 
 # Lazy-loaded module cache (wird einmal geladen, nicht 3,500x)
 _models_cache = None
@@ -402,6 +434,14 @@ class TrashEmailInfo:
             "is_reply": self.is_reply,
             "cluster_key": self.cluster_key,
             "folder": self.folder.decode("utf-8", "replace") if isinstance(self.folder, bytes) else (self.folder or ""),
+            "reply_to": self.reply_to,
+            "auth_results": self.auth_results,
+            "x_mailer": self.x_mailer,
+            "spam_score": self.spam_score,
+            "server_spam_flag": self.server_spam_flag,
+            "provider_junk_score": self.provider_junk_score,
+            "is_auto_generated": self.is_auto_generated,
+            "to_header": self.to_header,
         }
 
 
@@ -2896,3 +2936,33 @@ class FolderAuditService:
         except Exception as e:
             logger.error(f"Delete Fehler: {e}")
             return (0, len(uids))
+
+    @staticmethod
+    def peek_text(fetcher, folder: str, uid: int, max_chars: int = 4000) -> str:
+        """Lädt nur den Textanfang einer Mail (BODY.PEEK, kein \\Seen)."""
+        conn = fetcher.connection
+        if not conn:
+            raise RuntimeError("Keine IMAP-Verbindung")
+        if not folder or folder == "__ALL__":
+            raise ValueError("Ordner fehlt")
+
+        conn.select_folder(folder, readonly=True)
+        raw = None
+        for spec in ("BODY.PEEK[TEXT]<0.12000>", "BODY.PEEK[TEXT]", "BODY.PEEK[1]<0.12000>"):
+            try:
+                data = conn.fetch([uid], [spec])
+            except Exception as exc:
+                logger.debug("peek_text %s fehlgeschlagen: %s", spec, type(exc).__name__)
+                continue
+            msg = data.get(uid) or {}
+            for key, val in msg.items():
+                key_s = key.decode("utf-8", "replace") if isinstance(key, bytes) else str(key)
+                if "BODY" in key_s.upper() and val:
+                    raw = val
+                    break
+            if raw:
+                break
+
+        if not raw:
+            return ""
+        return preview_body_to_text(raw, max_chars=max_chars)

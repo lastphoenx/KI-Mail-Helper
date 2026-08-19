@@ -3,8 +3,9 @@ Folder Audit Blueprint - Papierkorb-Analyse und Aufräum-Tool
 
 Endpoints:
     GET  /folder-audit         - Haupt-UI für Folder-Audit
-    POST /folder-audit/scan    - Startet Scan des Papierkorbs
+    POST /folder-audit/scan    - Startet Scan (Header only)
     POST /folder-audit/delete  - Löscht ausgewählte Emails permanent
+    POST /folder-audit/preview - Textanfang einer Mail (IMAP PEEK, on-demand)
 """
 
 import logging
@@ -318,6 +319,63 @@ def delete_trash_emails():
         except Exception as e:
             logger.error(f"Trash delete error: {type(e).__name__}: {e}")
             return jsonify({"error": str(e)}), 500
+        finally:
+            if fetcher:
+                fetcher.disconnect()
+
+
+@folder_audit_bp.route("/folder-audit/preview", methods=["POST"])
+@login_required
+def preview_email():
+    """Lädt Textanfang einer Audit-Mail on-demand (IMAP PEEK)."""
+    with get_db_session() as db:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+
+        master_key = session.get("master_key")
+        if not master_key:
+            return jsonify({"error": "Master-Key erforderlich. Bitte neu einloggen."}), 401
+
+        data = request.get_json() or {}
+        account_id = data.get("account_id")
+        folder = data.get("folder")
+        uid = data.get("uid")
+
+        if not account_id or not folder or uid is None:
+            return jsonify({"error": "account_id, folder und uid erforderlich"}), 400
+        if str(folder) == "__ALL__":
+            return jsonify({"error": "Konkreten Ordner angeben, nicht Alle Ordner"}), 400
+
+        try:
+            uid = int(uid)
+        except (TypeError, ValueError):
+            return jsonify({"error": "uid ungültig"}), 400
+
+        models = _get_models()
+        account = (
+            db.query(models.MailAccount)
+            .filter(
+                models.MailAccount.id == account_id,
+                models.MailAccount.user_id == user.id,
+                models.MailAccount.auth_type == "imap",
+            )
+            .first()
+        )
+        if not account:
+            return jsonify({"error": "Account nicht gefunden"}), 404
+
+        fetcher = None
+        try:
+            fetcher = _get_imap_fetcher(account, master_key)
+            fetcher.connect()
+            if not fetcher.connection:
+                return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
+            text = FolderAuditService.peek_text(fetcher, str(folder), uid)
+            return jsonify({"success": True, "text": text or "(kein Textteil)"})
+        except Exception as e:
+            logger.exception("Folder-audit preview error: %s", e)
+            return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
         finally:
             if fetcher:
                 fetcher.disconnect()
