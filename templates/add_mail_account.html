@@ -50,12 +50,12 @@
                 
                 <div class="mb-3">
                     <label for="imap_username" class="form-label">E-Mail-Adresse / Benutzername</label>
-                    <input type="email" class="form-control" id="imap_username" name="imap_username" placeholder="z.B. test-account@example.com" required>
+                    <input type="email" class="form-control" id="imap_username" name="imap_username" placeholder="z.B. test-account@example.com" autocomplete="off" required>
                 </div>
                 
                 <div class="mb-3">
                     <label for="imap_password" class="form-label">IMAP-Passwort</label>
-                    <input type="password" class="form-control" id="imap_password" name="imap_password" required>
+                    <input type="password" class="form-control" id="imap_password" name="imap_password" autocomplete="off" required>
                     <small class="text-muted">Wird verschlüsselt in der Datenbank gespeichert</small>
                 </div>
                 
@@ -92,13 +92,13 @@
                 
                 <div class="mb-3">
                     <label for="smtp_username" class="form-label">SMTP-Benutzername</label>
-                    <input type="email" class="form-control" id="smtp_username" name="smtp_username" placeholder="Usually same as IMAP">
+                    <input type="email" class="form-control" id="smtp_username" name="smtp_username" placeholder="Usually same as IMAP" autocomplete="off">
                     <small class="text-muted">Meist wie IMAP-Benutzername</small>
                 </div>
                 
                 <div class="mb-3">
                     <label for="smtp_password" class="form-label">SMTP-Passwort</label>
-                    <input type="password" class="form-control" id="smtp_password" name="smtp_password">
+                    <input type="password" class="form-control" id="smtp_password" name="smtp_password" autocomplete="off">
                     <small class="text-muted">Lass leer um IMAP-Passwort zu verwenden</small>
                 </div>
                 

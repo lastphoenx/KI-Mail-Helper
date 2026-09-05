@@ -130,7 +130,7 @@ RETURNING failed_login_count
 ```python
 SESSION_TYPE = "filesystem"  # Nicht im Cookie
 SESSION_FILE_DIR = ".flask_sessions"  # chmod 700
-SESSION_USE_SIGNER = False
+SESSION_USE_SIGNER = True
 PERMANENT_SESSION_LIFETIME = timedelta(minutes=60)  # via SESSION_LIFETIME_MINUTES
 SESSION_COOKIE_SECURE = True      # Nur HTTPS
 SESSION_COOKIE_HTTPONLY = True    # Kein JS-Zugriff
@@ -359,7 +359,80 @@ pg_dump -U mail_helper mail_helper | gzip > backup_$(date +%Y%m%d).sql.gz
 
 ---
 
-## 11. Bekannte Limitierungen
+## 11. Betroffenheitsanalyse: Autofill-Clickjacking bei Passwort-Managern (ETH Zürich, Feb. 2026)
+
+### Was wurde gefunden
+
+Sicherheitsforscher der ETH Zürich haben in cloudbasierten Passwort-Manager-Erweiterungen (u. a. **LastPass, Bitwarden, Dashlane**) Lücken im Autofill-Mechanismus gefunden. Eine bösartige Webseite kann per DOM-Manipulation (unsichtbare/überlagerte Formularfelder, Clickjacking-Prinzip) den Browser-Passwort-Manager dazu bringen, gespeicherte Zugangsdaten automatisch in versteckte Felder einzutragen – die Seite liest sie anschließend per JavaScript aus. Die Lücke liegt in den **Browser-Extensions der Passwort-Manager**, nicht auf der Zielseite selbst; die Zielseite (bzw. eine darauf eingeschleuste bösartige Komponente) ist aber die Angriffsfläche, über die der Trick ausgeführt wird. Die betroffenen Anbieter haben die Lücken laut Artikel mittlerweile größtenteils geschlossen.
+
+### Wie stark ist KI-Mail-Helper betroffen
+
+Die Schwachstelle steckt in den Passwort-Manager-Erweiterungen selbst, nicht in unserem Code – wir können sie nicht patchen. Relevant für uns ist nur, ob **unsere Formulare** (Login, Registrierung, Passwort ändern, IMAP/SMTP-Zugangsdaten) als Einfallstor für den Trick missbraucht werden könnten. Prüfergebnis:
+
+| Prüfpunkt | Befund | Bewertung |
+|---|---|---|
+| Versteckte/überlagerte Passwortfelder (`display:none`, `opacity:0`) in `login.html`, `register.html`, `change_password.html`, `add_mail_account.html`, `edit_mail_account.html` | Keine gefunden – alle `type="password"`-Felder sind sichtbar und einzeln | ✅ kein Angriffsmuster vorhanden |
+| Voraussetzung für den Angriff auf eigener Seite: injizierbares HTML/JS (XSS) | `Content-Security-Policy` mit `script-src 'self' 'nonce-{random}'`, Jinja2 Auto-Escaping, `frame-ancestors 'none'` ([`app_factory.py`](../src/app_factory.py)) | ✅ deutlich erschwert |
+| Clickjacking/Framing der eigenen Login-/Formularseiten durch fremde Seiten | `X-Frame-Options: DENY` + `frame-ancestors 'none'` | ✅ verhindert |
+| `autocomplete`-Attribute auf Passwortfeldern | In allen relevanten Templates gesetzt (Login/Register: `username`/`current-password`/`new-password`; IMAP/SMTP: `off`) | ✅ umgesetzt |
+| Eigene Speicherung der IMAP/SMTP-Zugangsdaten | Serverseitig AES-256-GCM verschlüsselt (Zero-Knowledge, siehe Abschnitt 1) – unabhängig vom Autofill des Browsers | ✅ nicht betroffen |
+
+**Fazit:** Die direkte Angriffsfläche in unserer Anwendung ist gering – wir haben keine versteckten Formularfelder, eine harte CSP und Framing ist blockiert, was die Grundvoraussetzung des Angriffs (Code-Injection oder Framing der eigenen Seite) bereits verhindert. Ein Restrisiko besteht, falls Nutzer:innen einen ungepatchten Passwort-Manager verwenden und über eine *andere*, kompromittierte Webseite (nicht KI-Mail-Helper) angegriffen werden – das liegt außerhalb unserer Kontrolle.
+
+### Maßnahmen
+
+1. **Umgesetzt:** `autocomplete`-Attribute auf allen Formularen ergänzt – `login.html`/`register.html` (eigenes Konto) nutzen `username` / `current-password` / `new-password`. `add_mail_account.html`/`edit_mail_account.html` (fremde IMAP/SMTP-Zugangsdaten) nutzen bewusst `autocomplete="off"`.
+2. **Bestehend beibehalten:** CSP mit Nonce, `X-Frame-Options: DENY`/`frame-ancestors 'none'` und Jinja2 Auto-Escaping.
+3. **Review-Regel:** Bei neuen Templates keine `type="password"`-Felder mit `display:none`/`opacity:0`/`visibility:hidden` oder außerhalb des sichtbaren Viewports platzieren.
+4. **Nutzerkommunikation:** Passwort-Manager-Erweiterungen zeitnah aktualisieren.
+5. **Kein Handlungsbedarf** bei der Zero-Knowledge-Verschlüsselung der IMAP/SMTP-Credentials.
+
+---
+
+## 12. Härtungs-Roadmap
+
+### 12.1 Behobene Lücken (dieser Patch)
+
+| Finding | Problem | Fix |
+|---|---|---|
+| **SECRET_KEY-Mismatch** | `00_env_validator.py` erzwang beim Start `FLASK_SECRET_KEY`, aber `app_factory.py` las nur `SECRET_KEY` und fiel sonst auf den hartkodierten String `"dev-secret-key-change-in-production"` zurück. Wer nur `FLASK_SECRET_KEY` gesetzt hat (wie vom Validator verlangt), lief unbemerkt mit dem öffentlich bekannten Default-Key – CSRF-Tokens und signierte Session-Cookies wären fälschbar gewesen. | `app_factory.py` liest jetzt `SECRET_KEY` **oder** `FLASK_SECRET_KEY`; fehlen beide, wird beim Start ein zufälliger Ephemeral-Key erzeugt (mit Warnung) statt des statischen Default-Strings. |
+| **Ungesignte Session-IDs** | `SESSION_USE_SIGNER = False` – die im Cookie gespeicherte Session-ID war nicht mit `SECRET_KEY` signiert. | `SESSION_USE_SIGNER = True` gesetzt – die Session-ID wird jetzt zusätzlich signiert. |
+
+### 12.2 Offene Empfehlungen (nicht in diesem Patch umgesetzt)
+
+| Empfehlung | Begründung | Aufwand |
+|---|---|---|
+| **PBKDF2 → Argon2id** für KEK-Ableitung | Argon2id ist memory-hard und resistenter gegen GPU/ASIC-Offline-Cracking als PBKDF2-HMAC-SHA256. | Mittel – Migration bestehender User beim nächsten Login. |
+| **CSP `img-src`** enger fassen | `img-src 'self' data: https:;` erlaubt Tracking-Pixel aus jeder HTTPS-Quelle. | Niedrig, ggf. Funktionsänderung für Remote-Bilder in Mails. |
+| **DEK-Exposure in Server-Session** | `session["master_key"]` liegt unverschlüsselt in `.flask_sessions`. | Mittel – kürzere Session-TTL, verschlüsseltes Session-Backend, oder DEK nur im RAM. |
+| **2FA schützt nicht die Verschlüsselung** | TOTP gated nur den Login, fließt nicht in die KEK-Ableitung ein. | Siehe 12.3 (Secret-Key-Ansatz). |
+
+### 12.3 1Password-Ansatz: Secret Key einbringen
+
+**Warum:** Ein einziges Geheimnis (Passwort) treibt die Schlüsselkette; 2FA verhindert Offline-Entschlüsselung nicht. Ein zweiter, nie übertragener **Secret Key** (128 Bit) schließt diese Lücke analog zu 1Password.
+
+**Design (kompatibel mit bestehendem DEK/KEK-Pattern):**
+
+```
+User Password + Secret Key (128 Bit, nur clientseitig/beim User)
+              │
+    PBKDF2/Argon2id(password || secret_key, salt)
+              │
+              ▼
+             KEK → AES-256-GCM → DEK → Daten (wie bisher)
+```
+
+- **Registrierung:** Secret Key einmalig generieren/anzeigen, nirgends in DB speichern.
+- **KDF:** `generate_master_key(password + secret_key, salt)`.
+- **Login-UX:** Secret Key mit Passwort abfragen; auf vertrauenswürdigen Geräten optional lokal speichern.
+- **Recovery:** Verlust = Datenverlust (Zero-Knowledge-Tradeoff).
+- **Migration:** Analog zum `encrypted_master_key`-Deprecation-Pattern beim nächsten Login.
+
+**Einordnung:** Größte architektonische Änderung in dieser Liste – als eigenes Vorhaben planen.
+
+---
+
+## 13. Bekannte Limitierungen
 
 | Limitierung | Beschreibung | Mitigation |
 |-------------|--------------|------------|
@@ -373,7 +446,7 @@ pg_dump -U mail_helper mail_helper | gzip > backup_$(date +%Y%m%d).sql.gz
 
 ---
 
-## 12. Security Checklist für Deployment
+## 14. Security Checklist für Deployment
 
 - [ ] `SECRET_KEY` gesetzt (nicht leer)
 - [ ] `BEHIND_REVERSE_PROXY=true` hinter nginx
@@ -390,7 +463,7 @@ pg_dump -U mail_helper mail_helper | gzip > backup_$(date +%Y%m%d).sql.gz
 
 ---
 
-## 13. Vulnerability Reporting
+## 15. Vulnerability Reporting
 
 Falls du eine Sicherheitslücke findest:
 
@@ -401,7 +474,7 @@ Falls du eine Sicherheitslücke findest:
 
 ---
 
-## 14. Threat Model
+## 16. Threat Model
 
 ### Was ist geschützt?
 

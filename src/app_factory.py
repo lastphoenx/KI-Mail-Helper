@@ -125,8 +125,12 @@ def create_app(config_name="production"):
     
     secret_key = os.getenv("SECRET_KEY") or os.getenv("FLASK_SECRET_KEY")
     if not secret_key:
-        secret_key = "dev-secret-key-change-in-production"
-        logger.warning("SECRET_KEY nicht gesetzt — nur für Entwicklung verwenden")
+        secret_key = secrets.token_hex(32)
+        logger.warning(
+            "Weder SECRET_KEY noch FLASK_SECRET_KEY gesetzt — Ephemeral-Key generiert. "
+            "Sessions/CSRF-Tokens werden bei Neustart ungültig. "
+            "Für Produktion: SECRET_KEY in .env setzen (siehe .env.example)."
+        )
     app.config["SECRET_KEY"] = secret_key
     app.config["SESSION_TYPE"] = "filesystem"
     
@@ -137,7 +141,8 @@ def create_app(config_name="production"):
     app.config["SESSION_PERMANENT"] = True
     session_lifetime_minutes = int(os.getenv("SESSION_LIFETIME_MINUTES", "60"))
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=session_lifetime_minutes)
-    app.config["SESSION_USE_SIGNER"] = False
+    # Signiert die Session-ID im Cookie mit SECRET_KEY.
+    app.config["SESSION_USE_SIGNER"] = True
     app.config["SESSION_KEY_PREFIX"] = "mail_helper_"
     app.config["SESSION_ID_LENGTH"] = 32
     

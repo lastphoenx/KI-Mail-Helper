@@ -49,12 +49,12 @@
                 
                 <div class="mb-3">
                     <label for="imap_username" class="form-label">E-Mail-Adresse / Benutzername</label>
-                    <input type="email" class="form-control" id="imap_username" name="imap_username" value="{{ account.imap_username }}" required>
+                    <input type="email" class="form-control" id="imap_username" name="imap_username" value="{{ account.imap_username }}" autocomplete="off" required>
                 </div>
                 
                 <div class="mb-3">
                     <label for="imap_password" class="form-label">IMAP-Passwort</label>
-                    <input type="password" class="form-control" id="imap_password" name="imap_password" placeholder="Lass leer um nicht zu ändern">
+                    <input type="password" class="form-control" id="imap_password" name="imap_password" placeholder="Lass leer um nicht zu ändern" autocomplete="off">
                     <small class="text-muted">Nur eingeben wenn du das Passwort ändern möchtest. Wird verschlüsselt gespeichert.</small>
                 </div>
                 
@@ -89,13 +89,13 @@
                 
                 <div class="mb-3">
                     <label for="smtp_username" class="form-label">SMTP-Benutzername</label>
-                    <input type="email" class="form-control" id="smtp_username" name="smtp_username" value="{{ account.smtp_username or '' }}">
+                    <input type="email" class="form-control" id="smtp_username" name="smtp_username" value="{{ account.smtp_username or '' }}" autocomplete="off">
                     <small class="text-muted">Meist wie IMAP-Benutzername</small>
                 </div>
                 
                 <div class="mb-3">
                     <label for="smtp_password" class="form-label">SMTP-Passwort</label>
-                    <input type="password" class="form-control" id="smtp_password" name="smtp_password" placeholder="Lass leer um nicht zu ändern">
+                    <input type="password" class="form-control" id="smtp_password" name="smtp_password" placeholder="Lass leer um nicht zu ändern" autocomplete="off">
                     <small class="text-muted">Nur eingeben wenn du das Passwort ändern möchtest oder das IMAP-Passwort nutzen möchtest</small>
                 </div>
                 
