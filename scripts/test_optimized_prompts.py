@@ -29,8 +29,8 @@ from src.optimized_reply_prompts import (
 TEST_EMAILS = {
     "question": {
         "subject": "Frage zum Termin",
-        "body": "Hallo Mike,\n\nkönnen wir das Meeting auf nächste Woche verschieben? Dienstag oder Mittwoch würde mir passen.\n\nGruss, Thomas",
-        "sender": "thomas@firma.de"
+        "body": "Hallo Mike,\n\nkönnen wir das Meeting auf nächste Woche verschieben? Dienstag oder Mittwoch würde mir passen.\n\nGruss, Max",
+        "sender": "max@firma.de"
     },
     "request": {
         "subject": "Angebot gewünscht",

@@ -567,7 +567,7 @@ BRAND_DOMAIN_MAP = {
     "swica": ["swica.ch"],
     "sanitas": ["sanitas.ch"],
     # Swiss Universities
-    "unibas": ["example-university.edu"],
+    "exampleuni": ["example-university.edu"],
     "ethz": ["ethz.ch"],
     "uzh": ["uzh.ch"],
     # Swiss public media fee (häufiges Phishing-Ziel seit Billag → Serafe)
@@ -597,7 +597,7 @@ def normalize_homoglyphs(text: str) -> str:
     """Normalisiert Homoglyphen für Vergleiche.
     
     z.B. "myHeIsana" → "myhelsana"
-    z.B. "unIbas" → "unlbas" → erkennt Typo
+    z.B. "exAmpleuni" → "exampleuni" → erkennt Typo
     """
     result = text.lower()
     # Erst rn → m (muss vor einzelnen Zeichen passieren)
@@ -618,7 +618,7 @@ def normalize_homoglyphs(text: str) -> str:
 TYPOSQUATTING_TARGETS = {
     "helsana": ["helsana.ch", "myhelsana.ch"],
     "css": ["css.ch", "mycss.ch"],
-    "unibas": ["example-university.edu"],
+    "exampleuni": ["example-university.edu"],
     "swisscom": ["swisscom.ch", "swisscom.com"],
     "postfinance": ["postfinance.ch"],
     "raiffeisen": ["raiffeisen.ch"],

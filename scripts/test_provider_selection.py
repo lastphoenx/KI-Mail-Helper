@@ -36,7 +36,7 @@ try:
     from src.services.anonymizer_service import AnonymizerService
     anonymizer = AnonymizerService()
     
-    test_text = "Hallo Thomas Weber von Firma GmbH"
+    test_text = "Hallo Max Weber von Firma GmbH"
     result = anonymizer.pseudonymize(test_text)
     
     if result.get("success"):

@@ -8,9 +8,9 @@ echo "🚀 KI-Mail-Helper Celery Systemd Setup"
 echo "======================================="
 echo ""
 
-# Check: Läuft als User thomas?
-if [ "$USER" != "thomas" ]; then
-    echo "❌ Dieses Script muss als User 'thomas' laufen!"
+# Check: Läuft als User mailhelper?
+if [ "$USER" != "mailhelper" ]; then
+    echo "❌ Dieses Script muss als User 'mailhelper' laufen!"
     echo "   Bitte nicht mit sudo ausführen."
     exit 1
 fi

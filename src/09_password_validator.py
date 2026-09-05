@@ -84,7 +84,7 @@ COMMON_PASSWORDS = {
     "john",
     "william",
     "richard",
-    "thomas",
+    "maximilian",
     "charles",
     "christopher",
     "joseph",

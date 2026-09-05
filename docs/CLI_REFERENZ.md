@@ -240,7 +240,7 @@ python3 scripts/reset_all_emails.py --list
 ==========================================================================================
 User ID    Username             Account ID   Account Name              Emails    
 ------------------------------------------------------------------------------------------
-1          thomas               1            martina                   30        
+1          devuser              1            martina                   30        
                                 2            arbeit-beispiel             61        
 ------------------------------------------------------------------------------------------
 Gesamt:    1 User               2 Accounts                 91 Emails
