@@ -414,7 +414,11 @@ def correct_email(raw_email_id: int):
                     "status": "success",
                     "message": "Korrektur gespeichert! Training wird im Hintergrund gestartet.",
                     "correction_count": db.query(models.ProcessedEmail)
-                    .filter(models.ProcessedEmail.user_override_dringlichkeit != None)
+                    .join(models.RawEmail, models.RawEmail.id == models.ProcessedEmail.raw_email_id)
+                    .filter(
+                        models.RawEmail.user_id == user.id,
+                        models.ProcessedEmail.user_override_dringlichkeit != None,
+                    )
                     .count(),
                     "training_triggered": True,
                 }

@@ -5,6 +5,8 @@ Holt E-Mails von IMAP-Servern (GMX, Gmail, etc.) & Google OAuth
 
 from imapclient import IMAPClient
 from imapclient.exceptions import IMAPClientError
+
+from src.helpers.network_safety import assert_safe_mail_host
 import email
 from email.header import decode_header
 from datetime import datetime
@@ -278,6 +280,10 @@ class MailFetcher:
         
         for attempt in range(retry_count + 1):
             try:
+                # SSRF-Schutz: Host bei jedem Verbindungsversuch neu pruefen
+                # (DNS-Rebinding-sicher), bevor der eigentliche Socket geoeffnet wird
+                assert_safe_mail_host(self.server)
+
                 # Phase 1: TCP Connection (P1-004: Konfigurierbarer Timeout)
                 self.connection = IMAPClient(
                     host=self.server,

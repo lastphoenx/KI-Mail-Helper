@@ -27,6 +27,7 @@ import re
 import json
 import logging
 import importlib
+import threading
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 from datetime import datetime, timedelta, UTC
@@ -47,6 +48,79 @@ EmailTagAssignment = models.EmailTagAssignment
 EmailDataManager = encryption.EmailDataManager
 
 logger = logging.getLogger(__name__)
+
+
+def _regex_search_with_timeout(pattern: str, text: str, timeout_seconds: int = 2) -> bool:
+    """re.search() mit Timeout (ReDoS-Schutz).
+
+    subject_regex/body_regex in Auto-Rules stammen komplett vom User
+    (POST /api/rules) und laufen bei jeder eingehenden Email auf einem
+    geteilten Celery-Worker (process_new_emails/apply_rules_manual). Ein
+    Pattern mit katastrophalem Backtracking (z.B. "(a+)+$") wuerde ohne
+    Timeout den Worker-Prozess fuer ALLE User blockieren.
+
+    Nutzt signal.SIGALRM (funktioniert nur im Hauptthread eines Prozesses -
+    zutreffend fuer Celery mit --pool=prefork und Gunicorn mit
+    worker_class=sync, siehe config/). Empirisch bestaetigt: CPythons re-Modul
+    prueft waehrend des Matchings auf anstehende Signale, SIGALRM unterbricht
+    also auch katastrophales Backtracking zuverlaessig.
+    Fallback fuer Nicht-Hauptthread-Kontexte (z.B. Tests): Thread mit
+    Join-Timeout - das ist bei reinem CPU-Backtracking KEINE harte Garantie
+    (die GIL wird waehrend re.search nicht freigegeben, ein daemon-Thread
+    kann daher trotz Timeout im Hintergrund weiterlaufen), aber schuetzt
+    zumindest normale, nicht-katastrophale Faelle.
+
+    Bei Timeout: Bedingung gilt als nicht erfuellt (fail-closed fuer die
+    Regel, nicht fail-open) statt den Worker haengen zu lassen.
+    """
+    if threading.current_thread() is threading.main_thread():
+        import signal
+
+        class _RegexTimeout(Exception):
+            pass
+
+        def _handler(signum, frame):
+            raise _RegexTimeout()
+
+        old_handler = signal.signal(signal.SIGALRM, _handler)
+        signal.alarm(int(timeout_seconds) or 1)
+        try:
+            return bool(re.search(pattern, text, re.IGNORECASE))
+        except _RegexTimeout:
+            logger.warning(
+                f"ReDoS-Schutz: Regex-Timeout ({timeout_seconds}s) fuer Pattern "
+                f"'{pattern[:80]}' - Bedingung wird als nicht erfuellt gewertet"
+            )
+            return False
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
+
+    # Fallback: separater Thread mit Join-Timeout (best effort, siehe Docstring)
+    result: List[Any] = [False]
+    error_box: List[Optional[re.error]] = [None]
+
+    def _run():
+        try:
+            result[0] = bool(re.search(pattern, text, re.IGNORECASE))
+        except re.error as exc:
+            error_box[0] = exc
+
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout_seconds)
+
+    if thread.is_alive():
+        logger.warning(
+            f"ReDoS-Schutz: Regex-Timeout ({timeout_seconds}s) fuer Pattern "
+            f"'{pattern[:80]}' - Bedingung wird als nicht erfuellt gewertet"
+        )
+        return False
+
+    if error_box[0] is not None:
+        raise error_box[0]
+
+    return result[0]
 
 
 @dataclass
@@ -484,7 +558,7 @@ class AutoRulesEngine:
         
         if 'subject_regex' in conditions:
             try:
-                if re.search(conditions['subject_regex'], email_data['subject'], re.IGNORECASE):
+                if _regex_search_with_timeout(conditions['subject_regex'], email_data['subject']):
                     matched_conditions.append('subject_regex')
                     match_details['subject_regex'] = email_data['subject'][:50]
             except re.error as e:
@@ -504,7 +578,7 @@ class AutoRulesEngine:
         
         if 'body_regex' in conditions:
             try:
-                if re.search(conditions['body_regex'], email_data['body'], re.IGNORECASE):
+                if _regex_search_with_timeout(conditions['body_regex'], email_data['body']):
                     matched_conditions.append('body_regex')
                     match_details['body_regex'] = True
             except re.error as e:

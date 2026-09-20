@@ -9,6 +9,8 @@ from flask import Blueprint, jsonify
 from flask_login import login_required, current_user
 import logging
 
+from src.app_factory import limiter
+
 training_bp = Blueprint("training", __name__)
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,7 @@ logger = logging.getLogger(__name__)
 # Route 1: /retrain (Zeile 2249-2296)
 # =============================================================================
 @training_bp.route("/retrain", methods=["POST"])
+@limiter.limit("3 per hour")
 @login_required
 def retrain_models():
     """Trainiert ML-Klassifikatoren aus User-Korrektionen."""

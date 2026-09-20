@@ -6,9 +6,10 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=mailhelper
-WorkingDirectory=/home/mailhelper/projects/KI-Mail-Helper
-EnvironmentFile=/home/mailhelper/projects/KI-Mail-Helper/.env
-ExecStart=/home/mailhelper/projects/KI-Mail-Helper/venv/bin/python -m src.00_main --process-once
+# WICHTIG: Pfade anpassen! Muessen mit mail-helper.service uebereinstimmen.
+WorkingDirectory=/opt/KI-Mail-Helper
+EnvironmentFile=/opt/KI-Mail-Helper/.env
+ExecStart=/opt/KI-Mail-Helper/venv/bin/python -m src.00_main --process-once
 StandardOutput=append:/var/log/mail-helper-processor.log
 StandardError=append:/var/log/mail-helper-processor.log
 

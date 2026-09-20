@@ -1131,12 +1131,23 @@ def render_email_html(raw_email_id: int):
 @login_required
 def download_attachment(raw_email_id: int, attachment_id: int):
     """Download eines verschlüsselten Anhangs
-    
+
     Zero-Knowledge: Anhang wird im Browser entschlüsselt und als Download gesendet.
     """
     import io
     import base64
     from flask import send_file
+
+    def _safe_download_filename(filename, max_length: int = 255) -> str:
+        """Entfernt Pfadanteile/Steuerzeichen aus dem (absenderkontrollierten!)
+        Anhang-Dateinamen, bevor er in Content-Disposition landet - ohne
+        internationale Zeichen (Umlaute etc.) wie werkzeug.secure_filename
+        zu zerstoeren."""
+        if not filename:
+            return "attachment"
+        name = filename.replace("\\", "/").split("/")[-1]
+        name = "".join(ch for ch in name if ch.isprintable()).strip().strip(".")
+        return name[:max_length] if name else "attachment"
     
     models = _get_models()
     encryption = _get_encryption()
@@ -1203,7 +1214,7 @@ def download_attachment(raw_email_id: int, attachment_id: int):
                 io.BytesIO(decrypted_bytes),
                 mimetype=attachment.mime_type,
                 as_attachment=True,
-                download_name=attachment.filename
+                download_name=_safe_download_filename(attachment.filename)
             )
     
     except Exception as e:

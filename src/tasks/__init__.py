@@ -76,6 +76,10 @@ from src.tasks.training_tasks import (
     train_personal_classifier,
 )
 
+from src.tasks.maintenance_tasks import (
+    cleanup_expired_service_tokens,
+)
+
 __all__ = [
     "sync_user_emails",
     "sync_all_accounts",
@@ -91,4 +95,5 @@ __all__ = [
     "optimize_email_processing",
     "generate_reply_draft",
     "train_personal_classifier",
+    "cleanup_expired_service_tokens",
 ]

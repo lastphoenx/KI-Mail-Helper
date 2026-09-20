@@ -736,6 +736,24 @@ class ContentSanitizer:
                 new_lines.append(line)
         body = '\n'.join(new_lines)
         
+        # 4b. IBAN (DE + International) - MUSS vor Telefonnummern geprüft werden,
+        # sonst wird die IBAN als Telefonnummer erkannt (Pattern 5 unten).
+        p_iban = r'\b[A-Z]{2}\s?\d{2}(?:\s?[A-Z0-9]){11,30}\b'
+
+        def _iban_is_valid(raw: str) -> bool:
+            normalized = re.sub(r'\s', '', raw)
+            return 15 <= len(normalized) <= 34
+
+        for m in re.finditer(p_iban, body):
+            if _iban_is_valid(m.group(0)) and m.group(0) not in em.forward:
+                em.add(m.group(0), "IBAN")
+                counts["IBAN"] = counts.get("IBAN", 0) + 1
+        body = re.sub(
+            p_iban,
+            lambda m: (em.get_placeholder(m.group(0)) or m.group(0)) if _iban_is_valid(m.group(0)) else m.group(0),
+            body,
+        )
+
         # 5. Telefon - VERBESSERT!
         # Verschiedene Formate: Tel +41 61..., Tel. +41 61..., +41 61...
         p_tel = r'(?:Tel\.?|Telefon|Phone|Fax|Mobile?|Mobil)?[:\s]*\+\d{1,3}[\s\-\.]?\d{1,4}[\s\-\.]?\d{2,4}[\s\-\.]?\d{2,4}[\s\-\.]?\d{0,4}'

@@ -7,12 +7,15 @@ Requires=postgresql.service redis-server.service
 Type=simple
 User=mailhelper
 Group=mailhelper
-WorkingDirectory=/home/mailhelper/projects/KI-Mail-Helper-Dev
-Environment="PATH=/home/mailhelper/projects/KI-Mail-Helper-Dev/venv/bin:/usr/local/bin:/usr/bin:/bin"
-EnvironmentFile=/home/mailhelper/projects/KI-Mail-Helper-Dev/.env.local
+# WICHTIG: Pfade anpassen! Muessen mit mail-helper.service uebereinstimmen -
+# sonst laeuft Beat mit einem anderen SECRET_KEY/DATABASE_URL/REDIS als die
+# Web-App und der Celery-Worker.
+WorkingDirectory=/opt/KI-Mail-Helper
+Environment="PATH=/opt/KI-Mail-Helper/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/opt/KI-Mail-Helper/.env
 
 # Celery Beat für scheduled Tasks
-ExecStart=/home/mailhelper/projects/KI-Mail-Helper-Dev/venv/bin/celery \
+ExecStart=/opt/KI-Mail-Helper/venv/bin/celery \
     -A src.celery_app beat \
     --loglevel=info \
     --logfile=/var/log/mail-helper/celery-beat.log \

@@ -11,11 +11,16 @@ Endpoints:
 
 from flask import Blueprint, jsonify, request, session, current_app
 from flask_login import login_required, current_user
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from sqlalchemy import func
 import logging
 import importlib
+
+# Der App-weite, tatsaechlich an Flask gebundene Limiter (app_factory.py:
+# `global limiter; limiter = Limiter(app=app, ...)`). Ein eigenes, lokales
+# Limiter(...) hier (wie zuvor) wird NIE per init_app(app) an die App
+# gebunden, wodurch dessen @limiter.limit(...)-Decorators wirkungslos
+# bleiben - dieser Import stellt sicher, dass die Limits unten real gelten.
+from src.app_factory import limiter
 
 models = importlib.import_module(".02_models", "src")
 encryption = importlib.import_module(".08_encryption", "src")
@@ -24,12 +29,6 @@ thread_service = importlib.import_module(".thread_service", "src")
 logger = logging.getLogger(__name__)
 
 thread_api = Blueprint("thread_api", __name__, url_prefix="/api/threads")
-
-limiter = Limiter(
-    key_func=get_remote_address,
-    storage_uri="memory://",
-    swallow_errors=True
-)
 
 
 def format_datetime(dt):

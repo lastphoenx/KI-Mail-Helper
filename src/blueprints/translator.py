@@ -18,6 +18,7 @@ from flask_login import login_required
 from functools import wraps
 
 from src.services.translator_service import TranslatorService, LANGUAGE_NAMES, SUPPORTED_TARGET_LANGUAGES
+from src.app_factory import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ def translator_page():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @translator_bp.route('/api/translate/detect', methods=['POST'])
+@limiter.limit("30 per minute")
 @login_required
 def detect_language():
     """
@@ -111,6 +113,7 @@ def detect_language():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @translator_bp.route('/api/translate/execute', methods=['POST'])
+@limiter.limit("20 per minute")
 @login_required
 @async_route
 async def execute_translation():

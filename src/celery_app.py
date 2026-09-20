@@ -61,6 +61,17 @@ celery_app.conf.update(
     # task_time_limit=15 * 60,      # REMOVED: Mail-Sync kann Stunden dauern!
     # task_soft_time_limit=12 * 60,  # REMOVED: Verursacht SIGKILL bei großen Accounts
     worker_prefetch_multiplier=1,
+    # Periodische Wartung (benoetigt laufenden celery-beat, siehe
+    # config/mail-helper-celery-beat.service). Sicherheitskritisch:
+    # cleanup_expired_service_tokens raeumt Zeilen mit Klartext-DEK
+    # (ServiceToken.encrypted_dek) auf, sobald ihre TTL abgelaufen ist -
+    # ohne diesen Reaper werden sie nur beim expliziten /logout geloescht.
+    beat_schedule={
+        "cleanup-expired-service-tokens-hourly": {
+            "task": "src.tasks.maintenance_tasks.cleanup_expired_service_tokens",
+            "schedule": 3600.0,
+        },
+    },
 )
 
 celery_app.autodiscover_tasks(["src.tasks"])

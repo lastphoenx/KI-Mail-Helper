@@ -86,7 +86,11 @@ validate_backup() {
     fi
     
     # 2. Decompress for testing
-    test_file="/tmp/backup_test_$$.db"
+    # mktemp statt PID-basiertem Pfad: $$ ist vorhersehbar/wiederverwendbar,
+    # in geteiltem /tmp ein klassisches Symlink-/Race-Ziel. Die entpackte DB
+    # enthaelt zwar verschluesselte Inhalte, aber trotzdem: eng fassen (chmod 600).
+    test_file="$(mktemp /tmp/backup_test.XXXXXX.db)"
+    chmod 600 "$test_file"
     if ! gunzip -c "$backup_file" > "$test_file" 2>/dev/null; then
         rm -f "$test_file"
         return 1

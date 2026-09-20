@@ -7,13 +7,14 @@ Requires=redis-server.service
 Type=simple
 User=mailhelper
 Group=mailhelper
-WorkingDirectory=/home/mailhelper/projects/KI-Mail-Helper-Dev
-Environment="PATH=/home/mailhelper/projects/KI-Mail-Helper-Dev/venv/bin:/usr/local/bin:/usr/bin:/bin"
-EnvironmentFile=/home/mailhelper/projects/KI-Mail-Helper-Dev/.env.local
+# WICHTIG: Pfade anpassen! Muessen mit mail-helper.service uebereinstimmen.
+WorkingDirectory=/opt/KI-Mail-Helper
+Environment="PATH=/opt/KI-Mail-Helper/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/opt/KI-Mail-Helper/.env
 
 # DEV ONLY: localhost binden. Task-Results können PII enthalten — nie öffentlich!
 # Produktion (CT 134): diesen Service NICHT installieren.
-ExecStart=/home/mailhelper/projects/KI-Mail-Helper-Dev/venv/bin/celery \
+ExecStart=/opt/KI-Mail-Helper/venv/bin/celery \
     -A src.celery_app flower \
     --address=127.0.0.1 \
     --port=5555 \

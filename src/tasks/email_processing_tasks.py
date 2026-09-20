@@ -205,21 +205,39 @@ def reprocess_email_base(
             was_anonymized = False
             entities_count = 0
             
+            sanitized_subject = decrypted_subject
             if sanitize_level >= 2:
-                from src.services.sanitization_helper import get_or_create_sanitized_content
-                san_result = get_or_create_sanitized_content(
-                    raw_email=raw_email,
-                    master_key=master_key,
-                    db_session=db,
-                    level=sanitize_level,
-                    original_subject=decrypted_subject,
-                    original_body=decrypted_body,
-                    logger_prefix="Reprocess"
+                from src.services.sanitization_helper import (
+                    get_or_create_sanitized_content,
+                    SanitizationError,
                 )
+                try:
+                    san_result = get_or_create_sanitized_content(
+                        raw_email=raw_email,
+                        master_key=master_key,
+                        db_session=db,
+                        level=sanitize_level,
+                        original_subject=decrypted_subject,
+                        original_body=decrypted_body,
+                        logger_prefix="Reprocess",
+                        require_anonymization=use_cloud,
+                    )
+                except SanitizationError as san_err:
+                    raise Reject(
+                        "Cloud-Provider erfordert Anonymisierung, aber keine anonymisierten Daten verfügbar",
+                        requeue=False,
+                    ) from san_err
+                sanitized_subject = san_result.subject
                 sanitized_body = san_result.body
                 was_anonymized = san_result.was_anonymized
                 entities_count = san_result.entities_count
                 was_cached = san_result.was_cached
+
+                if use_cloud and not was_anonymized:
+                    raise Reject(
+                        "Cloud-Provider erfordert Anonymisierung, aber keine anonymisierten Daten verfügbar",
+                        requeue=False,
+                    )
             else:
                 was_cached = False
             
@@ -239,7 +257,7 @@ def reprocess_email_base(
             )
             
             result = client.analyze_email(
-                subject=decrypted_subject,
+                subject=sanitized_subject,
                 body=sanitized_body,
                 language="de"
             )
@@ -480,26 +498,44 @@ def optimize_email_processing(
             
             # 7. AI-Client und Analyse mit ContentSanitizer (spaCy NER für Cloud)
             client = ai_client.build_client(provider_optimize, model=resolved_model)
+            sanitized_subject = decrypted_subject
             sanitized_body = decrypted_body
             was_anonymized = False
             entities_count = 0
             was_cached = False
-            
+
             if sanitize_level >= 2:
-                from src.services.sanitization_helper import get_or_create_sanitized_content
-                san_result = get_or_create_sanitized_content(
-                    raw_email=raw_email,
-                    master_key=master_key,
-                    db_session=db,
-                    level=sanitize_level,
-                    original_subject=decrypted_subject,
-                    original_body=decrypted_body,
-                    logger_prefix="Optimize"
+                from src.services.sanitization_helper import (
+                    get_or_create_sanitized_content,
+                    SanitizationError,
                 )
+                try:
+                    san_result = get_or_create_sanitized_content(
+                        raw_email=raw_email,
+                        master_key=master_key,
+                        db_session=db,
+                        level=sanitize_level,
+                        original_subject=decrypted_subject,
+                        original_body=decrypted_body,
+                        logger_prefix="Optimize",
+                        require_anonymization=use_cloud,
+                    )
+                except SanitizationError as san_err:
+                    raise Reject(
+                        "Cloud-Provider erfordert Anonymisierung, aber keine anonymisierten Daten verfügbar",
+                        requeue=False,
+                    ) from san_err
+                sanitized_subject = san_result.subject
                 sanitized_body = san_result.body
                 was_anonymized = san_result.was_anonymized
                 entities_count = san_result.entities_count
                 was_cached = san_result.was_cached
+
+                if use_cloud and not was_anonymized:
+                    raise Reject(
+                        "Cloud-Provider erfordert Anonymisierung, aber keine anonymisierten Daten verfügbar",
+                        requeue=False,
+                    )
             
             # Progress-Update: LLM-Call beginnt jetzt
             cache_info = " (Cache)" if was_cached else " (neu)"
@@ -519,7 +555,7 @@ def optimize_email_processing(
             logger.info(f"🤖 Optimize-Pass mit {provider_optimize.upper()}/{resolved_model}")
             
             result = client.analyze_email(
-                subject=decrypted_subject,
+                subject=sanitized_subject,
                 body=sanitized_body,
                 language="de"
             )

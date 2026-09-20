@@ -139,20 +139,43 @@ def migrate_table(source_engine, target_engine, table_name, dry_run=False):
     return migrated
 
 
+def _redact_db_url(url: str) -> str:
+    """Maskiert Username/Passwort in einer DB-URL fuer Logging/Ausgabe.
+
+    Die URL enthaelt bei Postgres Klartext-Credentials (postgresql://user:pass@host/db).
+    --target wird als CLI-Argument uebergeben (landet damit in ps aux/Shell-History) -
+    zumindest die Ausgabe auf stdout/in Logs soll das Passwort nicht wiederholen.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    try:
+        parts = urlsplit(url)
+        if not parts.password and not parts.username:
+            return url
+        netloc = parts.hostname or ""
+        if parts.port:
+            netloc += f":{parts.port}"
+        if parts.username:
+            netloc = f"{parts.username}:***@{netloc}"
+        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    except Exception:
+        return "***redacted***"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Migrate SQLite to PostgreSQL")
     parser.add_argument("--source", required=True, help="Source DATABASE_URL (SQLite)")
     parser.add_argument("--target", required=True, help="Target DATABASE_URL (PostgreSQL)")
     parser.add_argument("--dry-run", action="store_true", help="Dry-run (no actual migration)")
     parser.add_argument("--tables", nargs="+", help="Specific tables to migrate (default: all)")
-    
+
     args = parser.parse_args()
-    
+
     print("=" * 70)
     print("SQLite → PostgreSQL Migration")
     print("=" * 70)
-    print(f"Source: {args.source}")
-    print(f"Target: {args.target}")
+    print(f"Source: {_redact_db_url(args.source)}")
+    print(f"Target: {_redact_db_url(args.target)}")
     print(f"Dry-Run: {args.dry_run}")
     print()
     

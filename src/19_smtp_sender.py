@@ -18,6 +18,8 @@ import ssl
 import logging
 import uuid
 import socket
+
+from src.helpers.network_safety import assert_safe_mail_host
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -309,7 +311,10 @@ class SMTPSender:
         encryption = creds["smtp_encryption"]
         
         logger.debug(f"SMTP-Verbindung: {server}:{port} ({encryption})")
-        
+
+        # SSRF-Schutz: Host bei jedem Verbindungsversuch neu pruefen (DNS-Rebinding-sicher)
+        assert_safe_mail_host(server)
+
         # SSL-Kontext für sichere Verbindungen
         context = ssl.create_default_context()
         
@@ -708,9 +713,12 @@ class SMTPSender:
             return {"success": False, "error": "IMAP nicht konfiguriert"}
         
         try:
+            # SSRF-Schutz: Host bei jedem Verbindungsversuch neu pruefen (DNS-Rebinding-sicher)
+            assert_safe_mail_host(creds["imap_server"])
+
             # IMAP-Verbindung
             context = ssl.create_default_context()
-            
+
             with IMAPClient(
                 creds["imap_server"],
                 port=creds["imap_port"],

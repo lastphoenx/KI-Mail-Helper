@@ -16,6 +16,8 @@ from typing import Dict, List, Optional, Tuple
 from imapclient import IMAPClient
 from email.utils import parseaddr
 
+from src.helpers.network_safety import assert_safe_mail_host
+
 logger = logging.getLogger(__name__)
 
 # Konfiguration
@@ -99,7 +101,10 @@ def scan_account_senders(
     try:
         # IMAP Connect mit Timeout
         logger.info(f"Connecting to {imap_server} as {imap_username} (folder: {folder})")
-        
+
+        # SSRF-Schutz: Host bei jedem Verbindungsversuch neu pruefen (DNS-Rebinding-sicher)
+        assert_safe_mail_host(imap_server)
+
         client = IMAPClient(imap_server, use_uid=True, timeout=IMAP_TIMEOUT)
         client.login(imap_username, imap_password)
         

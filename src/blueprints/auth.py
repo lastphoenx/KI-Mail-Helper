@@ -11,17 +11,26 @@ Routes (7 total):
     7. /settings/2fa/recovery-codes/regenerate (POST) - regenerate recovery codes
 """
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, make_response
 from flask_login import login_user, logout_user, login_required, current_user
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, UTC
 import importlib
 import logging
+import secrets
 
 from src.helpers import get_db_session, get_current_user_model
 
 auth_bp = Blueprint("auth", __name__)
 logger = logging.getLogger(__name__)
+
+# Timing-Attack Protection: Dummy-Hash im selben Format wie echte User-Passwort-Hashes
+# (generate_password_hash-Default, aktuell scrypt), damit der "User nicht gefunden"-Pfad
+# genauso lange dauert wie eine echte Passwort-Prüfung. Ein statischer bcrypt-Dummy
+# ("$2b$12$...") wird von Werkzeugs check_password_hash sofort mit ValueError
+# abgelehnt und ist dadurch um Größenordnungen schneller - das Timing verrät dann,
+# ob der Username existiert.
+_DUMMY_PASSWORD_HASH = generate_password_hash(secrets.token_hex(32))
 
 # Rate Limiter Referenz (wird in app_factory.py gesetzt)
 _limiter = None
@@ -37,6 +46,19 @@ def get_limiter():
     """Holt den konfigurierten Limiter"""
     global _limiter
     return _limiter
+
+
+def _render_no_store(template_name: str, **context):
+    """render_template() + Cache-Control: no-store.
+
+    Fuer Seiten, die einmalige Geheimnisse zeigen (Recovery-Codes): ohne
+    diesen Header koennen Browser die Seite cachen und sie ist danach ueber
+    Zurueck-Button/Verlauf auf einem geteilten/oeffentlichen Rechner auch
+    nach Logout wieder abrufbar.
+    """
+    response = make_response(render_template(template_name, **context))
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 # Lazy imports
 _models = None
@@ -127,12 +149,7 @@ def login():
 
                 # Timing-Attack Protection: Dummy password check für constant-time behavior
                 if not user:
-                    # Dummy bcrypt check to normalize timing (prevent user enumeration)
-                    dummy_hash = "$2b$12$" + "0" * 53  # Valid bcrypt format
-                    try:
-                        check_password_hash(dummy_hash, password)
-                    except:
-                        pass
+                    check_password_hash(_DUMMY_PASSWORD_HASH, password)
                     logger.warning(
                         f"SECURITY[LOGIN_FAILED]: user={username} ip={request.remote_addr} "
                         f"reason=user_not_found"
@@ -397,6 +414,24 @@ def verify_2fa():
                 return redirect(url_for("auth.login"))
 
             if request.method == "POST":
+                # Account Lockout Check (gleicher Zaehler wie /login - Phase 9):
+                # Ohne diese Pruefung schuetzt der Lockout nur die Passwort-Eingabe,
+                # nicht das Erraten von TOTP-Codes/Recovery-Codes fuer einen Account
+                # mit bereits bekanntem (z.B. geleaktem) Passwort.
+                if user.is_locked():
+                    remaining = (user.locked_until - datetime.now(UTC)).total_seconds() / 60
+                    logger.warning(
+                        f"SECURITY[LOCKOUT]: user={user.username} ip={request.remote_addr} "
+                        f"remaining={int(remaining)}min reason=account_locked_2fa"
+                    )
+                    return (
+                        render_template(
+                            "verify_2fa.html",
+                            error=f"Account gesperrt. Bitte versuche es in {int(remaining)} Minuten erneut.",
+                        ),
+                        403,
+                    )
+
                 token = request.form.get("token", "").strip()
                 recovery_code = request.form.get("recovery_code", "").strip()
 
@@ -420,6 +455,14 @@ def verify_2fa():
                         verified = False
 
                 if verified:
+                    # Erfolgreicher 2FA-Verifikation - Failed Counter zuruecksetzen
+                    try:
+                        user.reset_failed_logins(db)
+                        db.commit()
+                    except Exception as e:
+                        db.rollback()
+                        logger.error(f"verify_2fa: reset_failed_logins fehlgeschlagen: {e}")
+
                     # Extract pending data BEFORE session operations
                     dek = session.get("pending_dek")
                     remember = session.get("pending_remember", False)
@@ -453,10 +496,16 @@ def verify_2fa():
                     )
                     return redirect(url_for("emails.dashboard"))
 
-                # Fehlgeschlagener 2FA-Versuch
+                # Fehlgeschlagener 2FA-Versuch - gleicher Lockout-Zaehler wie /login
+                try:
+                    user.record_failed_login(db)
+                    db.commit()
+                except Exception as e:
+                    db.rollback()
+                    logger.error(f"verify_2fa: record_failed_login fehlgeschlagen: {e}")
                 logger.warning(
                     f"SECURITY[2FA_FAILED]: user={user.username} ip={request.remote_addr} "
-                    f"reason=invalid_token"
+                    f"attempts={user.failed_login_attempts}/5 reason=invalid_token"
                 )
                 return render_template("verify_2fa.html", error="Ungültiger Code")
 
@@ -570,7 +619,7 @@ def setup_2fa():
 
                 logger.info(f"✅ 2FA für User {user.username} aktiviert")
 
-                return render_template(
+                return _render_no_store(
                     "setup_2fa_success.html", recovery_codes=recovery_codes
                 )
 
@@ -624,7 +673,7 @@ def regenerate_recovery_codes():
 
             logger.info(f"✅ Recovery-Codes regeneriert für User {user.id}")
 
-            return render_template(
+            return _render_no_store(
                 "recovery_codes_regenerated.html", recovery_codes=recovery_codes
             )
     except Exception as e:

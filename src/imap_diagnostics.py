@@ -17,6 +17,8 @@ from email.header import decode_header
 from imapclient import IMAPClient
 from imapclient.exceptions import IMAPClientError
 
+from src.helpers.network_safety import assert_safe_mail_host
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,6 +94,7 @@ class IMAPDiagnostics:
     
     def _get_connection(self, timeout=None):
         """Helper: Create IMAP connection with optional custom timeout"""
+        assert_safe_mail_host(self.host)
         return IMAPClient(
             host=self.host,
             port=self.port,

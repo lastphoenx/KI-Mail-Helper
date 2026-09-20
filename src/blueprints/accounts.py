@@ -39,6 +39,7 @@ import logging
 from src.helpers import get_db_session, get_current_user_model
 from src.helpers.task_ownership import track_celery_task, verify_celery_task_access
 from src.helpers.http import external_request_scheme
+from src.helpers.network_safety import assert_safe_mail_host
 from src.app_factory import limiter
 
 accounts_bp = Blueprint("accounts", __name__)
@@ -1512,6 +1513,9 @@ def sync_mail_flags(account_id):
             total_checked = len(local_mails)
             
             try:
+                # SSRF-Schutz: Host bei jedem Verbindungsversuch neu pruefen (DNS-Rebinding-sicher)
+                assert_safe_mail_host(imap_server)
+
                 # IMAP-Verbindung aufbauen
                 client = IMAPClient(imap_server, port=imap_port, ssl=True, use_uid=True, timeout=60)
                 client.login(imap_username, imap_password)

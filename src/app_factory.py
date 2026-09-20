@@ -29,6 +29,47 @@ import json
 
 logger = logging.getLogger(__name__)
 
+
+def _configure_security_logging() -> None:
+    """Stellt sicher, dass SECURITY[...]-Log-Zeilen (Login-Fehlschlaege,
+    Lockouts, 2FA-Fehlschlaege) in einer deterministischen Datei landen -
+    unabhaengig vom Entry-Point (Gunicorn direkt vs. src/00_main.py).
+
+    Ohne diesen Handler landen WARNING-Logs unter Gunicorn nur ueber Pythons
+    "handler of last resort" auf stderr, was je nach systemd-/Gunicorn-Setup
+    NICHT der Pfad ist, den fail2ban-jail.conf ueberwacht - fail2ban baent
+    dann nie jemanden, obwohl es aktiv konfiguriert scheint.
+    """
+    log_dir = os.environ.get("SECURITY_LOG_DIR") or os.path.join(project_root, "logs")
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+    except OSError as exc:
+        logger.warning(f"Konnte Log-Verzeichnis nicht anlegen ({log_dir}): {exc}")
+        return
+
+    log_path = os.path.join(log_dir, "security.log")
+    abs_log_path = os.path.abspath(log_path)
+
+    root_logger = logging.getLogger()
+    already_configured = any(
+        isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None) == abs_log_path
+        for h in root_logger.handlers
+    )
+    if already_configured:
+        return
+
+    handler = logging.FileHandler(log_path)
+    handler.setLevel(logging.WARNING)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
+    root_logger.addHandler(handler)
+    if root_logger.level == logging.NOTSET or root_logger.level > logging.WARNING:
+        root_logger.setLevel(logging.WARNING)
+
+
+_configure_security_logging()
+
 env_validator = importlib.import_module(".00_env_validator", "src")
 env_validator.validate_environment()
 
@@ -190,18 +231,41 @@ def create_app(config_name="production"):
             db.close()
         return None
     
-    rate_limit_storage = os.getenv("RATE_LIMIT_STORAGE", "memory://")
+    # Default ist "auto" (nicht "memory://"): Ohne explizite RATE_LIMIT_STORAGE-Config
+    # soll die App bevorzugt das ohnehin fuer Celery benoetigte Redis nutzen statt
+    # unbemerkt auf In-Memory-Storage zu laufen (siehe Warnung unten - unter mehreren
+    # Gunicorn-Workern hat sonst jeder Worker seinen eigenen, unabhaengigen Zaehler).
+    rate_limit_storage = os.getenv("RATE_LIMIT_STORAGE", "auto")
     if rate_limit_storage == "auto":
         try:
             import redis
-            r = redis.Redis(host="localhost", port=6379, db=1, socket_connect_timeout=1)
+            from urllib.parse import urlparse
+
+            base_redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+            parsed = urlparse(base_redis_url)
+            redis_host = parsed.hostname or "localhost"
+            redis_port = parsed.port or 6379
+            # Eigene DB (3) - getrennt von REDIS_URL(/0), Celery-Broker(/1) und -Backend(/2)
+            r = redis.Redis(host=redis_host, port=redis_port, db=3, socket_connect_timeout=1)
             r.ping()
-            rate_limit_storage = "redis://localhost:6379/1"
+            rate_limit_storage = f"redis://{redis_host}:{redis_port}/3"
             logger.info("🟢 Redis detected - using for rate limiting")
-        except (ImportError, ConnectionError):
+        except Exception:
             rate_limit_storage = "memory://"
-            logger.warning("🟡 Redis not available - using memory storage")
-    
+
+    if rate_limit_storage == "memory://":
+        warning_msg = (
+            "Rate-Limiter laeuft mit In-Memory-Storage. Unter mehreren Gunicorn-Workern "
+            "(config/gunicorn.conf.py: workers = 2xCPU+1) hat JEDER Worker-Prozess seinen "
+            "eigenen Zaehler - aus '5 Versuche/Minute' auf /login wird effektiv "
+            "'5 x Anzahl-Worker Versuche/Minute'. Fuer Produktion Redis bereitstellen "
+            "und RATE_LIMIT_STORAGE=redis://<host>:<port>/3 setzen."
+        )
+        if os.getenv("FLASK_ENV") == "production":
+            logger.error(f"🔴 {warning_msg}")
+        else:
+            logger.warning(f"🟡 {warning_msg}")
+
     global limiter
     limiter = Limiter(
         app=app,
