@@ -29,7 +29,7 @@ click-repl==0.4.0
 cloudpathlib==0.25.0
 confection==0.1.5
 coverage==7.16.1
-cryptography==46.0.7
+cryptography==50.0.1
 cymem==2.0.13
 de_core_news_md @ https://github.com/explosion/spacy-models/releases/download/de_core_news_md-3.8.0/de_core_news_md-3.8.0-py3-none-any.whl#sha256=b903f59220f1e76dd672acdaa7fa454d6703fe056c5ccd6457820e70874116d0
 de_core_news_sm @ https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl#sha256=fec69fec52b1780f2d269d5af7582a5e28028738bd3190532459aeb473bfa3e7
