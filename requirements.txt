@@ -161,7 +161,7 @@ SQLAlchemy==2.0.54
 srsly==2.5.3
 thinc==8.3.13
 threadpoolctl==3.7.0
-tokenizers==0.23.0
+tokenizers==0.22.2
 tomlkit==0.15.1
 # torch - CPU-Version manuell installieren:
 # pip install torch --index-url https://download.pytorch.org/whl/cpu
