@@ -277,13 +277,14 @@ def delete_trash_emails():
         data = request.get_json() or {}
         account_id = data.get("account_id")
         uids = data.get("uids", [])
-        folder = data.get("folder")  # Optional: spezifischer Ordner
+        folder = data.get("folder")  # Optional: spezifischer Ordner (Legacy)
+        items = data.get("items")  # [{folder, uid}, ...] für Multi-Ordner-Scan
         
         if not account_id:
             return jsonify({"error": "account_id erforderlich"}), 400
         
-        if not uids:
-            return jsonify({"error": "Keine UIDs angegeben"}), 400
+        if not items and not uids:
+            return jsonify({"error": "Keine Mails angegeben (items oder uids)"}), 400
         
         models = _get_models()
         
@@ -307,7 +308,14 @@ def delete_trash_emails():
             if not fetcher.connection:
                 return jsonify({"error": "IMAP-Verbindung fehlgeschlagen"}), 500
             
-            success, failed = FolderAuditService.delete_safe_emails(fetcher, uids, folder)
+            if items:
+                success, failed = FolderAuditService.delete_emails_by_folder(fetcher, items)
+            else:
+                if folder in (None, "", "__ALL__"):
+                    return jsonify({
+                        "error": "Bei Löschen ohne items muss ein konkreter Ordner gesetzt sein",
+                    }), 400
+                success, failed = FolderAuditService.delete_safe_emails(fetcher, uids, folder)
             
             return jsonify({
                 "success": True,

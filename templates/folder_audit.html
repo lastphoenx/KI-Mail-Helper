@@ -843,7 +843,7 @@
 
 <script nonce="{{ csp_nonce() }}">
     let scanResult = null;
-    let selectedUids = new Set();
+    let selectedKeys = new Set();
     let expandedDetailKeys = new Set();
     let currentFilter = 'all';
     let currentAddAction = null;  // Aktuell gewählte Aktion (trusted-domain, vip-sender, etc.)
@@ -1055,6 +1055,28 @@
         return (email.folder || currentFolder || '') + '::' + String(email.uid);
     }
 
+    function findEmailInScan(folder, uid) {
+        if (!scanResult || !scanResult.emails) return null;
+        const folderNorm = folder || '';
+        return scanResult.emails.find(e =>
+            e.uid === uid && (e.folder || currentFolder || '') === folderNorm
+        ) || null;
+    }
+
+    function clusterMemberList(cluster) {
+        if (cluster.members && cluster.members.length) {
+            return cluster.members;
+        }
+        return (cluster.uids || []).map(uid => {
+            const e = scanResult.emails.find(x => x.uid === uid);
+            return e ? { folder: e.folder || currentFolder || '', uid: e.uid } : null;
+        }).filter(Boolean);
+    }
+
+    function memberRowKey(member) {
+        return emailRowKey({ folder: member.folder, uid: member.uid });
+    }
+
     function formatMailSize(bytes) {
         if (!bytes) return '';
         if (bytes < 1024) return bytes + ' B';
@@ -1207,7 +1229,7 @@
         const container = document.getElementById('emailList');
         const emails = scanResult.emails.filter(e => 
             currentFilter === 'all' || e.category === currentFilter
-        );
+        ).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
         
         if (emails.length === 0) {
             container.innerHTML = '<div class="text-center text-muted py-5">Keine Emails in dieser Kategorie</div>';
@@ -1216,7 +1238,8 @@
         
         let html = '';
         for (const email of emails) {
-            const isSelected = selectedUids.has(email.uid);
+            const rowKey = emailRowKey(email);
+            const isSelected = selectedKeys.has(rowKey);
             const categoryClass = `category-${email.category}`;
             const date = email.date ? new Date(email.date).toLocaleDateString('de-DE') : '';
             const reasons = email.reasons.join(', ');
@@ -1226,7 +1249,6 @@
                 ? `<span class="email-sender-name">${escapeHtml(email.sender_name)}</span><br><span class="email-sender-address">&lt;${escapeHtml(email.sender)}&gt;</span>`
                 : `<span class="email-sender-address">${escapeHtml(email.sender)}</span>`;
             
-            const rowKey = emailRowKey(email);
             const detailsOpen = expandedDetailKeys.has(rowKey);
             
             html += `
@@ -1252,7 +1274,7 @@
                         <div class="text-end d-flex flex-column gap-1" style="min-width: 120px;">
                             <div class="email-date small text-muted">${date}</div>
                             <button class="btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline-secondary'} email-select-btn"
-                                    data-uid="${email.uid}">
+                                    data-row-key="${escapeHtml(rowKey)}">
                                 ${isSelected ? '✓ Ausgewählt' : 'Auswählen'}
                             </button>
                             <div class="btn-group btn-group-sm">
@@ -1304,8 +1326,7 @@
         container.querySelectorAll('.email-select-btn').forEach(function(btn) {
             btn.addEventListener('click', function(e) {
                 e.stopPropagation();
-                const uid = parseInt(this.dataset.uid);
-                toggleSelect(uid);
+                toggleSelect(this.dataset.rowKey);
             });
         });
         
@@ -1339,11 +1360,12 @@
         updateSelectedCount();
     }
     
-    function toggleSelect(uid) {
-        if (selectedUids.has(uid)) {
-            selectedUids.delete(uid);
+    function toggleSelect(rowKey) {
+        if (!rowKey) return;
+        if (selectedKeys.has(rowKey)) {
+            selectedKeys.delete(rowKey);
         } else {
-            selectedUids.add(uid);
+            selectedKeys.add(rowKey);
         }
         renderEmails();
     }
@@ -1353,7 +1375,7 @@
         
         const safeEmails = scanResult.emails.filter(e => e.category === 'safe');
         for (const email of safeEmails) {
-            selectedUids.add(email.uid);
+            selectedKeys.add(emailRowKey(email));
         }
         renderEmails();
     }
@@ -1362,21 +1384,19 @@
         if (!scanResult) return;
         
         if (currentFilter === 'clusters') {
-            // Bei Cluster-Ansicht: Alle Emails aus sichtbaren Clustern (2+) auswählen
             const visibleClusters = scanResult.clusters.filter(c => c.count >= 2);
             for (const cluster of visibleClusters) {
-                for (const uid of cluster.uids) {
-                    selectedUids.add(uid);
+                for (const member of clusterMemberList(cluster)) {
+                    selectedKeys.add(memberRowKey(member));
                 }
             }
             renderClusters();
         } else {
-            // Nur Emails der aktuell angezeigten Kategorie auswählen
             const visibleEmails = scanResult.emails.filter(e => 
                 currentFilter === 'all' || e.category === currentFilter
             );
             for (const email of visibleEmails) {
-                selectedUids.add(email.uid);
+                selectedKeys.add(emailRowKey(email));
             }
             renderEmails();
         }
@@ -1384,7 +1404,7 @@
     }
     
     function deselectAll() {
-        selectedUids.clear();
+        selectedKeys.clear();
         if (currentFilter === 'clusters') {
             renderClusters();
         } else {
@@ -1394,7 +1414,7 @@
     }
     
     function updateSelectedCount() {
-        document.getElementById('selectedCount').textContent = selectedUids.size.toLocaleString();
+        document.getElementById('selectedCount').textContent = selectedKeys.size.toLocaleString();
     }
     
     function filterEmails(filter, element) {
@@ -1418,31 +1438,30 @@
         }
     }
     
-    // Rebuild clusters from remaining emails (after delete)
     function rebuildClusters() {
         if (!scanResult || !scanResult.emails) return;
         
         const clusterMap = {};
         
         for (const email of scanResult.emails) {
-            // Cluster-Key: domain + normalisierter Betreff (vereinfacht)
-            const domain = email.sender.includes('@') ? email.sender.split('@')[1].toLowerCase() : 'unknown';
-            const normalizedSubject = normalizeSubjectForClustering(email.subject || '');
-            const key = `${domain}|${normalizedSubject}`;
+            const key = email.cluster_key || emailRowKey(email);
             
             if (!clusterMap[key]) {
+                const domain = email.sender.includes('@') ? email.sender.split('@')[1].toLowerCase() : 'unknown';
                 clusterMap[key] = {
                     cluster_key: key,
-                    display_name: normalizedSubject || '(Kein Betreff)',
+                    display_name: (email.subject || '').slice(0, 80) || '(Kein Betreff)',
                     sender_domain: domain,
                     count: 0,
                     category: email.category,
                     uids: [],
+                    members: [],
                     sample_subject: email.subject,
                     sample_sender: email.sender,
                     safe_count: 0,
                     review_count: 0,
                     important_count: 0,
+                    scam_count: 0,
                     oldest_date: email.date,
                     newest_date: email.date,
                     total_size_kb: 0
@@ -1452,18 +1471,22 @@
             const cluster = clusterMap[key];
             cluster.count++;
             cluster.uids.push(email.uid);
+            cluster.members.push({
+                folder: email.folder || currentFolder || '',
+                uid: email.uid
+            });
             cluster.total_size_kb += (email.size || 0) / 1024;
             
             if (email.category === 'safe') cluster.safe_count++;
             else if (email.category === 'review') cluster.review_count++;
             else if (email.category === 'important') cluster.important_count++;
+            else if (email.category === 'scam') cluster.scam_count++;
             
-            // Update dominant category
             if (email.category === 'important') cluster.category = 'important';
+            else if (email.category === 'scam') cluster.category = 'scam';
             else if (email.category === 'review' && cluster.category === 'safe') cluster.category = 'review';
         }
         
-        // Sort by count descending
         scanResult.clusters = Object.values(clusterMap).sort((a, b) => b.count - a.count);
     }
     
@@ -1516,13 +1539,16 @@
                 ? `${new Date(cluster.oldest_date).toLocaleDateString('de-DE')} - ${new Date(cluster.newest_date).toLocaleDateString('de-DE')}`
                 : '';
             
-            const isAllSelected = cluster.uids.every(uid => selectedUids.has(uid));
-            const isSomeSelected = cluster.uids.some(uid => selectedUids.has(uid));
+            const members = clusterMemberList(cluster);
+            const memberKeys = members.map(m => memberRowKey(m));
+            const isAllSelected = memberKeys.length > 0 && memberKeys.every(k => selectedKeys.has(k));
+            const isSomeSelected = memberKeys.some(k => selectedKeys.has(k));
             
-            // Emails für diesen Cluster sammeln
-            const clusterEmails = cluster.uids.map(uid => 
-                scanResult.emails.find(e => e.uid === uid)
-            ).filter(e => e).sort((a, b) => new Date(b.date) - new Date(a.date));
+            const clusterEmails = members.map(m => findEmailInScan(m.folder, m.uid))
+                .filter(e => e)
+                .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+            
+            const rowKeysAttr = escapeHtml(memberKeys.join(','));
             
             html += `
                 <div class="cluster-card ${categoryClass}" data-cluster-key="${escapeHtml(cluster.cluster_key)}">
@@ -1546,7 +1572,7 @@
                         </div>
                         <div class="text-end d-flex flex-column gap-1">
                             <button class="btn btn-sm ${isAllSelected ? 'btn-primary' : isSomeSelected ? 'btn-outline-primary' : 'btn-outline-secondary'} cluster-select-btn"
-                                    data-uids="${cluster.uids.join(',')}">
+                                    data-row-keys="${rowKeysAttr}">
                                 ${isAllSelected ? '✓ Ausgewählt' : isSomeSelected ? 'Teilweise' : 'Auswählen'}
                             </button>
                             <div class="btn-group btn-group-sm mt-1">
@@ -1638,15 +1664,13 @@
         // Event Listeners für Cluster-Buttons
         container.querySelectorAll('.cluster-select-btn').forEach(btn => {
             btn.addEventListener('click', function() {
-                const uids = this.dataset.uids.split(',').map(u => parseInt(u));
-                const allSelected = uids.every(uid => selectedUids.has(uid));
+                const keys = (this.dataset.rowKeys || '').split(',').filter(Boolean);
+                const allSelected = keys.length > 0 && keys.every(k => selectedKeys.has(k));
                 
                 if (allSelected) {
-                    // Deselect all in cluster
-                    uids.forEach(uid => selectedUids.delete(uid));
+                    keys.forEach(k => selectedKeys.delete(k));
                 } else {
-                    // Select all in cluster
-                    uids.forEach(uid => selectedUids.add(uid));
+                    keys.forEach(k => selectedKeys.add(k));
                 }
                 
                 renderClusters();
@@ -1889,19 +1913,31 @@
     });
     
     async function deleteSelected() {
-        if (selectedUids.size === 0) {
+        if (selectedKeys.size === 0) {
             alert('Keine Emails ausgewählt');
             return;
         }
         
-        const confirm_msg = `${selectedUids.size} Emails PERMANENT löschen?\n\nDies kann nicht rückgängig gemacht werden!`;
+        const confirm_msg = `${selectedKeys.size} Emails PERMANENT löschen?\n\nDies kann nicht rückgängig gemacht werden!`;
         if (!confirm(confirm_msg)) {
             return;
         }
         
         const accountId = document.getElementById('accountSelect').value;
+        const items = Array.from(selectedKeys).map(key => {
+            const sep = key.indexOf('::');
+            return {
+                folder: key.slice(0, sep),
+                uid: parseInt(key.slice(sep + 2), 10)
+            };
+        }).filter(it => it.folder && !Number.isNaN(it.uid));
         
-        showLoading(`Lösche ${selectedUids.size} Emails...`);
+        if (items.length === 0) {
+            alert('Auswahl ungültig (Ordner fehlt) — bitte Scan erneut starten.');
+            return;
+        }
+        
+        showLoading(`Lösche ${items.length} Emails...`);
         
         try {
             const response = await fetch('/folder-audit/delete', {
@@ -1912,8 +1948,7 @@
                 },
                 body: JSON.stringify({ 
                     account_id: parseInt(accountId), 
-                    uids: Array.from(selectedUids),
-                    folder: currentFolder  // NEU: Ordner mitsenden
+                    items: items
                 })
             });
             
@@ -1923,20 +1958,20 @@
                 throw new Error(data.error || 'Löschen fehlgeschlagen');
             }
             
-            alert(`✅ ${data.deleted} Emails permanent gelöscht`);
+            alert(`✅ ${data.deleted} Emails permanent gelöscht` +
+                (data.failed ? ` (${data.failed} fehlgeschlagen)` : ''));
             
-            // Entferne gelöschte Emails aus dem Result
-            const deletedUids = new Set(selectedUids);
-            scanResult.emails = scanResult.emails.filter(e => !deletedUids.has(e.uid));
+            const deletedKeys = new Set(selectedKeys);
+            scanResult.emails = scanResult.emails.filter(e => !deletedKeys.has(emailRowKey(e)));
             scanResult.total = scanResult.emails.length;
             scanResult.safe_count = scanResult.emails.filter(e => e.category === 'safe').length;
             scanResult.review_count = scanResult.emails.filter(e => e.category === 'review').length;
             scanResult.important_count = scanResult.emails.filter(e => e.category === 'important').length;
+            scanResult.scam_count = scanResult.emails.filter(e => e.category === 'scam').length;
             
-            // Clusters neu berechnen
             rebuildClusters();
             
-            selectedUids.clear();
+            selectedKeys.clear();
             displayResults();
             
         } catch (error) {
@@ -1990,7 +2025,7 @@
         }
         
         // Alle Scam-UIDs auswählen
-        scamEmails.forEach(e => selectedUids.add(e.uid));
+        scamEmails.forEach(e => selectedKeys.add(emailRowKey(e)));
         updateSelectedCount();
         
         // Löschen

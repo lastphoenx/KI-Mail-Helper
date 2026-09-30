@@ -464,7 +464,9 @@ class TrashEmailCluster:
     review_count: int = 0
     important_count: int = 0
     scam_count: int = 0                 # NEU: Scam-Emails im Cluster
-    
+    # Ordner+UID (IMAP-UIDs sind nur pro Ordner eindeutig)
+    members: List[Dict] = field(default_factory=list)
+
     def to_dict(self) -> dict:
         return {
             "cluster_key": self.cluster_key,
@@ -473,6 +475,7 @@ class TrashEmailCluster:
             "count": self.count,
             "category": self.category.value,
             "uids": self.uids,
+            "members": self.members,
             "sample_subject": self.sample_subject,
             "sample_sender": self.sample_sender,
             "oldest_date": self.oldest_date.isoformat() if self.oldest_date else None,
@@ -942,6 +945,13 @@ class FolderAuditService:
         return normalized
     
     @staticmethod
+    def _subject_cluster_fingerprint(subject: str) -> str:
+        """Kurzer Hash, wenn Normalisierung Betreff zu generisch macht (Anti-Wildwuchs-Cluster)."""
+        import hashlib
+        raw = (subject or "").strip().lower()[:120]
+        return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()[:10]
+
+    @staticmethod
     def create_cluster_key(sender_email: str, subject: str) -> str:
         """Erstellt einen Cluster-Key aus Absender-Email + normalisiertem Subject.
         
@@ -951,7 +961,32 @@ class FolderAuditService:
         # Normalisiere Email (lowercase)
         sender_normalized = sender_email.lower().strip() if sender_email else 'unknown'
         normalized_subject = FolderAuditService.normalize_subject_for_clustering(subject)
+        generic_tokens = ("", "<HOST>", "<PATH>", "<EMAIL>", "<IP>", "(kein betreff)")
+        stripped = normalized_subject.replace("<", "").replace(">", "").strip()
+        if len(stripped) < 8 or normalized_subject.lower() in generic_tokens:
+            fp = FolderAuditService._subject_cluster_fingerprint(subject)
+            normalized_subject = f"{normalized_subject}|fp:{fp}"
         return f"{sender_normalized}|{normalized_subject}"
+    
+    @staticmethod
+    def _sort_emails_newest_first(emails: List[TrashEmailInfo]) -> None:
+        """In-place: neueste Mail zuerst (None-Datum ans Ende)."""
+        emails.sort(
+            key=lambda e: e.date or datetime.min.replace(tzinfo=UTC),
+            reverse=True,
+        )
+
+    @staticmethod
+    def _apply_global_limit(
+        emails: List[TrashEmailInfo], max_total: Optional[int]
+    ) -> List[TrashEmailInfo]:
+        """Behält die neuesten max_total Mails (nach Datum, nicht Scan-Reihenfolge)."""
+        if not emails:
+            return emails
+        FolderAuditService._sort_emails_newest_first(emails)
+        if max_total and len(emails) > max_total:
+            return emails[:max_total]
+        return emails
     
     @staticmethod
     def build_clusters(emails: List[TrashEmailInfo]) -> List[TrashEmailCluster]:
@@ -988,6 +1023,8 @@ class FolderAuditService:
             cluster = cluster_map[key]
             cluster.count += 1
             cluster.uids.append(email.uid)
+            folder_name = email.folder.decode("utf-8", "replace") if isinstance(email.folder, bytes) else (email.folder or "")
+            cluster.members.append({"folder": folder_name, "uid": email.uid})
             cluster.total_size += email.size
             
             # Kategorie-Zähler inkrementieren
@@ -2547,6 +2584,8 @@ class FolderAuditService:
                     logger.warning(f"Fehler bei UID {uid}: {e}")
                     continue
             
+            FolderAuditService._sort_emails_newest_first(result.emails)
+
             # Statistiken
             result.total = len(result.emails)
             result.safe_count = sum(1 for e in result.emails if e.category == TrashCategory.SAFE)
@@ -2667,24 +2706,16 @@ class FolderAuditService:
             
             all_emails = []
             folder_stats = {}
-            total_scanned = 0
             
             folders_processed = 0
             for folder_name in folder_names:
-                # Gesamt-Limit erreicht?
-                if total_scanned >= max_total:
-                    logger.info(f"⏹️ Gesamt-Limit {max_total} erreicht, stoppe Scan")
-                    break
-                
                 # Rate-Limiting: Kurze Pause zwischen Ordnern (Exchange/O365 sind streng)
                 # Erste 3 Ordner ohne Pause, danach 100ms pro Ordner
                 if folders_processed >= 3:
                     time.sleep(0.1)  # 100ms Pause
                 folders_processed += 1
                 
-                # Wie viele noch scannen?
-                remaining = max_total - total_scanned
-                folder_limit = min(limit_per_folder, remaining)
+                folder_limit = limit_per_folder
                 
                 try:
                     # Einzelnen Ordner scannen (ohne Clustering, das machen wir am Ende)
@@ -2700,8 +2731,10 @@ class FolderAuditService:
                     if folder_result.total > 0:
                         all_emails.extend(folder_result.emails)
                         folder_stats[folder_name] = folder_result.total
-                        total_scanned += folder_result.total
-                        logger.debug(f"  📁 {folder_name}: {folder_result.total} Emails (total: {total_scanned})")
+                        logger.debug(
+                            f"  📁 {folder_name}: {folder_result.total} Emails "
+                            f"(Kandidaten gesamt: {len(all_emails)})"
+                        )
                     
                 except Exception as e:
                     error_str = str(e).lower()
@@ -2720,6 +2753,13 @@ class FolderAuditService:
                         logger.warning(f"⚠️ Ordner '{folder_name}' übersprungen: {e}")
                         continue
             
+            # Neueste max_total über alle Ordner (nicht: erste N Ordner in LIST-Reihenfolge)
+            if max_total and len(all_emails) > max_total:
+                logger.info(
+                    f"📊 {len(all_emails)} Kandidaten → behalte neueste {max_total} nach Datum"
+                )
+            all_emails = FolderAuditService._apply_global_limit(all_emails, max_total)
+
             # Gesamtergebnis zusammenbauen
             result.emails = all_emails
             result.total = len(all_emails)
@@ -2893,6 +2933,37 @@ class FolderAuditService:
             logger.debug(f"Folded header extraction error: {e}")
             return None
     
+    @staticmethod
+    def delete_emails_by_folder(
+        fetcher,
+        items: List[Dict],
+    ) -> Tuple[int, int]:
+        """Löscht Mails anhand (Ordner, UID)-Paaren — UID allein reicht bei Multi-Ordner-Scan nicht."""
+        from collections import defaultdict
+
+        by_folder: Dict[str, List[int]] = defaultdict(list)
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            folder = item.get("folder")
+            uid = item.get("uid")
+            if folder is None or uid is None:
+                continue
+            if isinstance(folder, bytes):
+                folder = folder.decode("utf-8", "replace")
+            try:
+                by_folder[str(folder)].append(int(uid))
+            except (TypeError, ValueError):
+                continue
+
+        success = 0
+        failed = 0
+        for folder, uids in by_folder.items():
+            s, f = FolderAuditService.delete_safe_emails(fetcher, uids, folder)
+            success += s
+            failed += f
+        return success, failed
+
     @staticmethod
     def delete_safe_emails(
         fetcher,

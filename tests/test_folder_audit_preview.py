@@ -64,3 +64,36 @@ def test_peek_text_rejects_all_folders_sentinel():
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def test_create_cluster_key_differs_for_same_domain_different_subjects():
+    k1 = FolderAuditService.create_cluster_key(
+        "a@example.com", "Delta Scan: ladyswiss.ch"
+    )
+    k2 = FolderAuditService.create_cluster_key(
+        "b@example.com", "Re: AW: Ferienkürzung bei Krankheit"
+    )
+    assert k1 != k2
+
+
+def test_apply_global_limit_keeps_newest():
+    from datetime import datetime, UTC, timedelta
+
+    base = datetime.now(UTC)
+    emails = [
+        TrashEmailInfo(
+            uid=i,
+            subject=str(i),
+            sender="a@x.ch",
+            sender_name="",
+            date=base - timedelta(days=i),
+            has_attachments=False,
+            flags=[],
+            size=1,
+        )
+        for i in range(5)
+    ]
+    limited = FolderAuditService._apply_global_limit(emails, 2)
+    assert len(limited) == 2
+    assert limited[0].uid == 0
+    assert limited[1].uid == 1
