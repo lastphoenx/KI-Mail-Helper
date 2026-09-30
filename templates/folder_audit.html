@@ -1063,13 +1063,31 @@
         ) || null;
     }
 
+    function parseRowKey(key) {
+        if (!key) return null;
+        const sep = key.indexOf('::');
+        if (sep <= 0) return null;
+        const uid = parseInt(key.slice(sep + 2), 10);
+        if (Number.isNaN(uid)) return null;
+        return { folder: key.slice(0, sep), uid: uid };
+    }
+
     function clusterMemberList(cluster) {
         if (cluster.members && cluster.members.length) {
             return cluster.members;
         }
+        if (cluster.cluster_key && scanResult && scanResult.emails) {
+            return scanResult.emails
+                .filter(e => e.cluster_key === cluster.cluster_key)
+                .map(e => ({ folder: e.folder || currentFolder || '', uid: e.uid }));
+        }
         return (cluster.uids || []).map(uid => {
-            const e = scanResult.emails.find(x => x.uid === uid);
-            return e ? { folder: e.folder || currentFolder || '', uid: e.uid } : null;
+            const matches = scanResult.emails.filter(x => x.uid === uid);
+            if (matches.length === 1) {
+                const e = matches[0];
+                return { folder: e.folder || currentFolder || '', uid: e.uid };
+            }
+            return null;
         }).filter(Boolean);
     }
 
@@ -1548,8 +1566,6 @@
                 .filter(e => e)
                 .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
             
-            const rowKeysAttr = escapeHtml(memberKeys.join(','));
-            
             html += `
                 <div class="cluster-card ${categoryClass}" data-cluster-key="${escapeHtml(cluster.cluster_key)}">
                     <div class="d-flex justify-content-between align-items-start">
@@ -1572,7 +1588,7 @@
                         </div>
                         <div class="text-end d-flex flex-column gap-1">
                             <button class="btn btn-sm ${isAllSelected ? 'btn-primary' : isSomeSelected ? 'btn-outline-primary' : 'btn-outline-secondary'} cluster-select-btn"
-                                    data-row-keys="${rowKeysAttr}">
+                                    data-cluster-key="${escapeHtml(cluster.cluster_key)}">
                                 ${isAllSelected ? '✓ Ausgewählt' : isSomeSelected ? 'Teilweise' : 'Auswählen'}
                             </button>
                             <div class="btn-group btn-group-sm mt-1">
@@ -1664,7 +1680,10 @@
         // Event Listeners für Cluster-Buttons
         container.querySelectorAll('.cluster-select-btn').forEach(btn => {
             btn.addEventListener('click', function() {
-                const keys = (this.dataset.rowKeys || '').split(',').filter(Boolean);
+                const clusterKey = this.dataset.clusterKey;
+                const cluster = scanResult.clusters.find(c => c.cluster_key === clusterKey);
+                if (!cluster) return;
+                const keys = clusterMemberList(cluster).map(m => memberRowKey(m)).filter(Boolean);
                 const allSelected = keys.length > 0 && keys.every(k => selectedKeys.has(k));
                 
                 if (allSelected) {
@@ -1924,13 +1943,7 @@
         }
         
         const accountId = document.getElementById('accountSelect').value;
-        const items = Array.from(selectedKeys).map(key => {
-            const sep = key.indexOf('::');
-            return {
-                folder: key.slice(0, sep),
-                uid: parseInt(key.slice(sep + 2), 10)
-            };
-        }).filter(it => it.folder && !Number.isNaN(it.uid));
+        const items = Array.from(selectedKeys).map(parseRowKey).filter(Boolean);
         
         if (items.length === 0) {
             alert('Auswahl ungültig (Ordner fehlt) — bitte Scan erneut starten.');

@@ -2942,22 +2942,30 @@ class FolderAuditService:
         from collections import defaultdict
 
         by_folder: Dict[str, List[int]] = defaultdict(list)
+        skipped = 0
         for item in items:
             if not isinstance(item, dict):
+                skipped += 1
                 continue
             folder = item.get("folder")
             uid = item.get("uid")
-            if folder is None or uid is None:
+            if uid is None:
+                skipped += 1
                 continue
             if isinstance(folder, bytes):
                 folder = folder.decode("utf-8", "replace")
+            folder = str(folder).strip() if folder is not None else ""
+            if not folder:
+                skipped += 1
+                continue
             try:
-                by_folder[str(folder)].append(int(uid))
+                by_folder[folder].append(int(uid))
             except (TypeError, ValueError):
+                skipped += 1
                 continue
 
         success = 0
-        failed = 0
+        failed = skipped
         for folder, uids in by_folder.items():
             s, f = FolderAuditService.delete_safe_emails(fetcher, uids, folder)
             success += s
@@ -2997,12 +3005,27 @@ class FolderAuditService:
             
             conn.select_folder(target_folder)
             
-            # Bulk delete
-            conn.set_flags(uids, ['\\Deleted'])
+            all_in_folder = set(conn.search(["ALL"]))
+            valid_uids = [u for u in uids if u in all_in_folder]
+            missing = len(uids) - len(valid_uids)
+            if not valid_uids:
+                logger.warning(
+                    f"Delete: keine der {len(uids)} UIDs in Ordner '{target_folder}' gefunden"
+                )
+                return (0, len(uids))
+            
+            # Bulk delete (Batches — GMX/Exchange limitieren grosse STORE-Befehle)
+            batch_size = 50
+            for i in range(0, len(valid_uids), batch_size):
+                batch = valid_uids[i : i + batch_size]
+                conn.set_flags(batch, ["\\Deleted"])
             conn.expunge()
             
-            logger.info(f"🗑️ {len(uids)} Emails aus {target_folder} permanent gelöscht")
-            return (len(uids), 0)
+            logger.info(
+                f"🗑️ {len(valid_uids)} Emails aus {target_folder} permanent gelöscht"
+                + (f" ({missing} UID(s) nicht im Ordner)" if missing else "")
+            )
+            return (len(valid_uids), len(uids) - len(valid_uids))
             
         except Exception as e:
             logger.error(f"Delete Fehler: {e}")

@@ -310,6 +310,16 @@ def delete_trash_emails():
             
             if items:
                 success, failed = FolderAuditService.delete_emails_by_folder(fetcher, items)
+                if success == 0 and failed == 0 and items:
+                    return jsonify({
+                        "success": False,
+                        "deleted": 0,
+                        "failed": len(items),
+                        "error": (
+                            "Keine gültigen Ordner/UID in der Anfrage. "
+                            "Scan neu starten (Hard-Reload). Nach git pull: Gunicorn neu starten."
+                        ),
+                    }), 400
             else:
                 if folder in (None, "", "__ALL__"):
                     return jsonify({
