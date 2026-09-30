@@ -1,0 +1,40 @@
+﻿[Unit]
+Description=KI-Mail-Helper Celery Beat Scheduler
+After=network.target postgresql.service redis-server.service mail-helper-celery-worker.service
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=mailhelper
+Group=mailhelper
+# WICHTIG: Pfade anpassen! Muessen mit mail-helper.service uebereinstimmen -
+# sonst laeuft Beat mit einem anderen SECRET_KEY/DATABASE_URL/REDIS als die
+# Web-App und der Celery-Worker.
+WorkingDirectory=/opt/KI-Mail-Helper
+Environment="PATH=/opt/KI-Mail-Helper/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/opt/KI-Mail-Helper/.env
+
+# Celery Beat für scheduled Tasks
+ExecStart=/opt/KI-Mail-Helper/venv/bin/celery \
+    -A src.celery_app beat \
+    --loglevel=info \
+    --logfile=/var/log/mail-helper/celery-beat.log \
+    --pidfile=/var/run/mail-helper/celery-beat.pid \
+    --schedule=/var/run/mail-helper/celerybeat-schedule
+
+# Graceful Shutdown
+Restart=always
+RestartSec=10s
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Security Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource Limits (Beat ist lightweight)
+MemoryMax=256M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

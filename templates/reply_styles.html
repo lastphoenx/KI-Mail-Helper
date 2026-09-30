@@ -1,0 +1,515 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Antwort-Stile - KI-Mail-Helper{% endblock %}
+
+{% block content %}
+<div class="container-xxl mt-4">
+    
+    <!-- Simple Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>
+            <i class="bi bi-pen"></i> Antwort-Stile
+        </h2>
+        <a href="{{ url_for('settings') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Zurück
+        </a>
+    </div>
+    
+    <p class="lead text-muted mb-4">
+        Passe an, wie deine Antwort-Entwürfe generiert werden
+    </p>
+    
+    <!-- Globale Einstellungen -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="bi bi-globe"></i> Globale Einstellungen
+                <span class="badge bg-info">Wirken auf alle Stile</span>
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <!-- Anrede-Form -->
+                <div class="col-md-6">
+                    <label for="global-address-form" class="form-label fw-bold">Anrede-Form</label>
+                    <select id="global-address-form" class="form-select">
+                        <option value="auto">🔄 Automatisch (aus Email erkennen)</option>
+                        <option value="du">👋 Du (informell)</option>
+                        <option value="sie">🎩 Sie (formell)</option>
+                    </select>
+                </div>
+                
+                <!-- Standard-Anrede -->
+                <div class="col-md-6">
+                    <label for="global-salutation" class="form-label fw-bold">Standard-Anrede</label>
+                    <input type="text" id="global-salutation" 
+                           class="form-control"
+                           placeholder="z.B. Liebe/r, Hallo, Guten Tag">
+                    <small class="form-text text-muted">Leer = KI entscheidet</small>
+                </div>
+                
+                <!-- Grussformel -->
+                <div class="col-md-6">
+                    <label for="global-closing" class="form-label fw-bold">Grussformel</label>
+                    <input type="text" id="global-closing" 
+                           class="form-control"
+                           placeholder="z.B. Beste Grüsse, Viele Grüsse">
+                    <small class="form-text text-muted">Leer = KI entscheidet</small>
+                </div>
+                
+                <!-- Signatur -->
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">📝 Signatur-Einstellungen</label>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" id="global-signature-enabled" 
+                               class="form-check-input">
+                        <label for="global-signature-enabled" class="form-check-label">
+                            Signatur anhängen
+                        </label>
+                    </div>
+                    <textarea id="global-signature-text" 
+                              class="form-control font-monospace" rows="3" maxlength="2000"
+                              placeholder="z.B. Mike&#10;Technischer Support&#10;Firma GmbH&#10;+41 79 123 45 67"></textarea>
+                    <small class="form-text text-muted">💡 Tipp: Mehrzeilige Signaturen mit Enter-Taste<br>
+                    ⚠️ <strong>Priorität:</strong> Account-Signatur > Stil-Signatur > Diese globale Signatur</small>
+                </div>
+                
+                <!-- Zusätzliche Anweisungen -->
+                <div class="col-12">
+                    <label for="global-custom-instructions" class="form-label fw-bold">
+                        🤖 Zusätzliche Anweisungen für die KI
+                    </label>
+                    <textarea id="global-custom-instructions" 
+                              class="form-control" rows="4"
+                              placeholder="Beispiele:&#10;• In unserer Firma ist es üblich, dass wir uns duzen&#10;• Wir verwenden nie Emojis in geschäftlichen Mails&#10;• Immer kurz und prägnant formulieren&#10;• Bei Ablehnungen immer eine Alternative anbieten"></textarea>
+                    <small class="form-text text-muted">
+                        💡 Diese Anweisungen gelten für alle Antwort-Stile und werden mit den spezifischen Stil-Vorgaben kombiniert.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Stil-spezifische Einstellungen -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="bi bi-palette"></i> Stil-spezifische Einstellungen
+                <span class="badge bg-secondary">Optional - überschreibt Global</span>
+            </h5>
+        </div>
+        <div class="card-body">
+            
+            <!-- Tab-Buttons (Bootstrap Style) -->
+            <div class="mb-4">
+                <label class="form-label fw-bold">Ton der Antwort:</label>
+                <div class="btn-group w-100" role="group" id="styleButtonGroup">
+                    <button type="button" class="btn btn-outline-primary style-btn active" data-style="formal">
+                        📜 Formell
+                    </button>
+                    <button type="button" class="btn btn-outline-primary style-btn" data-style="friendly">
+                        😊 Freundlich
+                    </button>
+                    <button type="button" class="btn btn-outline-primary style-btn" data-style="brief">
+                        ⚡ Kurz
+                    </button>
+                    <button type="button" class="btn btn-outline-primary style-btn" data-style="decline">
+                        ❌ Ablehnung
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Tab Content -->
+            <div id="style-tab-content">
+                <div class="text-center py-4 text-muted">
+                    <div class="spinner-border spinner-border-sm" role="status">
+                        <span class="visually-hidden">Lade...</span>
+                    </div>
+                    <p class="mt-2">Lade Einstellungen...</p>
+                </div>
+            </div>
+            
+            <!-- Vorschau -->
+            <hr class="my-4">
+            <h5 class="mb-3">
+                <i class="bi bi-eye"></i> Vorschau
+                <button id="refresh-preview-btn" class="btn btn-sm btn-outline-secondary ms-2">
+                    <i class="bi bi-arrow-clockwise"></i> Aktualisieren
+                </button>
+            </h5>
+            
+            <div class="alert alert-info mb-3">
+                <small><strong>💡 Hinweis:</strong> Dies ist ein KI-generierter Entwurf. Bitte überprüfen und ggf. anpassen!</small>
+            </div>
+            
+            <label class="form-label fw-bold">Generierter Antwort-Text:</label>
+            <textarea id="preview-text" class="form-control font-monospace" rows="8" readonly>
+Lade Vorschau...</textarea>
+            <small class="form-text text-muted mt-2">
+                So sieht eine Antwort mit den aktuellen Einstellungen aus
+            </small>
+        </div>
+    </div>
+    
+    <!-- Action Buttons -->
+    <div class="d-flex justify-content-between gap-2 mb-4">
+        <button id="reset-defaults-btn" class="btn btn-outline-warning">
+            <i class="bi bi-arrow-counterclockwise"></i> Auf Standard zurücksetzen
+        </button>
+        <button id="save-all-btn" class="btn btn-success btn-lg">
+            <i class="bi bi-check-lg"></i> Alle Änderungen speichern
+        </button>
+    </div>
+    
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+// CSRF Token Helper
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
+// State
+let currentStyle = 'formal';
+let settings = {};
+let unsavedChanges = false;
+
+// Load on page load
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadSettings();
+    switchTab('formal');
+    
+    // Attach event listeners to global form fields
+    document.getElementById('global-address-form').addEventListener('change', updateGlobal);
+    document.getElementById('global-salutation').addEventListener('change', updateGlobal);
+    document.getElementById('global-closing').addEventListener('change', updateGlobal);
+    document.getElementById('global-signature-enabled').addEventListener('change', updateGlobal);
+    document.getElementById('global-signature-text').addEventListener('change', updateGlobal);
+    document.getElementById('global-custom-instructions').addEventListener('change', updateGlobal);
+    
+    // Attach event listeners to tab buttons
+    document.querySelectorAll('.style-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const style = btn.dataset.style;
+            if (style) switchTab(style);
+        });
+    });
+    
+    // Attach event listeners to action buttons
+    document.getElementById('refresh-preview-btn').addEventListener('click', refreshPreview);
+    document.getElementById('save-all-btn').addEventListener('click', saveAllSettings);
+    document.getElementById('reset-defaults-btn').addEventListener('click', resetToDefaults);
+});
+
+async function loadSettings() {
+    try {
+        const response = await fetch('/api/reply-styles');
+        if (!response.ok) throw new Error('Failed to load settings');
+        settings = await response.json();
+        populateGlobalForm();
+    } catch (error) {
+        console.error('Error loading settings:', error);
+        showToast('Fehler beim Laden der Einstellungen', 'error');
+    }
+}
+
+function populateGlobalForm() {
+    const global = settings.global || {};
+    document.getElementById('global-address-form').value = global.address_form || 'auto';
+    document.getElementById('global-salutation').value = global.salutation || '';
+    document.getElementById('global-closing').value = global.closing || '';
+    document.getElementById('global-signature-enabled').checked = global.signature_enabled || false;
+    document.getElementById('global-signature-text').value = global.signature_text || '';
+    document.getElementById('global-custom-instructions').value = global.custom_instructions || '';
+}
+
+function switchTab(styleKey) {
+    currentStyle = styleKey;
+    
+    // Update button styling
+    document.querySelectorAll('.style-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.style === styleKey) {
+            btn.classList.add('active');
+        }
+    });
+    
+    // Render tab content
+    renderStyleTab(styleKey);
+    refreshPreview();
+}
+
+function renderStyleTab(styleKey) {
+    const style = settings[styleKey] || {};
+    const global = settings.global || {};
+    
+    const html = `
+        <div class="alert alert-primary border-start border-4 mb-4">
+            <div class="d-flex align-items-start">
+                <i class="bi bi-info-circle me-2 fs-5"></i>
+                <div>
+                    <strong>Leere Felder übernehmen die globalen Einstellungen</strong><br>
+                    <small>Fülle nur die Felder aus, die für diesen Stil anders sein sollen.</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label for="style-address-form" class="form-label fw-bold">Anrede-Form</label>
+                <select id="style-address-form" class="form-select">
+                    <option value="">— Von Global übernehmen —</option>
+                    <option value="auto" ${style.address_form === 'auto' ? 'selected' : ''}>🔄 Automatisch</option>
+                    <option value="du" ${style.address_form === 'du' ? 'selected' : ''}>👋 Du</option>
+                    <option value="sie" ${style.address_form === 'sie' ? 'selected' : ''}>🎩 Sie</option>
+                </select>
+                <small class="form-text text-muted">Global: ${global.address_form || 'auto'}</small>
+            </div>
+            
+            <div class="col-md-6">
+                <label for="style-salutation" class="form-label fw-bold">Anrede</label>
+                <input type="text" id="style-salutation" class="form-control"
+                       placeholder="Von Global übernehmen"
+                       value="${style.salutation || ''}">
+                <small class="form-text text-muted">Global: ${global.salutation || '(KI entscheidet)'}</small>
+            </div>
+            
+            <div class="col-md-12">
+                <label for="style-closing" class="form-label fw-bold">Grussformel</label>
+                <input type="text" id="style-closing" class="form-control"
+                       placeholder="Von Global übernehmen"
+                       value="${style.closing || ''}">
+                <small class="form-text text-muted">Global: ${global.closing || '(KI entscheidet)'}</small>
+            </div>
+            
+            <div class="col-md-12">
+                <label for="style-custom-instructions" class="form-label fw-bold">
+                    💬 Zusätzliche Anweisungen für diesen Stil
+                </label>
+                <textarea id="style-custom-instructions" class="form-control" rows="3" maxlength="2000"
+                          placeholder="z.B. Bei Ablehnungen immer eine Alternative anbieten">${style.custom_instructions || ''}</textarea>
+                <small class="form-text text-muted">💡 Diese Anweisungen ergänzen die globalen Anweisungen speziell für diesen Stil.</small>
+            </div>
+            
+            <div class="col-md-12">
+                <hr class="my-3">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="style-signature-enabled" ${style.signature_enabled ? 'checked' : ''}>
+                    <label class="form-check-label fw-bold" for="style-signature-enabled">
+                        ✍️ Stil-spezifische Signatur verwenden
+                    </label>
+                </div>
+                <label for="style-signature-text" class="form-label fw-bold">Signatur-Text für diesen Stil</label>
+                <textarea id="style-signature-text" class="form-control font-monospace" rows="3" maxlength="2000"
+                          placeholder="Von Global übernehmen oder individuell für diesen Stil">${style.signature_text || ''}</textarea>
+                <small class="form-text text-muted">Global: ${global.signature_text || '(keine)'}<br>
+                ⚠️ <strong>Priorität:</strong> Account-Signatur > Diese Stil-Signatur > Globale Signatur</small>
+            </div>
+        </div>
+        
+        <div class="d-flex justify-content-end mt-4">
+            <button id="reset-style-btn" data-style="${styleKey}" class="btn btn-warning">
+                <i class="bi bi-trash"></i> Überschreibungen löschen (auf Global zurück)
+            </button>
+        </div>
+    `;
+    
+    document.getElementById('style-tab-content').innerHTML = html;
+    
+    // Attach event listeners to dynamically created elements
+    const addressForm = document.getElementById('style-address-form');
+    const salutation = document.getElementById('style-salutation');
+    const closing = document.getElementById('style-closing');
+    const customInstr = document.getElementById('style-custom-instructions');
+    const signatureEnabled = document.getElementById('style-signature-enabled');
+    const signatureText = document.getElementById('style-signature-text');
+    const resetBtn = document.getElementById('reset-style-btn');
+    
+    if (addressForm) addressForm.addEventListener('change', markUnsaved);
+    if (salutation) salutation.addEventListener('change', markUnsaved);
+    if (closing) closing.addEventListener('change', markUnsaved);
+    if (customInstr) customInstr.addEventListener('change', markUnsaved);
+    if (signatureEnabled) signatureEnabled.addEventListener('change', markUnsaved);
+    if (signatureText) signatureText.addEventListener('change', markUnsaved);
+    if (resetBtn) resetBtn.addEventListener('click', () => resetStyleToGlobal(styleKey));
+}
+
+async function refreshPreview() {
+    try {
+        const response = await fetch('/api/reply-styles/preview', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({
+                style_key: currentStyle,
+                sample_sender: 'Max Mustermann <max@example.com>'
+            })
+        });
+        
+        if (!response.ok) throw new Error('Preview failed');
+        const data = await response.json();
+        document.getElementById('preview-text').textContent = data.preview_text;
+    } catch (error) {
+        console.error('Preview error:', error);
+        document.getElementById('preview-text').textContent = 'Fehler beim Laden der Vorschau';
+    }
+}
+
+function markUnsaved() {
+    unsavedChanges = true;
+}
+
+function updateGlobal() {
+    markUnsaved();
+    // Speichere in lokalem State
+    settings.global = {
+        address_form: document.getElementById('global-address-form').value,
+        salutation: document.getElementById('global-salutation').value || null,
+        closing: document.getElementById('global-closing').value || null,
+        signature_enabled: document.getElementById('global-signature-enabled').checked,
+        signature_text: document.getElementById('global-signature-text').value || null,
+        custom_instructions: document.getElementById('global-custom-instructions').value || null,
+    };
+    refreshPreview();
+}
+
+async function saveAllSettings() {
+    const saveBtn = event.target;
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Speichere...';
+    
+    try {
+        // Global speichern
+        const globalResponse = await fetch('/api/reply-styles/global', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify(settings.global)
+        });
+        
+        if (!globalResponse.ok) throw new Error('Failed to save global settings');
+        
+        // Validierung: signature_enabled=true erfordert signature_text
+        const styleSignatureEnabled = document.getElementById('style-signature-enabled')?.checked || false;
+        const styleSignatureText = document.getElementById('style-signature-text')?.value?.trim() || '';
+        
+        if (styleSignatureEnabled && !styleSignatureText) {
+            showToast('⚠️ Stil-Signatur aktiviert aber Text ist leer!', 'error');
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-lg"></i> Alle Änderungen speichern';
+            return;
+        }
+        
+        // Aktuellen Stil speichern (falls geändert)
+        const styleData = {
+            address_form: document.getElementById('style-address-form')?.value || null,
+            salutation: document.getElementById('style-salutation')?.value || null,
+            closing: document.getElementById('style-closing')?.value || null,
+            signature_enabled: styleSignatureEnabled,
+            signature_text: styleSignatureText || null,
+            custom_instructions: document.getElementById('style-custom-instructions')?.value || null,
+        };
+        
+        // Nur speichern wenn mindestens ein Wert gesetzt
+        if (Object.values(styleData).some(v => v)) {
+            const styleResponse = await fetch(`/api/reply-styles/${currentStyle}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify(styleData)
+            });
+            
+            if (!styleResponse.ok) throw new Error('Failed to save style settings');
+        }
+        
+        unsavedChanges = false;
+        showToast('✅ Einstellungen gespeichert!', 'success');
+        
+    } catch (error) {
+        console.error('Save error:', error);
+        showToast('❌ Fehler beim Speichern', 'error');
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="bi bi-check-lg"></i> Alle Änderungen speichern';
+    }
+}
+
+async function resetStyleToGlobal(styleKey) {
+    if (!confirm(`Alle Überschreibungen für "${styleKey}" löschen und auf Global zurücksetzen?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/reply-styles/${styleKey}`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCsrfToken()
+            }
+        });
+        
+        if (!response.ok) throw new Error('Delete failed');
+        
+        delete settings[styleKey];
+        renderStyleTab(styleKey);
+        refreshPreview();
+        showToast('✅ Auf Global zurückgesetzt', 'success');
+    } catch (error) {
+        console.error('Reset error:', error);
+        showToast('❌ Fehler beim Zurücksetzen', 'error');
+    }
+}
+
+async function resetToDefaults() {
+    if (!confirm('Alle Einstellungen auf Standard zurücksetzen?\n\nDies löscht alle deine Anpassungen!')) {
+        return;
+    }
+    
+    try {
+        // Alle Stile löschen
+        for (const style of ['formal', 'friendly', 'brief', 'decline']) {
+            await fetch(`/api/reply-styles/${style}`, {
+                method: 'DELETE',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            });
+        }
+        
+        // Global auch zurücksetzen (auf defaults)
+        settings = {
+            global: {
+                address_form: 'auto',
+                salutation: null,
+                closing: null,
+                signature_enabled: false,
+                signature_text: null,
+                custom_instructions: null
+            }
+        };
+        
+        populateGlobalForm();
+        renderStyleTab(currentStyle);
+        refreshPreview();
+        showToast('✅ Auf Standard zurückgesetzt', 'success');
+    } catch (error) {
+        console.error('Reset error:', error);
+        showToast('❌ Fehler beim Zurücksetzen', 'error');
+    }
+}
+
+function showToast(message, type) {
+    // Simple toast notification
+    const toast = document.createElement('div');
+    toast.className = `alert alert-${type === 'error' ? 'danger' : 'success'} position-fixed top-0 end-0 m-3`;
+    toast.style.zIndex = '9999';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+</script>
+{% endblock %}

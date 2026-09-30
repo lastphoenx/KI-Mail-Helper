@@ -1,0 +1,199 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Dashboard - Mail Helper{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">
+    📊 Mail-Prioritäten Dashboard
+    {% if selected_account %}
+        <span class="badge bg-primary ms-2">{{ selected_account.decrypted_imap_username or selected_account.name }}</span>
+    {% endif %}
+</h1>
+
+<!-- Account-Filter -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-center">
+            <div class="col-auto">
+                <label class="form-label small mb-0 me-2">📧 Account:</label>
+            </div>
+            <div class="col-auto">
+                <select class="form-select form-select-sm" id="accountSelect">
+                    <option value="">Alle Accounts</option>
+                    {% if user_accounts %}
+                        {% for account in user_accounts %}
+                        <option value="{{ account.id }}" {% if account.id|string == filter_account_id|string %}selected{% endif %}>
+                            {{ account.decrypted_imap_username or account.name }}
+                            {% if account.id|string == filter_account_id|string %}({{ stats.total }} Mails){% endif %}
+                        </option>
+                        {% endfor %}
+                    {% endif %}
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col">
+        <div class="alert alert-info">
+            <strong>3×3 Prioritäten-Matrix:</strong> Wichtigkeit (X-Achse) × Dringlichkeit (Y-Achse)
+        </div>
+    </div>
+</div>
+
+<!-- 3x3 Matrix -->
+<div class="mb-5">
+    <h3>Matrix-Ansicht</h3>
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th></th>
+                <th class="text-center">Wenig wichtig (1)</th>
+                <th class="text-center">Mittel wichtig (2)</th>
+                <th class="text-center">Sehr wichtig (3)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Zeile 3: Sehr dringend -->
+            <tr>
+                <td><strong>Sehr dringend (3)</strong></td>
+                <td class="matrix-cell priority-gelb text-center">
+                    <div class="h2">{{ matrix.get('13', 0) }}</div>
+                    <small>Score: 7</small>
+                </td>
+                <td class="matrix-cell priority-rot text-center">
+                    <div class="h2">{{ matrix.get('23', 0) }}</div>
+                    <small>Score: 8</small>
+                </td>
+                <td class="matrix-cell priority-rot text-center">
+                    <div class="h2">{{ matrix.get('33', 0) }}</div>
+                    <small>Score: 9</small>
+                </td>
+            </tr>
+            <!-- Zeile 2: Mittel dringend -->
+            <tr>
+                <td><strong>Mittel dringend (2)</strong></td>
+                <td class="matrix-cell priority-gelb text-center">
+                    <div class="h2">{{ matrix.get('12', 0) }}</div>
+                    <small>Score: 5</small>
+                </td>
+                <td class="matrix-cell priority-gelb text-center">
+                    <div class="h2">{{ matrix.get('22', 0) }}</div>
+                    <small>Score: 6</small>
+                </td>
+                <td class="matrix-cell priority-gelb text-center">
+                    <div class="h2">{{ matrix.get('32', 0) }}</div>
+                    <small>Score: 7</small>
+                </td>
+            </tr>
+            <!-- Zeile 1: Wenig dringend -->
+            <tr>
+                <td><strong>Wenig dringend (1)</strong></td>
+                <td class="matrix-cell priority-grün text-center">
+                    <div class="h2">{{ matrix.get('11', 0) }}</div>
+                    <small>Score: 3</small>
+                </td>
+                <td class="matrix-cell priority-grün text-center">
+                    <div class="h2">{{ matrix.get('21', 0) }}</div>
+                    <small>Score: 4</small>
+                </td>
+                <td class="matrix-cell priority-gelb text-center">
+                    <div class="h2">{{ matrix.get('31', 0) }}</div>
+                    <small>Score: 5</small>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Ampel-Ansicht -->
+<div class="mb-5">
+    <h3>Ampel-Ansicht</h3>
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5>🔴 Hohe Priorität</h5>
+                </div>
+                <div class="card-body">
+                    <p class="h2">{{ ampel.rot|default(0) }}</p>
+                    <p>Mails mit Score 8-9</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-warning">
+                <div class="card-header bg-warning">
+                    <h5>🟡 Mittlere Priorität</h5>
+                </div>
+                <div class="card-body">
+                    <p class="h2">{{ ampel.gelb|default(0) }}</p>
+                    <p>Mails mit Score 5-7</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-success">
+                <div class="card-header bg-success text-white">
+                    <h5>🟢 Niedrige Priorität</h5>
+                </div>
+                <div class="card-body">
+                    <p class="h2">{{ ampel.grün|default(0) }}</p>
+                    <p>Mails mit Score 3-4</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5>📊 Statistik</h5>
+                <ul>
+                    <li>Gesamt: <strong>{{ stats.total|default(0) }}</strong> Mails</li>
+                    <li>Offen: <strong>{{ stats.open|default(0) }}</strong></li>
+                    <li>Erledigt: <strong>{{ stats.done|default(0) }}</strong></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5>🏷️ Top Tags</h5>
+                <ul>
+                    {% for tag in top_tags|default([]) %}
+                    <li>{{ tag }}</li>
+                    {% else %}
+                    <li class="text-muted">Keine Tags vorhanden</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+document.addEventListener('DOMContentLoaded', function() {
+    const accountSelect = document.getElementById('accountSelect');
+    if (accountSelect) {
+        accountSelect.addEventListener('change', function() {
+            const accountId = this.value;
+            const url = new URL(window.location.href);
+            
+            if (accountId) {
+                url.searchParams.set('mail_account', accountId);
+            } else {
+                url.searchParams.delete('mail_account');
+            }
+            
+            window.location.href = url.toString();
+        });
+    }
+});
+</script>
+{% endblock %}

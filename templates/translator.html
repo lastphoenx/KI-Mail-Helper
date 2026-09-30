@@ -1,0 +1,580 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Übersetzer - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container-xxl mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">🌍 KI-Übersetzer</h2>
+        <a href="/dashboard" class="btn btn-outline-secondary">← Dashboard</a>
+    </div>
+    
+    <!-- Header Card -->
+    <div class="card border-0 shadow-sm mb-4" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#f8fafc;">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div>
+                    <p class="text-uppercase small mb-1 opacity-75">Übersetzung</p>
+                    <h4 class="mb-2">Text in andere Sprachen übersetzen</h4>
+                    <p class="mb-0" style="max-width:520px;">
+                        Automatische Spracherkennung via fastText (lokal). Übersetzung via 
+                        Opus-MT (lokal), Ollama oder Cloud-KI (OpenAI/Anthropic/Mistral).
+                    </p>
+                </div>
+                <span class="badge bg-light text-dark px-3 py-2 align-self-start">🔍 fastText + 💻 Opus-MT</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Input Section -->
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="fw-bold">Quelltext</span>
+                        <span id="detectedLanguage" class="badge bg-secondary ms-2" style="display:none;">
+                            Erkannt: <span id="detectedLangName">-</span>
+                            <span id="detectedConfidence" class="opacity-75 ms-1"></span>
+                        </span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="clearBtn">
+                        🗑️ Leeren
+                    </button>
+                </div>
+                <div class="card-body">
+                    <textarea 
+                        id="sourceText" 
+                        class="form-control" 
+                        rows="12" 
+                        placeholder="Text hier eingeben oder einfügen..."
+                        style="resize: none; font-size: 1rem; line-height: 1.6;"
+                    ></textarea>
+                    <div class="d-flex justify-content-between align-items-center mt-2">
+                        <small class="text-muted">
+                            <span id="charCount">0</span> Zeichen
+                        </small>
+                        <small class="text-muted" id="detectStatus"></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Output Section -->
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="fw-bold">Übersetzung</span>
+                        <span id="targetLanguageBadge" class="badge bg-primary ms-2" style="display:none;">
+                            → <span id="targetLangName">-</span>
+                        </span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-success" id="copyBtn" disabled>
+                        📋 Kopieren
+                    </button>
+                </div>
+                <div class="card-body">
+                    <textarea 
+                        id="translatedText" 
+                        class="form-control" 
+                        rows="12" 
+                        readonly
+                        placeholder="Übersetzung erscheint hier..."
+                        style="resize: none; font-size: 1rem; line-height: 1.6; background-color: #f8f9fa;"
+                    ></textarea>
+                    <div class="d-flex justify-content-between align-items-center mt-2">
+                        <small class="text-muted" id="translateStatus"></small>
+                        <small class="text-muted" id="modelUsed"></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Target Language Selection -->
+    <div class="card border-0 shadow-sm mt-4">
+        <div class="card-body">
+            <div class="row align-items-center g-3">
+                <div class="col-auto">
+                    <label class="form-label mb-0 fw-bold">Übersetzen nach:</label>
+                </div>
+                <div class="col" id="targetLanguageButtons">
+                    <!-- Dynamisch gefüllt -->
+                    <div class="text-muted">Bitte erst Text eingeben...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Provider & Engine Selection -->
+    <div class="card border-0 shadow-sm mt-3">
+        <div class="card-body">
+            <div class="row align-items-center g-3">
+                <!-- Engine Toggle -->
+                <div class="col-auto">
+                    <label class="form-label mb-0 fw-bold">Engine:</label>
+                </div>
+                <div class="col-auto">
+                    <div class="btn-group" role="group" aria-label="Engine selection">
+                        <input type="radio" class="btn-check" name="engine" id="engineCloud" value="cloud">
+                        <label class="btn btn-outline-primary btn-sm" for="engineCloud">🧠 LLM (Cloud/Ollama)</label>
+                        
+                        <input type="radio" class="btn-check" name="engine" id="engineLocal" value="local" checked>
+                        <label class="btn btn-outline-success btn-sm" for="engineLocal">💻 Opus-MT (lokal)</label>
+                    </div>
+                </div>
+                
+                <!-- Provider Selection (nur für Cloud) -->
+                <div class="col-auto" id="cloudOptions">
+                    <label class="form-label mb-0 fw-bold ms-3">Provider:</label>
+                </div>
+                <div class="col-auto" id="providerContainer">
+                    <select id="providerSelect" class="form-select form-select-sm" style="min-width: 130px;">
+                        <option value="">Lade...</option>
+                    </select>
+                </div>
+                
+                <!-- Model Selection (nur für Cloud) -->
+                <div class="col-auto" id="modelLabel">
+                    <label class="form-label mb-0 fw-bold">Modell:</label>
+                </div>
+                <div class="col-auto" id="modelContainer">
+                    <select id="modelSelect" class="form-select form-select-sm" style="min-width: 180px;">
+                        <option value="">Wähle Provider...</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Box -->
+    <div class="alert alert-info mt-4">
+        <div class="d-flex gap-3">
+            <div>ℹ️</div>
+            <div>
+                <strong>Spracherkennung:</strong> lokal via fastText (176 Sprachen). 
+                <strong>Übersetzung:</strong> Opus-MT (lokal), Ollama oder Cloud-KI (OpenAI/Anthropic/Mistral).
+                <br>
+                <small class="text-muted">
+                    Zielsprachen: Deutsch, Englisch, Französisch, Italienisch, Spanisch, Portugiesisch, Niederländisch, Polnisch.
+                    Opus-MT lädt Modelle beim ersten Aufruf (~300&nbsp;MB pro Sprachpaar; benötigt PyTorch).
+                    Portugiesisch (DE↔PT) nutzt Pivot über Englisch. Vorab-Cache:
+                    <code>bash scripts/install-opus-mt-models.sh</code>
+                    Für Ollama: <code>ollama pull qwen2.5:7b-instruct</code> auf dem Ollama-Host
+                    (<code>OLLAMA_BASE_URL</code>). Die Liste zeigt nur installierte Modelle.
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .lang-btn {
+        min-width: 80px;
+        font-weight: 500;
+    }
+    .lang-btn.active {
+        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.25);
+    }
+    #translatedText:focus {
+        background-color: #f8f9fa !important;
+    }
+    .spinner-border-sm {
+        width: 1rem;
+        height: 1rem;
+        border-width: 0.15em;
+    }
+</style>
+
+<script nonce="{{ csp_nonce() }}">
+// ═══════════════════════════════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════════════════════════════
+let detectedLanguage = null;
+let selectedTargetLang = null;
+let debounceTimer = null;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Init: Load Providers on Page Load (gleiche API wie settings.html)
+// ═══════════════════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', initializeProviders);
+
+async function initializeProviders() {
+    try {
+        // Nutze dieselbe API wie settings.html
+        const response = await fetch('/api/available-providers', {credentials: 'include'});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const data = await response.json();
+        const providers = data.providers || [];
+        
+        const providerSelect = document.getElementById('providerSelect');
+        providerSelect.innerHTML = '';
+        
+        // LLM-Provider: Cloud-Keys + Ollama (lokal)
+        providers.forEach(p => {
+            if (['openai', 'anthropic', 'mistral', 'ollama'].includes(p.id)) {
+                const option = document.createElement('option');
+                option.value = p.id;
+                option.textContent = p.name;
+                providerSelect.appendChild(option);
+            }
+        });
+        
+        // Ollama bevorzugen wenn verfügbar, sonst erster Eintrag
+        const ollamaOpt = Array.from(providerSelect.options).find(o => o.value === 'ollama');
+        if (ollamaOpt) {
+            providerSelect.value = 'ollama';
+        }
+        
+        // Initial: Provider wählen und Modelle laden
+        if (providerSelect.options.length > 0) {
+            await updateModels(providerSelect.value);
+        }
+        
+    } catch (error) {
+        console.error('Failed to load providers:', error);
+        document.getElementById('providerSelect').innerHTML = 
+            '<option value="">Fehler beim Laden</option>';
+    }
+}
+
+async function updateModels(providerId) {
+    const modelSelect = document.getElementById('modelSelect');
+    modelSelect.innerHTML = '<option value="">Lade Modelle…</option>';
+    
+    const TRANSLATION_MODELS = {
+        openai: [
+            { id: 'gpt-4o-mini', name: '💬 GPT-4o Mini (schnell & günstig)' },
+            { id: 'gpt-4o', name: '💬 GPT-4o (beste Qualität)' },
+            { id: 'gpt-4-turbo', name: '💬 GPT-4 Turbo' }
+        ],
+        anthropic: [
+            { id: 'claude-sonnet-4-20250514', name: '💬 Claude Sonnet 4 (empfohlen)' },
+            { id: 'claude-3-5-haiku-20241022', name: '💬 Claude 3.5 Haiku (schnell)' }
+        ],
+        mistral: [
+            { id: 'mistral-large-latest', name: '💬 Mistral Large' },
+            { id: 'mistral-small-latest', name: '💬 Mistral Small (schnell)' }
+        ]
+    };
+    
+    let models = TRANSLATION_MODELS[providerId] || [];
+    
+    if (providerId === 'ollama') {
+        try {
+            const response = await fetch('/api/available-models/ollama', { credentials: 'include' });
+            if (response.ok) {
+                const data = await response.json();
+                const chatModels = (data.models || []).filter(m => {
+                    if (m.type === 'embedding') return false;
+                    const id = (m.id || '').toLowerCase();
+                    return !id.includes('embed') && !id.includes('vl') && !id.includes('vision');
+                });
+                models = chatModels.map(m => ({
+                    id: m.id,
+                    name: `🦙 ${m.display_name || m.name || m.id} (${m.id})`
+                }));
+                const preferred = ['qwen2.5:7b-instruct', 'qwen2.5:7b', 'qwen3:8b', 'llama3.1:8b', 'llama3.2:3b', 'mistral:7b'];
+                models.sort((a, b) => {
+                    const ai = preferred.indexOf(a.id);
+                    const bi = preferred.indexOf(b.id);
+                    if (ai === -1 && bi === -1) return a.id.localeCompare(b.id);
+                    if (ai === -1) return 1;
+                    if (bi === -1) return -1;
+                    return ai - bi;
+                });
+            }
+        } catch (e) {
+            console.warn('Ollama model load failed', e);
+        }
+        if (!models.length) {
+            models = [
+                { id: 'qwen2.5:7b-instruct', name: '🦙 qwen2.5:7b-instruct (nicht installiert – ollama pull)' },
+                { id: 'llama3.1:8b', name: '🦙 llama3.1:8b' },
+                { id: 'llama3.2:3b', name: '🦙 llama3.2:3b (schnell)' }
+            ];
+        }
+    }
+    
+    modelSelect.innerHTML = '';
+    models.forEach((m, idx) => {
+        const option = document.createElement('option');
+        option.value = m.id;
+        option.textContent = m.name;
+        if (idx === 0) option.selected = true;
+        modelSelect.appendChild(option);
+    });
+    
+    if (models.length === 0) {
+        modelSelect.innerHTML = '<option value="">Keine Modelle verfügbar</option>';
+    }
+}
+
+// Provider change handler
+document.getElementById('providerSelect').addEventListener('change', async function() {
+    await updateModels(this.value);
+    // Re-translate if we have content
+    if (document.getElementById('translatedText').value) {
+        translateText();
+    }
+});
+
+// Model change handler
+document.getElementById('modelSelect').addEventListener('change', function() {
+    // Re-translate if we have content  
+    if (document.getElementById('translatedText').value) {
+        translateText();
+    }
+});
+
+// Engine toggle handler - zeigt/versteckt Cloud-Optionen
+function setEngineUi(isCloud) {
+    const display = isCloud ? 'block' : 'none';
+    ['cloudOptions', 'providerContainer', 'modelLabel', 'modelContainer'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = display;
+    });
+}
+
+document.querySelectorAll('input[name="engine"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        setEngineUi(this.value === 'cloud');
+        
+        // Re-translate if we have content
+        if (document.getElementById('translatedText').value) {
+            translateText();
+        }
+    });
+});
+
+// Initial: Opus-MT aktiv → LLM-Optionen ausblenden
+setEngineUi(document.getElementById('engineCloud')?.checked === true);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Event Listeners (CSP-compliant)
+// ═══════════════════════════════════════════════════════════════════════════════
+document.getElementById('clearBtn').addEventListener('click', clearInput);
+document.getElementById('copyBtn').addEventListener('click', copyOutput);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Language Detection (debounced)
+// ═══════════════════════════════════════════════════════════════════════════════
+function handleTextInput() {
+    const text = document.getElementById('sourceText').value;
+    document.getElementById('charCount').textContent = text.length;
+    
+    // Debounce: Warte 300ms nach letztem Tastendruck
+    clearTimeout(debounceTimer);
+    
+    if (text.length < 10) {
+        document.getElementById('detectedLanguage').style.display = 'none';
+        document.getElementById('targetLanguageButtons').innerHTML = 
+            '<div class="text-muted">Bitte mindestens 10 Zeichen eingeben...</div>';
+        detectedLanguage = null;
+        return;
+    }
+    
+    document.getElementById('detectStatus').innerHTML = 
+        '<span class="spinner-border spinner-border-sm me-1"></span>Erkenne...';
+    
+    debounceTimer = setTimeout(() => detectLanguage(text), 300);
+}
+
+// Event Listeners für Text-Input (input + paste)
+document.getElementById('sourceText').addEventListener('input', handleTextInput);
+document.getElementById('sourceText').addEventListener('paste', function() {
+    // Paste-Event feuert vor dem Wert-Update, daher setTimeout
+    setTimeout(handleTextInput, 10);
+});
+
+async function detectLanguage(text) {
+    try {
+        const response = await fetch('/api/translate/detect', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify({ text: text.substring(0, 500) })
+        });
+        
+        const data = await response.json();
+        
+        if (data.language && data.language !== 'unknown') {
+            detectedLanguage = data.language;
+            
+            // Show detected language
+            document.getElementById('detectedLanguage').style.display = 'inline';
+            document.getElementById('detectedLangName').textContent = data.language_name;
+            document.getElementById('detectedConfidence').textContent = 
+                `(${(data.confidence * 100).toFixed(0)}%)`;
+            
+            // Build target language buttons
+            buildTargetButtons(data.target_languages);
+            
+            document.getElementById('detectStatus').innerHTML = 
+                `<span class="text-success">✓ ${data.language_name} erkannt</span>`;
+        } else {
+            document.getElementById('detectStatus').innerHTML = 
+                '<span class="text-warning">Sprache nicht erkannt</span>';
+        }
+    } catch (error) {
+        console.error('Detection error:', error);
+        document.getElementById('detectStatus').innerHTML = 
+            '<span class="text-danger">Fehler bei Erkennung</span>';
+    }
+}
+
+function buildTargetButtons(languages) {
+    const container = document.getElementById('targetLanguageButtons');
+    container.innerHTML = '';
+    
+    languages.forEach((lang, index) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-outline-primary lang-btn me-2 mb-2';
+        btn.textContent = lang.name;
+        btn.dataset.code = lang.code;
+        btn.onclick = () => selectTargetLanguage(lang.code, lang.name, btn);
+        
+        // Auto-select first (usually German)
+        if (index === 0) {
+            setTimeout(() => selectTargetLanguage(lang.code, lang.name, btn), 100);
+        }
+        
+        container.appendChild(btn);
+    });
+}
+
+function selectTargetLanguage(code, name, btnElement) {
+    // Remove active from all
+    document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active', 'btn-primary'));
+    document.querySelectorAll('.lang-btn').forEach(b => b.classList.add('btn-outline-primary'));
+    
+    // Mark as active
+    btnElement.classList.remove('btn-outline-primary');
+    btnElement.classList.add('btn-primary', 'active');
+    
+    selectedTargetLang = code;
+    
+    // Show target badge
+    document.getElementById('targetLanguageBadge').style.display = 'inline';
+    document.getElementById('targetLangName').textContent = name;
+    
+    // Auto-translate
+    translateText();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Translation
+// ═══════════════════════════════════════════════════════════════════════════════
+async function translateText() {
+    const text = document.getElementById('sourceText').value;
+    
+    if (!text || !selectedTargetLang) {
+        return;
+    }
+    
+    const engine = document.querySelector('input[name="engine"]:checked').value;
+    const provider = document.getElementById('providerSelect').value;
+    const model = document.getElementById('modelSelect').value;
+    
+    // Cloud benötigt Provider+Model, Lokal nicht
+    if (engine === 'cloud' && (!provider || !model)) {
+        document.getElementById('translateStatus').innerHTML = 
+            '<span class="text-warning">Bitte Provider und Modell wählen</span>';
+        return;
+    }
+    
+    const engineLabel = engine === 'cloud'
+        ? (provider === 'ollama' ? 'Ollama' : 'Cloud')
+        : 'Opus-MT';
+    document.getElementById('translateStatus').innerHTML = 
+        `<span class="spinner-border spinner-border-sm me-1"></span>Übersetze (${engineLabel})...`;
+    document.getElementById('translatedText').value = '';
+    document.getElementById('copyBtn').disabled = true;
+    document.getElementById('modelUsed').textContent = '';
+    
+    try {
+        const payload = {
+            text: text,
+            target_lang: selectedTargetLang,
+            source_lang: detectedLanguage,
+            engine: engine
+        };
+        
+        // Cloud-spezifische Parameter
+        if (engine === 'cloud') {
+            payload.provider = provider;
+            payload.model = model;
+        }
+        
+        const response = await fetch('/api/translate/execute', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            document.getElementById('translateStatus').innerHTML = 
+                `<span class="text-danger">❌ ${data.error}</span>`;
+            return;
+        }
+        
+        document.getElementById('translatedText').value = data.translated_text;
+        document.getElementById('translateStatus').innerHTML = 
+            `<span class="text-success">✓ ${data.source_language_name} → ${data.target_language_name}</span>`;
+        document.getElementById('modelUsed').textContent = 
+            `via ${data.model_used} (${data.engine})`;
+        document.getElementById('copyBtn').disabled = false;
+        
+    } catch (error) {
+        console.error('Translation error:', error);
+        document.getElementById('translateStatus').innerHTML = 
+            '<span class="text-danger">❌ Übersetzungsfehler</span>';
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════════════════════
+function clearInput() {
+    document.getElementById('sourceText').value = '';
+    document.getElementById('translatedText').value = '';
+    document.getElementById('charCount').textContent = '0';
+    document.getElementById('detectedLanguage').style.display = 'none';
+    document.getElementById('targetLanguageBadge').style.display = 'none';
+    document.getElementById('targetLanguageButtons').innerHTML = 
+        '<div class="text-muted">Bitte erst Text eingeben...</div>';
+    document.getElementById('detectStatus').textContent = '';
+    document.getElementById('translateStatus').textContent = '';
+    document.getElementById('modelUsed').textContent = '';
+    document.getElementById('copyBtn').disabled = true;
+    detectedLanguage = null;
+    selectedTargetLang = null;
+}
+
+function copyOutput() {
+    const text = document.getElementById('translatedText').value;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copyBtn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '✓ Kopiert!';
+        btn.classList.remove('btn-outline-success');
+        btn.classList.add('btn-success');
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-outline-success');
+        }, 1500);
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,46 @@
+﻿[Unit]
+Description=KI-Mail-Helper Celery Worker
+After=network.target postgresql.service redis-server.service
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=mailhelper
+Group=mailhelper
+# WICHTIG: Pfade anpassen! Muessen mit mail-helper.service (WorkingDirectory
+# /opt/KI-Mail-Helper, .env) uebereinstimmen - sonst laeuft dieser Worker mit
+# einem anderen SECRET_KEY/DATABASE_URL/REDIS als die Web-App (Session-/DEK-
+# Inkonsistenz, siehe docs/SECURITY.md).
+WorkingDirectory=/opt/KI-Mail-Helper
+Environment="PATH=/opt/KI-Mail-Helper/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/opt/KI-Mail-Helper/.env
+
+# Celery Worker mit Pool=prefork (für Multi-Core)
+# Concurrency=4 mit spaCy Global Cache (deine Optimierung!)
+ExecStart=/opt/KI-Mail-Helper/venv/bin/celery \
+    -A src.celery_app worker \
+    --loglevel=info \
+    --logfile=/var/log/mail-helper/celery-worker.log \
+    --pidfile=/var/run/mail-helper/celery-worker.pid \
+    --concurrency=4 \
+    --pool=prefork \
+    --max-tasks-per-child=50 \
+    --max-memory-per-child=1500000
+
+# Graceful Shutdown
+Restart=always
+RestartSec=10s
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Security Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource Limits (für 0-20 User ausreichend)
+# 6GB erlaubt 4 Worker × 1.5GB, mit Puffer für Peaks
+MemoryMax=6G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,47 @@
+﻿[Unit]
+Description=KI-Mail-Helper v2.0 - Zero-Knowledge Email Manager
+Documentation=https://github.com/lastphoenx/KI-Mail-Helper
+After=network.target postgresql.service redis-server.service
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=notify
+# WICHTIG: User/Group anpassen!
+User=YOUR_USERNAME
+Group=YOUR_USERNAME
+# WICHTIG: WorkingDirectory anpassen!
+WorkingDirectory=/opt/KI-Mail-Helper
+
+# Environment (lade .env Datei)
+EnvironmentFile=/opt/KI-Mail-Helper/.env
+
+Environment=HF_HOME=/opt/KI-Mail-Helper/.cache/huggingface
+
+# Gunicorn mit App Factory
+# WICHTIG: Pfade anpassen!
+ExecStart=/opt/KI-Mail-Helper/venv/bin/gunicorn \
+    --config /opt/KI-Mail-Helper/config/gunicorn.conf.py \
+    --bind 127.0.0.1:5000 \
+    "src.app_factory:create_app()"
+
+# Restart Policy
+Restart=always
+RestartSec=5
+# WICHTIG: Log-Pfade anpassen!
+StandardOutput=append:/opt/KI-Mail-Helper/logs/systemd_output.log
+StandardError=append:/opt/KI-Mail-Helper/logs/systemd_error.log
+
+# Security Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/KI-Mail-Helper/logs
+ReadWritePaths=/opt/KI-Mail-Helper/.flask_sessions
+
+# Resource Limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target
