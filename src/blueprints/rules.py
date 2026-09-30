@@ -1,0 +1,819 @@
+﻿# src/blueprints/rules.py
+"""Rules Blueprint - Auto-Rules Management.
+
+Routes (10 total):
+    1. /rules (GET) - Rules Management Page
+    2. /api/rules (GET) - API: Alle Regeln abrufen
+    3. /api/rules (POST) - API: Neue Regel erstellen
+    4. /api/rules/<id> (PUT) - API: Regel aktualisieren
+    5. /api/rules/<id> (DELETE) - API: Regel löschen
+    6. /api/rules/<id>/test (POST) - API: Regel testen (Dry-Run)
+    7. /api/rules/apply (POST) - API: Regeln anwenden
+    8. /api/rules/templates (GET) - API: Templates abrufen
+    9. /api/rules/templates/<name> (POST) - API: Regel aus Template
+    10. /rules/execution-log (GET) - Execution Log Page
+
+HINWEIS: rules_bp hat KEINEN Prefix. Die /api/rules Routes behalten ihren vollen Pfad!
+"""
+
+from flask import Blueprint, render_template, request, redirect, url_for, jsonify, session, g, flash
+from flask_login import login_required
+import importlib
+import logging
+
+from src.helpers import get_db_session, get_current_user_model
+from src.helpers.task_ownership import track_celery_task, verify_celery_task_access
+
+rules_bp = Blueprint("rules", __name__)
+logger = logging.getLogger(__name__)
+
+# Lazy imports
+_models = None
+_encryption = None
+
+
+def _get_models():
+    global _models
+    if _models is None:
+        _models = importlib.import_module(".02_models", "src")
+    return _models
+
+
+def _get_encryption():
+    global _encryption
+    if _encryption is None:
+        _encryption = importlib.import_module(".08_encryption", "src")
+    return _encryption
+
+
+# =============================================================================
+# Route 1: /rules (Zeile 4881-4906)
+# =============================================================================
+@rules_bp.route("/rules")
+@login_required
+def rules_management():
+    """Rules Management Page - Übersicht über alle Auto-Rules"""
+    models = _get_models()
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return redirect(url_for("auth.login"))
+            
+            try:
+                rules = db.query(models.AutoRule).filter_by(
+                    user_id=user.id
+                ).order_by(models.AutoRule.priority.asc()).all()
+            except Exception as e:
+                logger.error(f"rules_management: DB-Fehler bei Regel-Abfrage: {type(e).__name__}: {e}")
+                rules = []
+                flash("Fehler beim Laden der Regeln", "warning")
+            
+            return render_template(
+                "rules_management.html",
+                user=user,
+                rules=rules
+            )
+    except Exception as e:
+        logger.error(f"rules_management: Unerwarteter Fehler: {type(e).__name__}: {e}")
+        flash("Fehler beim Laden der Regeln-Seite", "danger")
+        return redirect(url_for("emails.dashboard"))
+
+
+# =============================================================================
+# Route 2: /api/rules GET (Zeile 4908-4943)
+# =============================================================================
+@rules_bp.route("/api/rules", methods=["GET"])
+@login_required
+def api_get_rules():
+    """API: Alle Regeln des Users abrufen"""
+    models = _get_models()
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({"error": "Unauthorized"}), 401
+            
+            rules = db.query(models.AutoRule).filter_by(
+                user_id=user.id
+            ).order_by(models.AutoRule.priority.asc()).all()
+            
+            return jsonify({
+                "rules": [
+                    {
+                        "id": rule.id,
+                        "name": rule.name,
+                        "description": rule.description,
+                        "is_active": rule.is_active,
+                        "priority": rule.priority,
+                        "conditions": rule.conditions,
+                        "actions": rule.actions,
+                        "enable_learning": rule.enable_learning,
+                        "times_triggered": rule.times_triggered,
+                        "last_triggered_at": rule.last_triggered_at.isoformat() if rule.last_triggered_at else None,
+                        "created_at": rule.created_at.isoformat() if rule.created_at else None
+                    }
+                    for rule in rules
+                ]
+            }), 200
+    except Exception as e:
+        logger.error(f"api_get_rules: Fehler: {type(e).__name__}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+# =============================================================================
+# Route 3: /api/rules POST (Zeile 4945-5008)
+# =============================================================================
+@rules_bp.route("/api/rules", methods=["POST"])
+@login_required
+def api_create_rule():
+    """API: Neue Regel erstellen"""
+    models = _get_models()
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({"error": "Unauthorized"}), 401
+            
+            data = request.get_json()
+            if not data:
+                return jsonify({"error": "JSON-Daten erforderlich"}), 400
+            
+            name = data.get("name", "").strip()
+            if not name:
+                return jsonify({"error": "Name erforderlich"}), 400
+            
+            if len(name) > 100:
+                return jsonify({"error": "Name zu lang (max. 100 Zeichen)"}), 400
+            
+            conditions = data.get("conditions", {})
+            actions = data.get("actions", {})
+            
+            if not conditions:
+                return jsonify({"error": "Mindestens eine Bedingung erforderlich"}), 400
+            
+            if not actions:
+                return jsonify({"error": "Mindestens eine Aktion erforderlich"}), 400
+            
+            rule = models.AutoRule(
+                user_id=user.id,
+                name=name,
+                description=data.get("description"),
+                priority=data.get("priority", 100),
+                is_active=data.get("is_active", True),
+                conditions=conditions,
+                actions=actions,
+                enable_learning=data.get("enable_learning", False)
+            )
+            
+            db.add(rule)
+            
+            try:
+                db.commit()
+                logger.info(f"✅ Regel erstellt: '{rule.name}' (ID: {rule.id}) für User {user.id}")
+                
+                return jsonify({
+                    "success": True,
+                    "rule": {
+                        "id": rule.id,
+                        "name": rule.name,
+                        "description": rule.description,
+                        "is_active": rule.is_active,
+                        "priority": rule.priority,
+                        "conditions": rule.conditions,
+                        "actions": rule.actions,
+                        "enable_learning": rule.enable_learning
+                    }
+                }), 201
+            except Exception as e:
+                db.rollback()
+                logger.error(f"api_create_rule: Commit-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"error": "Fehler beim Speichern der Regel"}), 500
+    except Exception as e:
+        logger.error(f"api_create_rule: Fehler: {type(e).__name__}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+# =============================================================================
+# Route 4: /api/rules/<id> PUT (Zeile 5010-5069)
+# =============================================================================
+@rules_bp.route("/api/rules/<int:rule_id>", methods=["PUT"])
+@login_required
+def api_update_rule(rule_id):
+    """API: Regel aktualisieren"""
+    models = _get_models()
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({"error": "Unauthorized"}), 401
+            
+            rule = db.query(models.AutoRule).filter_by(
+                id=rule_id,
+                user_id=user.id
+            ).first()
+            
+            if not rule:
+                return jsonify({"error": "Regel nicht gefunden"}), 404
+            
+            data = request.get_json()
+            if not data:
+                return jsonify({"error": "JSON-Daten erforderlich"}), 400
+            
+            if "name" in data:
+                name = data["name"].strip()
+                if len(name) > 100:
+                    return jsonify({"error": "Name zu lang (max. 100 Zeichen)"}), 400
+                rule.name = name
+            if "description" in data:
+                rule.description = data["description"]
+            if "is_active" in data:
+                rule.is_active = bool(data["is_active"])
+            if "priority" in data:
+                rule.priority = int(data["priority"])
+            if "conditions" in data:
+                rule.conditions = data["conditions"]
+            if "actions" in data:
+                rule.actions = data["actions"]
+            if "enable_learning" in data:
+                rule.enable_learning = bool(data["enable_learning"])
+            
+            try:
+                db.commit()
+                logger.info(f"✅ Regel aktualisiert: '{rule.name}' (ID: {rule.id})")
+                
+                return jsonify({
+                    "success": True,
+                    "rule": {
+                        "id": rule.id,
+                        "name": rule.name,
+                        "description": rule.description,
+                        "is_active": rule.is_active,
+                        "priority": rule.priority,
+                        "conditions": rule.conditions,
+                        "actions": rule.actions,
+                        "enable_learning": rule.enable_learning
+                    }
+                }), 200
+            except Exception as e:
+                db.rollback()
+                logger.error(f"api_update_rule: Commit-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"error": "Fehler beim Aktualisieren der Regel"}), 500
+    except Exception as e:
+        logger.error(f"api_update_rule: Fehler: {type(e).__name__}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+# =============================================================================
+# Route 5: /api/rules/<id> DELETE (Zeile 5071-5105)
+# =============================================================================
+@rules_bp.route("/api/rules/<int:rule_id>", methods=["DELETE"])
+@login_required
+def api_delete_rule(rule_id):
+    """API: Regel löschen"""
+    models = _get_models()
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({"error": "Unauthorized"}), 401
+            
+            rule = db.query(models.AutoRule).filter_by(
+                id=rule_id,
+                user_id=user.id
+            ).first()
+            
+            if not rule:
+                return jsonify({"error": "Regel nicht gefunden"}), 404
+            
+            rule_name = rule.name
+            db.delete(rule)
+            
+            try:
+                db.commit()
+                logger.info(f"🗑️  Regel gelöscht: '{rule_name}' (ID: {rule_id})")
+                return jsonify({"success": True}), 200
+            except Exception as e:
+                db.rollback()
+                logger.error(f"api_delete_rule: Commit-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"error": "Fehler beim Löschen der Regel"}), 500
+    except Exception as e:
+        logger.error(f"api_delete_rule: Fehler: {type(e).__name__}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+# =============================================================================
+# Route 6: /api/rules/<id>/test (Zeile 5107-5205)
+# =============================================================================
+@rules_bp.route("/api/rules/<int:rule_id>/test", methods=["POST"])
+@login_required
+def api_test_rule(rule_id):
+    """API: Regel auf E-Mail testen (Dry-Run)"""
+    models = _get_models()
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({"error": "Unauthorized"}), 401
+            
+            rule = db.query(models.AutoRule).filter_by(
+                id=rule_id,
+                user_id=user.id
+            ).first()
+            
+            if not rule:
+                return jsonify({"error": "Regel nicht gefunden"}), 404
+            
+            data = request.get_json() or {}
+            email_id = data.get("email_id")
+            
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Master-Key nicht verfügbar"}), 401
+            
+            try:
+                from src.auto_rules_engine import AutoRulesEngine
+                engine = AutoRulesEngine(user.id, master_key, db)
+                
+                matches = []
+                total_tested = 0
+                
+                if email_id:
+                    total_tested = 1
+                    results = engine.process_email(email_id, dry_run=True, rule_id=rule_id)
+                    
+                    for result in results:
+                        matches.append({
+                            "email_id": result.email_id,
+                            "matched": result.success,
+                            "actions_would_execute": result.actions_executed
+                        })
+                else:
+                    encryption = _get_encryption()
+                    # Alle klassifizierten Mails prüfen (kein 500er-Stichproben-Limit)
+                    classified_emails = (
+                        db.query(models.RawEmail)
+                        .filter(
+                            models.RawEmail.user_id == user.id,
+                            models.RawEmail.deleted_at.is_(None),
+                            models.RawEmail.ai_classification_completed_at.isnot(None),
+                        )
+                        .order_by(models.RawEmail.received_at.desc())
+                        .all()
+                    )
+
+                    for email in classified_emails:
+                        results = engine.process_email(email.id, dry_run=True, rule_id=rule_id)
+
+                        if results and any(r.success for r in results):
+                            try:
+                                subject = encryption.EmailDataManager.decrypt_email_subject(
+                                    email.encrypted_subject or "", master_key
+                                )
+                            except Exception:
+                                subject = "(Betreff nicht lesbar)"
+                            matches.append({
+                                "email_id": email.id,
+                                "matched": True,
+                                "subject": subject,
+                                "received_at": (
+                                    email.received_at.strftime("%Y-%m-%d %H:%M")
+                                    if email.received_at
+                                    else None
+                                ),
+                                "actions_would_execute": results[0].actions_executed,
+                            })
+                    total_tested = len(classified_emails)
+                
+                logger.info(f"🧪 Regel '{rule.name}' getestet: {len(matches)} Matches")
+                
+                return jsonify({
+                    "success": True,
+                    "matches": matches,
+                    "total_tested": total_tested,
+                    "total_matches": len(matches),
+                    "rule_name": rule.name
+                }), 200
+                
+            except ImportError as e:
+                logger.error(f"api_test_rule: AutoRulesEngine Import-Fehler: {e}")
+                return jsonify({"error": "Regel-Engine nicht verfügbar"}), 500
+            except Exception as e:
+                logger.error(f"api_test_rule: Engine-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"error": "Fehler beim Testen der Regel"}), 500
+    except Exception as e:
+        logger.error(f"api_test_rule: Fehler: {type(e).__name__}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+# =============================================================================
+# Route 7: /api/rules/apply (Zeile 5207-5295)
+# =============================================================================
+@rules_bp.route("/api/rules/apply", methods=["POST"])
+@login_required
+def api_apply_rules():
+    """API: Regeln manuell auf E-Mails anwenden (Celery + Legacy Dual-Mode)"""
+    import os
+    models = _get_models()
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({"error": "Unauthorized"}), 401
+            
+            data = request.get_json() or {}
+            email_ids = data.get("email_ids", [])
+            
+            master_key = session.get("master_key")
+            if not master_key:
+                return jsonify({"error": "Master-Key nicht verfügbar"}), 401
+            
+            # ─────────────────────────────────────────────────────
+            # CELERY MODE: Asynchrone Task-Queue
+            # ─────────────────────────────────────────────────────
+            logger.info("🚀 [CELERY] Applying rules asynchronously")
+            
+            try:
+                import importlib
+                from src.tasks.rule_execution_tasks import (
+                    apply_rules_to_emails,
+                    apply_rules_manual_all,
+                )
+                auth = importlib.import_module(".07_auth", "src")
+                ServiceTokenManager = auth.ServiceTokenManager
+                
+                # Phase 2 Security: ServiceToken erstellen (DEK nicht in Redis!)
+                with get_db_session() as token_db:
+                    _, service_token = ServiceTokenManager.create_token(
+                        user_id=user.id,
+                        master_key=master_key,
+                        session=token_db,
+                        days=1  # Rule-Token nur 1 Tag gültig
+                    )
+                    service_token_id = service_token.id
+                    
+                    if email_ids:
+                        # Spezifische E-Mails
+                        task = track_celery_task(
+                            apply_rules_to_emails.delay(
+                            user_id=user.id,
+                            email_ids=email_ids,
+                            service_token_id=service_token_id,
+                            dry_run=False
+                            ),
+                            user.id,
+                        )
+                        
+                        logger.info(f"✅ [CELERY] Rule task enqueued: {task.id}")
+                        
+                        return jsonify({
+                            "success": True,
+                            "task_id": task.id,
+                            "status": "processing",
+                            "message": f"Regeln werden auf {len(email_ids)} E-Mails angewendet",
+                            "mode": "celery"
+                        }), 202  # Accepted
+                        
+                    else:
+                        # Manuell: alle klassifizierten Mails in der DB
+                        task = track_celery_task(
+                            apply_rules_manual_all.delay(
+                                user_id=user.id,
+                                service_token_id=service_token_id,
+                            ),
+                            user.id,
+                        )
+                        
+                        logger.info(f"✅ [CELERY] Manual rule apply enqueued: {task.id}")
+                        
+                        return jsonify({
+                            "success": True,
+                            "task_id": task.id,
+                            "status": "processing",
+                            "message": "Regeln werden auf alle klassifizierten E-Mails angewendet",
+                            "mode": "celery"
+                        }), 202  # Accepted
+                        
+            except ImportError as e:
+                logger.error(f"api_apply_rules: Task Import-Fehler: {e}")
+                return jsonify({"error": "Rule-Tasks nicht verfügbar"}), 500
+            except Exception as e:
+                logger.error(f"api_apply_rules: Celery-Fehler: {type(e).__name__}: {e}")
+                return jsonify({"error": "Fehler beim Enqueuen der Rule-Tasks"}), 500
+                    
+    except Exception as e:
+        logger.error(f"api_apply_rules: Fehler: {type(e).__name__}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+# =============================================================================
+# Route 7b: /api/rules/task_status/<task_id> GET (Celery Task Status)
+# =============================================================================
+@rules_bp.route("/api/rules/task_status/<task_id>", methods=["GET"])
+@login_required
+def api_rule_task_status(task_id: str):
+    """API: Celery Task Status für Rule-Execution abfragen"""
+    try:
+        from src.celery_app import celery_app
+        from celery.result import AsyncResult
+        from flask_login import current_user
+
+        if not verify_celery_task_access(celery_app, task_id, current_user.id):
+            return jsonify({"error": "Task nicht gefunden"}), 404
+        
+        task = AsyncResult(task_id, app=celery_app)
+        
+        response = {
+            "task_id": task_id,
+            "state": task.state,
+            "ready": task.ready(),
+            "successful": task.successful() if task.ready() else None
+        }
+        
+        if task.ready():
+            if task.successful():
+                result = task.result
+                response["result"] = result
+                response["message"] = "Task completed successfully"
+            elif task.failed():
+                response["error"] = str(task.info)
+                response["message"] = "Task failed"
+        else:
+            response["message"] = "Task is still processing"
+        
+        return jsonify(response), 200
+        
+    except Exception as e:
+        logger.error(f"Error fetching task status: {e}")
+        return jsonify({"error": "Could not fetch task status"}), 500
+
+
+# =============================================================================
+# Route 8: /api/rules/templates GET (Zeile 5297-5321)
+# =============================================================================
+@rules_bp.route("/api/rules/templates", methods=["GET"])
+@login_required
+def api_get_rule_templates():
+    """API: Vordefinierte Regel-Templates abrufen"""
+    try:
+        # User Validation (auch wenn nur Templates geladen werden)
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({"error": "Unauthorized"}), 401
+        
+        try:
+            from src.auto_rules_engine import RULE_TEMPLATES
+            
+            return jsonify({
+                "templates": [
+                    {
+                        "id": key,
+                        "name": template["name"],
+                        "description": template["description"],
+                        "priority": template.get("priority", 100),
+                        "conditions": template["conditions"],
+                        "actions": template["actions"]
+                    }
+                    for key, template in RULE_TEMPLATES.items()
+                ]
+            }), 200
+        except ImportError as e:
+            logger.error(f"api_get_rule_templates: Import-Fehler: {e}")
+            return jsonify({"templates": [], "error": "Templates nicht verfügbar"}), 200
+    except Exception as e:
+        logger.error(f"api_get_rule_templates: Fehler: {type(e).__name__}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+# =============================================================================
+# Route 9: /api/rules/templates/<name> POST (Zeile 5323-5380)
+# =============================================================================
+@rules_bp.route("/api/rules/templates/<template_name>", methods=["POST"])
+@login_required
+def api_create_rule_from_template(template_name):
+    """API: Regel aus Template erstellen"""
+    # Validate template_name
+    if not template_name or len(template_name) > 50:
+        return jsonify({"error": "Ungültiger Template-Name"}), 400
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return jsonify({"error": "Unauthorized"}), 401
+            
+            data = request.get_json() or {}
+            overrides = data.get("overrides", {})
+            
+            try:
+                from src.auto_rules_engine import create_rule_from_template
+                
+                rule = create_rule_from_template(
+                    db_session=db,
+                    user_id=user.id,
+                    template_name=template_name,
+                    overrides=overrides
+                )
+                
+                if not rule:
+                    return jsonify({"error": "Template nicht gefunden"}), 404
+                
+                logger.info(f"✅ Regel aus Template '{template_name}' erstellt: {rule.name} (ID: {rule.id})")
+                
+                return jsonify({
+                    "success": True,
+                    "rule": {
+                        "id": rule.id,
+                        "name": rule.name,
+                        "description": rule.description,
+                        "is_active": rule.is_active,
+                        "priority": rule.priority,
+                        "conditions": rule.conditions,
+                        "actions": rule.actions
+                    }
+                }), 201
+                
+            except ImportError as e:
+                logger.error(f"api_create_rule_from_template: Import-Fehler: {e}")
+                return jsonify({"error": "Template-Engine nicht verfügbar"}), 500
+            except Exception as e:
+                db.rollback()
+                logger.error(f"api_create_rule_from_template: Fehler: {type(e).__name__}: {e}")
+                return jsonify({"error": "Fehler beim Erstellen der Regel aus Template"}), 500
+    except Exception as e:
+        logger.error(f"api_create_rule_from_template: Fehler: {type(e).__name__}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+# =============================================================================
+# Route 10: /rules/execution-log (Zeile 5382-5470)
+# =============================================================================
+@rules_bp.route("/rules/execution-log")
+@login_required
+def rules_execution_log():
+    """Zeigt Verlauf aller Regel-Ausführungen für Debugging und Monitoring"""
+    models = _get_models()
+    encryption = _get_encryption()
+    
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return redirect(url_for("auth.login"))
+            
+            # Pagination (ersetzt altes limit mit hartem 500er-Cap)
+            try:
+                page = int(request.args.get('page', 1))
+            except (ValueError, TypeError):
+                page = 1
+
+            per_page_param = request.args.get('per_page', request.args.get('limit', '100'))
+            if per_page_param == 'all':
+                per_page = 500
+            else:
+                try:
+                    per_page = int(per_page_param)
+                except (ValueError, TypeError):
+                    per_page = 100
+                if per_page not in (50, 100, 250, 500):
+                    per_page = 100
+                per_page_param = str(per_page)
+
+            rule_id = request.args.get('rule_id')
+            success_filter = request.args.get('success')
+            
+            try:
+                base_log_query = db.query(models.RuleExecutionLog).filter(
+                    models.RuleExecutionLog.user_id == user.id
+                )
+
+                if rule_id:
+                    try:
+                        base_log_query = base_log_query.filter(
+                            models.RuleExecutionLog.rule_id == int(rule_id)
+                        )
+                    except (ValueError, TypeError):
+                        pass
+
+                if success_filter == 'true':
+                    base_log_query = base_log_query.filter(
+                        models.RuleExecutionLog.success == True
+                    )
+                elif success_filter == 'false':
+                    base_log_query = base_log_query.filter(
+                        models.RuleExecutionLog.success == False
+                    )
+
+                total_count = base_log_query.count()
+                success_count = base_log_query.filter(
+                    models.RuleExecutionLog.success == True
+                ).count()
+                error_count = base_log_query.filter(
+                    models.RuleExecutionLog.success == False
+                ).count()
+
+                total_pages = max(1, (total_count + per_page - 1) // per_page)
+                if page < 1:
+                    page = 1
+                if page > total_pages:
+                    page = total_pages
+
+                query = db.query(
+                    models.RuleExecutionLog,
+                    models.AutoRule,
+                    models.ProcessedEmail,
+                    models.RawEmail
+                ).join(
+                    models.AutoRule,
+                    models.RuleExecutionLog.rule_id == models.AutoRule.id
+                ).join(
+                    models.ProcessedEmail,
+                    models.RuleExecutionLog.processed_email_id == models.ProcessedEmail.id
+                ).join(
+                    models.RawEmail,
+                    models.ProcessedEmail.raw_email_id == models.RawEmail.id
+                ).filter(
+                    models.RuleExecutionLog.user_id == user.id
+                )
+
+                if rule_id:
+                    try:
+                        query = query.filter(models.RuleExecutionLog.rule_id == int(rule_id))
+                    except (ValueError, TypeError):
+                        pass
+
+                if success_filter == 'true':
+                    query = query.filter(models.RuleExecutionLog.success == True)
+                elif success_filter == 'false':
+                    query = query.filter(models.RuleExecutionLog.success == False)
+
+                logs = (
+                    query.order_by(models.RuleExecutionLog.executed_at.desc())
+                    .offset((page - 1) * per_page)
+                    .limit(per_page)
+                    .all()
+                )
+                
+                all_rules = db.query(models.AutoRule).filter_by(
+                    user_id=user.id
+                ).order_by(models.AutoRule.name.asc()).all()
+            except Exception as e:
+                logger.error(f"rules_execution_log: DB-Fehler: {type(e).__name__}: {e}")
+                logs = []
+                all_rules = []
+                total_count = 0
+                success_count = 0
+                error_count = 0
+                total_pages = 1
+                page = 1
+                per_page = 100
+                per_page_param = '100'
+                flash("Fehler beim Laden der Logs", "warning")
+            
+            master_key = session.get("master_key")
+            decrypted_logs = []
+            
+            if master_key and logs:
+                for log, rule, processed, raw in logs:
+                    try:
+                        subject = encryption.EmailDataManager.decrypt_email_subject(
+                            raw.encrypted_subject or "", master_key
+                        )
+                    except Exception as e:
+                        logger.warning(f"rules_execution_log: Entschlüsselung fehlgeschlagen: {type(e).__name__}")
+                        subject = "(Entschlüsselung fehlgeschlagen)"
+                    
+                    decrypted_logs.append({
+                        'log': log,
+                        'rule': rule,
+                        'subject': subject,
+                        'email_id': raw.id
+                    })
+            
+            return render_template(
+                "rules_execution_log.html",
+                user=user,
+                logs=decrypted_logs,
+                all_rules=all_rules,
+                per_page=per_page,
+                per_page_param=per_page_param,
+                page=page,
+                total_pages=total_pages,
+                total_count=total_count,
+                success_count=success_count,
+                error_count=error_count,
+                rule_id=rule_id,
+                success_filter=success_filter
+            )
+    except Exception as e:
+        logger.error(f"rules_execution_log: Fehler: {type(e).__name__}: {e}")
+        flash("Fehler beim Laden des Execution-Logs", "danger")
+        return redirect(url_for("rules.rules_management"))

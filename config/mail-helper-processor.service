@@ -1,0 +1,17 @@
+[Unit]
+Description=Mail Helper - Mail Processor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mailhelper
+# WICHTIG: Pfade anpassen! Muessen mit mail-helper.service uebereinstimmen.
+WorkingDirectory=/opt/KI-Mail-Helper
+EnvironmentFile=/opt/KI-Mail-Helper/.env
+ExecStart=/opt/KI-Mail-Helper/venv/bin/python -m src.00_main --process-once
+StandardOutput=append:/var/log/mail-helper-processor.log
+StandardError=append:/var/log/mail-helper-processor.log
+
+[Install]
+WantedBy=multi-user.target

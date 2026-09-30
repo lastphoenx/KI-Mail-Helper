@@ -1,0 +1,401 @@
+﻿{% extends "base.html" %}
+
+{% block title %}AI beim Mail-Abruf - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="container-xxl mt-4 pb-5 mb-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">🤖 AI beim Mail-Abruf</h2>
+            <p class="text-muted mb-0">Account-spezifische AI-Steuerung beim Abrufen neuer Mails</p>
+        </div>
+        <div>
+            <a href="{{ url_for('settings') }}" class="btn btn-outline-secondary">
+                ⚙️ Zurück zu Einstellungen
+            </a>
+        </div>
+    </div>
+
+    <!-- AI-Analyse beim Mail-Abruf -->
+    <div class="card border-0 shadow-sm mb-4 bg-dark text-light">
+        <div class="card-header" style="background: linear-gradient(135deg, #1e293b, #0f172a); padding: 1.5rem;">
+            <h5 class="mb-2 text-light">🤖 AI-Analyse beim Mail-Abruf</h5>
+            <div class="small text-light opacity-75 mb-3">
+                <p class="mb-2">Konfiguriere pro Account, welche AI-Features beim <strong>Abrufen neuer Mails</strong> automatisch ausgeführt werden sollen.</p>
+            </div>
+            <div class="row g-2 small">
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start gap-2">
+                        <span class="text-success">✅</span>
+                        <div>
+                            <strong>AI-Analyse:</strong> Komplette LLM-Analyse (Dringlichkeit, Wichtigkeit, Kategorie, Summary, Tags)
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start gap-2">
+                        <span class="text-success">✅</span>
+                        <div>
+                            <strong>UrgencyBooster:</strong> Schnelle spaCy-Analyse für vertrauenswürdige Absender (Entity-basiert, 100-300ms)
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start gap-2">
+                        <span class="text-warning">⭕</span>
+                        <div>
+                            <strong>AI-Analyse deaktiviert:</strong> Nur Embedding erstellen, keine Bewertung → Manuelle Klassifizierung erforderlich
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start gap-2">
+                        <span class="text-warning">⭕</span>
+                        <div>
+                            <strong>UrgencyBooster deaktiviert:</strong> Nur LLM-Analyse (langsamer, aber universell einsetzbar)
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="alert alert-info mt-3 mb-0 small">
+                <strong>💡 Tipp:</strong> Für Newsletter-Accounts (z.B. GMX) empfiehlt sich <strong>AI-Analyse deaktiviert</strong> + manuelles Tagging für besseres ML-Learning.
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="urgencyBoosterSettings" class="row g-3">
+                <!-- Wird mit JavaScript gefüllt -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Links -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm bg-dark text-light">
+                <div class="card-body">
+                    <h6 class="text-light mb-3">🔗 Verwandte Einstellungen</h6>
+                    <div class="d-flex flex-wrap gap-2">
+                        <a href="{{ url_for('whitelist') }}" class="btn btn-outline-light btn-sm">
+                            📬 Trusted Senders
+                        </a>
+                        <a href="{{ url_for('ki_prio') }}" class="btn btn-outline-light btn-sm">
+                            🎯 KI-Priorisierung
+                        </a>
+                        <a href="{{ url_for('settings') }}" class="btn btn-outline-light btn-sm">
+                            ⚙️ Mail-Accounts
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+// ========================================
+// MAIL FETCH CONFIG PAGE JavaScript
+// ========================================
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function getCsrfToken() {
+    const token = document.querySelector('meta[name="csrf-token"]');
+    return token ? token.getAttribute('content') : '';
+}
+
+async function safeFetch(url, options = {}) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken && !options.headers) {
+        options.headers = {};
+    }
+    if (csrfToken && options.headers) {
+        options.headers['X-CSRFToken'] = csrfToken;
+    }
+    
+    try {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            let errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+            try {
+                const errorData = await response.json();
+                errorMsg = errorData.error || errorMsg;
+            } catch {}
+            throw new Error(errorMsg);
+        }
+        try {
+            return await response.json();
+        } catch (e) {
+            throw new Error('Invalid JSON response from server');
+        }
+    } catch (error) {
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+            throw new Error('Netzwerkfehler: Server nicht erreichbar');
+        }
+        throw error;
+    }
+}
+
+// Load UrgencyBooster settings für alle Accounts
+async function loadUrgencyBoosterSettingsV2() {
+    try {
+        const container = document.getElementById('urgencyBoosterSettings');
+        container.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Laden...</span></div>';
+        
+        const data = await safeFetch('/api/accounts/urgency-booster-settings', {
+            method: 'GET',
+            headers: {'Content-Type': 'application/json'}
+        });
+        
+        if (!data.success) {
+            container.innerHTML = `<div class="alert alert-danger small">Fehler: ${data.error}</div>`;
+            return;
+        }
+        
+        if (!data.accounts || data.accounts.length === 0) {
+            container.innerHTML = '<div class="text-muted small">Keine Accounts konfiguriert</div>';
+            return;
+        }
+        
+        container.innerHTML = data.accounts.map(account => `
+            <div class="col-md-6 col-lg-4">
+                <div class="card bg-dark border-secondary h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <h6 class="card-title mb-0 text-light">${escapeHtml(account.decrypted_imap_username || account.imap_username || account.email || account.name)}</h6>
+                                    <span class="badge bg-warning text-dark">Account ${account.id}</span>
+                                </div>
+                                <p class="card-text small text-light opacity-75">${escapeHtml(account.name || '')}</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Hierarchical Analysis Modes -->
+                        <div class="d-flex flex-column gap-3 mt-3">
+                            <div class="border-top border-secondary pt-3">
+                                <p class="small text-light mb-2"><strong>📊 Analyse-Modus:</strong></p>
+                                
+                                <!-- Anonymisierung Toggle (unabhängig) -->
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input anon-toggle" type="checkbox" 
+                                           id="anon-${account.id}"
+                                           ${account.anonymize_with_spacy ? 'checked' : ''}
+                                           data-account-id="${account.id}"
+                                           title="Erzeugt anonymisierte Version (Tab im Detail). Booster nutzt immer Original (lokal = sicher).">
+                                    <label class="form-check-label small text-light" for="anon-${account.id}">
+                                        🛡️ Mit Spacy anonymisieren
+                                    </label>
+                                    <div class="mode-description">
+                                        Entfernt Namen, Firmen, Orte (PII-Schutz). Unabhängig von Analyse-Modus.
+                                    </div>
+                                </div>
+                                
+                                <!-- Analysis Mode Radio Buttons -->
+                                <div class="border border-secondary rounded p-2" style="background: rgba(255,255,255,0.05);">
+                                    <p class="small text-light mb-2">Wähle einen Modus:</p>
+                                    
+                                    <!-- Spacy Booster -->
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input mode-radio" type="radio" 
+                                               name="mode-${account.id}" value="spacy_booster"
+                                               id="mode-booster-${account.id}"
+                                               ${account.effective_ai_mode === 'spacy_booster' ? 'checked' : ''}
+                                               data-account-id="${account.id}"
+                                               title="Nutzt IMMER Original-Daten (lokal = sicher, beste Ergebnisse)">
+                                        <label class="form-check-label small text-light" for="mode-booster-${account.id}">
+                                            ⚡ Urgency Booster (Spacy)
+                                        </label>
+                                        <div class="mode-description">
+                                            ✅ Schnell, kostenlos, offline, nutzt Original | ❌ Nur regel-basiert
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- AI auf anonyme Daten -->
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input mode-radio" type="radio" 
+                                               name="mode-${account.id}" value="llm_anon"
+                                               id="mode-anon-${account.id}"
+                                               ${account.effective_ai_mode === 'llm_anon' ? 'checked' : ''}
+                                               ${!account.anonymize_with_spacy ? 'disabled' : ''}
+                                               data-account-id="${account.id}">
+                                        <label class="form-check-label small text-light" for="mode-anon-${account.id}">
+                                            🛡️ AI - Anonyme Daten
+                                        </label>
+                                        <div class="mode-description">
+                                            ✅ Datenschutz | ❌ Benötigt Anonymisierung
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- AI auf Original -->
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input mode-radio" type="radio" 
+                                               name="mode-${account.id}" value="llm_original"
+                                               id="mode-orig-${account.id}"
+                                               ${account.effective_ai_mode === 'llm_original' ? 'checked' : ''}
+                                               data-account-id="${account.id}">
+                                        <label class="form-check-label small text-light" for="mode-orig-${account.id}">
+                                            🤖 AI - Original Daten
+                                        </label>
+                                        <div class="mode-description">
+                                            ✅ Beste Qualität | ⚠️ Kein Datenschutz-Layer
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Keine Analyse -->
+                                    <div class="form-check">
+                                        <input class="form-check-input mode-radio" type="radio" 
+                                               name="mode-${account.id}" value="none"
+                                               id="mode-none-${account.id}"
+                                               ${account.effective_ai_mode === 'none' ? 'checked' : ''}
+                                               data-account-id="${account.id}">
+                                        <label class="form-check-label small text-light" for="mode-none-${account.id}">
+                                            ❌ Keine Analyse
+                                        </label>
+                                        <div class="mode-description">
+                                            Nur Embeddings + Tag-Suggestions
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Status Badge -->
+                                <div class="mt-2 text-center">
+                                    <span class="badge ${
+                                        account.effective_ai_mode === 'spacy_booster' ? 'bg-info' :
+                                        account.effective_ai_mode === 'llm_anon' ? 'bg-success' :
+                                        account.effective_ai_mode === 'llm_original' ? 'bg-primary' :
+                                        'bg-secondary'
+                                    }" style="font-size: 0.7rem;">
+                                        Aktuell: ${
+                                            account.effective_ai_mode === 'spacy_booster' ? '⚡ Spacy Booster' :
+                                            account.effective_ai_mode === 'llm_anon' ? '🛡️ AI Anon' :
+                                            account.effective_ai_mode === 'llm_original' ? '🤖 AI Original' :
+                                            '❌ Keine Analyse'
+                                        }
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        
+        // Bind event listeners
+        // Anonymisierungs-Toggle
+        container.querySelectorAll('.anon-toggle').forEach(toggle => {
+            toggle.addEventListener('change', function() {
+                const accountId = parseInt(this.dataset.accountId);
+                const enabled = this.checked;
+                updateAccountMode(accountId, {anonymize_with_spacy: enabled});
+                
+                // Disable/Enable llm_anon radio based on anonymization
+                const anonRadio = document.getElementById(`mode-anon-${accountId}`);
+                const anonLabel = anonRadio?.nextElementSibling;
+                const anonDesc = anonLabel?.nextElementSibling;
+                if (anonRadio) {
+                    anonRadio.disabled = !enabled;
+                    if (!enabled && anonRadio.checked) {
+                        // Fallback to none if llm_anon was selected
+                        document.getElementById(`mode-none-${accountId}`).checked = true;
+                        updateAccountMode(accountId, {analysis_mode: 'none'});
+                    }
+                }
+                if (anonLabel) {
+                    anonLabel.className = 'form-check-label small text-light';
+                }
+                if (anonDesc) {
+                    anonDesc.className = 'mode-description';
+                }
+            });
+        });
+        
+        // Mode Radio Buttons
+        container.querySelectorAll('.mode-radio').forEach(radio => {
+            radio.addEventListener('change', function() {
+                if (this.checked) {
+                    const accountId = parseInt(this.dataset.accountId);
+                    const mode = this.value;
+                    updateAccountMode(accountId, {analysis_mode: mode});
+                }
+            });
+        });
+    } catch (error) {
+        console.error('Error loading booster settings:', error);
+        document.getElementById('urgencyBoosterSettings').innerHTML = `<div class="alert alert-danger small">Fehler beim Laden</div>`;
+    }
+}
+
+// Update Account Mode
+async function updateAccountMode(accountId, changes) {
+    try {
+        const data = await safeFetch(`/api/accounts/${accountId}/urgency-booster`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(changes)
+        });
+        
+        if (data.success) {
+            const modeLabels = {
+                'none': '❌ Keine Analyse',
+                'spacy_booster': '⚡ Spacy Booster',
+                'llm_anon': '🛡️ AI Anon',
+                'llm_original': '🤖 AI Original'
+            };
+            const modeLabel = modeLabels[data.effective_mode] || data.effective_mode;
+            showToast(`✅ Modus: ${modeLabel}`, 'success');
+            
+            // Update Status Badge
+            const badgeSpan = document.querySelector(`#mode-none-${accountId}`).closest('.border').nextElementSibling?.querySelector('.badge');
+            if (badgeSpan) {
+                badgeSpan.className = 'badge ' + (
+                    data.effective_mode === 'spacy_booster' ? 'bg-info' :
+                    data.effective_mode === 'llm_anon' ? 'bg-success' :
+                    data.effective_mode === 'llm_original' ? 'bg-primary' :
+                    'bg-secondary'
+                );
+                badgeSpan.textContent = 'Aktuell: ' + modeLabel;
+            }
+        } else {
+            showToast('Fehler beim Speichern: ' + (data.error || 'Unbekannt'), 'danger');
+            loadUrgencyBoosterSettingsV2();
+        }
+    } catch (error) {
+        console.error('Error updating mode:', error);
+        showToast('Fehler beim Speichern', 'danger');
+        loadUrgencyBoosterSettingsV2();
+    }
+}
+
+// Toast notification helper
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3`;
+    toast.style.zIndex = '9999';
+    toast.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.body.appendChild(toast);
+    console.log(`[Toast] ${type}: ${message}`);
+    setTimeout(() => toast.remove(), 5000);
+}
+
+// Load on page ready
+document.addEventListener('DOMContentLoaded', function() {
+    loadUrgencyBoosterSettingsV2();
+});
+</script>
+
+<style nonce="{{ csp_nonce() }}">
+.mode-description {
+    font-size: 0.7rem;
+    margin-left: 1.5rem;
+    color: rgba(255,255,255,0.85);
+}
+</style>
+{% endblock %}

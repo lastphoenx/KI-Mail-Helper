@@ -1,0 +1,1436 @@
+{% extends "base.html" %}
+
+{% block title %}E-Mail Liste - Mail Helper{% endblock %}
+
+{% block content %}
+<!-- CSS für erledigte Emails (global) -->
+<style nonce="{{ csp_nonce() }}">
+    /* Erledigte Emails ausgegraut -->
+    li:has(form[action*="/undo"]) {
+        opacity: 0.65;
+        background: linear-gradient(to right, #f8f9fa 0%, #e9ecef 100%) !important;
+    }
+    li:has(form[action*="/undo"]) .email-subject {
+        text-decoration: line-through;
+        color: #6c757d !important;
+    }
+    li:has(form[action*="/undo"]) .badge {
+        opacity: 0.7;
+    }
+    #listBulkActionBarCard {
+        position: sticky;
+        top: 56px;
+        z-index: 1020;
+        margin-bottom: 1rem;
+    }
+    #listBulkActionBarCard .card-header {
+        padding: 0.5rem 0.75rem;
+        background: #fff;
+    }
+    #listBulkActionBar .list-bulk-row {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 0.45rem;
+        flex-wrap: nowrap !important;
+        width: 100%;
+        overflow-x: auto;
+    }
+    #listBulkActionBar .list-bulk-row > * {
+        flex-shrink: 0;
+    }
+    #listBulkActionBar .list-bulk-folder-group {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+    #listBulkActionBar .list-bulk-count {
+        flex: 0 0 auto;
+        font-weight: 600;
+        font-size: 0.875rem;
+        white-space: nowrap;
+        color: #495057;
+        margin-right: 0.15rem;
+    }
+    #listBulkActionBar .list-bulk-count .bulk-count {
+        display: inline-block;
+        min-width: 1.4rem;
+        padding: 0.1rem 0.4rem;
+        margin-right: 0.2rem;
+        border-radius: 999px;
+        background: #0d6efd;
+        color: #fff;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+    }
+    #listBulkActionBar:not(.has-selection) .bulk-count {
+        background: #adb5bd;
+    }
+    #listBulkActionBar .list-bulk-sep {
+        flex: 0 0 auto;
+        width: 1px;
+        height: 24px;
+        background: #dee2e6;
+        margin: 0 0.1rem;
+    }
+    #listBulkActionBar .bulk-action-btn,
+    #listBulkActionBar .btn {
+        flex: 0 0 auto;
+        font-size: 0.8125rem;
+        white-space: nowrap;
+    }
+    #listBulkActionBar .form-select {
+        width: auto !important;
+        display: inline-block !important;
+        flex: 0 0 auto !important;
+        min-width: 0 !important;
+        max-width: 11rem;
+    }
+  /* Kompakt wie Filter-Leiste: auto-Breite statt Bootstrap 100% */
+    .compact-folder-select,
+    #filterBar #folderSelect,
+    #filterBar #accountSelect.filter-has-value {
+        width: auto !important;
+        max-width: 11rem;
+        min-width: 6.5rem;
+        display: inline-block !important;
+        flex: 0 0 auto !important;
+    }
+    #filterBar #accountSelect.filter-has-value,
+    #filterBar #folderSelect.folder-select-ready:not(:disabled),
+    #listBulkActionBar #bulkMoveFolderSelect.folder-select-ready:not(:disabled) {
+        background-color: #cfe2ff;
+        border-color: #9ec5fe;
+        color: #052c65;
+    }
+    #listBulkActionBar #bulkMoveFolderSelect:disabled {
+        background-color: #e9ecef;
+        border-color: #ced4da;
+        color: #6c757d;
+    }
+    #listBulkActionBar #bulkMoveFolderSelect {
+        width: auto !important;
+        min-width: 6.5rem !important;
+        max-width: 11rem !important;
+        font-size: 0.8125rem;
+        padding-right: 1.5rem;
+        text-overflow: ellipsis;
+    }
+    #listBulkActionBar #bulkTagSelect {
+        width: 5.5rem !important;
+        min-width: 5.5rem !important;
+        max-width: 5.5rem !important;
+        font-size: 0.8125rem;
+    }
+    #listBulkActionBar #bulkMoveFolderBtn {
+        flex: 0 0 auto;
+    }
+    #listBulkActionBar:not(.has-selection) .bulk-action-btn,
+    #listBulkActionBar:not(.has-selection) #bulkTagSelect,
+    #listBulkActionBar:not(.has-selection) #bulkTagBtn,
+    #listBulkActionBar:not(.has-selection) #bulkMoveFolderSelect,
+    #listBulkActionBar:not(.has-selection) #bulkMoveFolderBtn {
+        opacity: 0.5;
+        pointer-events: none;
+    }
+    #advancedToggle.active {
+        background-color: #e7f1ff;
+        border-color: #9ec5fe;
+        color: #052c65;
+    }
+    #advancedToggleIcon {
+        display: inline-block;
+        font-size: 0.7rem;
+        line-height: 1;
+        transition: transform 0.2s ease;
+    }
+    #advancedToggle[aria-expanded="true"] #advancedToggleIcon {
+        transform: rotate(180deg);
+    }
+    li.list-item-unread {
+        border-left: 3px solid #0d6efd;
+        background-color: #f8fbff;
+    }
+    li.list-item-unread .email-subject-link {
+        font-weight: 700;
+    }
+</style>
+
+{% set advanced_filters_open = search_term or filter_date_from or filter_date_to or filter_color or filter_done or (filter_tag_ids and filter_tag_ids|length > 0) %}
+
+<div class="mb-4">
+<h1 class="mb-4">📝 E-Mail Liste</h1>
+
+<!-- Filter Bar (Phase 13) -->
+<div class="card mb-4" id="filterBar">
+    <div class="card-body">
+        <!-- Hauptfilter-Leiste (kompakt) -->
+        <div class="filter-toolbar mb-3">
+            <div class="row g-2 align-items-end">
+                <!-- Account -->
+                <div class="col-auto">
+                    <label class="form-label small mb-1">📧 Account</label>
+                    <select class="form-select form-select-sm filter-select" data-filter="mail_account" id="accountSelect">
+                        <option value="">Alle</option>
+                        {% if user_accounts %}
+                            {% for account in user_accounts %}
+                            <option value="{{ account.id }}" {% if account.id|string == filter_account_id|string %}selected{% endif %}>
+                                {{ account.decrypted_imap_username or account.name }}
+                            </option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+
+                <!-- Folder -->
+                <div class="col-auto">
+                    <label class="form-label small mb-1">📁 Ordner</label>
+                    <select class="form-select form-select-sm filter-select" data-filter="folder" id="folderSelect" 
+                            {% if not server_folders %}disabled{% endif %}>
+                        <option value="">{% if server_folders %}Alle Ordner{% else %}Erst Account wählen{% endif %}</option>
+                        {% if server_folders %}
+                            {% for folder in server_folders %}
+                            <option value="{{ folder }}" {% if folder == filter_folder %}selected{% endif %}>
+                                {{ folder }}
+                            </option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+
+                <!-- Status (Read/Unread) -->
+                <div class="col-auto">
+                    <label class="form-label small mb-1">👁️ Status</label>
+                    <select class="form-select form-select-sm filter-select" data-filter="seen">
+                        <option value="">Alle</option>
+                        <option value="true" {% if filter_seen == 'true' %}selected{% endif %}>Gelesen</option>
+                        <option value="false" {% if filter_seen == 'false' %}selected{% endif %}>Ungelesen</option>
+                    </select>
+                </div>
+
+                <!-- Flagged -->
+                <div class="col-auto">
+                    <label class="form-label small mb-1">🚩 Wichtig</label>
+                    <select class="form-select form-select-sm filter-select" data-filter="flagged">
+                        <option value="">Alle</option>
+                        <option value="true" {% if filter_flagged == 'true' %}selected{% endif %}>Geflaggt</option>
+                        <option value="false" {% if filter_flagged == 'false' %}selected{% endif %}>Nicht geflaggt</option>
+                    </select>
+                </div>
+
+                <!-- Attachments -->
+                <div class="col-auto">
+                    <label class="form-label small mb-1">📎 Anhänge</label>
+                    <select class="form-select form-select-sm filter-select" data-filter="attach">
+                        <option value="">Alle</option>
+                        <option value="true" {% if filter_attachments == 'true' %}selected{% endif %}>Mit Anhang</option>
+                        <option value="false" {% if filter_attachments == 'false' %}selected{% endif %}>Ohne Anhang</option>
+                    </select>
+                </div>
+
+                <!-- Kalendereinladungen -->
+                <div class="col-auto">
+                    <label class="form-label small mb-1">📅 Termine</label>
+                    <select class="form-select form-select-sm filter-select" data-filter="calendar">
+                        <option value="">Alle</option>
+                        <option value="true" {% if filter_calendar == 'true' %}selected{% endif %}>Nur Termine</option>
+                        <option value="false" {% if filter_calendar == 'false' %}selected{% endif %}>Keine Termine</option>
+                    </select>
+                </div>
+
+                <!-- Sprache -->
+                <div class="col-auto">
+                    <label class="form-label small mb-1">🌐 Sprache</label>
+                    <select class="form-select form-select-sm filter-select" data-filter="language">
+                        <option value="">Alle Sprachen</option>
+                        {% if available_languages %}
+                            {% for lang in available_languages %}
+                            <option value="{{ lang }}" {% if lang == filter_language %}selected{% endif %}>
+                                {{ lang|upper }}
+                            </option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+
+                <!-- More/Advanced Toggle -->
+                <div class="col-auto ms-auto d-flex gap-2">
+                    <a href="/list" class="btn btn-sm btn-outline-danger" id="resetFiltersBtn" title="Alle Filter zurücksetzen">
+                        🔄 Reset
+                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-secondary{% if advanced_filters_open %} active{% endif %}"
+                            id="advancedToggle" data-bs-toggle="collapse" data-bs-target="#advancedFilters"
+                            aria-expanded="{{ 'true' if advanced_filters_open else 'false' }}" aria-controls="advancedFilters">
+                        ⚙️ Erweitert <span class="ms-1" id="advancedToggleIcon" aria-hidden="true">▼</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Erweiterte Filter (Toggle bleibt über Reloads offen) -->
+            <div class="collapse mt-3{% if advanced_filters_open %} show{% endif %}" id="advancedFilters">
+                <div class="row g-2 align-items-end">
+                    <!-- Suche -->
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">🔍 Suche</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" class="form-control form-control-sm filter-search" placeholder="Betreff, Absender..." 
+                                   value="{{ search_term }}" id="searchInput">
+                            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" 
+                                    aria-expanded="false" id="searchModeBtn" title="Suchmodus">
+                                <span id="searchModeLabel">Text</span>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item search-mode-option" href="#" data-mode="text">
+                                    <i class="bi bi-search"></i> Text-Suche
+                                </a></li>
+                                <li><a class="dropdown-item search-mode-option" href="#" data-mode="semantic">
+                                    <i class="bi bi-lightbulb"></i> Semantisch
+                                </a></li>
+                            </ul>
+                        </div>
+                        <small class="text-muted" id="searchModeHint" style="display:none;">
+                            🧠 Findet ähnliche Bedeutungen
+                        </small>
+                    </div>
+
+                    <!-- Datums-Range -->
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">📅 Von</label>
+                        <input type="date" class="form-control form-control-sm filter-select" data-filter="date_from" 
+                               value="{{ filter_date_from }}">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">📅 Bis</label>
+                        <input type="date" class="form-control form-control-sm filter-select" data-filter="date_to" 
+                               value="{{ filter_date_to }}">
+                    </div>
+
+                    <!-- Priorität (Legacy) -->
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">🎯 Priorität</label>
+                        <select class="form-select form-select-sm filter-select" data-filter="farbe">
+                            <option value="">Alle</option>
+                            <option value="rot" {% if filter_color == 'rot' %}selected{% endif %}>🔴 Rot</option>
+                            <option value="gelb" {% if filter_color == 'gelb' %}selected{% endif %}>🟡 Gelb</option>
+                            <option value="grün" {% if filter_color == 'grün' %}selected{% endif %}>🟢 Grün</option>
+                        </select>
+                    </div>
+
+<!-- Status (Done) -->
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">✓ Bearbeitet</label>
+                        <select class="form-select form-select-sm filter-select" data-filter="done">
+                            <option value="">Alle</option>
+                            <option value="false" {% if filter_done == 'false' %}selected{% endif %}>Offen</option>
+                            <option value="true" {% if filter_done == 'true' %}selected{% endif %}>Erledigt</option>
+                        </select>
+                    </div>
+
+                    <!-- Tags -->
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">🏷️ Tags</label>
+                        <select class="form-select form-select-sm filter-select" data-filter="tags">
+                            <option value="">Alle Tags</option>
+                            {% if all_tags %}
+                                {% for tag in all_tags %}
+                                <option value="{{ tag.id }}" {% if filter_tag_ids and tag.id == filter_tag_ids[0] %}selected{% endif %}>
+                                    {{ tag.name }}
+                                </option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sortierung & Info -->
+        <div class="row align-items-center pt-2 border-top">
+            <div class="col-auto">
+                <small class="text-muted">
+                    <strong id="resultCount">{{ mails|length }}</strong> Mails
+                    <span id="activeFilters" class="badge bg-info ms-2" style="display:none;"></span>
+                </small>
+            </div>
+            <div class="col-auto ms-auto">
+                <label class="form-label small mb-0 me-2">Sortierung:</label>
+                <select class="form-select form-select-sm d-inline-block" style="width: auto;" id="sortBy" data-filter="sort">
+                    <option value="score" {% if sort_by == 'score' %}selected{% endif %}>Score</option>
+                    <option value="date" {% if sort_by == 'date' %}selected{% endif %}>Datum</option>
+                    <option value="size" {% if sort_by == 'size' %}selected{% endif %}>Größe</option>
+                    <option value="sender" {% if sort_by == 'sender' %}selected{% endif %}>Absender</option>
+                </select>
+                <button class="btn btn-sm btn-outline-secondary ms-2" id="sortOrder" data-order="{{ sort_order }}">
+                    {% if sort_order == 'asc' %}↑{% else %}↓{% endif %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TOP Pagination Info & Per-Page Selection -->
+{% if total_pages >= 1 %}
+<div class="d-flex justify-content-between align-items-center mb-3" id="topPaginationBar">
+    <div class="d-flex align-items-center">
+        <span class="text-muted">
+            {% if search_term %}
+            <strong>{{ total_count }}</strong> Treffer für „{{ search_term }}“
+            {% else %}
+            <strong>{{ total_count }}</strong> E-Mails insgesamt
+            {% endif %}
+            {% if total_pages > 1 %}
+            &mdash; Seite <strong>{{ page }}</strong> von <strong>{{ total_pages }}</strong>
+            {% endif %}
+        </span>
+    </div>
+    <div class="d-flex align-items-center gap-3">
+        <label class="form-label small mb-0 me-1">Pro Seite:</label>
+        <select class="form-select form-select-sm" style="width: auto;" id="perPageSelect" data-filter="per_page">
+            <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+            <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+            <option value="150" {% if per_page == 150 %}selected{% endif %}>150</option>
+        </select>
+        {% if total_pages > 1 %}
+        <!-- Quick Navigation -->
+        <nav aria-label="Top pagination">
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" href="?page={{ page - 1 }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}" 
+                       {% if page <= 1 %}tabindex="-1" aria-disabled="true"{% endif %}>
+                        &laquo;
+                    </a>
+                </li>
+                <li class="page-item disabled"><span class="page-link">{{ page }}/{{ total_pages }}</span></li>
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="?page={{ page + 1 }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}" 
+                       {% if page >= total_pages %}tabindex="-1" aria-disabled="true"{% endif %}>
+                        &raquo;
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Bulk-Aktionsleiste (Card-Header-Stil wie Mail-Zähler) -->
+<div class="card mb-3" id="listBulkActionBarCard">
+    <div class="card-header" id="listBulkActionBar" role="toolbar" aria-label="Massenaktionen">
+        <div class="list-bulk-row">
+            <div class="list-bulk-count">
+                <span class="bulk-count" id="bulkSelectedCount">0</span> ausgewählt
+            </div>
+            <span class="list-bulk-sep" aria-hidden="true"></span>
+            <button type="button" class="btn btn-sm btn-success bulk-action-btn" data-bulk-action="mark_done">✓ Erledigt</button>
+            <button type="button" class="btn btn-sm btn-outline-primary bulk-action-btn" data-bulk-action="mark_undone">↩ Offen</button>
+            <button type="button" class="btn btn-sm btn-outline-primary bulk-action-btn" data-bulk-action="mark_read">👁 Gelesen</button>
+            <button type="button" class="btn btn-sm btn-outline-primary bulk-action-btn" data-bulk-action="mark_unread">👁 Ungelesen</button>
+            {% if all_tags %}
+            <span class="list-bulk-sep" aria-hidden="true"></span>
+            <select class="form-select form-select-sm" id="bulkTagSelect">
+                <option value="">🏷 Tag…</option>
+                {% for tag in all_tags %}
+                <option value="{{ tag.id }}">{{ tag.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="bulkTagBtn">🏷 Tag</button>
+            {% endif %}
+            <span class="list-bulk-sep" aria-hidden="true"></span>
+            <button type="button" class="btn btn-sm btn-warning bulk-action-btn" data-bulk-action="move_trash">🗑 Papierkorb</button>
+            <button type="button" class="btn btn-sm btn-danger bulk-action-btn" data-bulk-action="delete_permanent">⛔ Löschen</button>
+            <span class="list-bulk-sep" aria-hidden="true"></span>
+            <span class="list-bulk-folder-group">
+                <select class="form-select form-select-sm compact-folder-select bulk-folder-select" id="bulkMoveFolderSelect" disabled title="Zielordner">
+                    <option value="">Ordner…</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-primary" id="bulkMoveFolderBtn">📁 Verschieben</button>
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- E-Mail-Liste -->
+<div class="card" id="emailListCard">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <input type="checkbox" class="form-check-input mt-0" id="selectAllPageCheckbox"
+                   title="Alle E-Mails auf dieser Seite auswählen" aria-label="Alle auf dieser Seite">
+            <div>
+        <strong id="emailListCount">{{ mails|length }}</strong>
+        {% if search_term %}Treffer{% else %}Mails{% endif %}
+        {% if sort_by != 'score' or sort_order == 'asc' %}
+        <small class="text-muted">(sortiert nach {{ sort_by|replace('score', 'Score')|replace('date', 'Datum')|replace('size', 'Größe')|replace('sender', 'Absender') }} {{ 'aufsteigend' if sort_order == 'asc' else 'absteigend' }})</small>
+        {% else %}
+        <small class="text-muted">(sortiert nach Score)</small>
+        {% endif %}
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="bulkSelectAllVisibleBtn">
+                Alle sichtbaren
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="bulkDeselectAllBtn">
+                Auswahl aufheben
+            </button>
+        </div>
+    </div>
+    <ul class="list-group list-group-flush">
+        {% for email in mails|default([]) %}
+        {% set raw = email.raw_email %}
+        {% set tag_list = email._decrypted_tags.split(',') if email._decrypted_tags else [] %}
+        <li class="list-group-item{% if raw and raw.imap_is_seen == False %} list-item-unread{% endif %}" data-email-id="{{ email.raw_email_id }}">
+            <div class="row align-items-center">
+                <div class="col-auto">
+                    <input type="checkbox" class="form-check-input email-bulk-checkbox"
+                           value="{{ email.raw_email_id }}" aria-label="E-Mail auswählen">
+                </div>
+                <div class="col-md-1 text-center">
+                    {# Score-Anzeige: Immer email.score verwenden (wird bei Korrektur aktualisiert) #}
+                    {% if email.optimization_status == 'done' and email.optimize_score is not none and email.optimization_completed_at and email.processed_at and email.optimization_completed_at > email.processed_at %}
+                    <span class="badge priority-{{ email.optimize_farbe }} fs-5">
+                        {{ email.optimize_score }}
+                    </span>
+                    {% else %}
+                    <span class="badge priority-{{ email.farbe }} fs-5">
+                        {{ email.score }}
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="col-md-7">
+                    <h6 class="mb-1">
+                        {% if raw and raw.imap_is_seen == False %}
+                        <span class="badge bg-primary me-1" title="Ungelesen" style="font-size: 0.65rem;">●</span>
+                        {% endif %}
+                        {% if raw and raw.is_calendar_invite %}
+                            {% if raw.calendar_method == 'REPLY' %}
+                                <span class="badge bg-success me-1" title="Terminantwort (Zusage/Absage)" style="font-size: 0.75em;">✅ Antwort</span>
+                            {% elif raw.calendar_method == 'CANCEL' %}
+                                <span class="badge bg-danger me-1" title="Terminabsage" style="font-size: 0.75em;">❌ Absage</span>
+                            {% else %}
+                                <span class="badge bg-primary me-1" title="Termineinladung" style="font-size: 0.75em;">📅 Termin</span>
+                            {% endif %}
+                        {% endif %}
+                        <a href="/email/{{ email.raw_email_id }}" class="text-decoration-none email-subject-link">
+                            {{ email._decrypted_subject|default("(ohne Betreff)") }}
+                        </a>
+                        {% if raw and raw.attachments|length > 0 %}
+                        <span class="text-muted ms-2" title="{{ raw.attachments|length }} Anhang{% if raw.attachments|length > 1 %}e{% endif %}">📎 {{ raw.attachments|length }}</span>
+                        {% endif %}
+                    </h6>
+                    <small class="text-muted">
+                        Von: {{ email._decrypted_sender|default("Unbekannt") }}
+                        {% if raw and raw.received_at %}| {{ raw.received_at }}{% endif %}
+                        {% if raw and raw.imap_folder %}
+                        | <span class="badge rounded-pill bg-primary-subtle text-primary fw-semibold border border-primary-subtle px-2" title="IMAP-Ordner: {{ raw.imap_folder }}">📁 {{ raw.imap_folder }}</span>
+                        {% endif %}
+                    </small>
+                    <p class="mb-2 mt-2">{{ email._decrypted_summary_de|default('Keine Zusammenfassung verfügbar')|truncate(200) }}</p>
+                    <div class="small text-muted mb-2">
+                        {% if email.user_override_dringlichkeit is not none or email.user_override_wichtigkeit is not none %}
+                        {# User-Korrektur hat höchste Priorität #}
+                        <span class="badge bg-warning text-dark me-1">✏️ Korrigiert</span>
+                        Dringlichkeit: {{ email.user_override_dringlichkeit if email.user_override_dringlichkeit is not none else email.dringlichkeit }} | 
+                        Wichtigkeit: {{ email.user_override_wichtigkeit if email.user_override_wichtigkeit is not none else email.wichtigkeit }} |
+                        Aktion: {{ (email.user_override_kategorie if email.user_override_kategorie else email.kategorie_aktion)|replace('_',' ') }}
+                        {% set final_spam = email.user_override_spam_flag if email.user_override_spam_flag is not none else email.spam_flag %}
+                        {% if final_spam %}<span class="badge bg-danger ms-2">🚫 SPAM</span>{% endif %}
+                        {% elif email.optimization_status == 'done' and email.optimize_dringlichkeit is not none and email.optimization_completed_at and email.processed_at and email.optimization_completed_at > email.processed_at %}
+                        Dringlichkeit: {{ email.optimize_dringlichkeit }} | Wichtigkeit: {{ email.optimize_wichtigkeit }} |
+                        Aktion: {{ email.optimize_kategorie_aktion|replace('_',' ') if email.optimize_kategorie_aktion else email.kategorie_aktion|replace('_',' ') }}
+                        {% set final_spam = email.optimize_spam_flag if email.optimize_spam_flag is not none else email.spam_flag %}
+                        {% if final_spam %}<span class="badge bg-danger ms-2">🚫 SPAM</span>{% endif %}
+                        {% if email.optimize_confidence and email.optimize_confidence < 0.7 %}
+                        <span class="badge bg-warning text-dark ms-2" title="Niedrige Optimize-Confidence ({{ '%.0f'|format(email.optimize_confidence * 100) }}%) - Optimierung unsicher">⚠️ Opt. unsicher</span>
+                        {% endif %}
+                        {% else %}
+                        Dringlichkeit: {{ email.dringlichkeit }} | Wichtigkeit: {{ email.wichtigkeit }} |
+                        Aktion: {{ email.kategorie_aktion|replace('_',' ') }}
+                        {% if email.spam_flag %}<span class="badge bg-danger ms-2">🚫 SPAM</span>{% endif %}
+                        {% if email.ai_confidence and email.ai_confidence < 0.7 %}
+                        <span class="badge bg-warning text-dark ms-2" title="Niedrige AI-Confidence ({{ '%.0f'|format(email.ai_confidence * 100) }}%) - bitte prüfen">⚠️ Unsicher</span>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+                    {% if email.email_tags %}
+                    <div class="mt-2">
+                        {% for tag in email.email_tags %}
+                        <span class="badge me-1" style="background-color: {{ tag.color }};">{{ tag.name }}</span>
+                        {% endfor %}
+                    </div>
+                    {% elif tag_list %}
+                    <div class="mt-2">
+                        <small class="text-muted">Legacy:</small>
+                        {% for tag in tag_list if tag %}
+                        <span class="badge bg-secondary">{{ tag.strip() }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="col-md-3 text-end">
+                    {% if not email.done %}
+                    <form method="post" action="/email/{{ email.raw_email_id }}/done" class="d-inline action-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <button type="submit" class="btn btn-sm btn-success action-btn" data-action="done">✓ Erledigt</button>
+                    </form>
+                    {% else %}
+                    <form method="post" action="/email/{{ email.raw_email_id }}/undo" class="d-inline action-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <button type="submit" class="btn btn-sm btn-outline-success action-btn" data-action="undo" title="Wieder als offen markieren">
+                            ✓ Erledigt
+                        </button>
+                    </form>
+                    {% endif %}
+                    <button type="button" class="btn btn-sm btn-outline-warning sync-action-btn" 
+                            data-action="move-trash" data-email-id="{{ email.raw_email_id }}" 
+                            title="In Papierkorb verschieben">🗑️</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger sync-action-btn" 
+                            data-action="delete" data-email-id="{{ email.raw_email_id }}" 
+                            title="Permanent löschen">🗑️ Löschen</button>
+                    <a href="/email/{{ email.raw_email_id }}" class="btn btn-sm btn-outline-primary action-btn" data-action="details">Details</a>
+                </div>
+            </div>
+        </li>
+
+        {% else %}
+        <li class="list-group-item text-center text-muted py-5">
+            Keine E-Mails gefunden
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+
+<!-- P2-007: Pagination -->
+{% if total_pages > 1 %}
+<nav aria-label="Email pagination" class="mt-3">
+    <div class="d-flex justify-content-between align-items-center">
+        <div class="text-muted small">
+            Seite {{ page }} von {{ total_pages }}
+            ({% if search_term %}{{ total_count }} Treffer{% else %}{{ total_count }} E-Mails insgesamt{% endif %})
+        </div>
+        <ul class="pagination pagination-sm mb-0">
+            <!-- Previous -->
+            <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                <a class="page-link" href="?page={{ page - 1 }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}" 
+                   {% if page <= 1 %}tabindex="-1" aria-disabled="true"{% endif %}>
+                    &laquo; Zurück
+                </a>
+            </li>
+            
+            <!-- First Page -->
+            {% if page > 3 %}
+            <li class="page-item">
+                <a class="page-link" href="?page=1{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}">1</a>
+            </li>
+            {% if page > 4 %}
+            <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+            {% endif %}
+            
+            <!-- Pages around current -->
+            {% for p in range([page - 2, 1]|max, [page + 2, total_pages]|min + 1) %}
+            <li class="page-item {% if p == page %}active{% endif %}">
+                <a class="page-link" href="?page={{ p }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}">{{ p }}</a>
+            </li>
+            {% endfor %}
+            
+            <!-- Last Page -->
+            {% if page < total_pages - 2 %}
+            {% if page < total_pages - 3 %}
+            <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ total_pages }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}">{{ total_pages }}</a>
+            </li>
+            {% endif %}
+            
+            <!-- Next -->
+            <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                <a class="page-link" href="?page={{ page + 1 }}{% if filter_account_id %}&mail_account={{ filter_account_id }}{% endif %}{% if filter_folder %}&folder={{ filter_folder }}{% endif %}{% if filter_seen %}&seen={{ filter_seen }}{% endif %}{% if filter_flagged %}&flagged={{ filter_flagged }}{% endif %}{% if filter_attachments %}&attach={{ filter_attachments }}{% endif %}{% if filter_tag_ids %}&tags={{ filter_tag_ids|join(',') }}{% endif %}{% if search_term %}&search={{ search_term }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}{% if sort_order %}&order={{ sort_order }}{% endif %}{% if per_page != 50 %}&per_page={{ per_page }}{% endif %}" 
+                   {% if page >= total_pages %}tabindex="-1" aria-disabled="true"{% endif %}>
+                    Weiter &raquo;
+                </a>
+            </li>
+        </ul>
+    </div>
+</nav>
+{% endif %}
+
+</div><!-- end page wrapper -->
+
+<script nonce="{{ csp_nonce() }}">
+document.addEventListener('DOMContentLoaded', function() {
+    const filterSelects = document.querySelectorAll('.filter-select');
+    const filterSearch = document.querySelector('.filter-search');
+    const sortBySelect = document.getElementById('sortBy');
+    const sortOrderBtn = document.getElementById('sortOrder');
+    const accountSelect = document.getElementById('accountSelect');
+    const folderSelect = document.getElementById('folderSelect');
+    const perPageSelect = document.getElementById('perPageSelect');
+    const bulkMoveFolderSelect = document.getElementById('bulkMoveFolderSelect');
+
+    function folderNameFromApi(folder) {
+        return typeof folder === 'string' ? folder : (folder && folder.name) || '';
+    }
+
+    /** Gleiche Logik wie Filter-Ordner: Select mit IMAP-Ordnern füllen */
+    function fillFolderSelect(selectEl, folders, options = {}) {
+        const {
+            placeholder = 'Alle Ordner',
+            disabled = false,
+            preserveValue = true,
+        } = options;
+        if (!selectEl) return;
+        const previous = preserveValue ? selectEl.value : '';
+        selectEl.innerHTML = '';
+        const placeholderOpt = document.createElement('option');
+        placeholderOpt.value = '';
+        placeholderOpt.textContent = placeholder;
+        selectEl.appendChild(placeholderOpt);
+        folders.forEach(folder => {
+            const folderName = folderNameFromApi(folder);
+            if (!folderName) return;
+            const option = document.createElement('option');
+            option.value = folderName;
+            option.textContent = folderName;
+            if (folderName === previous) option.selected = true;
+            selectEl.appendChild(option);
+        });
+        selectEl.disabled = disabled;
+    }
+
+    function updateFolderSelectAppearance() {
+        const hasAccount = !!(accountSelect && accountSelect.value);
+        if (accountSelect) {
+            accountSelect.classList.toggle('filter-has-value', hasAccount);
+        }
+        if (folderSelect) {
+            folderSelect.classList.toggle('folder-select-ready', hasAccount);
+        }
+        if (bulkMoveFolderSelect) {
+            bulkMoveFolderSelect.classList.toggle('folder-select-ready', hasAccount);
+        }
+    }
+
+    async function updateFolderDropdown(accountId) {
+        if (!accountId || !folderSelect) {
+            fillFolderSelect(folderSelect, [], {
+                placeholder: 'Erst Account wählen',
+                disabled: true,
+            });
+            fillFolderSelect(bulkMoveFolderSelect, [], {
+                placeholder: 'Ordner…',
+                disabled: true,
+            });
+            updateFolderSelectAppearance();
+            return;
+        }
+
+        try {
+            const response = await fetch(`/account/${accountId}/folders`, {
+                method: 'GET',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                console.error('Fehler beim Laden von Ordnern:', response.status);
+                fillFolderSelect(folderSelect, [], {
+                    placeholder: 'Fehler beim Laden',
+                    disabled: true,
+                });
+                fillFolderSelect(bulkMoveFolderSelect, [], {
+                    placeholder: 'Ordner…',
+                    disabled: true,
+                });
+                updateFolderSelectAppearance();
+                return;
+            }
+
+            const data = await response.json();
+            const folders = data.folders || [];
+            fillFolderSelect(folderSelect, folders, { placeholder: 'Alle Ordner' });
+            fillFolderSelect(bulkMoveFolderSelect, folders, { placeholder: 'Ordner…' });
+            updateFolderSelectAppearance();
+        } catch (error) {
+            console.error('Fehler beim Abrufen von Ordnern:', error);
+            fillFolderSelect(folderSelect, [], {
+                placeholder: 'Fehler beim Laden',
+                disabled: true,
+            });
+            fillFolderSelect(bulkMoveFolderSelect, [], {
+                placeholder: 'Ordner…',
+                disabled: true,
+            });
+            updateFolderSelectAppearance();
+        }
+    }
+
+    // Phase F.1: Semantic Search Mode (global variable)
+    window.searchMode = 'text'; // 'text' or 'semantic'
+    
+    function performSemanticSearch(query) {
+        const emailListContainer = document.querySelector('.card:last-of-type .list-group');
+        if (!emailListContainer) {
+            console.error('[ERROR] Email list container not found!');
+            return;
+        }
+        
+        console.log('[DEBUG] performSemanticSearch starting for:', query);
+        
+        // Show loading state
+        emailListContainer.innerHTML = '<li class="list-group-item"><div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Semantische Suche läuft...</p></div></li>';
+        
+        // Build API URL
+        const params = new URLSearchParams({
+            q: query,
+            limit: 50,
+            threshold: 0.25
+        });
+        
+        // Account-Filter: Standardmäßig nur aktueller Account
+        const accountSelect = document.getElementById('accountSelect');
+        if (accountSelect && accountSelect.value) {
+            params.append('account_id', accountSelect.value);
+        }
+        
+        fetch(`/api/search/semantic?${params}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('[DEBUG] Semantic search results:', data);
+                if (data.results && data.results.length > 0) {
+                    renderSemanticResults(data.results);
+                } else {
+                    emailListContainer.innerHTML = '<li class="list-group-item"><div class="alert alert-info m-3">Keine semantischen Ergebnisse gefunden. Versuche Text-Suche oder andere Begriffe.</div></li>';
+                }
+            })
+            .catch(error => {
+                console.error('Semantic search error:', error);
+                emailListContainer.innerHTML = `<li class="list-group-item"><div class="alert alert-danger m-3">Fehler bei semantischer Suche: ${error.message}</div></li>`;
+            });
+    }
+    
+    function renderSemanticResults(results) {
+        const emailListContainer = document.querySelector('.card:last-of-type .list-group');
+        if (!emailListContainer) {
+            console.error('[ERROR] Email list container not found for rendering!');
+            return;
+        }
+        
+        console.log('[DEBUG] Rendering', results.length, 'semantic results');
+        
+        let html = '';
+        
+        results.forEach(result => {
+            const date = result.date ? new Date(result.date).toLocaleDateString('de-DE') : 'N/A';
+            const score = (result.similarity_score * 100).toFixed(0);
+            
+            html += `
+                <li class="list-group-item">
+                    <a href="/email/${result.email_id}" class="text-decoration-none">
+                        <div class="d-flex w-100 justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">${escapeHtml(result.subject || '(Kein Betreff)')}</h6>
+                                <p class="mb-1 text-muted small">
+                                    <strong>Von:</strong> ${escapeHtml(result.from)} | ${date}
+                                </p>
+                                <p class="mb-2 small">${escapeHtml(result.snippet)}</p>
+                            </div>
+                            <span class="badge bg-primary ms-3" title="Semantic Similarity Score">
+                                🧠 ${score}%
+                            </span>
+                        </div>
+                    </a>
+                </li>
+            `;
+        });
+        
+        emailListContainer.innerHTML = html;
+        
+        // Update count
+        const emailListCount = document.getElementById('emailListCount');
+        if (emailListCount) {
+            emailListCount.textContent = results.length;
+        }
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    const ADVANCED_FILTERS_STORAGE_KEY = 'listAdvancedFiltersOpen';
+
+    function hasAdvancedFiltersInUrl() {
+        const p = new URLSearchParams(window.location.search);
+        return !!(
+            p.get('search') ||
+            p.get('date_from') ||
+            p.get('date_to') ||
+            p.get('farbe') ||
+            p.get('done') ||
+            p.get('tags')
+        );
+    }
+
+    function isAdvancedFiltersPanelOpen() {
+        const panel = document.getElementById('advancedFilters');
+        return !!(panel && panel.classList.contains('show'));
+    }
+
+    function persistAdvancedFiltersOpen(open) {
+        try {
+            sessionStorage.setItem(ADVANCED_FILTERS_STORAGE_KEY, open ? '1' : '0');
+        } catch (e) {
+            /* sessionStorage nicht verfügbar */
+        }
+    }
+
+    function shouldOpenAdvancedFilters() {
+        if (hasAdvancedFiltersInUrl()) return true;
+        try {
+            return sessionStorage.getItem(ADVANCED_FILTERS_STORAGE_KEY) === '1';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function syncAdvancedToggleUi(open) {
+        const toggleBtn = document.getElementById('advancedToggle');
+        if (!toggleBtn) return;
+        toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggleBtn.classList.toggle('active', open);
+    }
+
+    function initAdvancedFiltersPanel() {
+        const panel = document.getElementById('advancedFilters');
+        const toggleBtn = document.getElementById('advancedToggle');
+        if (!panel || !toggleBtn || typeof bootstrap === 'undefined') return;
+
+        const collapse = bootstrap.Collapse.getOrCreateInstance(panel, { toggle: false });
+
+        if (shouldOpenAdvancedFilters() && !panel.classList.contains('show')) {
+            collapse.show();
+        }
+        syncAdvancedToggleUi(panel.classList.contains('show'));
+        if (panel.classList.contains('show')) {
+            persistAdvancedFiltersOpen(true);
+        }
+
+        panel.addEventListener('shown.bs.collapse', () => {
+            syncAdvancedToggleUi(true);
+            persistAdvancedFiltersOpen(true);
+        });
+        panel.addEventListener('hidden.bs.collapse', () => {
+            syncAdvancedToggleUi(false);
+            persistAdvancedFiltersOpen(false);
+        });
+    }
+
+    function buildFilterParams() {
+        const params = new URLSearchParams();
+
+        filterSelects.forEach(select => {
+            const value = select.value.trim();
+            if (value) {
+                params.set(select.dataset.filter, value);
+            }
+        });
+
+        if (filterSearch && filterSearch.value.trim()) {
+            params.set('search', filterSearch.value.trim());
+        }
+
+        if (sortBySelect && sortBySelect.value) {
+            params.set('sort', sortBySelect.value);
+        }
+
+        const currentOrder = sortOrderBtn?.dataset.order || 'desc';
+        params.set('order', currentOrder);
+
+        if (perPageSelect && perPageSelect.value && perPageSelect.value !== '50') {
+            params.set('per_page', perPageSelect.value);
+        }
+
+        return params;
+    }
+
+    let filterFetchController = null;
+    let filterFetchSeq = 0;
+
+    function updateFilters(options = {}) {
+        const { preserveSearchFocus = false } = options;
+        const searchInput = document.getElementById('searchInput');
+        console.log('[DEBUG] updateFilters called, searchMode:', window.searchMode, 'value:', searchInput?.value);
+
+        if (window.searchMode === 'semantic' && searchInput && searchInput.value.trim()) {
+            console.log('[DEBUG] Triggering semantic search for:', searchInput.value.trim());
+            performSemanticSearch(searchInput.value.trim());
+            return;
+        }
+
+        console.log('[DEBUG] Using normal text-based filtering (AJAX)');
+        const params = buildFilterParams();
+        persistAdvancedFiltersOpen(isAdvancedFiltersPanelOpen());
+
+        const focusState = (preserveSearchFocus && searchInput) ? {
+            el: searchInput,
+            start: searchInput.selectionStart,
+            end: searchInput.selectionEnd,
+        } : null;
+
+        applyFiltersViaAjax(params, focusState);
+    }
+
+    function applyFiltersViaAjax(params, focusState = null) {
+        const url = '/list?' + params.toString();
+        const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        history.replaceState(null, '', newUrl);
+
+        if (filterFetchController) {
+            filterFetchController.abort();
+        }
+        filterFetchController = new AbortController();
+        const fetchSeq = ++filterFetchSeq;
+
+        const resultCount = document.getElementById('resultCount');
+        if (resultCount) resultCount.textContent = '⏳...';
+
+        fetch(url, {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            signal: filterFetchController.signal,
+        })
+        .then(response => response.text())
+        .then(html => {
+            if (fetchSeq !== filterFetchSeq) return;
+
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+
+            const newListHtml = doc.querySelector('#emailListCard');
+            const oldListHtml = document.querySelector('#emailListCard');
+
+            if (newListHtml && oldListHtml) {
+                oldListHtml.replaceWith(newListHtml);
+                attachActionFormListeners();
+                if (typeof initBulkToolbar === 'function') {
+                    initBulkToolbar();
+                }
+                const accountSel = document.getElementById('accountSelect');
+                if (accountSel && accountSel.value && typeof updateFolderDropdown === 'function') {
+                    updateFolderDropdown(accountSel.value);
+                }
+            }
+
+            const newTopPagination = doc.querySelector('#topPaginationBar');
+            const oldTopPagination = document.querySelector('#topPaginationBar');
+            if (newTopPagination && oldTopPagination) {
+                oldTopPagination.replaceWith(newTopPagination);
+                const newPerPageSelect = document.getElementById('perPageSelect');
+                if (newPerPageSelect) {
+                    newPerPageSelect.addEventListener('change', function() {
+                        const p = buildFilterParams();
+                        const newPerPage = this.value;
+                        if (newPerPage === '50') {
+                            p.delete('per_page');
+                        } else {
+                            p.set('per_page', newPerPage);
+                        }
+                        p.delete('page');
+                        applyFiltersViaAjax(p);
+                    });
+                }
+            }
+
+            const newBottomPagination = doc.querySelector('nav[aria-label="Email pagination"]');
+            const oldBottomPagination = document.querySelector('nav[aria-label="Email pagination"]');
+            if (newBottomPagination) {
+                if (oldBottomPagination) {
+                    oldBottomPagination.replaceWith(newBottomPagination);
+                } else {
+                    const listCard = document.querySelector('#emailListCard');
+                    if (listCard) {
+                        listCard.after(newBottomPagination);
+                    }
+                }
+            } else if (oldBottomPagination) {
+                oldBottomPagination.remove();
+            }
+
+            const newResultCount = doc.querySelector('#resultCount');
+            if (newResultCount && resultCount) {
+                resultCount.textContent = newResultCount.textContent;
+            }
+
+            const newListCount = doc.querySelector('#emailListCount');
+            const oldListCount = document.querySelector('#emailListCount');
+            if (newListCount && oldListCount) {
+                oldListCount.textContent = newListCount.textContent;
+            }
+
+            updateActiveFilterBadge(params);
+
+            if (focusState && focusState.el && document.body.contains(focusState.el)) {
+                focusState.el.focus({ preventScroll: true });
+                try {
+                    focusState.el.setSelectionRange(focusState.start, focusState.end);
+                } catch (e) {
+                    /* setSelectionRange nicht überall verfügbar */
+                }
+            }
+        })
+        .catch(error => {
+            if (error.name === 'AbortError') return;
+            console.error('Filter-Fehler:', error);
+            if (resultCount) resultCount.textContent = 'Fehler';
+        });
+    }
+
+    function updateActiveFilterBadge(params) {
+        const activeCount = params.toString().split('&').filter(p => p).length;
+        const badge = document.getElementById('activeFilters');
+        if (badge) {
+            if (activeCount > 0) {
+                badge.textContent = activeCount + ' aktiv';
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    }
+
+    function attachActionFormListeners() {
+        let isProcessing = false;
+
+        document.querySelectorAll('.action-form').forEach(form => {
+            form.removeEventListener('submit', handleFormSubmit);
+            form.addEventListener('submit', handleFormSubmit);
+        });
+
+        function handleFormSubmit(e) {
+            if (isProcessing) {
+                e.preventDefault();
+                return false;
+            }
+            const btn = this.querySelector('.action-btn');
+            btn.disabled = true;
+            btn.innerHTML = '⏳...';
+            isProcessing = true;
+        }
+
+        document.querySelectorAll('.action-btn[data-action="details"]').forEach(btn => {
+            btn.removeEventListener('click', handleDetailsClick);
+            btn.addEventListener('click', handleDetailsClick);
+        });
+
+        function handleDetailsClick(e) {
+            if (isProcessing) {
+                e.preventDefault();
+                return false;
+            }
+        }
+    }
+
+    filterSelects.forEach(select => {
+        select.addEventListener('change', async function() {
+            if (this === accountSelect) {
+                const accountId = this.value;
+                await updateFolderDropdown(accountId || null);
+            }
+            updateFilters();
+        });
+    });
+
+    if (filterSearch) {
+        let searchTimeout;
+        filterSearch.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => updateFilters({ preserveSearchFocus: true }), 400);
+        });
+    }
+
+    if (sortBySelect) {
+        sortBySelect.addEventListener('change', updateFilters);
+    }
+
+    // Per-page selection
+    if (perPageSelect) {
+        perPageSelect.addEventListener('change', function() {
+            const p = buildFilterParams();
+            const newPerPage = this.value;
+            if (newPerPage === '50') {
+                p.delete('per_page');
+            } else {
+                p.set('per_page', newPerPage);
+            }
+            p.delete('page');
+            applyFiltersViaAjax(p);
+        });
+    }
+
+    if (sortOrderBtn) {
+        sortOrderBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const currentOrder = this.dataset.order || 'desc';
+            const newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+            this.dataset.order = newOrder;
+            this.textContent = newOrder === 'asc' ? '↑' : '↓';
+            updateFilters();
+        });
+    }
+
+    // ===== Phase F.1: Semantic Search Toggle =====
+    const searchModeOptions = document.querySelectorAll('.search-mode-option');
+    const searchModeLabel = document.getElementById('searchModeLabel');
+    const searchModeHint = document.getElementById('searchModeHint');
+    
+    searchModeOptions.forEach(option => {
+        option.addEventListener('click', function(e) {
+            e.preventDefault();
+            window.searchMode = this.dataset.mode;
+            console.log('[DEBUG] Search mode changed to:', window.searchMode);
+            
+            if (window.searchMode === 'semantic') {
+                searchModeLabel.textContent = 'Semantisch';
+                searchModeHint.style.display = 'block';
+            } else {
+                searchModeLabel.textContent = 'Text';
+                searchModeHint.style.display = 'none';
+            }
+            
+            // Re-trigger search if there's a query
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput && searchInput.value.trim()) {
+                console.log('[DEBUG] Re-triggering search with existing query');
+                updateFilters();
+            }
+        });
+    });
+    // ===== End Phase F.1 =====
+
+    // ===== Sync Action Buttons (Papierkorb & Permanent Löschen) =====
+    document.querySelectorAll('.sync-action-btn').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            const action = this.dataset.action;
+            const emailId = this.dataset.emailId;
+            
+            let confirmMsg = '';
+            if (action === 'delete') {
+                confirmMsg = '🗑️ Email wirklich PERMANENT LÖSCHEN? Diese Aktion kann nicht rückgängig gemacht werden.';
+            } else if (action === 'move-trash') {
+                confirmMsg = '🗑️ Email in Papierkorb verschieben?';
+            }
+            
+            if (!confirm(confirmMsg)) return;
+            
+            const btn = this;
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '⏳';
+            
+            try {
+                const response = await fetch(`/email/${emailId}/${action}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    },
+                    credentials: 'include'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    // DELETE: Email komplett entfernen
+                    // MOVE-TRASH: Page reload damit Filter korrekt zeigt
+                    if (action === 'delete') {
+                        // Permanent gelöscht → aus Liste entfernen
+                        const listItem = btn.closest('li');
+                        listItem.style.transition = 'opacity 0.3s';
+                        listItem.style.opacity = '0';
+                        setTimeout(() => {
+                            listItem.remove();
+                            // Check if list is empty
+                            const emailList = document.getElementById('emailList');
+                            if (emailList && emailList.querySelectorAll('li').length === 0) {
+                                emailList.innerHTML = '<li class="list-group-item text-center text-muted py-5">Keine E-Mails gefunden</li>';
+                            }
+                        }, 300);
+                    } else if (action === 'move-trash') {
+                        // In Papierkorb → Seite neu laden (zeigt dann in "Gelöscht" Filter)
+                        window.location.reload();
+                    }
+                } else {
+                    alert('❌ ' + (data.error || 'Fehler bei der Aktion'));
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                }
+            } catch (error) {
+                console.error('Sync action error:', error);
+                alert('❌ Netzwerk-Fehler: ' + error.message);
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+    });
+    // ===== End Sync Action Buttons =====
+
+    // ===== Bulk Toolbar =====
+    function getSelectedEmailIds() {
+        return Array.from(document.querySelectorAll('.email-bulk-checkbox:checked'))
+            .map(cb => parseInt(cb.value, 10))
+            .filter(id => !Number.isNaN(id));
+    }
+
+    function updateBulkToolbar() {
+        const ids = getSelectedEmailIds();
+        const bar = document.getElementById('listBulkActionBar');
+        const countEl = document.getElementById('bulkSelectedCount');
+        const selectAll = document.getElementById('selectAllPageCheckbox');
+        const checkboxes = document.querySelectorAll('.email-bulk-checkbox');
+        if (countEl) countEl.textContent = ids.length;
+        if (bar) bar.classList.toggle('has-selection', ids.length > 0);
+        if (selectAll && checkboxes.length) {
+            selectAll.checked = ids.length > 0 && ids.length === checkboxes.length;
+            selectAll.indeterminate = ids.length > 0 && ids.length < checkboxes.length;
+        }
+    }
+
+    async function runBulkAction(action, extra = {}) {
+        const emailIds = getSelectedEmailIds();
+        if (!emailIds.length) {
+            alert('Bitte mindestens eine E-Mail auswählen.');
+            return;
+        }
+        if (emailIds.length > 150) {
+            alert('Maximal 150 E-Mails pro Massenaktion.');
+            return;
+        }
+
+        const confirmMsgs = {
+            mark_done: `${emailIds.length} E-Mail(s) als erledigt markieren?`,
+            mark_undone: `${emailIds.length} E-Mail(s) wieder als offen markieren?`,
+            mark_read: `${emailIds.length} E-Mail(s) als gelesen markieren?`,
+            mark_unread: `${emailIds.length} E-Mail(s) als ungelesen markieren?`,
+            move_trash: `${emailIds.length} E-Mail(s) in den Papierkorb verschieben?`,
+            delete_permanent: `${emailIds.length} E-Mail(s) PERMANENT löschen? Nicht rückgängig!`,
+            move_to_folder: `${emailIds.length} E-Mail(s) nach "${extra.target_folder}" verschieben?`,
+            assign_tag: `${emailIds.length} E-Mail(s) mit Tag versehen?`,
+        };
+        if (!confirm(confirmMsgs[action] || 'Aktion ausführen?')) return;
+
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+        try {
+            const response = await fetch('/emails/bulk-action', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrf
+                },
+                credentials: 'include',
+                body: JSON.stringify({ action, email_ids: emailIds, ...extra })
+            });
+            const data = await response.json();
+            if (!response.ok && response.status !== 207) {
+                throw new Error(data.error || 'Bulk-Aktion fehlgeschlagen');
+            }
+            const msg = `Fertig: ${data.succeeded}/${data.total} erfolgreich` +
+                (data.failed ? `, ${data.failed} Fehler` : '');
+            alert('✅ ' + msg);
+            window.location.reload();
+        } catch (err) {
+            alert('❌ ' + err.message);
+        }
+    }
+
+    function initBulkToolbar() {
+        document.querySelectorAll('.email-bulk-checkbox').forEach(cb => {
+            cb.removeEventListener('change', updateBulkToolbar);
+            cb.addEventListener('change', updateBulkToolbar);
+        });
+
+        const selectAll = document.getElementById('selectAllPageCheckbox');
+        if (selectAll) {
+            selectAll.onchange = function() {
+                const checked = this.checked;
+                document.querySelectorAll('.email-bulk-checkbox').forEach(cb => {
+                    cb.checked = checked;
+                });
+                updateBulkToolbar();
+            };
+        }
+
+        const visBtn = document.getElementById('bulkSelectAllVisibleBtn');
+        const desBtn = document.getElementById('bulkDeselectAllBtn');
+        if (visBtn) {
+            visBtn.onclick = () => {
+                document.querySelectorAll('.email-bulk-checkbox').forEach(cb => { cb.checked = true; });
+                updateBulkToolbar();
+            };
+        }
+        if (desBtn) {
+            desBtn.onclick = () => {
+                document.querySelectorAll('.email-bulk-checkbox').forEach(cb => { cb.checked = false; });
+                updateBulkToolbar();
+            };
+        }
+
+        document.querySelectorAll('.bulk-action-btn').forEach(btn => {
+            btn.onclick = () => runBulkAction(btn.dataset.bulkAction);
+        });
+
+        const moveBtn = document.getElementById('bulkMoveFolderBtn');
+        if (moveBtn) {
+            moveBtn.onclick = () => {
+                const folder = document.getElementById('bulkMoveFolderSelect')?.value;
+                if (!folder) {
+                    alert('Bitte Zielordner wählen.');
+                    return;
+                }
+                runBulkAction('move_to_folder', { target_folder: folder });
+            };
+        }
+
+        const tagBtn = document.getElementById('bulkTagBtn');
+        if (tagBtn) {
+            tagBtn.onclick = () => {
+                const tagId = document.getElementById('bulkTagSelect')?.value;
+                if (!tagId) {
+                    alert('Bitte Tag wählen.');
+                    return;
+                }
+                runBulkAction('assign_tag', { tag_id: parseInt(tagId, 10) });
+            };
+        }
+
+        updateBulkToolbar();
+    }
+    // ===== End Bulk Toolbar =====
+
+    attachActionFormListeners();
+    initBulkToolbar();
+    initAdvancedFiltersPanel();
+
+    const params = new URLSearchParams(window.location.search);
+    updateActiveFilterBadge(params);
+
+    if (accountSelect && accountSelect.value) {
+        updateFolderDropdown(accountSelect.value);
+    } else {
+        updateFolderSelectAppearance();
+    }
+});
+</script>
+{% endblock %}
