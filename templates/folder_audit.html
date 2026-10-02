@@ -855,6 +855,7 @@
     let scanResult = null;
     let selectedKeys = new Set();
     let expandedDetailKeys = new Set();
+    let expandedClusterKeys = new Set();
     let currentFilter = 'all';
     let currentAddAction = null;  // Aktuell gewählte Aktion (trusted-domain, vip-sender, etc.)
     let currentClusterData = null; // Cluster-Daten für das Modal
@@ -996,6 +997,8 @@
             }
             
             scanResult = data.result;
+            expandedClusterKeys.clear();
+            expandedDetailKeys.clear();
             if (scanResult && scanResult.emails && scanResult.emails.length) {
                 rebuildClusters();
             }
@@ -1653,6 +1656,7 @@
             const clusterEmails = members.map(m => findEmailInScan(m.folder, m.uid))
                 .filter(e => e)
                 .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+            const clusterOpen = expandedClusterKeys.has(cluster.cluster_key);
             
             html += `
                 <div class="cluster-card ${categoryClass}" data-cluster-key="${escapeHtml(cluster.cluster_key)}">
@@ -1661,7 +1665,7 @@
                             <div class="d-flex align-items-center gap-2 mb-2">
                                 <span class="cluster-count">${cluster.count}×</span>
                                 ${categoryBadge}
-                                <span class="cluster-expand-btn" title="Emails anzeigen" data-cluster-key="${escapeHtml(cluster.cluster_key)}">▼</span>
+                                <span class="cluster-expand-btn ${clusterOpen ? 'expanded' : ''}" title="Emails anzeigen" data-cluster-key="${escapeHtml(cluster.cluster_key)}">${clusterOpen ? '▲' : '▼'}</span>
                             </div>
                             <div class="cluster-pattern mb-2">${escapeHtml(cluster.display_name)}</div>
                             <div class="cluster-meta">
@@ -1719,7 +1723,7 @@
                     </div>
                     
                     <!-- Aufklappbare Email-Liste -->
-                    <div class="cluster-emails-list" data-cluster-key="${escapeHtml(cluster.cluster_key)}">
+                    <div class="cluster-emails-list ${clusterOpen ? 'show' : ''}" data-cluster-key="${escapeHtml(cluster.cluster_key)}">
                         ${clusterEmails.map(email => {
                             const rowKey = emailRowKey(email);
                             const isRowSelected = selectedKeys.has(rowKey);
@@ -1776,13 +1780,19 @@
         container.querySelectorAll('.cluster-expand-btn').forEach(btn => {
             btn.addEventListener('click', function(e) {
                 e.stopPropagation();
-                // Finde die Email-Liste im selben cluster-card Container
+                const key = this.dataset.clusterKey;
+                if (!key) return;
+                if (expandedClusterKeys.has(key)) {
+                    expandedClusterKeys.delete(key);
+                } else {
+                    expandedClusterKeys.add(key);
+                }
                 const clusterCard = this.closest('.cluster-card');
                 const list = clusterCard ? clusterCard.querySelector('.cluster-emails-list') : null;
-                if (list) {
-                    list.classList.toggle('show');
-                    this.classList.toggle('expanded');
-                }
+                const open = expandedClusterKeys.has(key);
+                if (list) list.classList.toggle('show', open);
+                this.classList.toggle('expanded', open);
+                this.textContent = open ? '▲' : '▼';
             });
         });
         
