@@ -1142,7 +1142,7 @@ class FolderAuditService:
         if not FolderAuditService._is_plain_bulk(email):
             return None
         sender = email.sender.lower().strip()
-        if FolderAuditService._registrable_domain(sender) in FolderAuditService.TRUSTED_GLOBAL_DOMAINS:
+        if FolderAuditService._registrable_domain(sender) in TRUSTED_GLOBAL_DOMAINS:
             return None
         return (sender, email.category)
     
@@ -1152,7 +1152,7 @@ class FolderAuditService:
         if not FolderAuditService._is_plain_bulk(email):
             return None
         dom = FolderAuditService._registrable_domain(email.sender)
-        if dom in FolderAuditService.TRUSTED_GLOBAL_DOMAINS:
+        if dom in TRUSTED_GLOBAL_DOMAINS:
             return None
         # Transaktionales (Rechnung, Konto, Sicherheit ...) nie mit Werbung mischen
         if re.search(FolderAuditService._DOMAIN_STAGE_BLOCK_SUBJECT, email.subject or '', re.IGNORECASE):
@@ -3066,9 +3066,14 @@ class FolderAuditService:
             result.scam_count = sum(1 for e in all_emails if e.category == TrashCategory.SCAM)
             
             # Clustering über ALLE Emails (nicht pro Ordner!)
-            result.clusters = FolderAuditService.build_clusters(
-                all_emails, mode=cluster_mode,
-                trusted_domains=FolderAuditService._trusted_domains_for(db_session, user_id, account_id))
+            try:
+                result.clusters = FolderAuditService.build_clusters(
+                    all_emails, mode=cluster_mode,
+                    trusted_domains=FolderAuditService._trusted_domains_for(
+                        db_session, user_id, account_id))
+            except Exception:
+                logger.exception("build_clusters fehlgeschlagen (Alle-Ordner-Audit)")
+                result.clusters = []
             
             result.scan_duration_ms = int((time.time() - start_time) * 1000)
             

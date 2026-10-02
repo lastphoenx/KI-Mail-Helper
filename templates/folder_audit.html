@@ -987,6 +987,9 @@
             }
             
             scanResult = data.result;
+            if (scanResult && scanResult.emails && scanResult.emails.length) {
+                rebuildClusters();
+            }
             displayResults();
             
         } catch (error) {
