@@ -174,6 +174,7 @@
     .cluster-card.category-safe { border-left: 4px solid #198754; }
     .cluster-card.category-review { border-left: 4px solid #ffc107; }
     .cluster-card.category-important { border-left: 4px solid #dc3545; }
+    .cluster-card.category-scam { border-left: 4px solid #6f1d1b; }
     .cluster-pattern {
         font-family: monospace;
         background: #f8f9fa;
@@ -974,7 +975,8 @@
                 body: JSON.stringify({ 
                     account_id: parseInt(accountId), 
                     limit,
-                    folder: folder
+                    folder: folder,
+                    cluster_mode: getClusterMode()
                 })
             });
             
@@ -1521,6 +1523,43 @@
         return s.substring(0, 80);
     }
     
+    // Cluster-Modus: 'cleanup' (grosses Aufräumen) oder 'maintenance' (bereits sauberer Account).
+    // Wird beim Scan ans Backend gesendet (Sammel-Cluster) und steuert hier die "Kleinkram"-Karte.
+    const CLUSTER_MISC_MAX = 4;  // Gruppen mit 2..4 Mails (nur 🟢) landen im Aufräum-Modus im Kleinkram
+    function getClusterMode() {
+        try { return localStorage.getItem('auditClusterMode') === 'maintenance' ? 'maintenance' : 'cleanup'; }
+        catch (e) { return 'cleanup'; }
+    }
+    function setClusterMode(mode) {
+        try { localStorage.setItem('auditClusterMode', mode); } catch (e) { /* ignorieren */ }
+        renderClusters();
+    }
+    
+    // Fasst kleine, sichere Cluster zu EINER Karte "Kleinkram" zusammen.
+    // Nur 🟢-Cluster; 🟡/🔴/🚨 und Kampagnen bleiben immer als eigene Karten sichtbar.
+    function buildMiscCluster(clusters) {
+        const small = clusters.filter(c => c.count <= CLUSTER_MISC_MAX && c.category === 'safe'
+            && !String(c.cluster_key).startsWith('*kampagne'));
+        if (small.length < 2) return { rest: clusters, misc: null };
+        const smallKeys = new Set(small.map(c => c.cluster_key));
+        const dates = small.flatMap(c => [c.oldest_date, c.newest_date]).filter(Boolean).sort();
+        const misc = {
+            cluster_key: '*kleinkram',
+            display_name: `Kleinkram: ${small.length} kleine Gruppen (je 2–${CLUSTER_MISC_MAX} Mails)`,
+            sender_domain: 'verschiedene',
+            category: 'safe',
+            count: small.reduce((n, c) => n + c.count, 0),
+            uids: small.flatMap(c => c.uids),
+            sample_subject: small.slice(0, 3).map(c => c.sample_subject).filter(Boolean).join(' · '),
+            sample_sender: small.slice(0, 3).map(c => c.sample_sender).filter(Boolean).join(', '),
+            oldest_date: dates[0] || null,
+            newest_date: dates[dates.length - 1] || null,
+            total_size_kb: Math.round(small.reduce((n, c) => n + (c.total_size_kb || 0), 0) * 10) / 10,
+            isMisc: true,
+        };
+        return { rest: clusters.filter(c => !smallKeys.has(c.cluster_key)), misc };
+    }
+    
     function renderClusters() {
         const container = document.getElementById('clusterView');
         if (!scanResult || !scanResult.clusters) {
@@ -1529,7 +1568,12 @@
         }
         
         // Nur Cluster mit 2+ Emails anzeigen
-        const clusters = scanResult.clusters.filter(c => c.count >= 2);
+        let clusters = scanResult.clusters.filter(c => c.count >= 2);
+        const clusterMode = getClusterMode();
+        if (clusterMode === 'cleanup') {
+            const { rest, misc } = buildMiscCluster(clusters);
+            clusters = misc ? [...rest, misc] : rest;
+        }
         
         // Summary
         const totalClusters = clusters.length;
@@ -1537,6 +1581,13 @@
         const totalEmails = clusters.reduce((sum, c) => sum + c.count, 0);
         
         let html = `
+            <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Cluster-Modus">
+                <button type="button" class="btn ${clusterMode === 'cleanup' ? 'btn-primary' : 'btn-outline-primary'} cluster-mode-btn" data-mode="cleanup"
+                        title="Grosses Aufräumen: wenige grosse Karten, kleine sichere Gruppen als 'Kleinkram'">🧹 Aufräumen</button>
+                <button type="button" class="btn ${clusterMode === 'maintenance' ? 'btn-primary' : 'btn-outline-primary'} cluster-mode-btn" data-mode="maintenance"
+                        title="Bereits sauberer Account: auch kleine Gruppen einzeln zeigen">✨ Pflege</button>
+            </div>
+            <small class="text-muted ms-2">Gruppierung im Backend wirkt ab dem nächsten Scan.</small>
             <div class="alert alert-info mb-4">
                 <strong>📦 ${totalClusters} Cluster</strong> mit insgesamt ${totalEmails.toLocaleString()} Emails - 
                 davon ${largeClusters} mit 5+ Emails. 
@@ -1551,6 +1602,8 @@
                 ? '<span class="badge bg-success">Sicher löschbar</span>'
                 : cluster.category === 'important'
                 ? '<span class="badge bg-danger">Wichtig</span>'
+                : cluster.category === 'scam'
+                ? '<span class="badge bg-dark">🚨 Scam/Spam</span>'
                 : '<span class="badge bg-warning text-dark">Prüfen</span>';
             
             const dateRange = cluster.oldest_date && cluster.newest_date
@@ -1660,6 +1713,12 @@
         }
         
         container.innerHTML = html;
+        
+        // Kleinkram-Karte: "Hinzufügen"-Menü (Whitelist etc.) ergibt für Sammelkarte keinen Sinn
+        container.querySelectorAll('.cluster-card[data-cluster-key="*kleinkram"] .btn-group').forEach(el => el.remove());
+        container.querySelectorAll('.cluster-mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => setClusterMode(btn.dataset.mode));
+        });
         
         bindEmailDetailEvents(container);
         

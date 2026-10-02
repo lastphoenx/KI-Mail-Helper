@@ -916,6 +916,9 @@ class FolderAuditService:
         # Entferne lange Hex-IDs (8+ Zeichen)
         normalized = re.sub(r'\b[a-f0-9]{8,}\b', '<ID>', normalized, flags=re.IGNORECASE)
         
+        # Dezimalzahlen (Jackpot 26.7 Millionen) - vor den Ganzzahl-Regeln
+        normalized = re.sub(r'\b\d+[.,]\d+\b', '<N>', normalized)
+        
         # Entferne numerische IDs (Order #12345, Ticket 98765)
         normalized = re.sub(r'#\d+', '#<ID>', normalized)
         normalized = re.sub(r'\b\d{5,}\b', '<ID>', normalized)  # 5+ Ziffern
@@ -934,6 +937,13 @@ class FolderAuditService:
         
         # Entferne Email-Adressen
         normalized = re.sub(r'[\w\.\-]+@[\w\.\-]+\.\w+', '<EMAIL>', normalized)
+        
+        # Dezimalzahlen (Jackpot 26.7 Millionen) und Zahl-Adjektive (5-tägiger Streak)
+        normalized = re.sub(r'\b\d+-täg\w*', '<N>-tägig', normalized)
+        
+        # Führende/nachgestellte Emoji/Sonderzeichen entfernen (nur Dekoration)
+        normalized = re.sub(r'^[^\w<#]+', '', normalized)
+        normalized = re.sub(r'[\U0001F000-\U0001FFFF\u2600-\u27BF\u2B00-\u2BFF\ufe0f\u200d\s]+$', '', normalized)
         
         # Normalisiere Whitespace
         normalized = re.sub(r'\s+', ' ', normalized).strip()
@@ -987,9 +997,13 @@ class FolderAuditService:
         if max_total and len(emails) > max_total:
             return emails[:max_total]
         return emails
-    
+
     @staticmethod
-    def build_clusters(emails: List[TrashEmailInfo]) -> List[TrashEmailCluster]:
+    def build_clusters(
+        emails: List[TrashEmailInfo],
+        mode: str = "cleanup",
+        trusted_domains: Optional[set] = None,
+    ) -> List[TrashEmailCluster]:
         """Gruppiert Emails zu Clustern basierend auf Ähnlichkeit.
         
         Returns:
@@ -1054,10 +1068,249 @@ class FolderAuditService:
                 if priority.get(email.category, 0) > priority.get(cluster.category, 0):
                     cluster.category = email.category
         
+        # Stufe 2-4: Sammel-Cluster (Kampagne, Whitelist-Domain, Absender)
+        cfg = FolderAuditService.CLUSTER_MODES.get(mode, FolderAuditService.CLUSTER_MODES["cleanup"])
+        FolderAuditService._add_campaign_clusters(emails, cluster_map)
+        if cfg["domain_stage"]:
+            FolderAuditService._merge_clusters(
+                emails, cluster_map, FolderAuditService._domain_group_key,
+                min_count=cfg["min_count"], absorb_max=cfg["absorb_max"],
+                label="domain", trusted_domains=trusted_domains)
+        FolderAuditService._merge_clusters(
+            emails, cluster_map, FolderAuditService._sender_group_key,
+            min_count=cfg["min_count"], absorb_max=cfg["absorb_max"], label="sender")
+        
         # Sortiere nach Anzahl (größte zuerst)
         clusters = sorted(cluster_map.values(), key=lambda c: c.count, reverse=True)
         
         return clusters
+    
+    # ------------------------------------------------------------------
+    # Sammel-Cluster (Stufe 2-4). Grundsatz: lieber zu wenig als zu viel.
+    # ------------------------------------------------------------------
+    # Modi: "cleanup" = grosses Aufräumen (wenige, grosse Karten),
+    #       "maintenance" = bereits sauberer Account (nur kleine Ergänzungen)
+    CLUSTER_MODES = {
+        "cleanup":     {"min_count": 3, "absorb_max": 10**9, "domain_stage": True},
+        "maintenance": {"min_count": 2, "absorb_max": 1,     "domain_stage": False},
+    }
+    # Domains, bei denen die Domain allein nichts über den Absender aussagt (Freemail/Shared)
+    # → TRUSTED_GLOBAL_DOMAINS enthält bereits gmx/gmail/outlook (kein Duplikat-Set wegen Hook/PII)
+    # Gründe, die eine Mail von jeder Sammel-Gruppierung ausschliessen
+    SENDER_CLUSTER_BLOCK_REASONS = ('wichtig', 'konversation', 'vertrauenswürdig', 'scam')
+    _DOMAIN_STAGE_BLOCK_SUBJECT = (
+        r'rechnung|invoice|zahlung|payment|mahnung|vertrag|offerte|passwort|password|'
+        r'sicherheit|security|code|konto|account|bestell|order|termin|beleg|quittung'
+    )
+    _SECOND_LEVEL_TLDS = {'co.uk', 'com.br', 'co.jp', 'com.au', 'co.kr', 'com.co', 'co.nz', 'org.uk'}
+    
+    @staticmethod
+    def _trusted_domains_for(db_session, user_id, account_id) -> set:
+        """Whitelist-Domains des Users aus der DB (leer, wenn nicht verfügbar)."""
+        if db_session is None or user_id is None:
+            return set()
+        try:
+            cfg = AuditConfigCache.get_config(db_session, user_id, account_id)
+            return set(cfg.get('trusted_domains', set())) if cfg else set()
+        except Exception as e:  # Clustering darf nie am Config-Load scheitern
+            logger.debug("trusted_domains für Clustering nicht ladbar: %s", e)
+            return set()
+    
+    @staticmethod
+    def _registrable_domain(sender_email: str) -> str:
+        """Hauptdomain (mail.ubs.com -> ubs.com, gagag.gmail.com -> gmail.com)."""
+        host = FolderAuditService._extract_domain(sender_email or "")
+        labels = [l for l in host.split('.') if l]
+        if len(labels) <= 2:
+            return host
+        if '.'.join(labels[-2:]) in FolderAuditService._SECOND_LEVEL_TLDS:
+            return '.'.join(labels[-3:])
+        return '.'.join(labels[-2:])
+    
+    @staticmethod
+    def _is_plain_bulk(email: 'TrashEmailInfo') -> bool:
+        """Eindeutig harmlose Massenmail (SAFE/REVIEW, ohne Wichtig-/Antwort-Signale)."""
+        if email.category not in (TrashCategory.SAFE, TrashCategory.REVIEW):
+            return False
+        if email.has_attachments or email.is_reply or not email.sender:
+            return False
+        reasons = ' | '.join(email.reasons or []).lower()
+        if any(b in reasons for b in FolderAuditService.SENDER_CLUSTER_BLOCK_REASONS):
+            return False
+        return bool(email.has_list_unsubscribe or 'newsletter' in reasons or 'marketing' in reasons)
+    
+    @staticmethod
+    def _sender_group_key(email, trusted_domains=None):
+        if not FolderAuditService._is_plain_bulk(email):
+            return None
+        sender = email.sender.lower().strip()
+        if FolderAuditService._registrable_domain(sender) in FolderAuditService.TRUSTED_GLOBAL_DOMAINS:
+            return None
+        return (sender, email.category)
+    
+    @staticmethod
+    def _domain_group_key(email, trusted_domains=None):
+        """Nur Whitelist-Domains mit bestandener Authentifizierung."""
+        if not FolderAuditService._is_plain_bulk(email):
+            return None
+        dom = FolderAuditService._registrable_domain(email.sender)
+        if dom in FolderAuditService.TRUSTED_GLOBAL_DOMAINS:
+            return None
+        # Transaktionales (Rechnung, Konto, Sicherheit ...) nie mit Werbung mischen
+        if re.search(FolderAuditService._DOMAIN_STAGE_BLOCK_SUBJECT, email.subject or '', re.IGNORECASE):
+            return None
+        trusted = set(TRUSTED_SWISS_DOMAINS) | set(trusted_domains or ())
+        if dom not in trusted:
+            return None
+        auth = FolderAuditService._parse_auth_results(email.auth_results)
+        if auth['is_forged'] or not (auth['spf'] == 'pass' or auth['dkim'] == 'pass' or auth['dmarc'] == 'pass'):
+            return None
+        return (dom, email.category)
+    
+    @staticmethod
+    def _new_cluster(key, display_name, sample, domain):
+        return TrashEmailCluster(
+            cluster_key=key, display_name=display_name, sender_domain=domain,
+            sample_subject=sample.subject, sample_sender=sample.sender,
+            category=sample.category)
+    
+    @staticmethod
+    def _add_email_to_cluster(cluster, email):
+        cluster.count += 1
+        cluster.uids.append(email.uid)
+        folder_name = (
+            email.folder.decode("utf-8", "replace")
+            if isinstance(email.folder, bytes)
+            else (email.folder or "")
+        )
+        cluster.members.append({"folder": folder_name, "uid": email.uid})
+        cluster.total_size += email.size
+        if email.category == TrashCategory.SAFE:
+            cluster.safe_count += 1
+        elif email.category == TrashCategory.REVIEW:
+            cluster.review_count += 1
+        elif email.category == TrashCategory.IMPORTANT:
+            cluster.important_count += 1
+        elif email.category == TrashCategory.SCAM:
+            cluster.scam_count += 1
+        if email.date:
+            if cluster.oldest_date is None or email.date < cluster.oldest_date:
+                cluster.oldest_date = email.date
+            if cluster.newest_date is None or email.date > cluster.newest_date:
+                cluster.newest_date = email.date
+        priority = {TrashCategory.SCAM: 4, TrashCategory.IMPORTANT: 3,
+                    TrashCategory.REVIEW: 2, TrashCategory.SAFE: 1}
+        if priority.get(email.category, 0) > priority.get(cluster.category, 0):
+            cluster.category = email.category
+    
+    @staticmethod
+    def _merge_clusters(emails, cluster_map, group_key_fn, min_count, absorb_max,
+                        label, trusted_domains=None):
+        """Fasst bestehende Cluster zu Sammel-Clustern zusammen.
+        
+        Ein Cluster ist nur zulässig, wenn ALLE seine Mails denselben (nicht-None)
+        Gruppen-Key haben und er höchstens absorb_max Mails hat. Pro Gruppe wird
+        ab min_count Mails ein Sammel-Cluster gebildet. Kategorien werden nie gemischt.
+        """
+        from collections import defaultdict
+        members: Dict[str, list] = defaultdict(list)
+        for e in emails:
+            members[e.cluster_key].append(e)
+        
+        groups: Dict[tuple, list] = defaultdict(list)
+        for ckey, cluster in list(cluster_map.items()):
+            if cluster.count > absorb_max or cluster.category == TrashCategory.SCAM:
+                continue
+            keys = {group_key_fn(e, trusted_domains) for e in members[ckey]}
+            if len(keys) != 1 or None in keys:
+                continue
+            groups[keys.pop()].append(ckey)
+        
+        for gkey, ckeys in groups.items():
+            total = sum(cluster_map[k].count for k in ckeys)
+            if total < min_count:
+                continue
+            if len(ckeys) == 1 and cluster_map[ckeys[0]].count >= 2:
+                continue  # bereits sauberer Cluster, nichts zu gewinnen
+            first = members[ckeys[0]][0]
+            if label == "domain":
+                key = f"{gkey[0]}|*domain|{gkey[1].value}"
+                name = f"(alle Absender von {gkey[0]})"
+            else:
+                key = f"{gkey[0]}|*alle-betreffs*|{gkey[1].value}"
+                name = "(verschiedene Betreffs – Newsletter/Werbung)"
+            cluster = FolderAuditService._new_cluster(
+                key, name, first, FolderAuditService._registrable_domain(first.sender))
+            for ck in ckeys:
+                for e in members[ck]:
+                    e.cluster_key = key
+                    FolderAuditService._add_email_to_cluster(cluster, e)
+                cluster_map.pop(ck, None)
+            cluster_map[key] = cluster
+    
+    @staticmethod
+    def _is_campaign_candidate(email) -> bool:
+        """Scam oder vom Provider als Spam markiert; nie Antwort/Anhang/Wichtig."""
+        if email.has_attachments or email.is_reply or not email.sender:
+            return False
+        if email.category == TrashCategory.IMPORTANT:
+            return False
+        reasons = ' | '.join(email.reasons or []).lower()
+        if any(b in reasons for b in ('wichtig', 'konversation', 'vertrauenswürdig')):
+            return False
+        spam_flagged = bool(email.server_spam_flag or (email.provider_junk_score or 0) >= 10
+                            or 'server-spam' in reasons)
+        return email.category == TrashCategory.SCAM or spam_flagged
+    
+    @staticmethod
+    def _add_campaign_clusters(emails, cluster_map):
+        """Spam-/Scam-Kampagnen: gleicher Betreff bzw. Markenname von mehreren
+        UNABHÄNGIGEN Absender-Domains (Wegwerf-Domains). Echte Newsletter kommen
+        von einer Domain und werden hier nie erfasst."""
+        from collections import defaultdict
+        
+        def doms(group):
+            return {FolderAuditService._registrable_domain(e.sender) for e in group}
+        
+        cands = [e for e in emails if FolderAuditService._is_campaign_candidate(e)]
+        assigned = set()
+        
+        def build(groups, prefix, title_fn, min_mails):
+            for gkey, group in groups.items():
+                group = [e for e in group if e.uid not in assigned]
+                if len(group) < min_mails or len(doms(group)) < 2:
+                    continue
+                key = f"*kampagne|{prefix}|{gkey}"
+                cluster = FolderAuditService._new_cluster(
+                    key, title_fn(group[0]), group[0], "(mehrere Domains)")
+                for e in group:
+                    old = cluster_map.get(e.cluster_key)
+                    if old:
+                        old.count -= 1
+                        old.uids = [u for u in old.uids if u != e.uid]
+                        old.members = [m for m in old.members if m.get("uid") != e.uid]
+                        if old.count <= 0:
+                            cluster_map.pop(e.cluster_key, None)
+                    e.cluster_key = key
+                    assigned.add(e.uid)
+                    FolderAuditService._add_email_to_cluster(cluster, e)
+                cluster.category = TrashCategory.SCAM if cluster.scam_count else TrashCategory.REVIEW
+                cluster_map[key] = cluster
+        
+        by_subject = defaultdict(list)
+        for e in cands:
+            norm = FolderAuditService.normalize_subject_for_clustering(e.subject)
+            if len(norm) >= 15:
+                by_subject[norm].append(e)
+        build(by_subject, "betreff",
+              lambda e: f"🚨 Spam-/Scam-Kampagne: {FolderAuditService.normalize_subject_for_clustering(e.subject)}", 2)
+        
+        by_brand = defaultdict(list)
+        for e in cands:
+            name = (e.sender_name or "").lower().strip()
+            if len(name) >= 3:
+                by_brand[name].append(e)
+        build(by_brand, "marke", lambda e: f"🚨 Spam-/Scam-Kampagne: «{e.sender_name}» von wechselnden Domains", 3)
     
     # =============================================================================
     # Hilfsfunktionen
@@ -2275,7 +2528,8 @@ class FolderAuditService:
         db_session=None,
         user_id: Optional[int] = None,
         account_id: Optional[int] = None,
-        folder: Optional[str] = None
+        folder: Optional[str] = None,
+        cluster_mode: str = "cleanup",
     ) -> FolderAuditResult:
         """Holt Emails aus einem Ordner und analysiert sie.
         
@@ -2594,7 +2848,9 @@ class FolderAuditService:
             result.scam_count = sum(1 for e in result.emails if e.category == TrashCategory.SCAM)
             
             # Clustering für bessere Übersicht
-            result.clusters = FolderAuditService.build_clusters(result.emails)
+            result.clusters = FolderAuditService.build_clusters(
+                result.emails, mode=cluster_mode,
+                trusted_domains=FolderAuditService._trusted_domains_for(db_session, user_id, account_id))
             
             result.scan_duration_ms = int((time.time() - start_time) * 1000)
             
@@ -2628,7 +2884,8 @@ class FolderAuditService:
         db_session=None,
         user_id: Optional[int] = None,
         account_id: Optional[int] = None,
-        exclude_folders: Optional[List[str]] = None
+        exclude_folders: Optional[List[str]] = None,
+        cluster_mode: str = "cleanup",
     ) -> FolderAuditResult:
         """Scannt ALLE Ordner eines Accounts und analysiert Emails.
         
@@ -2769,7 +3026,9 @@ class FolderAuditService:
             result.scam_count = sum(1 for e in all_emails if e.category == TrashCategory.SCAM)
             
             # Clustering über ALLE Emails (nicht pro Ordner!)
-            result.clusters = FolderAuditService.build_clusters(all_emails)
+            result.clusters = FolderAuditService.build_clusters(
+                all_emails, mode=cluster_mode,
+                trusted_domains=FolderAuditService._trusted_domains_for(db_session, user_id, account_id))
             
             result.scan_duration_ms = int((time.time() - start_time) * 1000)
             

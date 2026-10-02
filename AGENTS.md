@@ -19,3 +19,7 @@ CT **134** — vollständige Befehle: privates `doku/pve2/vm/134-ki-mail-helper/
 ## Git
 
 **`main`** für Produktionsfixes. Commit/Push nur auf Nutzeranweisung.
+
+**Remote für Entwicklung:** `origin` → `KI-Mail-Helper-Dev` (Deploy CT 134). Feature-Branches und KI-Arbeit **nur** hier — nicht im öffentlichen `KI-Mail-Helper` entwickeln (nur Spiegel/Sync von Dev).
+
+**Keine Mailbox-Daten in Git:** Keine IMAP-Exports, Absenderlisten oder «Validierungs-Fixtures» aus echten Postfächern — weder in Tests noch in `scripts/`. Clustering-Tests nur mit synthetischen `TrashEmailInfo` in pytest; optionale Stats-Skripte erzeugen Daten im Speicher (`example.com`-Absender).

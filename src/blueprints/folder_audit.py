@@ -195,6 +195,9 @@ def scan_trash():
         account_id = data.get("account_id")
         limit = data.get("limit", 5000)
         folder = data.get("folder")  # Optional: spezifischer Ordner
+        cluster_mode = data.get("cluster_mode", "cleanup")
+        if cluster_mode not in ("cleanup", "maintenance"):
+            cluster_mode = "cleanup"
         
         if not account_id:
             return jsonify({"error": "account_id erforderlich"}), 400
@@ -233,6 +236,7 @@ def scan_trash():
                     db_session=db,
                     user_id=user.id,
                     account_id=account.id,
+                    cluster_mode=cluster_mode,
                 )
                 scan_folder = "Alle Ordner"
             else:
@@ -243,7 +247,8 @@ def scan_trash():
                     db_session=db, 
                     user_id=user.id,
                     account_id=account.id,
-                    folder=folder
+                    folder=folder,
+                    cluster_mode=cluster_mode,
                 )
                 scan_folder = folder or "Trash"
             
