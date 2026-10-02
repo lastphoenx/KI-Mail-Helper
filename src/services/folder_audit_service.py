@@ -1080,10 +1080,8 @@ class FolderAuditService:
             emails, cluster_map, FolderAuditService._sender_group_key,
             min_count=cfg["min_count"], absorb_max=cfg["absorb_max"], label="sender")
         
-        # Sortiere nach Anzahl (größte zuerst)
-        clusters = sorted(cluster_map.values(), key=lambda c: c.count, reverse=True)
-        
-        return clusters
+        # Counts/Members aus finalen cluster_keys der Mails (UID pro Ordner → kein Drift)
+        return FolderAuditService._rebuild_clusters_from_emails(emails, cluster_map)
     
     # ------------------------------------------------------------------
     # Sammel-Cluster (Stufe 2-4). Grundsatz: lieber zu wenig als zu viel.
@@ -1175,14 +1173,60 @@ class FolderAuditService:
             category=sample.category)
     
     @staticmethod
+    def _member_folder(email: "TrashEmailInfo") -> str:
+        f = email.folder
+        if isinstance(f, bytes):
+            return f.decode("utf-8", "replace")
+        return f or ""
+
+    @staticmethod
+    def _member_id(email: "TrashEmailInfo") -> Tuple[str, int]:
+        return (FolderAuditService._member_folder(email), email.uid)
+
+    @staticmethod
+    def _rebuild_clusters_from_emails(
+        emails: List[TrashEmailInfo],
+        cluster_map: Dict[str, TrashEmailCluster],
+    ) -> List[TrashEmailCluster]:
+        """Cluster-Liste aus finalen E-Mail-Zuordnungen (nach Merge/Kampagnen)."""
+        from collections import defaultdict
+
+        groups: Dict[str, List[TrashEmailInfo]] = defaultdict(list)
+        for e in emails:
+            if e.cluster_key:
+                groups[e.cluster_key].append(e)
+
+        rebuilt: List[TrashEmailCluster] = []
+        for key, group in groups.items():
+            if len(group) < 2:
+                continue
+            hint = cluster_map.get(key)
+            first = group[0]
+            domain = FolderAuditService._extract_domain(first.sender)
+            display = (
+                hint.display_name
+                if hint
+                else (FolderAuditService.normalize_subject_for_clustering(first.subject) or "(Kein Betreff)")
+            )
+            c = TrashEmailCluster(
+                cluster_key=key,
+                display_name=display,
+                sender_domain=hint.sender_domain if hint else domain,
+                sample_subject=hint.sample_subject if hint else first.subject,
+                sample_sender=hint.sample_sender if hint else first.sender,
+                category=first.category,
+            )
+            for e in group:
+                FolderAuditService._add_email_to_cluster(c, e)
+            rebuilt.append(c)
+
+        return sorted(rebuilt, key=lambda c: c.count, reverse=True)
+
+    @staticmethod
     def _add_email_to_cluster(cluster, email):
         cluster.count += 1
         cluster.uids.append(email.uid)
-        folder_name = (
-            email.folder.decode("utf-8", "replace")
-            if isinstance(email.folder, bytes)
-            else (email.folder or "")
-        )
+        folder_name = FolderAuditService._member_folder(email)
         cluster.members.append({"folder": folder_name, "uid": email.uid})
         cluster.total_size += email.size
         if email.category == TrashCategory.SAFE:
@@ -1273,26 +1317,19 @@ class FolderAuditService:
             return {FolderAuditService._registrable_domain(e.sender) for e in group}
         
         cands = [e for e in emails if FolderAuditService._is_campaign_candidate(e)]
-        assigned = set()
+        assigned: Set[Tuple[str, int]] = set()
         
         def build(groups, prefix, title_fn, min_mails):
             for gkey, group in groups.items():
-                group = [e for e in group if e.uid not in assigned]
+                group = [e for e in group if FolderAuditService._member_id(e) not in assigned]
                 if len(group) < min_mails or len(doms(group)) < 2:
                     continue
                 key = f"*kampagne|{prefix}|{gkey}"
                 cluster = FolderAuditService._new_cluster(
                     key, title_fn(group[0]), group[0], "(mehrere Domains)")
                 for e in group:
-                    old = cluster_map.get(e.cluster_key)
-                    if old:
-                        old.count -= 1
-                        old.uids = [u for u in old.uids if u != e.uid]
-                        old.members = [m for m in old.members if m.get("uid") != e.uid]
-                        if old.count <= 0:
-                            cluster_map.pop(e.cluster_key, None)
                     e.cluster_key = key
-                    assigned.add(e.uid)
+                    assigned.add(FolderAuditService._member_id(e))
                     FolderAuditService._add_email_to_cluster(cluster, e)
                 cluster.category = TrashCategory.SCAM if cluster.scam_count else TrashCategory.REVIEW
                 cluster_map[key] = cluster
@@ -2530,6 +2567,7 @@ class FolderAuditService:
         account_id: Optional[int] = None,
         folder: Optional[str] = None,
         cluster_mode: str = "cleanup",
+        skip_clustering: bool = False,
     ) -> FolderAuditResult:
         """Holt Emails aus einem Ordner und analysiert sie.
         
@@ -2847,10 +2885,11 @@ class FolderAuditService:
             result.important_count = sum(1 for e in result.emails if e.category == TrashCategory.IMPORTANT)
             result.scam_count = sum(1 for e in result.emails if e.category == TrashCategory.SCAM)
             
-            # Clustering für bessere Übersicht
-            result.clusters = FolderAuditService.build_clusters(
-                result.emails, mode=cluster_mode,
-                trusted_domains=FolderAuditService._trusted_domains_for(db_session, user_id, account_id))
+            if not skip_clustering:
+                result.clusters = FolderAuditService.build_clusters(
+                    result.emails, mode=cluster_mode,
+                    trusted_domains=FolderAuditService._trusted_domains_for(
+                        db_session, user_id, account_id))
             
             result.scan_duration_ms = int((time.time() - start_time) * 1000)
             
@@ -2975,14 +3014,15 @@ class FolderAuditService:
                 folder_limit = limit_per_folder
                 
                 try:
-                    # Einzelnen Ordner scannen (ohne Clustering, das machen wir am Ende)
+                    # Einzelnen Ordner scannen (Clustering einmal am Ende über alle Mails)
                     folder_result = FolderAuditService.fetch_and_analyze_trash(
                         fetcher=fetcher,
                         limit=folder_limit,
                         db_session=db_session,
                         user_id=user_id,
                         account_id=account_id,
-                        folder=folder_name
+                        folder=folder_name,
+                        skip_clustering=True,
                     )
                     
                     if folder_result.total > 0:
@@ -3032,12 +3072,13 @@ class FolderAuditService:
             
             result.scan_duration_ms = int((time.time() - start_time) * 1000)
             
+            multi_clusters = sum(1 for c in result.clusters if c.count >= 2)
             logger.info(
                 f"✅ Alle-Ordner-Audit: {result.total} Emails aus {len(folder_stats)} Ordnern "
                 f"in {result.scan_duration_ms}ms "
                 f"(🟢 {result.safe_count} safe, 🟡 {result.review_count} review, "
                 f"🔴 {result.important_count} important, 🚨 {result.scam_count} scam, "
-                f"📦 {len(result.clusters)} Cluster)"
+                f"📦 {len(result.clusters)} Cluster-Karten, {multi_clusters} mit 2+ Mails)"
             )
             
         except Exception as e:

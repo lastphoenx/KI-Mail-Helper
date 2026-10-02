@@ -76,6 +76,22 @@ def test_domain_stage_needs_whitelist_auth_and_not_transactional():
     assert not any(c.count == 3 and "*domain" in c.cluster_key for c in cl)
 
 
+def test_rebuild_clusters_multi_folder_same_uid():
+    """IMAP-UIDs sind pro Ordner — gleiche UID in zwei Ordnern darf einen Cluster nicht zerstören."""
+    from src.services.folder_audit_service import TrashCategory as C
+
+    def em(uid, folder, subj="Newsletter Angebot"):
+        return mk(uid, subj, sender="news@shop.example", cat=C.SAFE, folder=folder)
+
+    emails = [em(42, "INBOX"), em(42, "Archiv")]
+    for e in emails:
+        e.cluster_key = S.create_cluster_key(e.sender, e.subject)
+    cmap = {}
+    rebuilt = S._rebuild_clusters_from_emails(emails, cmap)
+    assert len(rebuilt) == 1 and rebuilt[0].count == 2
+    assert len(rebuilt[0].members) == 2
+
+
 def test_merged_clusters_never_mix_categories():
     em = [mk(1, "a1x"), mk(2, "b2x"), mk(3, "c3x"),
           mk(4, "d4x", cat=TrashCategory.REVIEW), mk(5, "e5x", cat=TrashCategory.REVIEW),
