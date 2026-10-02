@@ -228,6 +228,10 @@
     .cluster-email-item:hover {
         background: #e9ecef;
     }
+    .cluster-email-item.selected {
+        background: #cfe2ff;
+        outline: 1px solid #0d6efd;
+    }
     .cluster-email-subject {
         flex: 1;
         overflow: hidden;
@@ -242,7 +246,12 @@
     }
     .cluster-email-attachment {
         color: #0d6efd;
-        margin-left: 6px;
+        margin-right: 6px;
+        flex-shrink: 0;
+    }
+    .cluster-email-attach-badge {
+        font-size: 0.7rem;
+        vertical-align: middle;
     }
 
     .email-details-toggle {
@@ -1106,6 +1115,24 @@
         return Math.round(bytes / 1024) + ' KB';
     }
 
+    function emailHasAttachmentHint(email) {
+        return !!(email && (email.has_attachments || (email.attachment_names && email.attachment_names.length)));
+    }
+
+    function attachmentSummary(email) {
+        if (!emailHasAttachmentHint(email)) return '';
+        const names = (email.attachment_names || []).filter(Boolean);
+        if (names.length) return names.join(', ');
+        return 'Anhang';
+    }
+
+    function clusterAttachmentLabel(email) {
+        if (!emailHasAttachmentHint(email)) return '';
+        const summary = attachmentSummary(email);
+        const short = summary.length > 48 ? summary.slice(0, 45) + '…' : summary;
+        return `<span class="badge bg-info text-dark cluster-email-attach-badge" title="${escapeHtml(summary)}">📎 ${escapeHtml(short)}</span>`;
+    }
+
     function headerMetaRows(email) {
         const rows = [];
         if (email.reply_to) rows.push(['Reply-To', email.reply_to]);
@@ -1390,7 +1417,12 @@
         } else {
             selectedKeys.add(rowKey);
         }
-        renderEmails();
+        if (currentFilter === 'clusters') {
+            renderClusters();
+        } else {
+            renderEmails();
+        }
+        updateSelectedCount();
     }
     
     function selectAllSafe() {
@@ -1635,7 +1667,7 @@
                             <div class="cluster-meta">
                                 <strong>Domain:</strong> ${escapeHtml(cluster.sender_domain)}
                                 ${dateRange ? ` | <strong>Zeitraum:</strong> ${dateRange}` : ''}
-                                ${cluster.total_size_kb ? ` | <strong>Größe:</strong> ${cluster.total_size_kb} KB` : ''}
+                                ${cluster.total_size_kb ? ` | <strong>Größe:</strong> ${Math.round(cluster.total_size_kb * 10) / 10} KB` : ''}
                             </div>
                             <div class="mt-2 text-muted small">
                                 <em>Beispiel: ${escapeHtml(cluster.sample_subject || '(Kein Betreff)')}</em>
@@ -1688,28 +1720,36 @@
                     
                     <!-- Aufklappbare Email-Liste -->
                     <div class="cluster-emails-list" data-cluster-key="${escapeHtml(cluster.cluster_key)}">
-                        ${clusterEmails.map(email => `
-                            <div class="cluster-email-item flex-column align-items-stretch">
-                                <div class="d-flex justify-content-between align-items-center w-100">
-                                    <div class="cluster-email-subject">
-                                        ${email.has_attachments ? `<span class="cluster-email-attachment" title="${email.attachment_names?.length ? escapeHtml(email.attachment_names.join(', ')) : 'Hat Anhänge'}">📎</span>` : ''}
-                                        ${escapeHtml(email.subject || '(Kein Betreff)')}
-                                        ${email.attachment_names?.length ? `<span class="text-muted small ms-2">[${escapeHtml(email.attachment_names.join(', '))}]</span>` : ''}
-                                        ${!email.subject && email.content_summary ? `<span class="text-info small ms-2">• ${escapeHtml(email.content_summary)}</span>` : ''}
+                        ${clusterEmails.map(email => {
+                            const rowKey = emailRowKey(email);
+                            const isRowSelected = selectedKeys.has(rowKey);
+                            return `
+                            <div class="cluster-email-item flex-column align-items-stretch ${isRowSelected ? 'selected' : ''}">
+                                <div class="d-flex justify-content-between align-items-center w-100 gap-2">
+                                    <div class="cluster-email-subject d-flex align-items-center min-w-0">
+                                        ${emailHasAttachmentHint(email) ? `<span class="cluster-email-attachment" title="${escapeHtml(attachmentSummary(email))}">📎</span>` : ''}
+                                        <span class="text-truncate">${escapeHtml(email.subject || '(Kein Betreff)')}</span>
+                                        ${!email.subject && email.content_summary ? `<span class="text-info small ms-2 text-truncate">• ${escapeHtml(email.content_summary)}</span>` : ''}
                                     </div>
-                                    <div class="cluster-email-meta">
-                                        ${email.folder ? `<span class="badge bg-secondary me-2" title="Ordner">📁 ${escapeHtml(email.folder)}</span>` : ''}
+                                    <div class="cluster-email-meta d-flex align-items-center flex-wrap justify-content-end gap-1">
+                                        ${clusterAttachmentLabel(email)}
+                                        ${email.folder ? `<span class="badge bg-secondary" title="Ordner">📁 ${escapeHtml(email.folder)}</span>` : ''}
                                         ${email.date ? new Date(email.date).toLocaleDateString('de-DE') + ' ' + new Date(email.date).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : ''}
-                                        ${email.size ? ` · ${Math.round(email.size/1024)} KB` : ''}
-                                        <button type="button" class="btn btn-outline-secondary email-details-toggle ms-2"
-                                                data-row-key="${escapeHtml(emailRowKey(email))}">
-                                            ${expandedDetailKeys.has(emailRowKey(email)) ? '▲' : '▼'}
+                                        ${email.size ? ` · ${formatMailSize(email.size)}` : ''}
+                                        <button type="button" class="btn btn-sm ${isRowSelected ? 'btn-primary' : 'btn-outline-secondary'} cluster-email-select-btn"
+                                                data-row-key="${escapeHtml(rowKey)}"
+                                                title="${isRowSelected ? 'Aus Auswahl entfernen' : 'Zur Lösch-Auswahl hinzufügen'}">
+                                            ${isRowSelected ? '✓' : '○'}
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm email-details-toggle"
+                                                data-row-key="${escapeHtml(rowKey)}">
+                                            ${expandedDetailKeys.has(rowKey) ? '▲' : '▼'}
                                         </button>
                                     </div>
                                 </div>
-                                ${headerDetailsHtml(email, expandedDetailKeys.has(emailRowKey(email)))}
-                            </div>
-                        `).join('')}
+                                ${headerDetailsHtml(email, expandedDetailKeys.has(rowKey))}
+                            </div>`;
+                        }).join('')}
                     </div>
                 </div>
             `;
@@ -1724,6 +1764,13 @@
         });
         
         bindEmailDetailEvents(container);
+
+        container.querySelectorAll('.cluster-email-select-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                toggleSelect(this.dataset.rowKey);
+            });
+        });
         
         // Event Listeners für Cluster-Expand (Aufklappen)
         container.querySelectorAll('.cluster-expand-btn').forEach(btn => {
