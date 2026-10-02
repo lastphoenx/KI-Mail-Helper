@@ -2711,6 +2711,9 @@ class FolderAuditService:
                     content_summary = ""
                     if bodystructure:
                         has_attachments, attachment_names, content_summary = FolderAuditService._extract_attachment_info(bodystructure)
+                    has_attachments, attachment_names = FolderAuditService._apply_attachment_heuristics(
+                        subject, has_attachments, attachment_names
+                    )
                     
                     # Power-Header parsen
                     has_list_unsubscribe = False
@@ -3147,33 +3150,43 @@ class FolderAuditService:
                         elif mime_subtype == 'plain':
                             has_text = True
                     
-                    # Disposition prüfen
-                    if len(part) > 8:
+                    # Disposition + Dateiname (viele Server setzen nur name= ohne attachment)
+                    params = part[2] if len(part) > 2 else None
+                    type_filename = extract_filename(params)
+                    disp_type = None
+                    disp_filename = None
+                    if len(part) > 8 and part[8] and isinstance(part[8], (list, tuple)):
                         disposition = part[8]
-                        if disposition and isinstance(disposition, (list, tuple)):
-                            disp_type = disposition[0]
-                            if isinstance(disp_type, bytes):
-                                disp_type = disp_type.decode('utf-8', errors='replace').lower()
-                            
-                            if disp_type == 'inline' and mime_type == 'image':
-                                inline_images += 1
-                            
-                            if disp_type == 'attachment':
-                                # Versuche Dateiname aus disposition params
-                                filename = None
-                                if len(disposition) > 1 and disposition[1]:
-                                    filename = extract_filename(disposition[1])
-                                
-                                # Fallback: params (Index 2)
-                                if not filename:
-                                    params = part[2] if len(part) > 2 else None
-                                    filename = extract_filename(params)
-                                
-                                if filename:
-                                    attachment_names.append(filename)
-                                else:
-                                    # Fallback: Typ/Subtyp als Beschreibung
-                                    attachment_names.append(f"({mime_type}/{mime_subtype})")
+                        disp_raw = disposition[0]
+                        if isinstance(disp_raw, bytes):
+                            disp_type = disp_raw.decode('utf-8', errors='replace').lower()
+                        elif disp_raw:
+                            disp_type = str(disp_raw).lower()
+                        if len(disposition) > 1 and disposition[1]:
+                            disp_filename = extract_filename(disposition[1])
+
+                    filename = disp_filename or type_filename
+
+                    if disp_type == 'inline' and mime_type == 'image':
+                        inline_images += 1
+                    else:
+                        sig = {'pkcs7-signature', 'pgp-signature', 'pgp-keys'}
+                        is_body = mime_type == 'text' and mime_subtype in ('plain', 'html')
+                        as_attachment = (
+                            disp_type == 'attachment'
+                            or (
+                                filename
+                                and (
+                                    (mime_type == 'application' and mime_subtype not in sig)
+                                    or (mime_type == 'text' and mime_subtype in ('rtf', 'calendar'))
+                                    or (not is_body and disp_type != 'inline')
+                                )
+                            )
+                        )
+                        if as_attachment:
+                            attachment_names.append(
+                                filename if filename else f"({mime_type}/{mime_subtype})"
+                            )
             
             check(bodystructure)
             
@@ -3195,6 +3208,34 @@ class FolderAuditService:
         content_summary = ", ".join(summary_parts) if summary_parts else ""
         
         return (len(attachment_names) > 0, attachment_names, content_summary)
+
+    _SUBJECT_ATTACHMENT_RE = re.compile(
+        r'\b([\w.\-]+\.(?:pdf|doc|docx|xls|xlsx|ppt|pptx|rtf|odt|ods|zip|rar|7z|csv|'
+        r'png|jpe?g|gif|webp|msg|eml))\b',
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _apply_attachment_heuristics(
+        subject: str,
+        has_attachments: bool,
+        attachment_names: List[str],
+    ) -> Tuple[bool, List[str]]:
+        """Fallback wenn BODYSTRUCTURE kein Content-Disposition liefert (z. B. name= only)."""
+        if has_attachments and attachment_names:
+            return has_attachments, attachment_names
+        if has_attachments:
+            return has_attachments, attachment_names
+        if not subject:
+            return has_attachments, attachment_names
+        m = FolderAuditService._SUBJECT_ATTACHMENT_RE.search(subject)
+        if m:
+            name = m.group(1)
+            names = list(attachment_names) if attachment_names else []
+            if name not in names:
+                names.append(name)
+            return True, names
+        return has_attachments, attachment_names
     
     @staticmethod
     def _has_attachments(bodystructure) -> bool:

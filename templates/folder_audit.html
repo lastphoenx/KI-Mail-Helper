@@ -1119,14 +1119,41 @@
     }
 
     function emailHasAttachmentHint(email) {
-        return !!(email && (email.has_attachments || (email.attachment_names && email.attachment_names.length)));
+        if (!email) return false;
+        if (email.has_attachments || (email.attachment_names && email.attachment_names.length)) {
+            return true;
+        }
+        return subjectSuggestsAttachment(email.subject);
+    }
+
+    function subjectSuggestsAttachment(subject) {
+        if (!subject) return false;
+        return /\b[\w.\-]+\.(pdf|docx?|xlsx?|pptx?|rtf|odt|ods|zip|rar|7z|csv|jpe?g|png|gif|webp|msg|eml)\b/i.test(subject);
     }
 
     function attachmentSummary(email) {
         if (!emailHasAttachmentHint(email)) return '';
         const names = (email.attachment_names || []).filter(Boolean);
         if (names.length) return names.join(', ');
+        const subj = email.subject || '';
+        const m = subj.match(/\b([\w.\-]+\.(pdf|docx?|xlsx?|pptx?|rtf|odt|ods|zip|rar|7z|csv|jpe?g|png|gif|webp|msg|eml))\b/i);
+        if (m) return m[1];
         return 'Anhang';
+    }
+
+    function clusterAttachmentStats(emails) {
+        let withAtt = 0;
+        const names = [];
+        for (const e of emails) {
+            if (!emailHasAttachmentHint(e)) continue;
+            withAtt++;
+            (e.attachment_names || []).forEach(n => { if (n) names.push(n); });
+            if (!(e.attachment_names && e.attachment_names.length)) {
+                const hint = attachmentSummary(e);
+                if (hint && hint !== 'Anhang') names.push(hint);
+            }
+        }
+        return { withAtt, names };
     }
 
     function clusterAttachmentLabel(email) {
@@ -1657,6 +1684,7 @@
                 .filter(e => e)
                 .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
             const clusterOpen = expandedClusterKeys.has(cluster.cluster_key);
+            const attStats = clusterAttachmentStats(clusterEmails);
             
             html += `
                 <div class="cluster-card ${categoryClass}" data-cluster-key="${escapeHtml(cluster.cluster_key)}">
@@ -1665,6 +1693,11 @@
                             <div class="d-flex align-items-center gap-2 mb-2">
                                 <span class="cluster-count">${cluster.count}×</span>
                                 ${categoryBadge}
+                                ${attStats.withAtt ? (() => {
+                                    const unique = [...new Set(attStats.names)].slice(0, 8);
+                                    const title = unique.length ? unique.join(', ') : attStats.withAtt + ' Mail(s) mit Anhang';
+                                    return `<span class="badge bg-info text-dark ms-1" title="${escapeHtml(title)}">📎 ${attStats.withAtt}× Anhang</span>`;
+                                })() : ''}
                                 <span class="cluster-expand-btn ${clusterOpen ? 'expanded' : ''}" title="Emails anzeigen" data-cluster-key="${escapeHtml(cluster.cluster_key)}">${clusterOpen ? '▲' : '▼'}</span>
                             </div>
                             <div class="cluster-pattern mb-2">${escapeHtml(cluster.display_name)}</div>
@@ -1672,6 +1705,7 @@
                                 <strong>Domain:</strong> ${escapeHtml(cluster.sender_domain)}
                                 ${dateRange ? ` | <strong>Zeitraum:</strong> ${dateRange}` : ''}
                                 ${cluster.total_size_kb ? ` | <strong>Größe:</strong> ${Math.round(cluster.total_size_kb * 10) / 10} KB` : ''}
+                                ${attStats.withAtt ? ` | <strong>Anhänge:</strong> ${attStats.withAtt} von ${clusterEmails.length} Mail(s)` : ''}
                             </div>
                             <div class="mt-2 text-muted small">
                                 <em>Beispiel: ${escapeHtml(cluster.sample_subject || '(Kein Betreff)')}</em>
