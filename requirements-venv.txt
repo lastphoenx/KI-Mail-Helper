@@ -124,7 +124,7 @@ rich==13.9.4
 rsa==4.9.1
 scikit-learn==1.8.0
 scipy==1.16.3
-setuptools==80.10.2
+setuptools==83.0.0
 shellingham==1.5.4
 six==1.17.0
 smart_open==7.7.1

@@ -148,7 +148,7 @@ sacremoses==0.2.0
 scikit-learn==1.8.0
 scipy==1.16.3
 sentencepiece==0.2.2
-setuptools==80.10.2
+setuptools==83.0.0
 shellingham==1.5.4
 six==1.17.0
 smart_open==7.7.1
