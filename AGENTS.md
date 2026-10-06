@@ -38,6 +38,6 @@ CT **134** — vollständige Befehle: privates `doku/pve2/vm/134-ki-mail-helper/
 
 **Erlaubte generische Beispiele:** `example.com`, `beispiel.example`, `meine-domain.ch`, «Max Muster» — nichts aus Screenshots, CT, Mail oder Homelab.
 
-**Hooks (dieses Repo):** Lokale Sperrliste `~/.config/kmh-denylist.txt` (nicht im Git), ganze Wörter (`grep -w`). Install: `powershell -File scripts/install-git-hooks-kmh.ps1` → `core.hooksPath=.githooks`. Test: `bash scripts/test-kmh-denylist-hook.sh`. Vor Push zusätzlich: `bash scripts/pre-push-dev-check.sh`.
+**Hooks (dieses Repo):** Lokale Sperrliste `~/.config/kmh-denylist.txt` (nicht im Git), ganze Wörter (`grep -w`). Install: `powershell -File scripts/install-git-hooks-kmh.ps1` → `core.hooksPath=.githooks`. Test: `bash scripts/test-kmh-denylist-hook.sh`, `bash scripts/test-kmh-denylist-hook-git.sh`. Vor Push zusätzlich: `bash scripts/pre-push-dev-check.sh`.
 
 **History-Neustart (selten):** Erst wenn Hook steht und Working Tree sauber — ein Commit ohne Leak-Historie (orphan/`reset` + force), Backup `git bundle create ../kmh-backup.bundle --all`, danach CT 134 `git fetch && git reset --hard origin/main`, Entwickler **neu klonen**. Details: privates `doku/ops/privacy-cleanup-playbook.md`.
