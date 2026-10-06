@@ -6,5 +6,5 @@ cd "$ROOT"
 PYTHON="${PYTHON:-python}"
 echo "pre-push-dev-check: compileall src/" >&2
 "$PYTHON" -m compileall -q src
-echo "pre-push-dev-check: pytest -q" >&2
-"$PYTHON" -m pytest -q
+echo "pre-push-dev-check: pytest tests/ -q" >&2
+"$PYTHON" -m pytest tests/ -q

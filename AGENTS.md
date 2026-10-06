@@ -16,7 +16,7 @@ Kanonisch auf `main`: `requirements.txt`, `requirements-venv.txt`, `requirements
 
 **Betrieb (Pull, venv, systemd, Alembic):** nur im **privaten Betriebsdokument** des Betreibers — nicht in diesem Repo. Nach Dependency-Merge auf `main`: venv neu installieren + Services neu starten (vom Betreiber).
 
-**Vor Push (Entwicklung):** `bash scripts/pre-push-dev-check.sh` — `compileall` + `pytest -q` (siehe **Hooks**).
+**Vor Push (Entwicklung):** `bash scripts/pre-push-dev-check.sh` — `compileall` + `pytest tests/ -q` (nur `tests/`, keine `scripts/test_*.py`). Unter **WSL** im Repo-Root dasselbe; Alias: `bash scripts/ci-local.sh`. **GitHub:** `.github/workflows/ci.yml` bei Push/PR auf `main` (Python 3.13, `pip install -r requirements.txt`, dann `pre-push-dev-check`).
 
 **Nach Deploy:** `bash scripts/pytest-audit-smoke.sh` — Audit/Tranco/Scam/Marken/DBL. **`pytest tests/`** ist deutlich größer (Legacy, alte Pfade, Integration) und kein Release-Gate.
 
