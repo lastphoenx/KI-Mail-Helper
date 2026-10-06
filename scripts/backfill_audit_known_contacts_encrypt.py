@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Backfill: audit_known_contacts Klartext → encrypted_* + email_lookup_hmac.
 
-Benötigt User-DEK (Argument oder interaktiv). Nur nach Alembic f7a8b9c0d1e2.
-Vor Drop der Klartext-Spalten ausführen; DB-Backup zuerst (Operator).
+Benötigt User-DEK (--dek-base64 oder KMH_BACKFILL_DEK). Nur nach Alembic f7a8b9c0d1e2.
+Klartext-Spalten bleiben bis f8 (Drop-Migration) — danach verify + pg_dump, dann f8.
+
+Vor Backfill: pg_dump auf CT. Nach Backfill: scripts/verify_audit_known_contacts_encrypt.py
 """
 
 from __future__ import annotations
@@ -37,14 +39,15 @@ def main() -> int:
 
     session = get_session()
     models = importlib.import_module(".02_models", "src")
+    bad_rows = 0
+    updated = 0
+    skipped = 0
     try:
         rows = (
             session.query(models.AuditKnownContact)
             .filter(models.AuditKnownContact.user_id == args.user_id)
             .all()
         )
-        updated = 0
-        skipped = 0
         for row in rows:
             if row_requires_master_key(row):
                 skipped += 1
@@ -52,6 +55,11 @@ def main() -> int:
             em_raw = row.email_normalized or ""
             em = normalize_contact_email(em_raw)
             if not em:
+                print(
+                    f"backfill: Zeile id={row.id} ohne normalisierbare E-Mail — Abbruch",
+                    file=sys.stderr,
+                )
+                bad_rows += 1
                 continue
             hmac_val, enc_email, enc_name = encrypt_contact_fields(
                 em, row.display_name, master_key
@@ -62,12 +70,16 @@ def main() -> int:
             row.email_lookup_hmac = hmac_val
             row.encrypted_email = enc_email
             row.encrypted_display_name = enc_name or None
-            row.email_normalized = None
-            row.display_name = None
             updated += 1
-        if not args.dry_run:
+        if bad_rows:
+            session.rollback()
+            return 1
+        if not args.dry_run and updated:
             session.commit()
-        print(f"user_id={args.user_id} updated={updated} already_encrypted={skipped}")
+        print(
+            f"user_id={args.user_id} updated={updated} already_encrypted={skipped} "
+            f"dry_run={args.dry_run}"
+        )
         return 0
     except Exception as exc:
         session.rollback()

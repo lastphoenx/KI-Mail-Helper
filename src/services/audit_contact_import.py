@@ -166,8 +166,8 @@ def _upsert_contact(
             if not prev_len or len(chosen) > prev_len:
                 _, _, enc_name = encrypt_contact_fields(em, chosen, master_key)
                 row.encrypted_display_name = enc_name or None
-        row.email_normalized = None
-        row.display_name = None
+                row.display_name = chosen or None
+        row.email_normalized = em
         row.is_active = True
         if row.source not in ("vip", "trusted", "reply") and source == "sent":
             row.source = "sent"
@@ -182,8 +182,8 @@ def _upsert_contact(
             email_lookup_hmac=hmac_val,
             encrypted_email=enc_email,
             encrypted_display_name=enc_name_final or None,
-            email_normalized=None,
-            display_name=None,
+            email_normalized=em,
+            display_name=chosen or None,
             source=source,
             mail_count=1,
             first_seen_at=now,

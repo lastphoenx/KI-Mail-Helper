@@ -74,15 +74,17 @@ Wie bei **Mails:** Ohne DEK (Passwort vergessen, Recovery Codes nicht nutzbar) s
 ## Migration
 
 1. **Backup** der DB vor Migration; dokumentierter Rollback (Klartext-Spalten erst droppen, wenn Backfill verifiziert).
-2. Alembic: neue Spalten; Backfill nur mit verfügbarem DEK (Session oder Service-Token).
-3. Pro Zeile: `normalize_sender_email` → HMAC → encrypt email + display_name; Duplikate vermeiden (Unique auf HMAC).
-4. Verifikation: keine Klartext-Adressen/Namen mehr in Tabelle, Logs, Fehlermeldungen; dann Klartext-Spalten droppen.
+2. Alembic: neue Spalten; Backfill nur mit verfügbarem DEK (Session oder Service-Token). Klartext-Spalten **bis f8** behalten (`scripts/backfill_audit_known_contacts_encrypt.py` schreibt nur `encrypted_*` + HMAC).
+3. Verifikation: `scripts/verify_audit_known_contacts_encrypt.py --user-id … --require-full` (Counts, HMAC, Stichproben decrypt vs. Klartext); optional Scan-Vergleich manuell.
+4. Pro Zeile: `normalize_sender_email` → HMAC → encrypt email + display_name; Duplikate vermeiden (Unique auf HMAC).
+5. **pg_dump**, dann Alembic **f8** — Klartext-Spalten droppen.
 
 ## Implementierungs-Checkliste (Abnahme)
 
 | Kriterium | Erwartung |
 |-----------|-----------|
 | Migration | Bestehende Zeilen vollständig; Backup + Rollback; keine Duplikat-Lücken (gleiche Adresse, eine Normalisierung) |
+| Backfill/Verify | `backfill_…` ohne Klartext-Löschung; `verify_… --require-full` vor f8 |
 | Klartext weg | Spalten `email_normalized` / `display_name` entfernt; keine PII in Logs/Errors |
 | HMAC | Identisch zu bisherigem `normalize_sender_email` |
 | Ohne DEK/Token | Scan/Import **Fehler**, nicht leerer Kontext |
