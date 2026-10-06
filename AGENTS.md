@@ -16,7 +16,9 @@ Kanonisch auf `main`: `requirements.txt`, `requirements-venv.txt`, `requirements
 
 CT **134** — vollständige Befehle: privates `doku/pve2/vm/134-ki-mail-helper/betrieb.md` und `doku/ops/deploy-after-git-pull.md`. Nach Dependency-Merge auf `main`: venv neu installieren + Services neu starten (vom Betreiber).
 
-**Vor Push (Entwicklung):** `python -m compileall -q src` und mindestens `pytest tests/test_src_compile_smoke.py` — erkennt Syntaxfehler unter `src/` (z. B. `audit_scam_detection.py`), die einzelne Modul-Tests nicht laden.
+**Vor Push (Entwicklung):** `bash scripts/pre-push-dev-check.sh` — `compileall -q src` + `pytest -q` (319+ Tests; fängt IndentationError und LLM-Prompt-Regressionen ab). Zusätzlich bleibt Safe-CLI-Helpers `pre-push` (PII-Diff) aktiv, wenn `core.hooksPath` gesetzt ist — Dev-Check **manuell vor Push** oder Hook lokal erweitern.
+
+**Vor Push (Minimal):** `python -m compileall -q src` und mindestens `pytest tests/test_src_compile_smoke.py` — erkennt Syntaxfehler unter `src/` (z. B. `audit_scam_detection.py`), die einzelne Modul-Tests nicht laden.
 
 **Nach Deploy (CT):** `bash scripts/pytest-audit-smoke.sh` — Audit/Tranco/Scam/Marken/DBL. **`pytest tests/`** ist deutlich größer (Legacy, alte Pfade, Integration) und kein Release-Gate.
 

@@ -237,17 +237,34 @@ def get_tranco_status() -> TrancoStatus:
         )
     try:
         count = store._connect().execute("SELECT COUNT(*) FROM domains").fetchone()[0]
+        max_rank_row = store._connect().execute("SELECT MAX(rank) FROM domains").fetchone()
+        max_rank_in_db = int(max_rank_row[0]) if max_rank_row and max_rank_row[0] is not None else 0
     except sqlite3.Error:
         count = 0
+        max_rank_in_db = 0
     updated = store.meta("updated_at", store.meta("built_at", ""))
     list_id = store.meta("list_id", os.getenv("TRANCO_LIST_ID", "").strip() or "auto")
+    db_max_meta = store.meta("max_rank", "")
+    message = f"Tranco-Liste {list_id}, {count} Domains in DB (Laufzeit Top {top_n})"
+    if top_n < max_rank_in_db:
+        message += (
+            f" — es zählen nur Ränge ≤ {top_n}; "
+            f"DB enthält bis Rang {max_rank_in_db}."
+        )
+    elif top_n > max_rank_in_db and max_rank_in_db > 0:
+        message += (
+            f" — TRANCO_TOP_N={top_n} höher als DB (max. Rang {max_rank_in_db}); "
+            "Tranco-Update nach .env-Änderung ausführen."
+        )
+    if db_max_meta and db_max_meta.isdigit() and int(db_max_meta) != top_n:
+        message += f" DB gebaut für max_rank={db_max_meta}."
     return TrancoStatus(
         available=True,
         list_id=list_id,
         updated_at=updated,
         domain_count=int(count),
         top_n=top_n,
-        message=f"Tranco-Liste {list_id}, {count} Domains (Top {top_n})",
+        message=message,
         source_note=note,
     )
 
@@ -283,6 +300,7 @@ def build_sqlite_from_rank_pairs(
         [(dom, rank) for rank, dom in rows],
     )
     conn.execute("INSERT INTO meta VALUES ('list_id', ?)", (list_id,))
+    conn.execute("INSERT INTO meta VALUES ('max_rank', ?)", (str(max_rank),))
     conn.execute(
         "INSERT INTO meta VALUES ('built_at', ?)",
         (datetime.now(timezone.utc).isoformat(),),

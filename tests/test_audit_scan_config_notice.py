@@ -32,7 +32,8 @@ def test_build_notice_from_scan_config_snapshot():
     assert not err
     assert "Konfiguration im Scan:" in notice
     assert "Meine Domains: 1" in notice
-    assert "Marketing-Pattern: 1" in notice
+    assert "Muster Betreff: 1" in notice
+    assert "Muster Absender: 0" in notice
 
 
 def test_build_notice_load_failed_no_fake_counts():

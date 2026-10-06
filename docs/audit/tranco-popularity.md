@@ -78,6 +78,25 @@ python scripts/tranco_rank_domains.py meine_scam_domains.txt
 
 Messung vor Ausbau: Anteil Scam-Domains vs. sichere Absender in Top-10k / Top-N — Zahlen hier dokumentieren, wenn gemessen.
 
+## Abnahme nach `.env`-Änderung (CT)
+
+1. `TRANCO_TOP_N` in `.env` setzen.
+2. **`systemctl restart mail-helper mail-helper-celery-worker`** (Worker baut die DB — interaktives `python` ohne systemd lädt `.env` nicht).
+3. UI «Tranco aktualisieren» (Celery) abwarten.
+4. Prüfen:
+
+```bash
+systemctl show mail-helper -p Environment --no-pager | tr ' ' '\n' | grep TRANCO_TOP_N
+python <<'PY'
+from src.services.tranco_popularity import get_tranco_status, tranco_top_n_threshold
+# unter systemd / nach: set -a && source .env && set +a
+print("top_n env:", tranco_top_n_threshold())
+print(get_tranco_status().message)
+PY
+```
+
+Erwartung: `domain_count` ≈ `TRANCO_TOP_N`, `max(rank)` in DB ≈ `TRANCO_TOP_N`, Laufzeit-`top_n` = derselbe Wert. Ohne `sqlite3`: `python -c "import sqlite3; ..."` auf `tranco.db`.
+
 ## UI
 
 Ordner-Audit → Marken-Domains: Statuszeile + «Tranco aktualisieren» (`GET /api/audit-config/tranco-status`, `POST …/tranco-update` → 202 + Celery).

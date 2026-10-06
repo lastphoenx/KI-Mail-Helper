@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 def _counts_from_audit_config(
     audit_config: Dict[str, Any],
-) -> Tuple[int, int, int, int, int, int, int, int, int]:
+) -> Tuple[int, int, int, int, int, int, int, int, int, int]:
     from src.services.brand_domain_policy import BUILTIN_BRAND_OFFICIAL_DOMAINS
 
     custom_map = audit_config.get("brand_official_domains_custom") or {}
@@ -22,9 +22,8 @@ def _counts_from_audit_config(
     n_own = len(audit_config.get("own_domains") or [])
     n_trusted = len(audit_config.get("trusted_domains") or [])
     n_vip = len(audit_config.get("vip_senders") or [])
-    n_safe = len(audit_config.get("safe_subject_patterns") or []) + len(
-        audit_config.get("safe_sender_patterns") or []
-    )
+    n_safe_subject = len(audit_config.get("safe_subject_patterns") or [])
+    n_safe_sender = len(audit_config.get("safe_sender_patterns") or [])
     n_known = int(audit_config.get("known_contacts_count") or 0)
     n_exclude = int(audit_config.get("exclude_folder_count") or 0)
     return (
@@ -35,7 +34,8 @@ def _counts_from_audit_config(
         n_trusted,
         n_vip,
         n_known,
-        n_safe,
+        n_safe_subject,
+        n_safe_sender,
         n_exclude,
     )
 
@@ -78,7 +78,8 @@ def build_audit_scan_config_notice(
         n_trusted,
         n_vip,
         n_known,
-        n_safe,
+        n_safe_subject,
+        n_safe_sender,
         n_exclude,
     ) = _counts_from_audit_config(audit_config)
 
@@ -99,7 +100,8 @@ def build_audit_scan_config_notice(
         f"Vertrauenswürdige Domains: {n_trusted}",
         f"VIP: {n_vip}",
         f"Bekannte Kontakte: {n_known}",
-        f"Marketing-Pattern: {n_safe}",
+        f"Muster Betreff: {n_safe_subject}",
+        f"Muster Absender: {n_safe_sender}",
         f"Ordner ausgenommen: {n_exclude}",
     ]
     prefix = "⚠️ Audit-Konfiguration unvollständig — " if brand_json_warn else ""
