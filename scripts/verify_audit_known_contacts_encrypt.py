@@ -26,6 +26,11 @@ def main() -> int:
         help="Stichprobe (0 = alle; bei --require-full immer alle)",
     )
     parser.add_argument("--require-full", action="store_true")
+    parser.add_argument(
+        "--expect-db",
+        metavar="NAME",
+        help="Abbruch wenn current_database() != NAME (Deploy/Drill)",
+    )
     args = parser.parse_args()
 
     from src.helpers.database import get_session
@@ -34,9 +39,19 @@ def main() -> int:
         run_verify_encryption,
     )
 
+    from scripts.kmh_expect_db import ExpectDbMismatch, check_expect_db, fail_exit_code_for_mismatch
     from scripts.kmh_operator_dek import resolve_dek_for_user_id
 
     session = get_session()
+    try:
+        check_expect_db(session, args.expect_db)
+    except ExpectDbMismatch as exc:
+        print(
+            f"FEHLER: verbunden mit '{exc.actual}', erwartet '{exc.expected}'",
+            file=sys.stderr,
+        )
+        session.close()
+        return fail_exit_code_for_mismatch()
     models = importlib.import_module(".02_models", "src")
     try:
         master_key = resolve_dek_for_user_id(session, args.user_id)

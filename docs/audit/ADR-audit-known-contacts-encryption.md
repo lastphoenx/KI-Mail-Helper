@@ -40,7 +40,7 @@ Wenn **kein gültiges Service-Token** (abgelaufen, gelöscht beim Logout, nie an
 - Scan/Import **abbrechen** oder Task mit **klarem Fehler** (`token`, `master_key_required`, o. ä.) — **nicht** mit leerem `KnownContactContext` weiterlaufen (sonst Fehlalarme bei Familie/Freunden).
 - UI: Hinweis «Bitte einloggen / Hintergrund-Token aktivieren», nicht leere Liste ohne Erklärung.
 
-Gilt analog für die **Datenmigration**: Backfill/Verify fragen das **Masterpasswort** ab (wie Login) und leiten den DEK über `MasterKeyManager.decrypt_dek_from_password` ab — kein Export aus der Session, kein `--dek-base64`, kein `KMH_BACKFILL_DEK` in der History. Alternative: Kontakt-Import über UI (Service-Token). Deploy: `docs/audit/deploy-known-contacts-encryption.md` (Probelauf: `DATABASE_URL` auf DB-Kopie, nicht nur `PGDATABASE`).
+Gilt analog für die **Datenmigration**: Backfill/Verify fragen das **Masterpasswort** ab (wie Login) und leiten den DEK über `MasterKeyManager.decrypt_dek_from_password` ab — kein Export aus der Session, kein `--dek-base64`, kein `KMH_BACKFILL_DEK` in der History. Alternative: Kontakt-Import über UI (Service-Token). Deploy: `docs/audit/deploy-known-contacts-encryption.md` (Drill: `DATABASE_URL` auf Kopie; `--expect-db` / `kmh_expect_db.py` prüft `current_database()`).
 
 ## Masterpasswort-Verlust
 
