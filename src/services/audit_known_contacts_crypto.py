@@ -50,7 +50,7 @@ def encrypt_contact_fields(
     if not em:
         raise ValueError("empty contact email")
     hmac_val = contact_email_lookup_hmac(em, master_key)
-    encrypted_email = enc.EncryptionManager.encrypt_email_address(em, master_key)
+    encrypted_email = enc.CredentialManager.encrypt_email_address(em, master_key)
     name = (display_name or "").strip()
     encrypted_name = ""
     if name:
@@ -63,7 +63,7 @@ def decrypt_contact_row(row, master_key: str) -> Tuple[str, str]:
     enc_mod = _import_encryption()
     enc_email = getattr(row, "encrypted_email", None)
     if enc_email:
-        em = enc_mod.EncryptionManager.decrypt_email_address(enc_email, master_key)
+        em = enc_mod.CredentialManager.decrypt_email_address(enc_email, master_key)
         enc_name = getattr(row, "encrypted_display_name", None)
         name = ""
         if enc_name:

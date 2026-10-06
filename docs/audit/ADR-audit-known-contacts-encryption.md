@@ -12,7 +12,7 @@ Eine **zusätzliche Verschlüsselung nur der Backups** wäre doppelte Arbeit und
 
 ## Entscheidung
 
-1. **E-Mail und Anzeigename** werden wie Mail-Metadaten mit dem **bestehenden Benutzer-DEK** (`EncryptionManager.encrypt_data` / `encrypt_email_address`, `src/08_encryption.py`) persistiert.
+1. **E-Mail und Anzeigename** werden mit dem **Benutzer-DEK** persistiert: E-Mail wie andere Zugangsdaten über **`CredentialManager.encrypt_email_address` / `decrypt_email_address`**, Anzeigename über **`EncryptionManager.encrypt_data` / `decrypt_data`** (`src/08_encryption.py`).
 2. **Abgleich ohne Klartext in der DB:** zusätzliche Spalte **`email_lookup_hmac`** (Index, Unique mit `user_id` + `account_id`). Wert = **HMAC-SHA256** über normalisierte E-Mail, Schlüsselmaterial **aus dem DEK abgeleitet** (z. B. HKDF/HMAC-Key pro User/Account — **kein** neues `CONTACT_PII_KEY` in `.env`).
 3. **Kein separater Backup-Verschlüsselungs-Track** als Lösung — gestrichen.
 4. **Laufzeit:** UI-API und Audit-Scan **entschlüsseln** mit Session-DEK bzw. Service-Token-DEK (gleiches Muster wie Menü «Liste», Mail-Listen, Ordner-Audit-IMAP).
@@ -40,7 +40,7 @@ Wenn **kein gültiges Service-Token** (abgelaufen, gelöscht beim Logout, nie an
 - Scan/Import **abbrechen** oder Task mit **klarem Fehler** (`token`, `master_key_required`, o. ä.) — **nicht** mit leerem `KnownContactContext` weiterlaufen (sonst Fehlalarme bei Familie/Freunden).
 - UI: Hinweis «Bitte einloggen / Hintergrund-Token aktivieren», nicht leere Liste ohne Erklärung.
 
-Gilt analog für die **Datenmigration**: Backfill braucht den DEK — nur während **eingeloggtem Nutzer** (Session) oder **aktivem Service-Token** (Batch-Job).
+Gilt analog für die **Datenmigration**: Backfill braucht den DEK — **nicht** als `--dek-base64` (Prozessliste/History). Operator: **`KMH_BACKFILL_DEK` nur in der aktuellen Shell** (`read -s` / getpass beim Skript) oder **Kontakt-Import über UI** (Service-Token, Celery). Der Wert ist derselbe Base64-DEK wie `session["master_key"]` nach Login (Zero-Knowledge — nur der eingeloggte Nutzer hat ihn).
 
 ## Masterpasswort-Verlust
 
@@ -75,16 +75,16 @@ Wie bei **Mails:** Ohne DEK (Passwort vergessen, Recovery Codes nicht nutzbar) s
 
 1. **Backup** der DB vor Migration; dokumentierter Rollback (Klartext-Spalten erst droppen, wenn Backfill verifiziert).
 2. Alembic: neue Spalten; Backfill nur mit verfügbarem DEK (Session oder Service-Token). Klartext-Spalten **bis f8** behalten (`scripts/backfill_audit_known_contacts_encrypt.py` schreibt nur `encrypted_*` + HMAC).
-3. Verifikation: `scripts/verify_audit_known_contacts_encrypt.py --user-id … --require-full` (Counts, HMAC, Stichproben decrypt vs. Klartext); optional Scan-Vergleich manuell.
+3. Verifikation: `scripts/verify_audit_known_contacts_encrypt.py --user-id … --require-full --sample 0` (alle Zeilen, Counts, HMAC, Name muss mitverschlüsselt sein); optional Scan-Vergleich manuell.
 4. Pro Zeile: `normalize_sender_email` → HMAC → encrypt email + display_name; Duplikate vermeiden (Unique auf HMAC).
-5. **pg_dump**, dann Alembic **f8** — Klartext-Spalten droppen.
+5. **pg_dump**, Dienste stoppen, Alembic **f8** + **Code ohne Klartext-Spalten** (Phase-2-Commit) gemeinsam einspielen, Dienste starten. Vor f8 Backfill erneut (Import schreibt in der Übergangsphase parallel Klartext).
 
 ## Implementierungs-Checkliste (Abnahme)
 
 | Kriterium | Erwartung |
 |-----------|-----------|
 | Migration | Bestehende Zeilen vollständig; Backup + Rollback; keine Duplikat-Lücken (gleiche Adresse, eine Normalisierung) |
-| Backfill/Verify | `backfill_…` ohne Klartext-Löschung; `verify_… --require-full` vor f8 |
+| Backfill/Verify | `backfill_…` ohne Klartext-Löschung; vor f8 `verify_… --require-full --sample 0`; DEK nur env/getpass |
 | Klartext weg | Spalten `email_normalized` / `display_name` entfernt; keine PII in Logs/Errors |
 | HMAC | Identisch zu bisherigem `normalize_sender_email` |
 | Ohne DEK/Token | Scan/Import **Fehler**, nicht leerer Kontext |

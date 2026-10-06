@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Verifikation nach Backfill (f7): Counts, HMAC, Stichproben decrypt vs. Klartext.
+"""Verifikation nach Backfill (f7): Counts, HMAC, decrypt vs. Klartext.
 
-DEK erforderlich. Vor Alembic f8 ausführen. Exit 0 = ok, 1 = Fehler, 2 = kein DEK.
+DEK wie backfill (KMH_BACKFILL_DEK / getpass, kein CLI-Argument). Vor f8:
+  --require-full --sample 0
 """
 
 from __future__ import annotations
@@ -10,7 +11,12 @@ import argparse
 import importlib
 import random
 import sys
+from pathlib import Path
 from typing import List, Tuple
+
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 
 def _compare_row(row, master_key: str) -> Tuple[bool, str]:
@@ -22,6 +28,12 @@ def _compare_row(row, master_key: str) -> Tuple[bool, str]:
 
     enc = getattr(row, "encrypted_email", None)
     plain_em = getattr(row, "email_normalized", None) or ""
+    plain_name = (getattr(row, "display_name", None) or "").strip()
+    enc_name = getattr(row, "encrypted_display_name", None)
+
+    if plain_name and not enc_name:
+        return False, "display_name Klartext ohne encrypted_display_name"
+
     if not enc:
         return False, "encrypted_email fehlt"
     if not plain_em:
@@ -41,12 +53,10 @@ def _compare_row(row, master_key: str) -> Tuple[bool, str]:
     if dec_em != norm_plain:
         return False, "entschlüsselte E-Mail weicht von Klartext ab"
 
-    plain_name = (getattr(row, "display_name", None) or "").strip()
-    enc_name = getattr(row, "encrypted_display_name", None)
     if enc_name and plain_name and dec_name.strip() != plain_name:
         return False, "entschlüsselter Anzeigename weicht von Klartext ab"
-    if enc_name and not plain_name and dec_name.strip():
-        pass
+    if plain_name and not enc_name:
+        return False, "display_name Klartext ohne encrypted_display_name"
     return True, "ok"
 
 
@@ -54,25 +64,23 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--user-id", type=int, required=True)
     parser.add_argument(
-        "--dek-base64",
-        help="Benutzer-DEK (Base64), sonst KMH_BACKFILL_DEK",
-    )
-    parser.add_argument(
         "--sample",
         type=int,
         default=10,
-        help="Zufalls-Stichproben (0 = alle Zeilen prüfen)",
+        help="Zufalls-Stichproben (0 = alle Zeilen mit Klartext+Verschlüsselung)",
     )
     parser.add_argument(
         "--require-full",
         action="store_true",
-        help="Jede Zeile mit Klartext muss encrypted_* + HMAC haben",
+        help="Volle Abdeckung: alle Zeilen, Counts, Name-Verschlüsselung",
     )
     args = parser.parse_args()
 
-    master_key = args.dek_base64 or __import__("os").environ.get("KMH_BACKFILL_DEK")
+    from scripts.kmh_operator_dek import resolve_operator_dek
+
+    master_key = resolve_operator_dek()
     if not master_key:
-        print("DEK fehlt (--dek-base64 oder KMH_BACKFILL_DEK)", file=sys.stderr)
+        print("DEK fehlt (KMH_BACKFILL_DEK oder interaktive Eingabe)", file=sys.stderr)
         return 2
 
     from src.helpers.database import get_session
@@ -100,18 +108,26 @@ def main() -> int:
             if getattr(r, "email_normalized", None)
             and not getattr(r, "encrypted_email", None)
         )
-        n_enc_only = sum(
+        n_name_plain_no_enc = sum(
             1
             for r in rows
-            if getattr(r, "encrypted_email", None)
-            and not getattr(r, "email_normalized", None)
+            if (getattr(r, "display_name", None) or "").strip()
+            and not getattr(r, "encrypted_display_name", None)
         )
 
         print(f"user_id={args.user_id} total={n_total}")
         print(
             f"  plain={n_plain} encrypted={n_enc} both={n_both} "
-            f"plain_only={n_plain_only} enc_only={n_enc_only}"
+            f"plain_only={n_plain_only} name_plain_without_enc={n_name_plain_no_enc}"
         )
+
+        if n_name_plain_no_enc:
+            print(
+                f"FAIL: {n_name_plain_no_enc} Zeile(n) mit Klartext-Name ohne "
+                "encrypted_display_name",
+                file=sys.stderr,
+            )
+            return 1
 
         if args.require_full and n_plain_only:
             print(
@@ -119,11 +135,6 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        if n_plain and n_enc and n_both != n_plain:
-            print(
-                "WARN: nicht jede Klartext-Zeile hat encrypted_* (both != plain)",
-                file=sys.stderr,
-            )
 
         candidates = [
             r
@@ -135,9 +146,13 @@ def main() -> int:
             print("FAIL: keine Zeilen mit Klartext+Verschlüsselung zum Prüfen", file=sys.stderr)
             return 1
 
-        if args.sample and args.sample < len(candidates):
+        sample_n = args.sample
+        if args.require_full:
+            sample_n = 0
+
+        if sample_n and sample_n < len(candidates):
             rng = random.SystemRandom()
-            check_rows = rng.sample(candidates, args.sample)
+            check_rows = rng.sample(candidates, sample_n)
         else:
             check_rows = candidates
 

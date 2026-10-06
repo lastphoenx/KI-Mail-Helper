@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Backfill: audit_known_contacts Klartext → encrypted_* + email_lookup_hmac.
 
-Benötigt User-DEK (--dek-base64 oder KMH_BACKFILL_DEK). Nur nach Alembic f7a8b9c0d1e2.
-Klartext-Spalten bleiben bis f8 (Drop-Migration) — danach verify + pg_dump, dann f8.
+DEK: Umgebungsvariable KMH_BACKFILL_DEK oder versteckte Eingabe (kein CLI-Argument).
+Der Wert entspricht dem Session-DEK (master_key) nach Login — nur in der Shell setzen,
+nicht in .env committen. Alternative: Kontakt-Import über UI + Service-Token (Celery).
 
-Vor Backfill: pg_dump auf CT. Nach Backfill: scripts/verify_audit_known_contacts_encrypt.py
+Nur nach Alembic f7a8b9c0d1e2. Klartext-Spalten bleiben bis f8. Vor Backfill: pg_dump.
+Nach Backfill: verify mit --require-full --sample 0
 """
 
 from __future__ import annotations
@@ -12,21 +14,28 @@ from __future__ import annotations
 import argparse
 import importlib
 import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--user-id", type=int, required=True)
-    parser.add_argument(
-        "--dek-base64",
-        help="Benutzer-DEK (Base64), sonst aus Umgebung KMH_BACKFILL_DEK",
-    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    master_key = args.dek_base64 or __import__("os").environ.get("KMH_BACKFILL_DEK")
+    from scripts.kmh_operator_dek import resolve_operator_dek
+
+    master_key = resolve_operator_dek()
     if not master_key:
-        print("DEK fehlt (--dek-base64 oder KMH_BACKFILL_DEK)", file=sys.stderr)
+        print(
+            "DEK fehlt: export KMH_BACKFILL_DEK=… (nur diese Shell) "
+            "oder interaktiv getpass",
+            file=sys.stderr,
+        )
         return 2
 
     from src.helpers.database import get_session
