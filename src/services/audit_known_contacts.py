@@ -12,6 +12,7 @@ from src.services.audit_identity_helpers import (
     person_display_with_firstnames,
 )
 from src.services.audit_known_contacts_crypto import (
+    KnownContactsBackfillRequired,
     KnownContactsMasterKeyRequired,
     decrypt_contact_row,
     row_requires_master_key,
@@ -68,9 +69,10 @@ def load_known_contact_context(
             )
             if any(row_requires_master_key(r) for r in rows) and not master_key:
                 raise KnownContactsMasterKeyRequired()
+            unencrypted = [r for r in rows if not row_requires_master_key(r)]
+            if unencrypted:
+                raise KnownContactsBackfillRequired(len(unencrypted))
             for row in rows:
-                if not row_requires_master_key(row):
-                    continue
                 em, display_name = decrypt_contact_row(row, master_key)
                 em = normalize_sender_email(em or "")
                 if not em:
@@ -137,6 +139,8 @@ def load_known_contact_context(
                     if dom:
                         ctx.trusted_emails.add(f"domain:{dom}")
     except KnownContactsMasterKeyRequired:
+        raise
+    except KnownContactsBackfillRequired:
         raise
     except Exception as e:
         logger.debug("known contacts load failed: %s", e)

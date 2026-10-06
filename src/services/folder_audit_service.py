@@ -2914,6 +2914,7 @@ class FolderAuditService:
         if getattr(scan_context, "known_contact_context", None) is None:
             from src.services.audit_known_contacts import load_known_contact_context
             from src.services.audit_known_contacts_crypto import (
+                KnownContactsBackfillRequired,
                 KnownContactsMasterKeyRequired,
             )
 
@@ -2927,10 +2928,33 @@ class FolderAuditService:
             except KnownContactsMasterKeyRequired:
                 scan_context.known_contacts_master_key_required = True
                 scan_context.known_contact_context = None
+            except KnownContactsBackfillRequired as exc:
+                scan_context.known_contacts_backfill_required = True
+                scan_context.known_contacts_unencrypted_count = int(
+                    exc.unencrypted_count
+                )
+                scan_context.known_contact_context = None
         if getattr(scan_context, "firstname_set", None) is None:
             from src.services.audit_firstnames import get_firstname_set
 
             scan_context.firstname_set = get_firstname_set(db_session)
+
+    @staticmethod
+    def _abort_if_known_contacts_blocked(
+        scan_context,
+        result: "FolderAuditResult",
+    ) -> bool:
+        if getattr(scan_context, "known_contacts_backfill_required", False):
+            n = int(getattr(scan_context, "known_contacts_unencrypted_count", 0) or 0)
+            result.scan_failed_reason = "known_contacts_backfill_required"
+            result.scan_notice = (
+                f"{n} bekannte Kontakt(e) noch nicht verschlüsselt — "
+                "Backfill (scripts/backfill_audit_known_contacts_encrypt.py) ausführen."
+            )
+            return True
+        return FolderAuditService._abort_if_known_contacts_need_master_key(
+            scan_context, result
+        )
 
     @staticmethod
     def _abort_if_known_contacts_need_master_key(
@@ -3609,7 +3633,7 @@ class FolderAuditService:
         )
         start_time = time.time()
         result = FolderAuditResult()
-        if FolderAuditService._abort_if_known_contacts_need_master_key(
+        if FolderAuditService._abort_if_known_contacts_blocked(
             scan_context, result
         ):
             return result
@@ -4075,7 +4099,7 @@ class FolderAuditService:
         )
         start_time = time.time()
         result = FolderAuditResult()
-        if FolderAuditService._abort_if_known_contacts_need_master_key(
+        if FolderAuditService._abort_if_known_contacts_blocked(
             scan_context, result
         ):
             return result

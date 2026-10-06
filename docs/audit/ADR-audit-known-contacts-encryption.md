@@ -75,7 +75,7 @@ Wie bei **Mails:** Ohne DEK (Passwort vergessen, Recovery Codes nicht nutzbar) s
 
 1. **Backup** der DB vor Migration; dokumentierter Rollback (Klartext-Spalten erst droppen, wenn Backfill verifiziert).
 2. Alembic: neue Spalten; Backfill nur mit verfügbarem DEK (Session oder Service-Token). Klartext-Spalten **bis f8** behalten (`scripts/backfill_audit_known_contacts_encrypt.py` schreibt nur `encrypted_*` + HMAC).
-3. Verifikation: `scripts/verify_audit_known_contacts_encrypt.py --user-id … --require-full --sample 0` (alle Zeilen, Counts, HMAC, Name muss mitverschlüsselt sein); optional Scan-Vergleich manuell.
+3. Verifikation: `scripts/verify_audit_known_contacts_encrypt.py --user-id … --require-full --sample 0` (alle Zeilen); Deploy-Schritte: `docs/audit/deploy-known-contacts-encryption.md`.
 4. Pro Zeile: `normalize_sender_email` → HMAC → encrypt email + display_name; Duplikate vermeiden (Unique auf HMAC).
 5. **pg_dump**, Dienste stoppen, Alembic **f8** + **Code ohne Klartext-Spalten** (Phase-2-Commit) gemeinsam einspielen, Dienste starten. Vor f8 Backfill erneut (Import schreibt in der Übergangsphase parallel Klartext).
 

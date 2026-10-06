@@ -19,6 +19,14 @@ class KnownContactsMasterKeyRequired(Exception):
     """Verschlüsselte Kontakte, aber kein DEK (Session/Service-Token)."""
 
 
+class KnownContactsBackfillRequired(Exception):
+    """Aktive Kontakte ohne encrypted_email — Backfill vor Scan nötig."""
+
+    def __init__(self, unencrypted_count: int):
+        self.unencrypted_count = unencrypted_count
+        super().__init__(unencrypted_count)
+
+
 def _import_encryption():
     from importlib import import_module
 

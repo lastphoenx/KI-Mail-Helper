@@ -1804,13 +1804,23 @@ def audit_known_contacts_list():
         )
         total = base.count()
         rows = base.all()
+        unencrypted = sum(1 for r in rows if not row_requires_master_key(r))
+        if unencrypted:
+            return jsonify(
+                {
+                    "error": (
+                        f"{unencrypted} Kontakt(e) noch nicht verschlüsselt — "
+                        "Backfill ausführen."
+                    ),
+                    "code": "known_contacts_backfill_required",
+                    "unencrypted_count": unencrypted,
+                }
+            ), 409
         decrypted_rows = []
         for r in rows:
             try:
-                if not master_key and row_requires_master_key(r):
+                if not master_key:
                     raise KnownContactsMasterKeyRequired()
-                if not row_requires_master_key(r):
-                    continue
                 em, name = decrypt_contact_row(r, master_key)
             except KnownContactsMasterKeyRequired:
                 return jsonify(

@@ -75,6 +75,33 @@ def test_load_context_encrypted_without_dek_raises():
         load_known_contact_context(FakeSession(), user_id=1, account_id=2, master_key=None)
 
 
+def test_load_context_unencrypted_raises_backfill_required():
+    class PlainRow:
+        encrypted_email = None
+        mail_count = 1
+        source = "sent"
+        is_active = True
+
+    class FakeQuery:
+        def filter(self, *a, **k):
+            return self
+
+        def all(self):
+            return [PlainRow()]
+
+    class FakeSession:
+        def query(self, model):
+            return FakeQuery()
+
+    from src.services.audit_known_contacts_crypto import KnownContactsBackfillRequired
+
+    with pytest.raises(KnownContactsBackfillRequired) as exc:
+        load_known_contact_context(
+            FakeSession(), user_id=1, account_id=2, master_key="dummy-dek-not-used"
+        )
+    assert exc.value.unencrypted_count == 1
+
+
 def test_load_context_decrypts_with_dek(dek):
     hmac_val, enc_email, enc_name = encrypt_contact_fields(
         "friend@example.com", "Example Friend", dek
