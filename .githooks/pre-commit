@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -eu
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+LIB="${REPO_ROOT}/scripts/kmh-denylist-hook-lib.sh"
+# shellcheck source=/dev/null
+. "$LIB"
+
+kmh_check_staged_diff
+
+SAFE_PRE="${REPO_ROOT}/../Safe-CLI-Helpers/git-hooks/pre-commit"
+if [ -f "$SAFE_PRE" ]; then
+  bash "$SAFE_PRE"
+fi
+
+exit 0

@@ -31,3 +31,13 @@ CT **134** — vollständige Befehle: privates `doku/pve2/vm/134-ki-mail-helper/
 **Remote für Entwicklung:** `origin` → `KI-Mail-Helper-Dev` (Deploy CT 134). Feature-Branches und KI-Arbeit **nur** hier — nicht im öffentlichen `KI-Mail-Helper` entwickeln (nur Spiegel/Sync von Dev).
 
 **Keine Mailbox-Daten in Git:** Keine IMAP-Exports, Absenderlisten oder «Validierungs-Fixtures» aus echten Postfächern — weder in Tests noch in `scripts/`. Clustering-Tests nur mit synthetischen `TrashEmailInfo` in pytest; optionale Stats-Skripte erzeugen Daten im Speicher (`example.com`-Absender).
+
+## Kontospezifisches — nie im Repo
+
+**Keine kontospezifischen Werte im Repo** — auch nicht als Platzhalter, Beispiel, Kommentar oder Test. Alles Kontospezifische pflegt der Benutzer in der Oberfläche; es landet in der **verschlüsselten DB**.
+
+**Erlaubte generische Beispiele:** `example.com`, `beispiel.example`, `meine-domain.ch`, «Max Muster» — nichts aus Screenshots, CT, Mail oder Homelab.
+
+**Hooks (dieses Repo):** Lokale Sperrliste `~/.config/kmh-denylist.txt` (nicht im Git), ganze Wörter (`grep -w`). Install: `powershell -File scripts/install-git-hooks-kmh.ps1` → `core.hooksPath=.githooks`. Test: `bash scripts/test-kmh-denylist-hook.sh`. Vor Push zusätzlich: `bash scripts/pre-push-dev-check.sh`.
+
+**History-Neustart (selten):** Erst wenn Hook steht und Working Tree sauber — ein Commit ohne Leak-Historie (orphan/`reset` + force), Backup `git bundle create ../kmh-backup.bundle --all`, danach CT 134 `git fetch && git reset --hard origin/main`, Entwickler **neu klonen**. Details: privates `doku/ops/privacy-cleanup-playbook.md`.
