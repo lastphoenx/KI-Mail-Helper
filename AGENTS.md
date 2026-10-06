@@ -16,9 +16,7 @@ Kanonisch auf `main`: `requirements.txt`, `requirements-venv.txt`, `requirements
 
 CT **134** — vollständige Befehle: privates `doku/pve2/vm/134-ki-mail-helper/betrieb.md` und `doku/ops/deploy-after-git-pull.md`. Nach Dependency-Merge auf `main`: venv neu installieren + Services neu starten (vom Betreiber).
 
-**Vor Push (Entwicklung):** `bash scripts/pre-push-dev-check.sh` — `compileall -q src` + `pytest -q` (319+ Tests; fängt IndentationError und LLM-Prompt-Regressionen ab). Zusätzlich bleibt Safe-CLI-Helpers `pre-push` (PII-Diff) aktiv, wenn `core.hooksPath` gesetzt ist — Dev-Check **manuell vor Push** oder Hook lokal erweitern.
-
-**Vor Push (Minimal):** `python -m compileall -q src` und mindestens `pytest tests/test_src_compile_smoke.py` — erkennt Syntaxfehler unter `src/` (z. B. `audit_scam_detection.py`), die einzelne Modul-Tests nicht laden.
+**Vor Push (Entwicklung):** `bash scripts/pre-push-dev-check.sh` — `compileall` + `pytest -q` (siehe **Hooks**).
 
 **Nach Deploy (CT):** `bash scripts/pytest-audit-smoke.sh` — Audit/Tranco/Scam/Marken/DBL. **`pytest tests/`** ist deutlich größer (Legacy, alte Pfade, Integration) und kein Release-Gate.
 
@@ -38,6 +36,10 @@ CT **134** — vollständige Befehle: privates `doku/pve2/vm/134-ki-mail-helper/
 
 **Erlaubte generische Beispiele:** `example.com`, `beispiel.example`, `meine-domain.ch`, «Max Muster» — nichts aus Screenshots, CT, Mail oder Homelab.
 
-**Hooks (dieses Repo):** Lokale Sperrliste `~/.config/kmh-denylist.txt` (nicht im Git), ganze Wörter (`grep -w`). Install: `powershell -File scripts/install-git-hooks-kmh.ps1` → `core.hooksPath=.githooks`. Test: `bash scripts/test-kmh-denylist-hook.sh`, `bash scripts/test-kmh-denylist-hook-git.sh`. Vor Push zusätzlich: `bash scripts/pre-push-dev-check.sh`.
+**Hooks (dieses Repo):** Lokale Sperrliste `~/.config/kmh-denylist.txt` (nicht im Git). **Standard:** Teilstring, feste Zeichenkette (Punkte literal, kein Regex). **`=Wort`** am Zeilenanfang = nur ganzes Wort (z. B. `=ExampleTown`). **`@domain`** in der Datei **ohne** `@` eintragen (`domain.tld` findet `x@domain.tld`). UTF-8 **ohne BOM**. Install: `powershell -File scripts/install-git-hooks-kmh.ps1` → `core.hooksPath=.githooks` (nach jedem frischen Clone). Test: `bash scripts/test-kmh-denylist-hook.sh`, `bash scripts/test-kmh-denylist-hook-cases.sh`, `bash scripts/test-kmh-denylist-hook-git.sh`. `--no-verify` umgeht Hooks; GitHub prüft nicht mit.
+
+**Remotes:** Deploy **`origin`** → `KI-Mail-Helper-Dev`. `public` ist Spiegel — «ahead of public/main» ist normal und kein fehlender Push.
+
+**CT 134 nach Force-Push auf `main`:** `git fetch origin && git reset --hard origin/main` (kein Merge-Pull), dann Deploy/Restart.
 
 **History-Neustart (selten):** Erst wenn Hook steht und Working Tree sauber — ein Commit ohne Leak-Historie (orphan/`reset` + force), Backup `git bundle create ../kmh-backup.bundle --all`, danach CT 134 `git fetch && git reset --hard origin/main`, Entwickler **neu klonen**. Details: privates `doku/ops/privacy-cleanup-playbook.md`.

@@ -13,13 +13,22 @@ if [ ! -f "$deny_file" ]; then
   exit 0
 fi
 
+export KMH_DENYLIST_FILE="$deny_file"
+
+if _kmh_check_text_against_denylist "baseline-check" "align-baseline in css"; then
+  echo "ok: baseline substring check (kein =ExampleTown-Treffer nötig)"
+else
+  echo "FAIL: unerwartet blockiert bei align-baseline" >&2
+  exit 1
+fi
+
 first=""
+first_mode=""
 while IFS= read -r line || [ -n "$line" ]; do
-  w="${line%%#*}"
-  w="${w#"${w%%[![:space:]]*}"}"
-  w="${w%"${w##*[![:space:]]}"}"
-  [ -z "$w" ] && continue
-  first="$w"
+  parsed="$(_kmh_parse_deny_entry "$line" || true)"
+  [ -z "$parsed" ] && continue
+  first_mode="${parsed%%$'\t'*}"
+  first="${parsed#*$'\t'}"
   break
 done < "$deny_file"
 
@@ -28,19 +37,15 @@ if [ -z "$first" ]; then
   exit 0
 fi
 
-export KMH_DENYLIST_FILE="$deny_file"
-
-if _kmh_check_text_against_denylist "baseline-check" "align-baseline in css"; then
-  echo "ok: «baseline» substring does not match whole-word deny entries"
-else
-  echo "FAIL: whole-word check blocked baseline text" >&2
-  exit 1
+probe="token ${first} token"
+if [ "$first_mode" = "word" ]; then
+  probe="${first} standalone"
 fi
 
-if _kmh_check_text_against_denylist "live-block" "token ${first} token"; then
+if _kmh_check_text_against_denylist "live-block" "$probe"; then
   echo "FAIL: first denylist entry was not blocked" >&2
   exit 1
 fi
 
-echo "ok: first denylist entry blocked (word not printed)"
+echo "ok: first denylist entry blocked (pattern not printed)"
 echo "kmh-denylist live: PASS"
