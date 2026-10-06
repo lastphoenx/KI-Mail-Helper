@@ -28,8 +28,8 @@ if ((Test-Path $KmhDeny) -and -not $Force) {
 }
 
 $header = @(
-    '# kmh-denylist — local only, never commit'
-    '# From Safe-CLI denylist.txt — default substr; = only if source line starts with ='
+    '# kmh-denylist - local only, never commit'
+    '# From Safe-CLI denylist.txt - default substr; = only if source line starts with ='
     '# Domains: leading @ stripped. UTF-8 no BOM. Broad words: add = manually in this file.'
     ''
 )
@@ -40,6 +40,15 @@ foreach ($line in Get-Content -LiteralPath $SafeDeny -Encoding UTF8) {
     if ($null -ne $converted) {
         $entries.Add($converted) | Out-Null
     }
+}
+
+$BroadFile = Join-Path $ConfigDir "kmh-denylist-broad-words.txt"
+$broad = Read-KmhBroadWordTokens -BroadWordsFile $BroadFile
+Apply-KmhBroadWordPrefixes -Entries $entries -BroadTokens $broad
+if ($broad.Count -gt 0) {
+    Write-Host "Broad-word overlay: $($broad.Count) tokens from $BroadFile"
+} elseif (-not (Test-Path $BroadFile)) {
+    Write-Host "Hinweis: $BroadFile fehlt - breite Begriffe bleiben Teilstring (Vorlage scripts/kmh-denylist-broad-words.example.txt)"
 }
 
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false

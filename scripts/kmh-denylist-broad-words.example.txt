@@ -1,0 +1,6 @@
+# Tokens in dieser Datei werden in kmh-denylist.txt als =Ganzwort gesetzt (Rest: Teilstring).
+# Kopie:  cp scripts/kmh-denylist-broad-words.example.txt %USERPROFILE%\.config\kmh-denylist-broad-words.txt
+# Datei ist gitignored. Nach Aenderung: bootstrap-kmh-denylist.ps1 -Force
+
+ExampleTown
+ExampleFirstname

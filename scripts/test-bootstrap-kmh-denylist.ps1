@@ -16,4 +16,15 @@ Assert-Eq "alpha unchanged" "tokenalpha" (Convert-SafeCliDenyLineToKmh -Line "to
 Assert-Eq "equals preserved" "=ExampleTown" (Convert-SafeCliDenyLineToKmh -Line "=ExampleTown")
 Assert-Eq "underscore token" "needle_sub" (Convert-SafeCliDenyLineToKmh -Line "needle_sub")
 
+$entries = New-Object System.Collections.Generic.List[string]
+$entries.Add("tokenalpha") | Out-Null
+$entries.Add("needle_sub") | Out-Null
+$broad = New-Object System.Collections.Generic.List[string]
+$broad.Add("tokenalpha") | Out-Null
+Apply-KmhBroadWordPrefixes -Entries $entries -BroadTokens $broad
+if ($entries[0] -ne "=tokenalpha" -or $entries[1] -ne "needle_sub") {
+    Write-Error "FAIL broad overlay"
+}
+Write-Host "ok: broad-word overlay"
+
 Write-Host "bootstrap-kmh-denylist transform: PASS"
