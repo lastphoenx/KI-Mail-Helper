@@ -109,6 +109,9 @@ class AuditConfigCache:
         cache_key = (user_id, account_id)
         
         if cache_key in cls._cache:
+            cached = cls._cache[cache_key]
+            if "audit_config_load_ok" not in cached:
+                cached["audit_config_load_ok"] = True
             return cls._cache[cache_key]
         
         models = _get_models()
@@ -215,6 +218,7 @@ class AuditConfigCache:
             if brand_row and brand_row.brand_official_domains_json:
                 try:
                     raw_brand = brand_row.brand_official_domains_json.strip()
+                    config["_brand_json_bytes"] = len(raw_brand)
                     custom_brand = parse_brand_domains_text(raw_brand)
                 except (TypeError, ValueError, json.JSONDecodeError) as exc:
                     logger.warning(
@@ -240,8 +244,6 @@ class AuditConfigCache:
                     )
                     raw_own = getattr(acc, "audit_own_domains", None) if acc else None
                     if raw_own:
-                        import json
-
                         parsed = json.loads(raw_own)
                         if isinstance(parsed, list):
                             config["own_domains"] = {
@@ -249,9 +251,27 @@ class AuditConfigCache:
                                 for d in parsed
                                 if d and str(d).strip()
                             }
+                    raw_ex = getattr(acc, "audit_exclude_folders", None) if acc else None
+                    if raw_ex:
+                        ex_parsed = json.loads(raw_ex)
+                        if isinstance(ex_parsed, list):
+                            config["exclude_folder_count"] = len(
+                                [x for x in ex_parsed if x]
+                            )
+                    config["known_contacts_count"] = (
+                        db_session.query(models.AuditKnownContact)
+                        .filter(
+                            models.AuditKnownContact.user_id == user_id,
+                            models.AuditKnownContact.is_active == True,
+                            (models.AuditKnownContact.account_id == account_id)
+                            | (models.AuditKnownContact.account_id == None),
+                        )
+                        .count()
+                    )
                 except Exception as exc:
-                    logger.debug("own_domains für Audit nicht ladbar: %s", exc)
+                    logger.debug("Account-Audit-Felder nicht ladbar: %s", exc)
             
+            config["audit_config_load_ok"] = True
             logger.debug(f"Loaded audit config for user {user_id}: "
                         f"{len(config['trusted_domains'])} domains, "
                         f"{len(config['important_keywords'])} keywords, "
@@ -269,6 +289,7 @@ class AuditConfigCache:
                 e,
                 exc_info=True,
             )
+            config["audit_config_load_ok"] = False
             return config
         
         if load_ok:
@@ -599,7 +620,9 @@ class FolderAuditResult:
     scan_duration_ms: int = 0
     llm_skipped_candidates: int = 0
     scan_notice: str = ""
-    
+    scan_audit_config: Optional[dict] = None
+    scan_audit_config_load_ok: bool = False
+
     def to_dict(self) -> dict:
         return {
             "total": self.total,
@@ -2825,8 +2848,17 @@ class FolderAuditService:
 
         parts: List[str] = []
         if db_session and user_id is not None:
+            cfg = getattr(result, "scan_audit_config", None)
+            load_ok = getattr(result, "scan_audit_config_load_ok", False)
+            if cfg is None:
+                cfg = AuditConfigCache.get_config(db_session, user_id, account_id) or {}
+                load_ok = bool(cfg.get("audit_config_load_ok"))
             notice, _load_err = build_audit_scan_config_notice(
-                db_session, user_id, account_id
+                db_session,
+                user_id,
+                account_id,
+                audit_config=cfg,
+                config_load_ok=load_ok,
             )
             if notice:
                 parts.append(notice)
@@ -2843,6 +2875,21 @@ class FolderAuditService:
             result.scan_notice = f"{merged} {result.scan_notice}"
         else:
             result.scan_notice = merged
+
+    @staticmethod
+    def _bind_scan_audit_config_snapshot(
+        result: "FolderAuditResult",
+        db_session,
+        user_id: Optional[int],
+        account_id: Optional[int],
+    ) -> None:
+        if not db_session or user_id is None:
+            result.scan_audit_config = {}
+            result.scan_audit_config_load_ok = False
+            return
+        cfg = AuditConfigCache.get_config(db_session, user_id, account_id) or {}
+        result.scan_audit_config = cfg
+        result.scan_audit_config_load_ok = bool(cfg.get("audit_config_load_ok"))
 
     @staticmethod
     def _prepare_audit_scan_context(scan_context, db_session, user_id, account_id) -> None:
@@ -3528,6 +3575,9 @@ class FolderAuditService:
         )
         start_time = time.time()
         result = FolderAuditResult()
+        FolderAuditService._bind_scan_audit_config_snapshot(
+            result, db_session, user_id, account_id
+        )
 
         llm_cfg = None
         scan_llm_enabled = False
@@ -3986,6 +4036,9 @@ class FolderAuditService:
         )
         start_time = time.time()
         result = FolderAuditResult()
+        FolderAuditService._bind_scan_audit_config_snapshot(
+            result, db_session, user_id, account_id
+        )
         
         llm_cfg = None
         if db_session and user_id:

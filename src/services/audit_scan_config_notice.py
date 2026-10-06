@@ -1,94 +1,42 @@
-"""Scan-Hinweis: geladene Audit-Konfiguration (unabhängig vom AuditConfigCache-Zustand)."""
+"""Scan-Hinweis: Zusammenfassung der beim Scan geladenen Audit-Konfiguration."""
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 
-def _brand_settings_row(db_session, user_id: int):
-    models = __import__("src.02_models", fromlist=["AuditClusterSettings"])
-    if not hasattr(models, "AuditClusterSettings"):
-        return None
+def _counts_from_audit_config(
+    audit_config: Dict[str, Any],
+) -> Tuple[int, int, int, int, int, int, int, int, int]:
+    from src.services.brand_domain_policy import BUILTIN_BRAND_OFFICIAL_DOMAINS
+
+    custom_map = audit_config.get("brand_official_domains_custom") or {}
+    effective_map = audit_config.get("brand_official_domains_effective") or {}
+    custom_brands = len(custom_map)
+    effective_brands = len(effective_map)
+    builtin_brands = len(BUILTIN_BRAND_OFFICIAL_DOMAINS)
+
+    n_own = len(audit_config.get("own_domains") or [])
+    n_trusted = len(audit_config.get("trusted_domains") or [])
+    n_vip = len(audit_config.get("vip_senders") or [])
+    n_safe = len(audit_config.get("safe_subject_patterns") or []) + len(
+        audit_config.get("safe_sender_patterns") or []
+    )
+    n_known = int(audit_config.get("known_contacts_count") or 0)
+    n_exclude = int(audit_config.get("exclude_folder_count") or 0)
     return (
-        db_session.query(models.AuditClusterSettings)
-        .filter(
-            models.AuditClusterSettings.user_id == user_id,
-            models.AuditClusterSettings.account_id == None,
-            models.AuditClusterSettings.is_active == True,
-        )
-        .first()
-    )
-
-
-def _count_model_entries(db_session, user_id: int, account_id: Optional[int], model_name: str) -> int:
-    models = __import__("src.02_models", fromlist=[model_name])
-    model = getattr(models, model_name, None)
-    if model is None:
-        return 0
-    q = db_session.query(model).filter(
-        model.user_id == user_id,
-        model.is_active == True,
-    )
-    if account_id is not None and hasattr(model, "account_id"):
-        q = q.filter((model.account_id == account_id) | (model.account_id == None))
-    return q.count()
-
-
-def _own_domains_count(db_session, user_id: int, account_id: Optional[int]) -> int:
-    if not account_id:
-        return 0
-    models = __import__("src.02_models", fromlist=["MailAccount"])
-    acc = (
-        db_session.query(models.MailAccount)
-        .filter(models.MailAccount.id == account_id, models.MailAccount.user_id == user_id)
-        .first()
-    )
-    if not acc:
-        return 0
-    raw = getattr(acc, "audit_own_domains", None)
-    if not raw:
-        return 0
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, list):
-            return sum(1 for d in parsed if d and str(d).strip())
-    except (TypeError, json.JSONDecodeError):
-        logger.debug("audit_own_domains für Scan-Hinweis unparsebar")
-    return 0
-
-
-def _exclude_folder_count(db_session, user_id: int, account_id: Optional[int]) -> int:
-    if not account_id:
-        return 0
-    models = __import__("src.02_models", fromlist=["MailAccount"])
-    acc = (
-        db_session.query(models.MailAccount)
-        .filter(models.MailAccount.id == account_id, models.MailAccount.user_id == user_id)
-        .first()
-    )
-    if not acc:
-        return 0
-    raw = getattr(acc, "audit_exclude_folders", None)
-    if not raw:
-        return 0
-    try:
-        data = json.loads(raw)
-        if isinstance(data, list):
-            return len([x for x in data if x])
-    except (TypeError, json.JSONDecodeError):
-        pass
-    return 0
-
-
-def _known_contacts_count(db_session, user_id: int, account_id: Optional[int]) -> int:
-    if not account_id:
-        return 0
-    return _count_model_entries(
-        db_session, user_id, account_id, "AuditKnownContact"
+        effective_brands,
+        custom_brands,
+        builtin_brands,
+        n_own,
+        n_trusted,
+        n_vip,
+        n_known,
+        n_safe,
+        n_exclude,
     )
 
 
@@ -96,37 +44,53 @@ def build_audit_scan_config_notice(
     db_session,
     user_id: int,
     account_id: Optional[int] = None,
+    *,
+    audit_config: Optional[Dict[str, Any]] = None,
+    config_load_ok: Optional[bool] = None,
 ) -> Tuple[str, bool]:
-    """Returns (notice_text, load_error). load_error=True → UI soll warnen."""
-    if db_session is None or user_id is None:
-        return ("Konfiguration im Scan: nicht geladen (kein Benutzerkontext).", True)
+    """Returns (notice_text, load_error). Prefer audit_config from the scan run."""
+    if audit_config is None:
+        if db_session is None or user_id is None:
+            return ("Konfiguration im Scan: nicht geladen (kein Benutzerkontext).", True)
+        from src.services.folder_audit_service import AuditConfigCache
 
-    from src.services.brand_domain_health import brand_settings_api_payload
+        audit_config = AuditConfigCache.get_config(db_session, user_id, account_id) or {}
+        if config_load_ok is None:
+            config_load_ok = bool(audit_config.get("audit_config_load_ok"))
 
-    load_error = False
-    row = _brand_settings_row(db_session, user_id)
-    brand_payload = brand_settings_api_payload(row, user_id)
-    scope = brand_payload.get("scope") or {}
-    effective_brands = scope.get("effective_brands") or brand_payload.get("effective_count") or 0
-    custom_brands = scope.get("custom_brands") or brand_payload.get("custom_count") or 0
-    builtin_brands = scope.get("builtin_brands") or brand_payload.get("builtin_count") or 0
+    if config_load_ok is None:
+        config_load_ok = bool(audit_config.get("audit_config_load_ok"))
 
-    if row and row.brand_official_domains_json and custom_brands == 0:
-        raw_len = len((row.brand_official_domains_json or "").strip())
-        if raw_len > 10:
-            load_error = True
-            logger.warning(
-                "Marken-JSON in DB (%s Bytes) aber 0 Custom-Keys nach Parse (user_id=%s)",
-                raw_len,
-                user_id,
-            )
+    load_error = not config_load_ok
 
-    n_own = _own_domains_count(db_session, user_id, account_id)
-    n_trusted = _count_model_entries(db_session, user_id, account_id, "AuditTrustedDomain")
-    n_vip = _count_model_entries(db_session, user_id, account_id, "AuditVIPSender")
-    n_safe = _count_model_entries(db_session, user_id, account_id, "AuditSafePattern")
-    n_known = _known_contacts_count(db_session, user_id, account_id)
-    n_exclude = _exclude_folder_count(db_session, user_id, account_id)
+    if load_error:
+        return (
+            "⚠️ Konfiguration im Scan: nicht vollständig geladen — "
+            "Analyse lief ggf. mit leeren Listen. Bitte Scan wiederholen oder Logs prüfen.",
+            True,
+        )
+
+    (
+        effective_brands,
+        custom_brands,
+        builtin_brands,
+        n_own,
+        n_trusted,
+        n_vip,
+        n_known,
+        n_safe,
+        n_exclude,
+    ) = _counts_from_audit_config(audit_config)
+
+    brand_json_warn = False
+    row_hint = audit_config.get("_brand_json_bytes")
+    if row_hint and isinstance(row_hint, int) and row_hint > 10 and custom_brands == 0:
+        brand_json_warn = True
+        logger.warning(
+            "Marken-JSON (%s Bytes) aber 0 Custom-Keys in Scan-Config (user_id=%s)",
+            row_hint,
+            user_id,
+        )
 
     parts = [
         f"Konfiguration im Scan: {effective_brands} Marken aktiv "
@@ -138,5 +102,5 @@ def build_audit_scan_config_notice(
         f"Marketing-Pattern: {n_safe}",
         f"Ordner ausgenommen: {n_exclude}",
     ]
-    prefix = "⚠️ Audit-Konfiguration unvollständig — " if load_error else ""
-    return (prefix + " · ".join(parts) + ".", load_error)
+    prefix = "⚠️ Audit-Konfiguration unvollständig — " if brand_json_warn else ""
+    return (prefix + " · ".join(parts) + ".", brand_json_warn or load_error)

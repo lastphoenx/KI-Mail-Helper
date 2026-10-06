@@ -289,6 +289,20 @@ def test_e8_noreply_code_local():
     assert ev.identity_suspicion
 
 
+def test_e3_exempt_list_unsub_strong_auth_without_tranco():
+    meta = _Meta(
+        sender_name="Behörde Kundenservice",
+        sender="vorname.nachname@corp-example.test",
+        auth_results="dkim=pass; spf=pass; dmarc=pass",
+        has_list_unsubscribe=True,
+    )
+    assert identity_rule_e3(meta.sender_name, meta.sender, meta=meta)
+    assert _e3e6_reputation_exempt(meta)
+    ev = evaluate_scam_risk(meta, llm_enabled=False)
+    assert "E3" not in ev.identity_rules
+    assert not ev.identity_suspicion
+
+
 def test_tranco_auth_without_list_unsub_not_exempt(tmp_path, monkeypatch):
     from src.services.tranco_popularity import build_sqlite_from_rank_pairs, get_tranco_store
 

@@ -53,7 +53,7 @@ Implementiert schrittweise (Quick win: Transport + Auth → Verdacht ohne Identi
 | Nr. | Bedingung | Aktion (Ziel-Kategorie) |
 |-----|-----------|-------------------------|
 | 0 | Ordner in «vom Scan ausnehmen» (+ Gesendet/Entwürfe) | nicht analysieren |
-| 1 | **Meine Domains** / eigene Adresse | never_scam (weich); Kategorie über Regeln 3–7; **kein** Bypass der festen Sicherheitsebene |
+| 1 | **Meine Domains** / eigene Adresse | never_scam (weich); Kategorie über Regeln 3–9; **kein** Bypass der festen Sicherheitsebene (**Phase B** — heute im Code voller Scam-Bypass, UI entsprechend) |
 | 2 | **Harte Gefahr** (feste Sicherheitsebene) | Verdacht / Scam |
 | 3 | **Bekannte Kontakte** (exakte Adresse) | wichtig; Identität aus |
 | 4 | **VIP** (nur exakt oder Domain) | wichtig; Identität aus |
@@ -89,7 +89,7 @@ Jede Liste in der UI: **ein Satz**, was sie **auslöst** und was **nicht** (z. B
 
 | Phase | Inhalt |
 |-------|--------|
-| **A (erledigt/teilweise)** | Scan-Hinweis aus DB; LLM-aus → Hinweis trotzdem; Transport+Auth → Verdacht ohne Identität; Auth-Deduplizierung; E3-Bulk ohne Tranco; UI-Texte pro Liste |
+| **A (teilweise)** | Scan-Hinweis aus **Scan-Config-Snapshot** (+ Ladefehler); LLM-aus → Hinweis trotzdem; Transport+Auth → Verdacht ohne Identität; Auth-Deduplizierung; **E3-Bulk: List-Unsubscribe + Auth pass** (ohne Tranco/Plattform); UI-Texte Meine Domains Phase-B-Hinweis |
 | **B** | `deciding_rule_id` in `TrashEmailInfo`; Kaskade in `analyze_email`; Tests pro Regel; Spezifität über Stufen |
 | **C** | Regel-Test-API + UI; VIP/Pattern/Auto-Regeln in eine Regelliste; Konflikt-Warnungen |
 

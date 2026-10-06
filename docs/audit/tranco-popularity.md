@@ -64,6 +64,8 @@ Default **100000** bewusst — nicht erhöhen ohne Daten:
 python scripts/tranco_domain_coverage.py /path/to/top-1m.csv domains.txt
 ```
 
+Auf CT liegt die Liste in der SQLite (`TRANCO_DB_PATH`, z. B. `data/tranco/tranco.db`) — für Einzeldomains **`tranco_rank_domains.py`**, nicht die CSV. CSV-Pfad nur für `tranco_domain_coverage.py` (z. B. nach manuellem Download der ZIP lokal entpacken).
+
 `domains.txt`: eine Domain pro Zeile (Markenliste oder Newsletter-Absender; Unterdomains werden auf die registrierbare Domain gekürzt, z. B. `news.twint.ch` → `twint.ch`). Ausgabe: Abdeckung pro Schwelle → dann `TRANCO_TOP_N` in `.env` setzen und Update ausführen.
 
 Später (Roadmap Schicht 2): separate kleinere Grenze für Nachahmer-Erkennung (z. B. 20k–50k), DB bis max(exempt, impersonation) füllen.
