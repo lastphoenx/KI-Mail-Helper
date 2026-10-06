@@ -29,7 +29,7 @@ Tab **Konfiguration** im Ordner-Audit (`/api/audit-config/*`).
 |------------|----------|-----------------|
 | **Vertrauenswürdige Domains** | DB, pro User/Account | Erhöht «wichtig», mindert Scam-Verdacht bei bekannter Domain |
 | **Meine Domains** (`own_domains`) | DB | Eigene Web-/Marken-Domains — **gelten nicht** als fremde Scam-Absender-Domain |
-| **Wichtige Keywords / Safe Patterns / VIP** | DB | Klassifikation Papierkorb (wichtig vs. löschbar), nicht identisch mit Scam-Layer |
+| **Wichtige Keywords / Safe Patterns / VIP** | DB | Klassifikation (wichtig vs. löschbar); Safe-Pattern-Grundtext: «Marketing-Absender (Pattern)» — nicht identisch mit Scam-Layer |
 | **Auto-Regeln** | DB | Disposition SAFE/IMPORTANT/SCAM/REVIEW nach Pattern |
 | **Marken-Domains (Scam)** | DB + **eingebaute** System-Map | Layer 1: **B1** (Marke/Domain-Mismatch) plus **E3/E6** → Kategorie **Verdacht** ohne Provider-Flag; **Scam** = Identität + Transport/Auth-Schwäche oder (nur bei Verdacht-Kandidaten) DBL/junge Domain. Auth-**pass** senkt nicht. |
 | **Ordner vom Scan ausnehmen** | `audit_exclude_folders` | Kein Audit für diese IMAP-Ordner |
@@ -87,13 +87,13 @@ Marken-Health-RDAP (Button «Domains prüfen»): **pro Nutzer** Checkbox «Domai
 
 | Schritt | Wo |
 |---------|-----|
-| Code | Windows: `github_code/KI-Mail-Helper-Dev`, Branch **`main`** |
+| Code | Repo **KI-Mail-Helper-Dev**, Branch **`main`** |
 | Vor Push (Agent/Dev) | `python -m compileall -q src` und `pytest tests/test_src_compile_smoke.py` (+ betroffene Tests) |
-| CT 134 | `git pull` als **root**, `alembic upgrade head`, optional pytest im venv, `systemctl restart mail-helper mail-helper-celery-worker` (+ Beat bei Schedule-Änderung) |
+| Produktion | `git pull`, `alembic upgrade head`, optional pytest im venv, Services neu starten — **privates Betriebsdokument** |
 
-Vollständige Copy-Paste-Blöcke: `doku/pve2/vm/134-ki-mail-helper/betrieb.md`, `doku/ops/deploy-after-git-pull.md`.
+Copy-Paste-Befehle und systemd: **privates Betriebsdokument** (nicht in diesem Repo).
 
-**Nach Scam-/Marken-Updates:** Migrationen `brand_*`, `domain_reputation_cache` — immer Alembic auf CT.
+**Nach Scam-/Marken-Updates:** Migrationen `brand_*`, `domain_reputation_cache` — immer Alembic auf dem Deploy-Host.
 
 ---
 

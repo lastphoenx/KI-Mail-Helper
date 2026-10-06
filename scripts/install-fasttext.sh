@@ -4,7 +4,7 @@
 # PyPI fasttext-wheel==0.9.2 ships pre-built wheels for Python 3.11/3.12 on Linux x86_64.
 # Python 3.13+ has no wheel → patched source build (adds #include <cstdint> for GCC 13+).
 #
-# Usage on CT 134 (as root in pct enter):
+# Usage on production host (as root in container/shell):
 #   cd /opt/KI-Mail-Helper
 #   source venv/bin/activate
 #   bash scripts/install-fasttext.sh

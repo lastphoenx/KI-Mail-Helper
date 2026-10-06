@@ -13,7 +13,7 @@ Environment="PATH=/opt/KI-Mail-Helper/venv/bin:/usr/local/bin:/usr/bin:/bin"
 EnvironmentFile=/opt/KI-Mail-Helper/.env
 
 # DEV ONLY: localhost binden. Task-Results können PII enthalten — nie öffentlich!
-# Produktion (CT 134): diesen Service NICHT installieren.
+# Produktion: diesen Service NICHT installieren.
 ExecStart=/opt/KI-Mail-Helper/venv/bin/celery \
     -A src.celery_app flower \
     --address=127.0.0.1 \

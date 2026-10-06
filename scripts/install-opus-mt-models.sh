@@ -2,7 +2,7 @@
 # Pre-download Helsinki-NLP Opus-MT models into the Hugging Face cache.
 # Lädt NUR fehlende Modelle nach – bereits gecachte werden übersprungen.
 #
-# Usage on CT 134:
+# Usage on production host:
 #   sudo -u mailhelper bash scripts/install-opus-mt-models.sh
 #
 # Einzelnes Modell (sudo übergibt env mit -E oder env):

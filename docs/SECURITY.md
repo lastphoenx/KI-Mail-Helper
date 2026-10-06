@@ -438,7 +438,7 @@ User Password + Secret Key (128 Bit, nur clientseitig/beim User)
 |-------------|--------------|------------|
 | **Passwort-Verlust** | Daten unwiederbringlich | Recovery Codes, Dokumentation |
 | **RAM-/Session-Exposure** | DEK in RAM und `.flask_sessions` | Kurze Session-TTL, Server-Hardening, verschlüsselte Backups |
-| **ServiceToken DEK** | Celery-Token speichern DEK plaintext in DB (TTL) | Kurze TTL, Löschung bei Logout, kein DB-Dump während aktiver Tokens |
+| **ServiceToken DEK** | Celery-Token: DEK in DB mit **AES-GCM + Key aus `SECRET_KEY`** (`stenc1:` in `service_tokens.encrypted_dek`; Spaltenname historisch). Risiko bei DB-Dump **während** aktiver Tokens + bekanntem `SECRET_KEY` | Kurze TTL (1–7 Tage), Löschung bei Logout, kein DB-Dump während aktiver Tokens |
 | **TOTP-Secret** | `totp_secret` in DB unverschlüsselt | DB-Zugriff = 2FA bypass möglich; Postgres nur localhost |
 | **Timing Attacks** | Login-Enumeration erschwert | Dummy-Hash bei unbekanntem User |
 | **Brute Force** | Passwort-Raten | Rate Limiting (Login/2FA), Account Lockout |
@@ -491,17 +491,17 @@ Falls du eine Sicherheitslücke findest:
 | Szenario | Risiko | Hinweis |
 |----------|--------|---------|
 | Host root auf App-Server | Hoch | `.flask_sessions` enthält DEK |
-| DB-Dump + aktiver ServiceToken | Hoch | `encrypted_dek`-Spalte = plaintext DEK (TTL) |
+| DB-Dump + aktiver ServiceToken + `SECRET_KEY` | Hoch | `encrypted_dek` = DEK mit app-Key verschlüsselt (`service_token_storage.py`), nicht Klartext |
 | Kompromittierte Session-Cookie | Hoch | Wie eingeloggter User |
 | Mail-HTML Tracking/Phishing | Mittel | CSP/Sandbox, kein HTML-Sanitizer |
 
 ### ServiceToken (Celery)
 
-Background-Tasks benötigen den DEK ohne Flask-Session. Dafür werden kurzlebige `service_tokens` mit **plaintext DEK** in der DB gespeichert (Spaltenname historisch `encrypted_dek`). Tokens werden beim Logout gelöscht.
+Background-Tasks benötigen den DEK ohne Flask-Session. Kurzlebige `service_tokens` speichern den DEK in der Spalte **`encrypted_dek`** (historischer Name): Wert = **AES-GCM** mit Schlüssel abgeleitet aus **`SECRET_KEY`** / `FLASK_SECRET_KEY` (`src/helpers/service_token_storage.py`, Präfix `stenc1:`). Legacy-Zeilen ohne Präfix werden unverändert gelesen (Pass-through). Tokens laufen nach TTL (typ. 1–7 Tage) ab und werden beim **Logout** gelöscht.
 
 ### Produktion vs. Entwicklung
 
-| Komponente | Produktion (CT 134) | Entwicklung |
+| Komponente | Produktion | Entwicklung |
 |------------|---------------------|-------------|
 | Gunicorn + Celery Worker + Beat | ✅ | ✅ |
 | Flower (Port 5555) | ❌ nicht deployen | nur `127.0.0.1` + Auth |

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dry-run: alle Requirement-Dateien in frischem venv auflösbar? (Python 3.13 wie CT 134)
+# Dry-run: alle Requirement-Dateien in frischem venv auflösbar? (Python 3.13 wie Produktion)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
