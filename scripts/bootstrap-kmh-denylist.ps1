@@ -1,5 +1,5 @@
 # Erzeugt/aktualisiert ~/.config/kmh-denylist.txt aus Safe-CLI denylist.txt (lokal, gitignored).
-# Gibt Sperrmuster nicht aus. Kurze Begriffe ggf. manuell mit = prefix versehen.
+# Standard: Teilstring unveraendert. Nur Zeilen mit fuehrendem = in der Quelle bleiben =Wort.
 param(
     [switch]$Force
 )
@@ -9,6 +9,8 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $SafeDeny = Join-Path (Split-Path -Parent $RepoRoot) "Safe-CLI-Helpers\git-hooks\denylist.txt"
 $ConfigDir = Join-Path $env:USERPROFILE ".config"
 $KmhDeny = Join-Path $ConfigDir "kmh-denylist.txt"
+
+. (Join-Path $PSScriptRoot "bootstrap-kmh-denylist-lib.ps1")
 
 if (-not (Test-Path $SafeDeny)) {
     Write-Error "Safe-CLI denylist fehlt: $SafeDeny"
@@ -27,22 +29,17 @@ if ((Test-Path $KmhDeny) -and -not $Force) {
 
 $header = @(
     '# kmh-denylist — local only, never commit'
-    '# From Safe-CLI denylist.txt — substr; =word; domains without leading @'
-    '# UTF-8 no BOM'
+    '# From Safe-CLI denylist.txt — default substr; = only if source line starts with ='
+    '# Domains: leading @ stripped. UTF-8 no BOM. Broad words: add = manually in this file.'
     ''
 )
 
 $entries = New-Object System.Collections.Generic.List[string]
 foreach ($line in Get-Content -LiteralPath $SafeDeny -Encoding UTF8) {
-    $t = $line -replace '^\uFEFF', ''
-    $t = $t.Trim()
-    if ($t -eq '' -or $t.StartsWith('#')) { continue }
-    if ($t.StartsWith('@')) { $t = $t.Substring(1).Trim() }
-    if ($t -eq '') { continue }
-    if ($t -notmatch '^=' -and $t -match '^[A-Za-z]{2,20}$') {
-        $t = "=$t"
+    $converted = Convert-SafeCliDenyLineToKmh -Line $line
+    if ($null -ne $converted) {
+        $entries.Add($converted) | Out-Null
     }
-    $entries.Add($t) | Out-Null
 }
 
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false
