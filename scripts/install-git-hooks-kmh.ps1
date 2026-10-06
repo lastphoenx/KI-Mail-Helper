@@ -11,7 +11,7 @@ Push-Location $RepoRoot
 try {
     git config core.hooksPath .githooks
     Write-Host "core.hooksPath -> .githooks (dieses Repo)"
-    Write-Host "Sperrliste: `$env:USERPROFILE\.config\kmh-denylist.txt (oder KMH_DENYLIST_FILE)"
+    Write-Host "Sperrliste: `$env:USERPROFILE\.config\kmh-denylist.txt (Vorlage scripts/kmh-denylist.example.txt — nie kmh-denylist.txt ins Repo)"
     Write-Host "Test: bash scripts/test-kmh-denylist-hook.sh && bash scripts/test-kmh-denylist-hook-cases.sh"
 } finally {
     Pop-Location

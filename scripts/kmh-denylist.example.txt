@@ -1,0 +1,14 @@
+# kmh-denylist — nur lokal, nie committen.
+# Canonical:  %USERPROFILE%\.config\kmh-denylist.txt  (Linux: ~/.config/kmh-denylist.txt)
+# Kopie:       mkdir -p ~/.config && cp scripts/kmh-denylist.example.txt ~/.config/kmh-denylist.txt
+# Dateiname kmh-denylist.txt im Repo-Tree ist in .gitignore (siehe AGENTS.md).
+#
+# Syntax (ein Eintrag pro Zeile):
+#   muster              Teilstring, feste Zeichenkette, case-insensitive
+#   =ExampleTown        nur ganzes Wort
+#   beispiel-uni.example   Domain ohne @ (findet auch x@beispiel-uni.example)
+# UTF-8 ohne BOM.
+
+example-private-token
+=ExampleTown
+beispiel-uni.example

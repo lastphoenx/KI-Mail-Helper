@@ -9,16 +9,85 @@
 
 set -eu
 
+_kmh_is_wsl() {
+  [ -f /proc/version ] && grep -qi microsoft /proc/version 2>/dev/null
+}
+
+_kmh_existing_denylist() {
+  local p="$1"
+  if [ -n "$p" ] && [ -f "$p" ]; then
+    printf '%s' "$p"
+    return 0
+  fi
+  return 1
+}
+
+# WSL: Windows-Profil → /mnt/c/Users/…/.config/kmh-denylist.txt
+_kmh_wsl_denylist_path() {
+  local raw winp drive rest p
+  _kmh_is_wsl || return 1
+  command -v powershell.exe >/dev/null 2>&1 || return 1
+  raw="$(powershell.exe -NoProfile -Command 'Write-Output $env:USERPROFILE' 2>/dev/null)"
+  raw="${raw//$'\r'/}"
+  raw="${raw//$'\n'/}"
+  [ -z "$raw" ] && return 1
+  winp="${raw//\\//}"
+  case "$winp" in
+    [A-Za-z]:/*)
+      drive="$(printf '%s' "${winp:0:1}" | tr '[:upper:]' '[:lower:]')"
+      rest="${winp:3}"
+      p="/mnt/${drive}/${rest}/.config/kmh-denylist.txt"
+      _kmh_existing_denylist "$p"
+      return $?
+      ;;
+  esac
+  return 1
+}
+
 _kmh_denylist_path() {
+  local p winp drive rest tried
   if [ -n "${KMH_DENYLIST_FILE:-}" ]; then
     echo "$KMH_DENYLIST_FILE"
     return 0
   fi
+  if [ -n "${USERPROFILE:-}" ]; then
+    tried="$(_kmh_existing_denylist "${USERPROFILE}/.config/kmh-denylist.txt" || true)"
+    if [ -n "$tried" ]; then
+      echo "$tried"
+      return 0
+    fi
+    winp="${USERPROFILE//\\//}"
+    case "$winp" in
+      [A-Za-z]:/*)
+        drive="$(printf '%s' "${winp:0:1}" | tr '[:upper:]' '[:lower:]')"
+        rest="${winp:3}"
+        tried="$(_kmh_existing_denylist "/${drive}/${rest}/.config/kmh-denylist.txt" || true)"
+        if [ -n "$tried" ]; then
+          echo "$tried"
+          return 0
+        fi
+        ;;
+    esac
+  fi
   if [ -n "${HOME:-}" ]; then
-    echo "${HOME}/.config/kmh-denylist.txt"
+    tried="$(_kmh_existing_denylist "${HOME}/.config/kmh-denylist.txt" || true)"
+    if [ -n "$tried" ]; then
+      echo "$tried"
+      return 0
+    fi
+  fi
+  tried="$(_kmh_wsl_denylist_path || true)"
+  if [ -n "$tried" ]; then
+    echo "$tried"
     return 0
   fi
-  echo ""
+  if [ -n "${USERPROFILE:-}" ]; then
+    echo "${USERPROFILE}/.config/kmh-denylist.txt"
+  elif [ -n "${HOME:-}" ]; then
+    echo "${HOME}/.config/kmh-denylist.txt"
+  else
+    echo ""
+  fi
 }
 
 _kmh_strip_bom() {

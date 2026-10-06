@@ -28,6 +28,18 @@ env/
 .env
 .env.local
 
+# Lokale Commit-Sperrlisten (canonical: ~/.config/kmh-denylist.txt — nie ins Git)
+kmh-denylist.txt
+kmh-denylist.local.txt
+.config/kmh-denylist.txt
+**/kmh-denylist.txt
+**/kmh-denylist.local.txt
+# Safe-CLI-Denylist-Kopien, falls versehentlich ins Repo gelegt
+denylist.txt
+denylist.local.txt
+**/denylist.txt
+**/denylist.local.txt
+
 # Flask Server-Side Sessions (Zero-Knowledge)
 .flask_sessions/
 

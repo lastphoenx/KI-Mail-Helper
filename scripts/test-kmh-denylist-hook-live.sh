@@ -9,7 +9,10 @@ LIB="${REPO_ROOT}/scripts/kmh-denylist-hook-lib.sh"
 
 deny_file="$(_kmh_denylist_path)"
 if [ ! -f "$deny_file" ]; then
-  echo "SKIP: $deny_file fehlt (lokal anlegen)"
+  echo "SKIP: $deny_file fehlt (lokal anlegen, z. B. cp scripts/kmh-denylist.example.txt \"\$USERPROFILE/.config/kmh-denylist.txt\")" >&2
+  if _kmh_is_wsl 2>/dev/null; then
+    echo "  Hinweis: PowerShell «bash» ist oft WSL — Datei unter Windows: /mnt/c/Users/<Windows-User>/.config/kmh-denylist.txt oder Git-Bash nutzen." >&2
+  fi
   exit 0
 fi
 
