@@ -52,6 +52,7 @@ def main() -> int:
             return 1
         print(
             f"user_id={args.user_id} updated={stats.updated} "
+            f"merged_duplicates={stats.merged_duplicates} "
             f"already_encrypted={stats.skipped_encrypted} dry_run={args.dry_run}"
         )
         return 0

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -58,6 +59,7 @@ def test_backfill_encrypts_plaintext_row(monkeypatch, user_with_dek):
     _, _, dek = user_with_dek
     plain = _PlainContactRow(
         id=1,
+        account_id=10,
         email_normalized="friend@example.com",
         display_name="Example Friend",
         encrypted_email=None,
@@ -108,6 +110,7 @@ def test_verify_detects_name_plain_without_encryption(monkeypatch, user_with_dek
         lambda _s, _uid: [
             _PlainContactRow(
                 id=2,
+                account_id=10,
                 email_normalized="friend@example.com",
                 display_name="Example Friend",
                 encrypted_email=enc_email,
@@ -144,6 +147,7 @@ def test_verify_ok_when_fully_encrypted(monkeypatch, user_with_dek):
         lambda _s, _uid: [
             _PlainContactRow(
                 id=3,
+                account_id=10,
                 email_normalized="friend@example.com",
                 display_name="Example Friend",
                 encrypted_email=enc_email,
@@ -163,3 +167,66 @@ def test_verify_ok_when_fully_encrypted(monkeypatch, user_with_dek):
     )
     assert not errors
     assert stats.failures == 0
+
+
+def test_backfill_merges_plaintext_with_encrypted_duplicate(monkeypatch, user_with_dek):
+    from src.services.audit_known_contacts_operator import (
+        _PlainContactRow,
+        run_backfill_encrypt,
+    )
+
+    _, _, dek = user_with_dek
+    hmac_val, enc_email, enc_name = encrypt_contact_fields(
+        "friend@example.com", "Newer Name", dek
+    )
+    older = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    newer = datetime(2024, 6, 1, tzinfo=timezone.utc)
+    encrypted_row = _PlainContactRow(
+        id=100,
+        account_id=10,
+        email_normalized=None,
+        display_name=None,
+        encrypted_email=enc_email,
+        encrypted_display_name=enc_name,
+        email_lookup_hmac=hmac_val,
+        mail_count=2,
+        last_seen_at=older,
+    )
+    plain_row = _PlainContactRow(
+        id=101,
+        account_id=10,
+        email_normalized="friend@example.com",
+        display_name="Legacy Plain",
+        encrypted_email=None,
+        encrypted_display_name=None,
+        email_lookup_hmac=None,
+        mail_count=5,
+        last_seen_at=newer,
+    )
+    monkeypatch.setattr(
+        "src.services.audit_known_contacts_operator._fetch_plaintext_rows",
+        lambda _s, _uid: [encrypted_row, plain_row],
+    )
+
+    executed = []
+
+    class FakeSession:
+        def execute(self, stmt, params=None):
+            executed.append((str(stmt), params))
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+    session = FakeSession()
+    stats = run_backfill_encrypt(
+        session, None, user_id=1, master_key=dek, dry_run=False
+    )
+    assert stats.merged_duplicates == 1
+    assert stats.updated == 0
+    deletes = [p for s, p in executed if "DELETE" in s]
+    assert any(p and p.get("id") == 101 for p in deletes)
+    updates = [p for s, p in executed if "UPDATE" in s and p]
+    assert any(p.get("id") == 100 and p.get("mail_count") == 7 for p in updates)
