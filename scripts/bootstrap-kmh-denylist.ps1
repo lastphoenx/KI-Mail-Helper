@@ -39,6 +39,9 @@ foreach ($line in Get-Content -LiteralPath $SafeDeny -Encoding UTF8) {
     if ($t -eq '' -or $t.StartsWith('#')) { continue }
     if ($t.StartsWith('@')) { $t = $t.Substring(1).Trim() }
     if ($t -eq '') { continue }
+    if ($t -notmatch '^=' -and $t -match '^[A-Za-z]{2,20}$') {
+        $t = "=$t"
+    }
     $entries.Add($t) | Out-Null
 }
 

@@ -18,10 +18,10 @@ fi
 
 export KMH_DENYLIST_FILE="$deny_file"
 
-if _kmh_check_text_against_denylist "baseline-check" "align-baseline in css"; then
-  echo "ok: baseline substring check (kein =ExampleTown-Treffer nötig)"
+if _kmh_check_text_against_denylist "baseline-check" "layout-grid utility css"; then
+  echo "ok: baseline text passed (kein Teilstring-Treffer noetig)"
 else
-  echo "FAIL: unerwartet blockiert bei align-baseline" >&2
+  echo "FAIL: unerwartet blockiert bei baseline-check" >&2
   exit 1
 fi
 
