@@ -1964,7 +1964,7 @@ def evaluate_scam_risk(
         if raw is None:
             out.llm_skip_reason = "error"
         else:
-        out.llm_used = True
+            out.llm_used = True
             usable = _llm_result_usable(raw, meta)
             if usable is None:
                 out.llm_unusable = True
@@ -1980,10 +1980,10 @@ def evaluate_scam_risk(
         out.reasons = list(out.layer1_flags)
 
     if out.identity_suspicion and not out.is_scam:
-                return out
+        return out
 
     if out.needs_review_boost and out.reasons:
-                return out
+        return out
 
     if combined >= LAYER1_LLM_GATE_MIN and not out.is_scam:
         out.needs_review_boost = True
