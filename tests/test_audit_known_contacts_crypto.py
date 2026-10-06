@@ -46,8 +46,6 @@ def test_encrypt_roundtrip(dek):
     class Row:
         encrypted_email = enc_email
         encrypted_display_name = enc_name
-        email_normalized = None
-        display_name = None
 
     assert row_requires_master_key(Row())
     em_out, name_out = decrypt_contact_row(Row(), dek)
@@ -55,40 +53,11 @@ def test_encrypt_roundtrip(dek):
     assert name_out == name
 
 
-def test_load_context_legacy_plaintext_without_dek():
-    class PlainRow:
-        email_normalized = "legacy@example.com"
-        display_name = "Legacy"
-        mail_count = 3
-        source = "sent"
-        encrypted_email = None
-
-        is_active = True
-
-    class FakeQuery:
-        def filter(self, *a, **k):
-            return self
-
-        def all(self):
-            return [PlainRow()]
-
-    class FakeSession:
-        def query(self, model):
-            return FakeQuery()
-
-    ctx = load_known_contact_context(FakeSession(), user_id=1, account_id=2)
-    assert isinstance(ctx, KnownContactContext)
-    assert "legacy@example.com" in ctx.email_counts
-
-
 def test_load_context_encrypted_without_dek_raises():
     class EncRow:
-        email_normalized = None
-        display_name = None
         encrypted_email = "enc:stub"
         mail_count = 1
         source = "sent"
-
         is_active = True
 
     class FakeQuery:
@@ -104,3 +73,33 @@ def test_load_context_encrypted_without_dek_raises():
 
     with pytest.raises(KnownContactsMasterKeyRequired):
         load_known_contact_context(FakeSession(), user_id=1, account_id=2, master_key=None)
+
+
+def test_load_context_decrypts_with_dek(dek):
+    hmac_val, enc_email, enc_name = encrypt_contact_fields(
+        "friend@example.com", "Example Friend", dek
+    )
+
+    class EncRow:
+        encrypted_email = enc_email
+        encrypted_display_name = enc_name
+        mail_count = 2
+        source = "sent"
+        is_active = True
+
+    class FakeQuery:
+        def filter(self, *a, **k):
+            return self
+
+        def all(self):
+            return [EncRow()]
+
+    class FakeSession:
+        def query(self, model):
+            return FakeQuery()
+
+    ctx = load_known_contact_context(
+        FakeSession(), user_id=1, account_id=2, master_key=dek
+    )
+    assert isinstance(ctx, KnownContactContext)
+    assert "friend@example.com" in ctx.trusted_emails

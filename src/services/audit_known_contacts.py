@@ -69,11 +69,9 @@ def load_known_contact_context(
             if any(row_requires_master_key(r) for r in rows) and not master_key:
                 raise KnownContactsMasterKeyRequired()
             for row in rows:
-                if row_requires_master_key(row):
-                    em, display_name = decrypt_contact_row(row, master_key)
-                else:
-                    em = (row.email_normalized or "").lower()
-                    display_name = row.display_name or ""
+                if not row_requires_master_key(row):
+                    continue
+                em, display_name = decrypt_contact_row(row, master_key)
                 em = normalize_sender_email(em or "")
                 if not em:
                     continue

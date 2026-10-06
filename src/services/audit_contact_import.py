@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from src.services.audit_known_contacts_crypto import (
     KnownContactsMasterKeyRequired,
+    decrypt_contact_row,
     encrypt_contact_fields,
     normalize_contact_email,
 )
@@ -137,16 +138,6 @@ def _upsert_contact(
         )
         .first()
     )
-    if not row:
-        row = (
-            db_session.query(models.AuditKnownContact)
-            .filter_by(
-                user_id=user_id,
-                account_id=account_id,
-                email_normalized=em,
-            )
-            .first()
-        )
     now = datetime.now(timezone.utc)
     chosen = _coalesce_display_name(em, display_name)
     if row:
@@ -155,19 +146,11 @@ def _upsert_contact(
         row.email_lookup_hmac = hmac_val
         row.encrypted_email = enc_email
         if chosen:
-            prev_plain = (row.display_name or "").strip()
-            prev_enc = row.encrypted_display_name
-            prev_len = len(prev_plain)
-            if prev_enc and master_key:
-                from src.services.audit_known_contacts_crypto import decrypt_contact_row
-
-                _, prev_dec = decrypt_contact_row(row, master_key)
-                prev_len = len((prev_dec or "").strip())
+            _, prev_dec = decrypt_contact_row(row, master_key)
+            prev_len = len((prev_dec or "").strip())
             if not prev_len or len(chosen) > prev_len:
                 _, _, enc_name = encrypt_contact_fields(em, chosen, master_key)
                 row.encrypted_display_name = enc_name or None
-                row.display_name = chosen or None
-        row.email_normalized = em
         row.is_active = True
         if row.source not in ("vip", "trusted", "reply") and source == "sent":
             row.source = "sent"
@@ -182,8 +165,6 @@ def _upsert_contact(
             email_lookup_hmac=hmac_val,
             encrypted_email=enc_email,
             encrypted_display_name=enc_name_final or None,
-            email_normalized=em,
-            display_name=chosen or None,
             source=source,
             mail_count=1,
             first_seen_at=now,

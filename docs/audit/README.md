@@ -9,6 +9,7 @@ Index für Technik und Betrieb der Ordner-Audit-Funktionen in dieser App.
 | [spamhaus-dbl.md](spamhaus-dbl.md) | Spamhaus DBL, Resolver, Cache, Grenzen im Alltag |
 | [firstnames-import.md](firstnames-import.md) | Vornamen-CLI → `audit_firstnames` (E9/N1) |
 | [ADR-audit-known-contacts-encryption.md](ADR-audit-known-contacts-encryption.md) | Bekannte Kontakte: at-rest wie Mails (DEK, HMAC-Lookup) |
+| [deploy-known-contacts-encryption.md](deploy-known-contacts-encryption.md) | Deploy f7 → Backfill → f8 (Copy-Paste CLI) |
 
 **Deploy, `.env`, systemd:** privates Betriebsdokument des Betreibers (nicht in diesem Repo).
 

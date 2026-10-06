@@ -1807,11 +1807,11 @@ def audit_known_contacts_list():
         decrypted_rows = []
         for r in rows:
             try:
-                if row_requires_master_key(r):
-                    em, name = decrypt_contact_row(r, master_key)
-                else:
-                    em = r.email_normalized or ""
-                    name = r.display_name or ""
+                if not master_key and row_requires_master_key(r):
+                    raise KnownContactsMasterKeyRequired()
+                if not row_requires_master_key(r):
+                    continue
+                em, name = decrypt_contact_row(r, master_key)
             except KnownContactsMasterKeyRequired:
                 return jsonify(
                     {

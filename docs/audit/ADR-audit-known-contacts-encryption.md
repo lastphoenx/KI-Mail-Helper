@@ -1,6 +1,6 @@
 # ADR: Verschlüsselung von `audit_known_contacts` (at-rest wie Mails)
 
-**Status:** Accepted (Umsetzung in Arbeit — Schema/Crypto/Backfill; Klartext-Drop folgt)
+**Status:** Accepted — Phase 1 deployed via f7; Phase 2 (Model ohne Klartext + f8) im Repo, gemeinsam ausrollen
 **Datum:** 2026-10-06  
 **Kontext:** Ordner-Audit, Bekannte Kontakte, Git-Hooks / AGENTS (kein Kontospezifisches im Repo)
 
@@ -40,7 +40,7 @@ Wenn **kein gültiges Service-Token** (abgelaufen, gelöscht beim Logout, nie an
 - Scan/Import **abbrechen** oder Task mit **klarem Fehler** (`token`, `master_key_required`, o. ä.) — **nicht** mit leerem `KnownContactContext` weiterlaufen (sonst Fehlalarme bei Familie/Freunden).
 - UI: Hinweis «Bitte einloggen / Hintergrund-Token aktivieren», nicht leere Liste ohne Erklärung.
 
-Gilt analog für die **Datenmigration**: Backfill braucht den DEK — **nicht** als `--dek-base64` (Prozessliste/History). Operator: **`KMH_BACKFILL_DEK` nur in der aktuellen Shell** (`read -s` / getpass beim Skript) oder **Kontakt-Import über UI** (Service-Token, Celery). Der Wert ist derselbe Base64-DEK wie `session["master_key"]` nach Login (Zero-Knowledge — nur der eingeloggte Nutzer hat ihn).
+Gilt analog für die **Datenmigration**: Backfill/Verify fragen das **Masterpasswort** ab (wie Login) und leiten den DEK über `MasterKeyManager.decrypt_dek_from_password` ab — kein Export aus der Session, kein `--dek-base64`, kein `KMH_BACKFILL_DEK` in der History. Alternative: Kontakt-Import über UI (Service-Token). Deploy: `docs/audit/deploy-known-contacts-encryption.md`.
 
 ## Masterpasswort-Verlust
 

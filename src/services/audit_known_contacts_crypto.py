@@ -59,19 +59,19 @@ def encrypt_contact_fields(
 
 
 def decrypt_contact_row(row, master_key: str) -> Tuple[str, str]:
-    """(email, display_name) — legacy Klartext oder encrypted_*."""
+    """(email, display_name) aus encrypted_*."""
+    if not master_key:
+        raise KnownContactsMasterKeyRequired()
     enc_mod = _import_encryption()
     enc_email = getattr(row, "encrypted_email", None)
-    if enc_email:
-        em = enc_mod.CredentialManager.decrypt_email_address(enc_email, master_key)
-        enc_name = getattr(row, "encrypted_display_name", None)
-        name = ""
-        if enc_name:
-            name = enc_mod.EncryptionManager.decrypt_data(enc_name, master_key)
-        return em, name
-    legacy_em = getattr(row, "email_normalized", None) or ""
-    legacy_name = getattr(row, "display_name", None) or ""
-    return legacy_em, legacy_name
+    if not enc_email:
+        raise KnownContactsMasterKeyRequired()
+    em = enc_mod.CredentialManager.decrypt_email_address(enc_email, master_key)
+    enc_name = getattr(row, "encrypted_display_name", None)
+    name = ""
+    if enc_name:
+        name = enc_mod.EncryptionManager.decrypt_data(enc_name, master_key)
+    return em, name
 
 
 def row_requires_master_key(row) -> bool:
