@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# BFS-Vornamen CSV (dam-api.bfs.admin.ch) — CT 134 / Dev mit Python3.
+# BFS-Vornamen CSV (dam-api.bfs.admin.ch) — Produktion / Dev mit Python3.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

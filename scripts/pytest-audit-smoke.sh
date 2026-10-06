@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy-Smoke nach git pull (CT 134 / lokal) — nicht die volle tests/-Suite.
+# Deploy-Smoke nach git pull (Produktion / lokal) — nicht die volle tests/-Suite.
 # AGENTS.md: compileall + diese Tests reichen für Audit/Tranco/Scam-Änderungen.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

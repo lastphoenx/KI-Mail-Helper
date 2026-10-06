@@ -87,13 +87,13 @@ Marken-Health-RDAP (Button «Domains prüfen»): **pro Nutzer** Checkbox «Domai
 
 | Schritt | Wo |
 |---------|-----|
-| Code | Windows: `github_code/KI-Mail-Helper-Dev`, Branch **`main`** |
+| Code | Repo **KI-Mail-Helper-Dev**, Branch **`main`** |
 | Vor Push (Agent/Dev) | `python -m compileall -q src` und `pytest tests/test_src_compile_smoke.py` (+ betroffene Tests) |
-| CT 134 | `git pull` als **root**, `alembic upgrade head`, optional pytest im venv, `systemctl restart mail-helper mail-helper-celery-worker` (+ Beat bei Schedule-Änderung) |
+| Produktion | `git pull`, `alembic upgrade head`, optional pytest im venv, Services neu starten — **privates Betriebsdokument** |
 
-Vollständige Copy-Paste-Blöcke: `doku/pve2/vm/134-ki-mail-helper/betrieb.md`, `doku/ops/deploy-after-git-pull.md`.
+Copy-Paste-Befehle und systemd: **privates Betriebsdokument** (nicht in diesem Repo).
 
-**Nach Scam-/Marken-Updates:** Migrationen `brand_*`, `domain_reputation_cache` — immer Alembic auf CT.
+**Nach Scam-/Marken-Updates:** Migrationen `brand_*`, `domain_reputation_cache` — immer Alembic auf dem Deploy-Host.
 
 ---
 

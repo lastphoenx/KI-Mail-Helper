@@ -12,7 +12,7 @@
 
 Öffentliche Resolver (Google 8.8.8.8, Cloudflare 1.1.1.1, …) liefern oft **127.255.255.254** — die App wertet das als **«DBL nicht verfügbar»** (Warnung/Log), nicht als «sauber».
 
-Empfehlung auf CT 134:
+Empfehlung auf dem **Produktions-Host**:
 
 - Eigener rekursiver Resolver (z. B. **unbound** auf localhost), oder
 - Resolver des Providers ohne «open resolver»-Policy.

@@ -4,7 +4,7 @@
 # Opus-MT lädt standardmäßig pytorch + tensorflow + rust (~1.2 GB/Modell).
 # Für transformers/PyTorch reicht pytorch_model.bin (+ Tokenizer) (~300 MB).
 #
-# Usage (CT 134):
+# Usage (production):
 #   sudo bash scripts/cleanup-opus-mt-cache.sh
 #   sudo bash scripts/cleanup-opus-mt-cache.sh --dry-run   # nur anzeigen
 
