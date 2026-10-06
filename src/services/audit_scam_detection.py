@@ -1479,15 +1479,15 @@ def identity_llm_check(
             provider_spam += f" (Junk {meta.provider_junk_score})"
         auth = (meta.auth_results or "")[:300] or "(leer)"
         list_unsub = "ja" if getattr(meta, "list_unsubscribe", None) else "nein"
-    prompt = IDENTITY_PROMPT.format(
-        display_name=display,
+        prompt = IDENTITY_PROMPT.format(
+            display_name=display,
             from_address=from_address,
-        replyto_domain=reply_domain,
-        subject=subject or "(leer)",
+            replyto_domain=reply_domain,
+            subject=subject or "(leer)",
             provider_spam=provider_spam,
             auth_summary=auth,
             list_unsub=list_unsub,
-    )
+        )
     result = _audit_identity_llm_json(prompt, cfg=cfg)
     if result is not None:
         _identity_llm_cache[cache_key] = result
