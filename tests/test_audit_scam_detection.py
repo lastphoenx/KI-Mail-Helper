@@ -649,3 +649,21 @@ def test_identity_llm_check_prompt_v1_stubbed(monkeypatch):
     assert result is not None
     assert "prompt" in seen
     assert "betrug-beispiel.example" in seen["prompt"]
+
+
+def test_spam_flag_and_dmarc_fail_yields_verdacht_without_identity():
+    clear_audit_scam_caches()
+    meta = _Meta(
+        subject="Beispiel: Archiv steht bereit",
+        sender="no-reply@example-host.example",
+        sender_name="Beispiel Host",
+        auth_results="gmx.net; dkim=fail; spf=fail; dmarc=fail",
+        server_spam_flag=True,
+        provider_junk_score=10,
+    )
+    ev = evaluate_scam_risk(meta, llm_enabled=False)
+    assert ev.identity_suspicion is True
+    assert ev.is_scam is False
+    auth_line = " ".join(ev.layer1_flags or [])
+    assert "DMARC fail" in auth_line
+    assert auth_line.count("DMARC fail") == 1

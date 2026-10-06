@@ -484,6 +484,17 @@ def _e3e6_reputation_exempt(meta: EmailMeta, brand_map=None) -> bool:
     reg = registrable_domain_from_host(extract_domain(meta.sender or ""))
     if not reg or shared_infrastructure_registrable(reg):
         return False
+
+    host = extract_domain(meta.sender or "")
+    if _meta_has_list_unsubscribe(meta):
+        plat = _detect_mailer_platform(host)
+        if plat and plat not in (host, "unbekannt"):
+            return True
+        from src.services.brand_domain_policy import _host_on_marketing_platform
+
+        if _host_on_marketing_platform(host):
+            return True
+
     store = get_tranco_store()
     if store is None or not store.is_in_top_n(reg, tranco_top_n_threshold()):
         return False
@@ -837,7 +848,7 @@ def _auth_summary(auth: str) -> Tuple[bool, bool, List[str], int]:
     if "dkim=fail" in a:
         score += 55
         messages.append("DKIM fail")
-    elif weak_none:
+    elif weak_none and "dmarc=fail" not in a:
         messages.append("Kein DKIM/DMARC")
     return weak_none, score >= 80, messages, score
 
@@ -1811,6 +1822,12 @@ def _layer1_decision(
             transport_line,
             auth_msgs[:1] if weak_none else [],
             extra=["Spam/Junk ohne Absendername und Betreff"],
+        )
+        return _mark_verdacht()
+
+    if not has_identity and strong_t and auth_forces:
+        out.reasons = format_reason_lines(
+            [], transport_line, auth_msgs if auth_forces else []
         )
         return _mark_verdacht()
 

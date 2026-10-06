@@ -200,7 +200,6 @@ class AuditConfigCache:
             from src.services.brand_domain_policy import (
                 effective_brand_map,
                 parse_brand_domains_text,
-                validate_brand_map,
             )
 
             brand_row = (
@@ -216,10 +215,7 @@ class AuditConfigCache:
             if brand_row and brand_row.brand_official_domains_json:
                 try:
                     raw_brand = brand_row.brand_official_domains_json.strip()
-                    if raw_brand.startswith("{"):
-                        custom_brand, _ = validate_brand_map(json.loads(raw_brand))
-                    else:
-                        custom_brand = parse_brand_domains_text(raw_brand)
+                    custom_brand = parse_brand_domains_text(raw_brand)
                 except (TypeError, ValueError, json.JSONDecodeError) as exc:
                     logger.warning(
                         "brand_official_domains_json für user %s ungültig: %s",
@@ -2766,6 +2762,9 @@ class FolderAuditService:
         )
 
         if not scan_context or not llm_cfg or not llm_cfg.enabled:
+            FolderAuditService._apply_audit_scam_scan_notices(
+                result, db_session, user_id, account_id
+            )
             return
         brand_map = None
         if db_session and user_id:
@@ -2815,17 +2814,6 @@ class FolderAuditService:
         )
 
     @staticmethod
-    def _format_audit_config_scan_notice(cfg: Optional[dict]) -> str:
-        cfg = cfg or {}
-        custom = cfg.get("brand_official_domains_custom") or {}
-        n_brands = len(custom) if isinstance(custom, dict) else 0
-        own = cfg.get("own_domains") or set()
-        n_own = len(own)
-        return (
-            f"Marken-Liste: {n_brands} eigene Einträge, eigene Domains: {n_own}."
-        )
-
-    @staticmethod
     def _apply_audit_scam_scan_notices(
         result: FolderAuditResult,
         db_session=None,
@@ -2833,16 +2821,23 @@ class FolderAuditService:
         account_id: Optional[int] = None,
     ) -> None:
         from src.services.audit_scam_detection import audit_scam_dbl_scan_notice
+        from src.services.audit_scan_config_notice import build_audit_scan_config_notice
 
         parts: List[str] = []
         if db_session and user_id is not None:
-            cfg = AuditConfigCache.get_config(db_session, user_id, account_id)
-            parts.append(FolderAuditService._format_audit_config_scan_notice(cfg))
+            notice, _load_err = build_audit_scan_config_notice(
+                db_session, user_id, account_id
+            )
+            if notice:
+                parts.append(notice)
         extra = audit_scam_dbl_scan_notice()
         if extra:
             parts.append(extra)
         merged = " ".join(p for p in parts if p).strip()
         if not merged:
+            return
+        config_prefix = "Konfiguration im Scan:"
+        if result.scan_notice and result.scan_notice.strip().startswith(config_prefix):
             return
         if result.scan_notice:
             result.scan_notice = f"{merged} {result.scan_notice}"
@@ -3261,7 +3256,7 @@ class FolderAuditService:
             if pattern in sender_lower:
                 is_marketing = True
                 score += 0.6
-                reasons.append(f"Safe-Absender (DB)")
+                reasons.append(f"Marketing-Absender (Pattern)")
                 break
         
         # --- TRUSTED DOMAIN CHECK ---
@@ -4191,7 +4186,7 @@ class FolderAuditService:
                 result.clusters = []
             
             result.scan_duration_ms = int((time.time() - start_time) * 1000)
-            
+
             multi_clusters = sum(1 for c in result.clusters if c.count >= 2)
             logger.info(
                 f"✅ Alle-Ordner-Audit: {result.total} Emails aus {len(folder_stats)} Ordnern "

@@ -1939,7 +1939,7 @@ class TrashAuditService:
             if pattern in sender_lower:
                 is_marketing = True
                 score += 0.6
-                reasons.append(f"Safe-Absender (DB)")
+                reasons.append(f"Marketing-Absender (Pattern)")
                 break
         
         # --- TRUSTED DOMAIN CHECK ---

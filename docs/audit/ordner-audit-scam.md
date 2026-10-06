@@ -29,7 +29,7 @@ Tab **Konfiguration** im Ordner-Audit (`/api/audit-config/*`).
 |------------|----------|-----------------|
 | **Vertrauenswürdige Domains** | DB, pro User/Account | Erhöht «wichtig», mindert Scam-Verdacht bei bekannter Domain |
 | **Meine Domains** (`own_domains`) | DB | Eigene Web-/Marken-Domains — **gelten nicht** als fremde Scam-Absender-Domain |
-| **Wichtige Keywords / Safe Patterns / VIP** | DB | Klassifikation Papierkorb (wichtig vs. löschbar), nicht identisch mit Scam-Layer |
+| **Wichtige Keywords / Safe Patterns / VIP** | DB | Klassifikation (wichtig vs. löschbar); Safe-Pattern-Grundtext: «Marketing-Absender (Pattern)» — nicht identisch mit Scam-Layer |
 | **Auto-Regeln** | DB | Disposition SAFE/IMPORTANT/SCAM/REVIEW nach Pattern |
 | **Marken-Domains (Scam)** | DB + **eingebaute** System-Map | Layer 1: **B1** (Marke/Domain-Mismatch) plus **E3/E6** → Kategorie **Verdacht** ohne Provider-Flag; **Scam** = Identität + Transport/Auth-Schwäche oder (nur bei Verdacht-Kandidaten) DBL/junge Domain. Auth-**pass** senkt nicht. |
 | **Ordner vom Scan ausnehmen** | `audit_exclude_folders` | Kein Audit für diese IMAP-Ordner |

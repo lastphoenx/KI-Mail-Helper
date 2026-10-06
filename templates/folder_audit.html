@@ -774,11 +774,13 @@
                         <span class="badge bg-success ms-2" id="trustedBadge">0</span>
                     </button>
                 </h2>
-                <div id="trustedDomainsSection" class="accordion-collapse collapse show" data-bs-parent="#configAccordion">
+                <div id="trustedDomainsSection" class="accordion-collapse collapse show">
                     <div class="accordion-body">
                         <p class="text-muted mb-3">
-                            Emails von diesen Domains werden <strong>nicht</strong> als Scam/Spam markiert.
-                            Beispiele: ubs.com, admin.ch, iliad.it
+                            Domains von Firmen und Personen, denen du vertraust (z.&nbsp;B. Bank, Arzt, Lieferant).
+                            <strong>Verdachtsregeln</strong> (Identität, Marken-Mismatch) werden dort abgeschwächt —
+                            die Mail wird <strong>nicht automatisch wichtig</strong> oder sicher löschbar.
+                            Beispiel: <code>bank-beispiel.ch</code>, <code>arztpraxis.example</code>
                         </p>
                         <textarea id="trustedDomainsInput" class="form-control font-monospace" rows="5" 
                             placeholder="ubs.com, credit-suisse.com, admin.ch, iliad.it, estraprometeo.it..."></textarea>
@@ -788,6 +790,39 @@
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Meine Domains (never_scam) -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#ownDomainsSection">
+                        <i class="bi bi-house-check me-2 text-info"></i>
+                        Meine Domains
+                        <span class="badge bg-info text-dark ms-2" id="ownDomainsBadge">0</span>
+                    </button>
+                </h2>
+                <div id="ownDomainsSection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <p class="text-muted mb-2">
+                            Domains, die <strong>dir gehören</strong> (eigene Server, Websites, Homelab).
+                            Mails von diesen Absendern werden <strong>nie als Scam oder Verdacht</strong> markiert.
+                            Sie werden <strong>nicht automatisch</strong> wichtig oder sicher löschbar — dafür brauchst du VIP, Patterns oder Auto-Regeln.
+                            Beispiel: <code>meine-domain.ch</code>, <code>cloud.meine-domain.ch</code>
+                        </p>
+                        <div id="auditOwnDomainsAccountHint" class="alert alert-info py-2 small mb-2">
+                            Pro <strong>Mail-Account</strong> (Dropdown im Tab «Ordner scannen»). Gespeichert mit «Speichern» unten.
+                        </div>
+                        <textarea class="form-control form-control-sm font-monospace" id="auditOwnDomainsInput" rows="4"
+                                  placeholder="meine-domain.ch&#10;cloud.meine-domain.ch" disabled></textarea>
+                        <div class="mt-2 d-flex justify-content-between align-items-center">
+                            <small class="text-muted">Eine Domain pro Zeile, ohne @</small>
+                            <button type="button" class="btn btn-sm btn-primary" id="saveOwnDomainsBtn" disabled>
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                        <span class="small text-muted" id="ownDomainsSaveStatus"></span>
                     </div>
                 </div>
             </div>
@@ -801,7 +836,7 @@
                         <span class="badge bg-warning text-dark ms-2" id="brandDomainsBadge">System</span>
                     </button>
                 </h2>
-                <div id="brandDomainsSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                <div id="brandDomainsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
                         <p class="text-muted mb-2">
                             Wenn der <strong>Anzeigename</strong> eine Marke nennt (z.&nbsp;B. PayPal), muss die Absender-Domain zu den <strong>offiziellen Domains</strong> passen.
@@ -911,7 +946,11 @@
                             <button type="button" class="btn btn-sm btn-outline-secondary mt-1" id="brandImportTextBtn">Text in Tabelle übernehmen</button>
                         </details>
                         <div class="mt-2 d-flex flex-wrap gap-2 justify-content-between align-items-center">
-                            <button type="button" class="btn btn-sm btn-outline-secondary" id="showBuiltinBrandBtn">System-Liste anzeigen</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse"
+                                data-bs-target="#builtinBrandListCollapse" aria-expanded="false"
+                                aria-controls="builtinBrandListCollapse">
+                                System-Liste ein-/ausblenden
+                            </button>
                             <div class="d-flex flex-wrap align-items-center gap-2">
                                 <div class="form-check mb-0">
                                     <input class="form-check-input" type="checkbox" id="brandHealthRdapCheck"
@@ -933,6 +972,10 @@
                                 </button>
                             </div>
                         </div>
+                        <div class="collapse mt-2" id="builtinBrandListCollapse">
+                            <pre id="builtinBrandListPre" class="small bg-light border rounded p-2 mb-0 font-monospace"
+                                style="max-height:280px;overflow:auto;">System-Marken werden geladen, sobald Sie diesen Bereich öffnen …</pre>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -946,7 +989,7 @@
                         <span class="badge bg-info ms-2" id="clusterSettingsBadge">System</span>
                     </button>
                 </h2>
-                <div id="clusterSettingsSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                <div id="clusterSettingsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
                         <p class="text-muted mb-3">
                             Steuert, wie ähnliche Mails in der Delta-Ansicht zu Sammel-Karten zusammengefasst werden.
@@ -1048,7 +1091,7 @@
                         <span class="badge bg-danger ms-2" id="keywordsBadge">0</span>
                     </button>
                 </h2>
-                <div id="keywordsSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                <div id="keywordsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
                         <p class="text-muted mb-3">
                             Emails mit diesen Keywords im Betreff werden als <strong>wichtig</strong> markiert.
@@ -1075,7 +1118,7 @@
                         <span class="badge bg-warning text-dark ms-2" id="safeSubjectBadge">0</span>
                     </button>
                 </h2>
-                <div id="safeSubjectSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                <div id="safeSubjectSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
                         <p class="text-muted mb-3">
                             Emails mit diesen Patterns im Betreff werden als <strong>sicher löschbar</strong> markiert.
@@ -1101,10 +1144,12 @@
                         <span class="badge bg-warning text-dark ms-2" id="safeSenderBadge">0</span>
                     </button>
                 </h2>
-                <div id="safeSenderSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                <div id="safeSenderSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
                         <p class="text-muted mb-3">
-                            Emails von Absendern mit diesen Patterns werden als <strong>sicher löschbar</strong> markiert.
+                            Absender-Muster (Teilstring oder Domain) für Newsletter/Marketing — tendenz <strong>sicher löschbar</strong>.
+                            Gilt <strong>nicht</strong>, wenn Identitäts- oder Scam-Regeln (Rechnung+Anhang, Marken-Mismatch) greifen.
+                            Beispiel: <code>@newsletter.firma.ch</code>, <code>noreply@</code>
                         </p>
                         <textarea id="safeSenderInput" class="form-control font-monospace" rows="4" 
                             placeholder="newsletter@, noreply@, marketing@, @mailchimp., @sendgrid...."></textarea>
@@ -1127,11 +1172,13 @@
                         <span class="badge bg-danger ms-2" id="vipBadge">0</span>
                     </button>
                 </h2>
-                <div id="vipSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                <div id="vipSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
                         <p class="text-muted mb-3">
-                            Emails von VIP-Absendern werden immer als <strong>wichtig</strong> markiert.
-                            Format: Email (chef@firma.de), Domain (@firma.de) oder nur Domain (firma.de)
+                            Absender, die du <strong>priorisieren</strong> willst (exakte Adresse vor Domain vor Teilstring).
+                            <strong>Heute:</strong> starker Bonus Richtung «wichtig» im Score — blockiert Identitäts-Verdacht noch nicht vollständig
+                            (geplant: feste Regel «wichtig» in der Entscheidungs-Kaskade).
+                            Format: <code>chef@firma.ch</code>, <code>@firma.ch</code>, <code>firma.ch</code>
                         </p>
                         <textarea id="vipSendersInput" class="form-control font-monospace" rows="4" 
                             placeholder="chef@firma.de, @wichtiger-kunde.de, partner-firma.com..."></textarea>
@@ -1154,7 +1201,7 @@
                         <span class="badge bg-primary ms-2" id="knownContactsBadge">0</span>
                     </button>
                 </h2>
-                <div id="knownContactsSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                <div id="knownContactsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
                         <p class="text-muted mb-2">
                             Namen und Adressen aus <strong>Gesendet</strong> (und VIP/Trusted) reduzieren Fehlalarme bei Namens-Imitation (N1).
@@ -1207,7 +1254,7 @@
                         <span class="badge bg-info ms-2" id="autoDeleteBadge">0</span>
                     </button>
                 </h2>
-                <div id="autoDeleteSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                <div id="autoDeleteSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
                         <p class="text-muted mb-3">
                             Regeln für automatisches Löschen/Schützen. Wenn <strong>beide</strong> Patterns matchen (falls gesetzt), wird die Aktion ausgeführt.
@@ -1296,7 +1343,7 @@
                         <span class="badge bg-secondary ms-2" id="auditExcludeBadge">0</span>
                     </button>
                 </h2>
-                <div id="auditScanFoldersSection" class="accordion-collapse collapse" data-bs-parent="#configAccordion">
+                <div id="auditScanFoldersSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
                         <p class="text-muted mb-2">
                             Gilt für <strong>«Alle Ordner scannen»</strong> beim gewählten Account (Dropdown oben im Tab «Ordner scannen»).
@@ -1319,10 +1366,6 @@
                         <div id="auditExcludeFoldersList" class="border rounded p-2 bg-light" style="max-height: 320px; overflow-y: auto;">
                             <span class="text-muted" id="auditExcludeFoldersPlaceholder">Im Tab «Ordner scannen» oben einen Account wählen, dann «Ordnerliste laden».</span>
                         </div>
-                        <label class="form-label small mt-3 mb-1" for="auditOwnDomainsInput">Meine Domains (never_scam, z.&nbsp;B. eigene Websites — nicht die Login-Freemail)</label>
-                        <textarea class="form-control form-control-sm font-monospace" id="auditOwnDomainsInput" rows="3"
-                                  placeholder="meine-seite.example&#10;meine-firma.example" disabled></textarea>
-                        <div class="form-text">Eine Domain pro Zeile, ohne @. Wird mit «Ausschlüsse speichern» gesichert.</div>
                     </div>
                 </div>
             </div>
@@ -1529,8 +1572,6 @@
         }
         const brandImportTextBtn = document.getElementById('brandImportTextBtn');
         if (brandImportTextBtn) brandImportTextBtn.addEventListener('click', brandImportTextToTable);
-        const showBuiltinBrandBtn = document.getElementById('showBuiltinBrandBtn');
-        if (showBuiltinBrandBtn) showBuiltinBrandBtn.addEventListener('click', showBuiltinBrandClick);
         const brandDomainsSection = document.getElementById('brandDomainsSection');
         if (brandDomainsSection) {
             brandDomainsSection.addEventListener('shown.bs.collapse', function() {
@@ -1585,6 +1626,20 @@
 
         document.getElementById('reloadAuditFoldersBtn').addEventListener('click', loadAuditScanFolderSettings);
         document.getElementById('saveAuditExcludeFoldersBtn').addEventListener('click', saveAuditScanFolderSettings);
+        const saveOwnDomainsBtn = document.getElementById('saveOwnDomainsBtn');
+        if (saveOwnDomainsBtn) {
+            saveOwnDomainsBtn.addEventListener('click', async function() {
+                const st = document.getElementById('ownDomainsSaveStatus');
+                const prev = st ? st.textContent : '';
+                if (st) st.textContent = 'Speichern…';
+                try {
+                    await saveAuditScanFolderSettings();
+                    if (st) st.textContent = 'Gespeichert.';
+                } catch (e) {
+                    if (st) st.textContent = prev;
+                }
+            });
+        }
 
         const configTabBtn = document.querySelector('button[data-bs-target="#configPane"]');
         if (configTabBtn) {
@@ -1903,6 +1958,10 @@
             ownInput.disabled = false;
             ownInput.value = (ownDomains || []).join('\n');
         }
+        const ownBadge = document.getElementById('ownDomainsBadge');
+        if (ownBadge) ownBadge.textContent = String((ownDomains || []).length);
+        const saveOwnBtn = document.getElementById('saveOwnDomainsBtn');
+        if (saveOwnBtn) saveOwnBtn.disabled = false;
 
         if (folders && folders.length) {
             auditFolderNamesCache = folders.slice();
@@ -2271,6 +2330,13 @@
                     noticeEl.textContent = scanResult.scan_notice;
                 }
                 noticeEl.classList.remove('d-none');
+                if (scanResult.scan_notice.indexOf('⚠️') === 0) {
+                    noticeEl.classList.remove('alert-warning');
+                    noticeEl.classList.add('alert-danger');
+                } else {
+                    noticeEl.classList.add('alert-warning');
+                    noticeEl.classList.remove('alert-danger');
+                }
                 const skipped = scanResult.llm_skipped_candidates || 0;
                 if (llmContinueBtn) {
                     if (skipped > 0 && scanResult.emails && scanResult.emails.some(function(e) {
@@ -4489,6 +4555,10 @@
 
     function updateBrandHealthUi(data) {
         renderBrandScopeSummary(data);
+        const builtinPre = document.getElementById('builtinBrandListPre');
+        if (builtinPre && data.system_lines) {
+            builtinPre.textContent = data.system_lines;
+        }
         brandScopeData = data.scope || null;
         brandHealthData = data.health || null;
         brandDblBlocked = data.dbl_blocked_domains || [];
