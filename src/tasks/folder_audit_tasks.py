@@ -69,7 +69,7 @@ def run_folder_audit_scan_task(
 
         master_key = get_dek_from_service_token(service_token_id, session)
         if not master_key:
-            return {"success": False, "error": "scan_failed"}
+            return {"success": False, "error": "token"}
 
         progress({"phase": "connect", "message": "IMAP-Verbindung…"})
         fetcher = build_imap_fetcher_for_account(account, master_key)
@@ -97,6 +97,7 @@ def run_folder_audit_scan_task(
                 exclude_folders=exclude_folders,
                 cluster_mode=cluster_mode,
                 progress_callback=progress,
+                master_key=master_key,
             )
             scan_folder = "Alle Ordner"
         else:
@@ -109,8 +110,12 @@ def run_folder_audit_scan_task(
                 folder=folder,
                 cluster_mode=cluster_mode,
                 progress_callback=progress,
+                master_key=master_key,
             )
             scan_folder = folder or "Trash"
+
+        if getattr(result, "scan_failed_reason", None):
+            return {"success": False, "error": result.scan_failed_reason}
 
         progress({"phase": "done", "message": "Scan abgeschlossen"})
         payload = {

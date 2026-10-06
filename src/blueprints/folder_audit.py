@@ -83,6 +83,7 @@ def _run_sync_folder_audit_scan(
     folder: str,
     cluster_mode: str,
     audit_exclude: list,
+    master_key: str,
 ):
     if folder == "__ALL__":
         result = FolderAuditService.fetch_and_analyze_all_folders(
@@ -94,6 +95,7 @@ def _run_sync_folder_audit_scan(
             account_id=account.id,
             exclude_folders=audit_exclude,
             cluster_mode=cluster_mode,
+            master_key=master_key,
         )
         return result, "Alle Ordner"
     result = FolderAuditService.fetch_and_analyze_trash(
@@ -104,6 +106,7 @@ def _run_sync_folder_audit_scan(
         account_id=account.id,
         folder=str(folder),
         cluster_mode=cluster_mode,
+        master_key=master_key,
     )
     return result, folder or "Trash"
 
@@ -469,7 +472,16 @@ def scan_trash():
                     folder=str(folder),
                     cluster_mode=cluster_mode,
                     audit_exclude=audit_exclude,
+                    master_key=master_key,
                 )
+                if getattr(result, "scan_failed_reason", None):
+                    return jsonify(
+                        {
+                            "success": False,
+                            "error": result.scan_failed_reason,
+                            "scan_notice": result.scan_notice,
+                        }
+                    ), 400
                 return jsonify(
                     {
                         "success": True,

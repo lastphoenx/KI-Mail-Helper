@@ -1,6 +1,6 @@
 # ADR: Verschlüsselung von `audit_known_contacts` (at-rest wie Mails)
 
-**Status:** Accepted (Umsetzung ausstehend)  
+**Status:** Accepted (Umsetzung in Arbeit — Schema/Crypto/Backfill; Klartext-Drop folgt)
 **Datum:** 2026-10-06  
 **Kontext:** Ordner-Audit, Bekannte Kontakte, Git-Hooks / AGENTS (kein Kontospezifisches im Repo)
 

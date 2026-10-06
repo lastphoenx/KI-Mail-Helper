@@ -12,6 +12,7 @@ from src.helpers.service_token_dek import (
     get_dek_from_service_token,
 )
 from src.services.audit_contact_import import import_sent_contacts_for_account
+from src.services.audit_known_contacts_crypto import KnownContactsMasterKeyRequired
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +45,11 @@ def import_audit_known_contacts_task(
             fetcher,
             user_id=user_id,
             account_id=account_id,
+            master_key=master_key,
         )
         return result
+    except KnownContactsMasterKeyRequired:
+        return {"success": False, "error": "master_key_required"}
     except Exception as e:
         logger.exception("import_audit_known_contacts_task failed")
         return {"success": False, "error": type(e).__name__}

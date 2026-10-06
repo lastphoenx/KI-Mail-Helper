@@ -2268,7 +2268,10 @@ class AuditKnownContact(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     account_id = Column(Integer, ForeignKey("mail_accounts.id", ondelete="CASCADE"), nullable=False)
-    email_normalized = Column(String(320), nullable=False)
+    email_lookup_hmac = Column(String(64), nullable=True, index=True)
+    encrypted_email = Column(Text, nullable=True)
+    encrypted_display_name = Column(Text, nullable=True)
+    email_normalized = Column(String(320), nullable=True)
     display_name = Column(String(512), nullable=True)
     source = Column(String(32), nullable=False, default="sent")
     mail_count = Column(Integer, nullable=False, default=1)
@@ -2277,6 +2280,10 @@ class AuditKnownContact(Base):
     is_active = Column(Boolean, default=True, nullable=False)
 
     __table_args__ = (
+        UniqueConstraint(
+            "user_id", "account_id", "email_lookup_hmac",
+            name="uq_audit_known_contact_hmac",
+        ),
         UniqueConstraint(
             "user_id", "account_id", "email_normalized",
             name="uq_audit_known_contact_email",

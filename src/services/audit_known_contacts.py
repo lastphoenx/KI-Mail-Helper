@@ -11,6 +11,11 @@ from src.services.audit_identity_helpers import (
     normalize_display_name_for_identity,
     person_display_with_firstnames,
 )
+from src.services.audit_known_contacts_crypto import (
+    KnownContactsMasterKeyRequired,
+    decrypt_contact_row,
+    row_requires_master_key,
+)
 from src.services.audit_scam_detection import extract_domain, normalize_sender_email
 
 logger = logging.getLogger(__name__)
@@ -35,7 +40,13 @@ def _name_keys(display_name: str) -> Set[str]:
     return keys
 
 
-def load_known_contact_context(db_session, user_id: int, account_id: int) -> KnownContactContext:
+def load_known_contact_context(
+    db_session,
+    user_id: int,
+    account_id: int,
+    *,
+    master_key: Optional[str] = None,
+) -> KnownContactContext:
     ctx = KnownContactContext()
     if not db_session or not user_id:
         return ctx
@@ -46,27 +57,33 @@ def load_known_contact_context(db_session, user_id: int, account_id: int) -> Kno
 
         models = importlib.import_module(".02_models", "src")
         if hasattr(models, "AuditKnownContact"):
-            q = (
+            rows = (
                 db_session.query(models.AuditKnownContact)
                 .filter(
                     models.AuditKnownContact.user_id == user_id,
                     models.AuditKnownContact.account_id == account_id,
                     models.AuditKnownContact.is_active.is_(True),
                 )
+                .all()
             )
-            for row in q:
-                em = (row.email_normalized or "").lower()
+            if any(row_requires_master_key(r) for r in rows) and not master_key:
+                raise KnownContactsMasterKeyRequired()
+            for row in rows:
+                if row_requires_master_key(row):
+                    em, display_name = decrypt_contact_row(row, master_key)
+                else:
+                    em = (row.email_normalized or "").lower()
+                    display_name = row.display_name or ""
+                em = normalize_sender_email(em or "")
                 if not em:
                     continue
                 cnt = int(row.mail_count or 0)
                 ctx.email_counts[em] = cnt
                 if cnt >= 2 or row.source in ("vip", "trusted", "reply"):
                     ctx.trusted_emails.add(em)
-                for k in _name_keys(row.display_name or ""):
+                for k in _name_keys(display_name):
                     ctx.name_keys.add(k)
-                    reg = registrable_domain_from_host(
-                        extract_domain(row.email_normalized or "")
-                    )
+                    reg = registrable_domain_from_host(extract_domain(em))
                     if reg:
                         ctx.name_domains.setdefault(k, set()).add(reg.lower())
         vip_q = (
@@ -121,6 +138,8 @@ def load_known_contact_context(db_session, user_id: int, account_id: int) -> Kno
                     dom = pat.lstrip("@").strip(".")
                     if dom:
                         ctx.trusted_emails.add(f"domain:{dom}")
+    except KnownContactsMasterKeyRequired:
+        raise
     except Exception as e:
         logger.debug("known contacts load failed: %s", e)
     return ctx

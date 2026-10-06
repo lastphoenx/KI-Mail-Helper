@@ -1755,6 +1755,15 @@ def audit_known_contacts_settings():
 @audit_config_bp.route("/api/audit-config/known-contacts", methods=["GET"])
 @login_required
 def audit_known_contacts_list():
+    from flask import session as flask_session
+
+    from src.services.audit_known_contacts_crypto import (
+        KnownContactsMasterKeyRequired,
+        account_has_encrypted_known_contacts,
+        decrypt_contact_row,
+        row_requires_master_key,
+    )
+
     account_id = request.args.get("account_id", type=int)
     if not account_id:
         return jsonify({"error": "account_id erforderlich"}), 400
@@ -1775,6 +1784,16 @@ def audit_known_contacts_list():
             return jsonify({"error": "Konto nicht gefunden"}), 404
         from src.services.audit_contact_import import _last_import_from_state
 
+        master_key = flask_session.get("master_key")
+        if account_has_encrypted_known_contacts(db, models, user.id, account_id):
+            if not master_key:
+                return jsonify(
+                    {
+                        "error": "Master-Key erforderlich. Bitte neu einloggen.",
+                        "code": "master_key_required",
+                    }
+                ), 401
+
         if not hasattr(models, "AuditKnownContact"):
             return jsonify({"contacts": [], "total": 0, "account_id": account_id})
 
@@ -1784,25 +1803,41 @@ def audit_known_contacts_list():
             is_active=True,
         )
         total = base.count()
-        rows = (
-            base.order_by(
-                models.AuditKnownContact.display_name.asc(),
-                models.AuditKnownContact.email_normalized.asc(),
+        rows = base.all()
+        decrypted_rows = []
+        for r in rows:
+            try:
+                if row_requires_master_key(r):
+                    em, name = decrypt_contact_row(r, master_key)
+                else:
+                    em = r.email_normalized or ""
+                    name = r.display_name or ""
+            except KnownContactsMasterKeyRequired:
+                return jsonify(
+                    {
+                        "error": "Master-Key erforderlich. Bitte neu einloggen.",
+                        "code": "master_key_required",
+                    }
+                ), 401
+            except Exception:
+                return jsonify({"error": "Kontakte konnten nicht entschlüsselt werden"}), 500
+            decrypted_rows.append(
+                {
+                    "id": r.id,
+                    "display_name": name or "",
+                    "email": em,
+                    "source": r.source,
+                    "mail_count": int(r.mail_count or 0),
+                }
             )
-            .offset(offset)
-            .limit(limit)
-            .all()
+        decrypted_rows.sort(
+            key=lambda c: (
+                (c["display_name"] or "").lower(),
+                (c["email"] or "").lower(),
+            )
         )
-        contacts = [
-            {
-                "id": r.id,
-                "display_name": r.display_name or "",
-                "email": r.email_normalized,
-                "source": r.source,
-                "mail_count": int(r.mail_count or 0),
-            }
-            for r in rows
-        ]
+        page = decrypted_rows[offset : offset + limit]
+        contacts = page
         return jsonify(
             {
                 "account_id": account_id,

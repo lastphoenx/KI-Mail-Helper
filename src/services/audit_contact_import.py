@@ -9,6 +9,11 @@ from datetime import datetime, timezone
 from email.utils import getaddresses
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.services.audit_known_contacts_crypto import (
+    KnownContactsMasterKeyRequired,
+    encrypt_contact_fields,
+    normalize_contact_email,
+)
 from src.services.audit_safe_delete_veto import is_sent_or_drafts_folder
 from src.services.audit_scam_detection import normalize_sender_email
 from src.services.folder_audit_service import decode_mime_header
@@ -113,36 +118,72 @@ def _upsert_contact(
     email: str,
     display_name: str,
     source: str = "sent",
+    master_key: str,
 ) -> None:
+    if not master_key:
+        raise KnownContactsMasterKeyRequired()
+    em = normalize_contact_email(email)
+    if not em:
+        return
+    hmac_val, enc_email, enc_name = encrypt_contact_fields(
+        em, display_name, master_key
+    )
     row = (
         db_session.query(models.AuditKnownContact)
         .filter_by(
             user_id=user_id,
             account_id=account_id,
-            email_normalized=email,
+            email_lookup_hmac=hmac_val,
         )
         .first()
     )
+    if not row:
+        row = (
+            db_session.query(models.AuditKnownContact)
+            .filter_by(
+                user_id=user_id,
+                account_id=account_id,
+                email_normalized=em,
+            )
+            .first()
+        )
     now = datetime.now(timezone.utc)
+    chosen = _coalesce_display_name(em, display_name)
     if row:
         row.mail_count = int(row.mail_count or 0) + 1
         row.last_seen_at = now
-        chosen = _coalesce_display_name(email, display_name)
+        row.email_lookup_hmac = hmac_val
+        row.encrypted_email = enc_email
         if chosen:
-            prev = (row.display_name or "").strip()
-            if not prev or len(chosen) > len(prev):
-                row.display_name = chosen
+            prev_plain = (row.display_name or "").strip()
+            prev_enc = row.encrypted_display_name
+            prev_len = len(prev_plain)
+            if prev_enc and master_key:
+                from src.services.audit_known_contacts_crypto import decrypt_contact_row
+
+                _, prev_dec = decrypt_contact_row(row, master_key)
+                prev_len = len((prev_dec or "").strip())
+            if not prev_len or len(chosen) > prev_len:
+                _, _, enc_name = encrypt_contact_fields(em, chosen, master_key)
+                row.encrypted_display_name = enc_name or None
+        row.email_normalized = None
+        row.display_name = None
         row.is_active = True
         if row.source not in ("vip", "trusted", "reply") and source == "sent":
             row.source = "sent"
         return
-    chosen = _coalesce_display_name(email, display_name)
+    enc_name_final = ""
+    if chosen:
+        _, _, enc_name_final = encrypt_contact_fields(em, chosen, master_key)
     db_session.add(
         models.AuditKnownContact(
             user_id=user_id,
             account_id=account_id,
-            email_normalized=email,
-            display_name=chosen or None,
+            email_lookup_hmac=hmac_val,
+            encrypted_email=enc_email,
+            encrypted_display_name=enc_name_final or None,
+            email_normalized=None,
+            display_name=None,
             source=source,
             mail_count=1,
             first_seen_at=now,
@@ -158,11 +199,14 @@ def import_sent_contacts_for_account(
     *,
     user_id: int,
     account_id: int,
+    master_key: str,
     max_messages_per_folder: int = 5000,
 ) -> Dict[str, Any]:
     """Liest To/Cc aus Gesendet-Ordnern; aktualisiert audit_known_contacts."""
     import importlib
 
+    if not master_key:
+        return {"success": False, "error": "master_key_required"}
     models = importlib.import_module(".02_models", "src")
     account = (
         db_session.query(models.MailAccount)
@@ -224,6 +268,7 @@ def import_sent_contacts_for_account(
                         account_id=account_id,
                         email=em,
                         display_name=name,
+                        master_key=master_key,
                     )
                     added += 1
         state[folder] = max_uid

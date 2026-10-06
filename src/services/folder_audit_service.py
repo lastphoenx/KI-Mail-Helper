@@ -620,6 +620,7 @@ class FolderAuditResult:
     scan_duration_ms: int = 0
     llm_skipped_candidates: int = 0
     scan_notice: str = ""
+    scan_failed_reason: str = ""
     scan_audit_config: Optional[dict] = None
     scan_audit_config_load_ok: bool = False
 
@@ -634,6 +635,7 @@ class FolderAuditResult:
             "scan_duration_ms": self.scan_duration_ms,
             "llm_skipped_candidates": self.llm_skipped_candidates,
             "scan_notice": self.scan_notice,
+            "scan_failed_reason": self.scan_failed_reason or "",
             "emails": [e.to_dict() for e in self.emails],
             "clusters": [c.to_dict() for c in self.clusters],
         }
@@ -2892,7 +2894,14 @@ class FolderAuditService:
         result.scan_audit_config_load_ok = bool(cfg.get("audit_config_load_ok"))
 
     @staticmethod
-    def _prepare_audit_scan_context(scan_context, db_session, user_id, account_id) -> None:
+    def _prepare_audit_scan_context(
+        scan_context,
+        db_session,
+        user_id,
+        account_id,
+        *,
+        master_key=None,
+    ) -> None:
         if scan_context is None or not db_session or not user_id:
             return
         AuditConfigCache.clear_cache(user_id)
@@ -2904,14 +2913,38 @@ class FolderAuditService:
             return
         if getattr(scan_context, "known_contact_context", None) is None:
             from src.services.audit_known_contacts import load_known_contact_context
-
-            scan_context.known_contact_context = load_known_contact_context(
-                db_session, user_id, account_id
+            from src.services.audit_known_contacts_crypto import (
+                KnownContactsMasterKeyRequired,
             )
+
+            try:
+                scan_context.known_contact_context = load_known_contact_context(
+                    db_session,
+                    user_id,
+                    account_id,
+                    master_key=master_key,
+                )
+            except KnownContactsMasterKeyRequired:
+                scan_context.known_contacts_master_key_required = True
+                scan_context.known_contact_context = None
         if getattr(scan_context, "firstname_set", None) is None:
             from src.services.audit_firstnames import get_firstname_set
 
             scan_context.firstname_set = get_firstname_set(db_session)
+
+    @staticmethod
+    def _abort_if_known_contacts_need_master_key(
+        scan_context,
+        result: "FolderAuditResult",
+    ) -> bool:
+        if not getattr(scan_context, "known_contacts_master_key_required", False):
+            return False
+        result.scan_failed_reason = "master_key_required"
+        result.scan_notice = (
+            "Bekannte Kontakte sind verschlüsselt — Master-Key oder "
+            "Hintergrund-Token erforderlich."
+        )
+        return True
 
     @staticmethod
     def _apply_scan_context_to_email_info(info, scan_context, db_session) -> None:
@@ -3546,6 +3579,7 @@ class FolderAuditService:
         run_llm_batch_at_end: bool = True,
         progress_callback=None,
         only_uid: Optional[int] = None,
+        master_key: Optional[str] = None,
     ) -> FolderAuditResult:
         """Holt Emails aus einem Ordner und analysiert sie.
         
@@ -3571,10 +3605,14 @@ class FolderAuditService:
         if scan_context is None:
             scan_context = new_audit_scan_context()
         FolderAuditService._prepare_audit_scan_context(
-            scan_context, db_session, user_id, account_id
+            scan_context, db_session, user_id, account_id, master_key=master_key
         )
         start_time = time.time()
         result = FolderAuditResult()
+        if FolderAuditService._abort_if_known_contacts_need_master_key(
+            scan_context, result
+        ):
+            return result
         FolderAuditService._bind_scan_audit_config_snapshot(
             result, db_session, user_id, account_id
         )
@@ -4008,6 +4046,7 @@ class FolderAuditService:
         exclude_folders: Optional[List[str]] = None,
         cluster_mode: str = "cleanup",
         progress_callback=None,
+        master_key: Optional[str] = None,
     ) -> FolderAuditResult:
         """Scannt ALLE Ordner eines Accounts und analysiert Emails.
         
@@ -4032,10 +4071,14 @@ class FolderAuditService:
         clear_audit_scam_caches()
         scan_context = new_audit_scan_context()
         FolderAuditService._prepare_audit_scan_context(
-            scan_context, db_session, user_id, account_id
+            scan_context, db_session, user_id, account_id, master_key=master_key
         )
         start_time = time.time()
         result = FolderAuditResult()
+        if FolderAuditService._abort_if_known_contacts_need_master_key(
+            scan_context, result
+        ):
+            return result
         FolderAuditService._bind_scan_audit_config_snapshot(
             result, db_session, user_id, account_id
         )
@@ -4155,6 +4198,7 @@ class FolderAuditService:
                         clear_scam_caches=False,
                         run_llm_batch_at_end=False,
                         progress_callback=progress_callback,
+                        master_key=master_key,
                     )
                     
                     if folder_result.total > 0:
