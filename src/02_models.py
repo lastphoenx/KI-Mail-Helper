@@ -716,6 +716,7 @@ class MailAccount(Base):
     audit_domain_intel_enabled = Column(Boolean, nullable=True)  # NULL = an; DNS/RDAP nur im Zweifel
     audit_domain_young_days = Column(Integer, nullable=True)  # unter N Tagen = jung (Standard 30)
     audit_domain_caution_days = Column(Integer, nullable=True)  # unter N Tagen = neu (Standard 90)
+    audit_word_lists_json = Column(Text, nullable=True)  # added/disabled je sensitive, alarm, success
     audit_contacts_import_enabled = Column(Boolean, default=False, nullable=False)
     audit_contacts_import_state = Column(Text, nullable=True)  # JSON: last UID pro Sent-Ordner
 

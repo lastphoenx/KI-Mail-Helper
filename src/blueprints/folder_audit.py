@@ -54,6 +54,37 @@ def _parse_audit_own_domains(account) -> list:
     return []
 
 
+def _word_lists_payload(account) -> dict:
+    from src.services.audit_quality_rules import (
+        OPERATIONAL_ALARM_TOKENS,
+        SENSITIVE_SUBJECT_TOKENS,
+        SUCCESS_STATUS_TOKENS,
+        parse_word_lists,
+    )
+
+    raw = getattr(account, "audit_word_lists_json", None)
+    stored = {}
+    if raw:
+        try:
+            stored = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            stored = {}
+    parsed = parse_word_lists(stored)
+    system = {
+        "sensitive": list(SENSITIVE_SUBJECT_TOKENS),
+        "alarm": list(OPERATIONAL_ALARM_TOKENS),
+        "success": list(SUCCESS_STATUS_TOKENS),
+    }
+    return {
+        key: {
+            "system": system[key],
+            "added": parsed[key]["added"],
+            "disabled": parsed[key]["disabled"],
+        }
+        for key in system
+    }
+
+
 def _audit_quality_settings_payload(account) -> dict:
     from src.services.audit_quality_rules import clamp_age_days, clean_folder_patterns
 
@@ -85,6 +116,7 @@ def _audit_quality_settings_payload(account) -> dict:
         "domain_caution_days": clamp_age_days(
             getattr(account, "audit_domain_caution_days", None), 90
         ),
+        "word_lists": _word_lists_payload(account),
     }
 
 
@@ -383,6 +415,7 @@ def save_scan_settings():
             "domain_intel_enabled",
             "domain_young_days",
             "domain_caution_days",
+            "word_lists",
         )
         if exclude_folders is None and own_domains is None and not any(
             k in data for k in quality_keys
@@ -469,6 +502,13 @@ def save_scan_settings():
                 account.audit_domain_caution_days = clamp_age_days(
                     data.get("domain_caution_days"), 90
                 )
+        if "word_lists" in data:
+            from src.services.audit_quality_rules import parse_word_lists
+
+            raw_lists = data.get("word_lists")
+            if raw_lists is not None and not isinstance(raw_lists, dict):
+                return jsonify({"error": "word_lists muss ein Objekt sein"}), 400
+            account.audit_word_lists_json = json.dumps(parse_word_lists(raw_lists or {}))
         db.commit()
 
         from src.services.folder_audit_service import AuditConfigCache

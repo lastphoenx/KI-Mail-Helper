@@ -883,6 +883,21 @@
 
             <div class="accordion-item">
                 <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditWordListsSection">
+                        <i class="bi bi-list-check me-2 text-primary"></i>
+                        Wortlisten
+                    </button>
+                </h2>
+                <div id="auditWordListsSection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <p class="text-muted small">Systemwörter sind nur lesbar. Eigene Wörter ergänzen, einzelne Systemwörter durch Eintrag in «deaktiviert» abschalten. Gespeichert mit «Speichern» bei den Ordnern.</p>
+                        <div id="auditWordListsMount"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion-item">
+                <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditNotableDomainsSection">
                         <i class="bi bi-signpost me-2 text-primary"></i>
                         Auffällige Absender-Domains
@@ -2100,6 +2115,7 @@
                 if (youngDays && data.domain_young_days) youngDays.value = String(data.domain_young_days);
                 const cautionDays = document.getElementById('auditDomainCautionDays');
                 if (cautionDays && data.domain_caution_days) cautionDays.value = String(data.domain_caution_days);
+                renderAuditWordLists(data.word_lists || {});
             }
         } catch (e) {
             excluded = [];
@@ -2122,6 +2138,48 @@
 
         renderAuditExcludeFolderCheckboxes(folders, excluded);
         refreshScanFolderSelectLabels();
+    }
+
+    function renderAuditWordLists(lists) {
+        const mount = document.getElementById('auditWordListsMount');
+        if (!mount) return;
+        const titles = {
+            sensitive: 'Sensible Betreffwörter',
+            alarm: 'Alarmwörter',
+            success: 'Status- und Erfolgswörter',
+        };
+        mount.innerHTML = ['sensitive', 'alarm', 'success'].map(function(key) {
+            const block = lists[key] || {};
+            const system = (block.system || []).join('\n');
+            const added = (block.added || []).join('\n');
+            const disabled = (block.disabled || []).join('\n');
+            return '<div class="mb-3">'
+                + '<div class="fw-semibold small">' + titles[key] + '</div>'
+                + '<label class="form-label small mb-0">System</label>'
+                + '<textarea class="form-control form-control-sm font-monospace mb-1" rows="3" readonly id="auditWordsSystem_' + key + '">'
+                + escapeHtml(system) + '</textarea>'
+                + '<label class="form-label small mb-0">Eigene</label>'
+                + '<textarea class="form-control form-control-sm font-monospace mb-1" rows="2" id="auditWordsAdded_' + key + '">'
+                + escapeHtml(added) + '</textarea>'
+                + '<label class="form-label small mb-0">Systemwörter deaktivieren</label>'
+                + '<textarea class="form-control form-control-sm font-monospace" rows="2" id="auditWordsDisabled_' + key + '">'
+                + escapeHtml(disabled) + '</textarea>'
+                + '</div>';
+        }).join('');
+    }
+
+    function collectAuditWordLists() {
+        const out = {};
+        ['sensitive', 'alarm', 'success'].forEach(function(key) {
+            const addedEl = document.getElementById('auditWordsAdded_' + key);
+            const disabledEl = document.getElementById('auditWordsDisabled_' + key);
+            const split = function(el) {
+                if (!el) return [];
+                return el.value.split(/[\n,;]+/).map(function(s) { return s.trim(); }).filter(Boolean);
+            };
+            out[key] = { added: split(addedEl), disabled: split(disabledEl) };
+        });
+        return out;
     }
 
     async function loadNotableDomains() {
@@ -2212,6 +2270,7 @@
                         const el = document.getElementById('auditDomainCautionDays');
                         return el ? parseInt(el.value, 10) : 90;
                     })(),
+                    word_lists: collectAuditWordLists(),
                 }),
             });
             const data = await parseJsonResponse(response);

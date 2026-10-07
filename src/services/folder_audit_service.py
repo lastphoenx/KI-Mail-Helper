@@ -132,6 +132,7 @@ class AuditConfigCache:
             'domain_intel_enabled': True,
             'domain_young_days': 30,
             'domain_caution_days': 90,
+            'word_lists': {},
         }
         load_ok = False
         
@@ -287,6 +288,14 @@ class AuditConfigCache:
                         getattr(acc, "audit_domain_caution_days", None) if acc else None,
                         90,
                     )
+                    raw_words = getattr(acc, "audit_word_lists_json", None) if acc else None
+                    if raw_words:
+                        try:
+                            from src.services.audit_quality_rules import parse_word_lists
+
+                            config["word_lists"] = parse_word_lists(json.loads(raw_words))
+                        except (TypeError, json.JSONDecodeError):
+                            config["word_lists"] = {}
                     raw_own = getattr(acc, "audit_own_domains", None) if acc else None
                     if raw_own:
                         parsed = json.loads(raw_own)
@@ -3375,10 +3384,12 @@ class FolderAuditService:
             subject_has_operational_alarm,
         )
 
-        if is_success_status_subject(subject):
+        word_lists = (audit_config or {}).get("word_lists")
+        info.word_lists = word_lists
+        if is_success_status_subject(subject, word_lists):
             is_success_status = True
-        info.operational_alarm = subject_has_operational_alarm(subject)
-        info.routine_status = is_routine_status_subject(subject)
+        info.operational_alarm = subject_has_operational_alarm(subject, word_lists)
+        info.routine_status = is_routine_status_subject(subject, word_lists)
         
         # --- POWER HEADERS (Server-Vorarbeit nutzen!) ---
         
@@ -3531,7 +3542,7 @@ class FolderAuditService:
                 score += 0.5
                 reasons.append("✅ Erfolgsmeldung")
 
-        if is_transaction_status_subject(subject) and not info.operational_alarm:
+        if is_transaction_status_subject(subject, word_lists) and not info.operational_alarm:
             n_txn = info.transaction_safe_after_days
             if age_days is not None and age_days >= n_txn:
                 info.aged_transaction_safe = True

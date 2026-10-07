@@ -5,7 +5,11 @@ from datetime import datetime, timedelta, timezone
 
 from src.services.audit_quality_rules import (
     BRAND_COMPOUND_SUFFIXES,
+    OPERATIONAL_ALARM_TOKENS,
+    SENSITIVE_SUBJECT_TOKENS,
     folder_is_curated,
+    is_success_status_subject,
+    subject_has_operational_alarm,
     subject_is_sensitive,
 )
 from src.services.audit_safe_delete_veto import safe_delete_veto_reason
@@ -70,6 +74,26 @@ def test_compound_brand_and_random_suffix_not_official():
     assert _brand_key_matches_display_name(brand, f"{brand}{suffix} news")
     assert _brand_key_matches_display_name(brand, f"hello {brand}")
     assert not _brand_key_matches_display_name(brand, f"{brand}xyz")
+
+
+def test_account_word_lists_extend_and_disable_system_words():
+    extra = _token()
+    lists = {
+        "alarm": {"added": [extra], "disabled": ["alert"]},
+        "sensitive": {"added": ["bolletta"], "disabled": ["konto"]},
+        "success": {"added": ["fertig"], "disabled": ["erfolgreich"]},
+    }
+    assert "alert" in OPERATIONAL_ALARM_TOKENS
+    assert "konto" in SENSITIVE_SUBJECT_TOKENS
+    assert not subject_has_operational_alarm(f"Alert: {_token()}", lists)
+    assert subject_has_operational_alarm(f"Disk failed {_token()}", lists)
+    assert subject_has_operational_alarm(f"Hinweis {extra}", lists)
+    assert not subject_is_sensitive(f"Konto {_token()}", lists)
+    assert subject_is_sensitive(f"Bolletta {_token()}", lists)
+    assert subject_is_sensitive(f"Facture {_token()}", lists)
+    assert not is_success_status_subject(f"Vorgang erfolgreich {_token()}", lists)
+    assert is_success_status_subject(f"Backup fertig {_token()}", lists)
+    assert "." not in "".join(lists["alarm"]["added"])
 
 
 def test_sensitive_subject_includes_fr_it_tokens():

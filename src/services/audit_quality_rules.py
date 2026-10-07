@@ -66,14 +66,21 @@ _ALARM_RE = re.compile(
     + r")(?![a-z0-9])"
 )
 
-_SUCCESS_STATUS_RE = re.compile(
-    r"(?i)("
-    r"erfolgreich|successful|completed successfully|"
-    r"package\s+updates?|no updates available|"
-    r"backup\s+(created|successful|complete|status)|"
-    r"\brsync\b|garbage collect|verify datastore|"
-    r"\bvzdump\b"
-    r")"
+SUCCESS_STATUS_TOKENS: tuple[str, ...] = (
+    "erfolgreich",
+    "successful",
+    "completed successfully",
+    "package updates",
+    "package update",
+    "no updates available",
+    "backup created",
+    "backup successful",
+    "backup complete",
+    "backup status",
+    "rsync",
+    "garbage collect",
+    "verify datastore",
+    "vzdump",
 )
 
 _ROUTINE_REVIEW_RE = re.compile(
@@ -156,8 +163,78 @@ def clamp_age_days(value, default: int = DEFAULT_SUCCESS_SAFE_AFTER_DAYS) -> int
     return n
 
 
-def subject_has_operational_alarm(subject: str) -> bool:
-    return bool(_ALARM_RE.search(subject or ""))
+def clean_extra_words(items) -> list[str]:
+    """Eigene Wörter: kurz, ohne Adresse oder Domain."""
+    out: list[str] = []
+    seen = set()
+    for item in items or []:
+        raw = str(item or "").strip()
+        if not raw or len(raw) > 40 or "@" in raw or "." in raw:
+            continue
+        key = raw.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(raw)
+        if len(out) >= 80:
+            break
+    return out
+
+
+def parse_word_lists(raw) -> dict:
+    """Systemliste bleibt im Code. Hier nur added und disabled pro Liste."""
+    empty = {
+        "sensitive": {"added": [], "disabled": []},
+        "alarm": {"added": [], "disabled": []},
+        "success": {"added": [], "disabled": []},
+    }
+    if not isinstance(raw, dict):
+        return empty
+    for key in empty:
+        block = raw.get(key) if isinstance(raw.get(key), dict) else {}
+        empty[key]["added"] = clean_extra_words(block.get("added"))
+        empty[key]["disabled"] = clean_extra_words(block.get("disabled"))
+    return empty
+
+
+def effective_tokens(system: Sequence[str], word_lists, key: str) -> tuple[str, ...]:
+    lists = parse_word_lists(word_lists)
+    block = lists.get(key) or {"added": [], "disabled": []}
+    disabled = {item.lower() for item in block["disabled"]}
+    out: list[str] = []
+    seen = set()
+    for tok in system:
+        if tok.lower() in disabled:
+            continue
+        if tok.lower() not in seen:
+            seen.add(tok.lower())
+            out.append(tok)
+    for extra in block["added"]:
+        if extra.lower() in seen or extra.lower() in disabled:
+            continue
+        seen.add(extra.lower())
+        out.append(extra)
+    return tuple(out)
+
+
+def _phrase_re(tokens: Sequence[str], *, prefix: str = ""):
+    parts = []
+    if prefix:
+        parts.append(prefix)
+    if tokens:
+        parts.append(
+            r"(?<![a-z0-9])(?:"
+            + "|".join(re.escape(tok) for tok in tokens)
+            + r")(?![a-z0-9])"
+        )
+    if not parts:
+        return re.compile(r"a^")
+    return re.compile(r"(?i)(?:" + "|".join(parts) + r")")
+
+
+def subject_has_operational_alarm(subject: str, word_lists=None) -> bool:
+    tokens = effective_tokens(OPERATIONAL_ALARM_TOKENS, word_lists, "alarm")
+    return bool(_phrase_re(tokens).search(subject or ""))
 
 
 def alarm_counts_as_important(info) -> bool:
@@ -167,34 +244,36 @@ def alarm_counts_as_important(info) -> bool:
     Nicht-Werbe-Absender behalten den Alarm.
     """
     subject = getattr(info, "subject", "") or ""
-    if not subject_has_operational_alarm(subject):
+    if not subject_has_operational_alarm(subject, getattr(info, "word_lists", None)):
         return False
     if has_bulk_signal(info):
         return False
     return True
 
 
-def is_success_status_subject(subject: str) -> bool:
-    if subject_has_operational_alarm(subject):
+def is_success_status_subject(subject: str, word_lists=None) -> bool:
+    if subject_has_operational_alarm(subject, word_lists):
         return False
-    return bool(_SUCCESS_STATUS_RE.search(subject or ""))
+    tokens = effective_tokens(SUCCESS_STATUS_TOKENS, word_lists, "success")
+    return bool(_phrase_re(tokens).search(subject or ""))
 
 
-def is_routine_status_subject(subject: str) -> bool:
+def is_routine_status_subject(subject: str, word_lists=None) -> bool:
     """Status ohne Alarm: prüfen, nicht automatisch wichtig."""
-    if subject_has_operational_alarm(subject):
+    if subject_has_operational_alarm(subject, word_lists):
         return False
     return bool(_ROUTINE_REVIEW_RE.search(subject or ""))
 
 
-def is_transaction_status_subject(subject: str) -> bool:
-    if subject_has_operational_alarm(subject):
+def is_transaction_status_subject(subject: str, word_lists=None) -> bool:
+    if subject_has_operational_alarm(subject, word_lists):
         return False
     return bool(_TRANSACTION_STATUS_RE.search(subject or ""))
 
 
-def subject_is_sensitive(subject: str) -> bool:
-    return bool(_SENSITIVE_SUBJECT_RE.search(subject or ""))
+def subject_is_sensitive(subject: str, word_lists=None) -> bool:
+    tokens = effective_tokens(SENSITIVE_SUBJECT_TOKENS, word_lists, "sensitive")
+    return bool(_phrase_re(tokens, prefix="verifiz").search(subject or ""))
 
 
 def email_age_days(when: Optional[datetime]) -> Optional[int]:
@@ -311,7 +390,9 @@ def provider_spam_newsletter_safe(info) -> bool:
 def aged_success_applies(info) -> bool:
     if not getattr(info, "aged_success_safe", False):
         return False
-    if subject_has_operational_alarm(getattr(info, "subject", "") or ""):
+    if subject_has_operational_alarm(
+        getattr(info, "subject", "") or "", getattr(info, "word_lists", None)
+    ):
         return False
     return True
 
@@ -319,7 +400,9 @@ def aged_success_applies(info) -> bool:
 def aged_transaction_applies(info) -> bool:
     if not getattr(info, "aged_transaction_safe", False):
         return False
-    if subject_has_operational_alarm(getattr(info, "subject", "") or ""):
+    if subject_has_operational_alarm(
+        getattr(info, "subject", "") or "", getattr(info, "word_lists", None)
+    ):
         return False
     if _has_thread(info):
         return False
@@ -352,7 +435,9 @@ def brand_hit_has_warning(meta, *, auth_failed: bool = False, rule_ids=None) -> 
         return True
     if _provider_spam(meta):
         return True
-    return subject_is_sensitive(getattr(meta, "subject", "") or "")
+    return subject_is_sensitive(
+        getattr(meta, "subject", "") or "", getattr(meta, "word_lists", None)
+    )
 
 
 def vip_suppresses_soft_identity(meta, rule_ids, *, auth_failed: bool) -> bool:
