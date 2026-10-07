@@ -129,6 +129,9 @@ class AuditConfigCache:
             'curated_folder_patterns': [],
             'success_safe_after_days': 30,
             'transaction_safe_after_days': 30,
+            'domain_intel_enabled': True,
+            'domain_young_days': 30,
+            'domain_caution_days': 90,
         }
         load_ok = False
         
@@ -271,6 +274,18 @@ class AuditConfigCache:
                         if acc
                         else None,
                         30,
+                    )
+                    enabled_raw = (
+                        getattr(acc, "audit_domain_intel_enabled", None) if acc else None
+                    )
+                    config["domain_intel_enabled"] = True if enabled_raw is None else bool(enabled_raw)
+                    config["domain_young_days"] = clamp_age_days(
+                        getattr(acc, "audit_domain_young_days", None) if acc else None,
+                        30,
+                    )
+                    config["domain_caution_days"] = clamp_age_days(
+                        getattr(acc, "audit_domain_caution_days", None) if acc else None,
+                        90,
                     )
                     raw_own = getattr(acc, "audit_own_domains", None) if acc else None
                     if raw_own:
@@ -556,6 +571,7 @@ class TrashEmailInfo:
     llm_priority: int = 0              # Ranking für «Rest prüfen»
     llm_unusable: bool = False         # KI antwortete, Antwort verworfen
     llm_skip_reason: Optional[str] = None  # budget | quota | error wenn offen
+    domain_badge: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -588,6 +604,7 @@ class TrashEmailInfo:
             "llm_priority": self.llm_priority,
             "llm_unusable": self.llm_unusable,
             "llm_skip_reason": self.llm_skip_reason,
+            "domain_badge": self.domain_badge,
         }
 
 
@@ -3631,6 +3648,10 @@ class FolderAuditService:
                 skip_identity = True
                 info.known_contact = True
         info.skip_identity_rules = skip_identity
+        cfg = audit_config or {}
+        info.domain_intel_enabled = bool(cfg.get("domain_intel_enabled", False))
+        info.domain_young_days = int(cfg.get("domain_young_days") or 30)
+        info.domain_caution_days = int(cfg.get("domain_caution_days") or 90)
 
         trusted_domains = audit_config.get('trusted_domains', set()) if audit_config else set()
         brand_map = (audit_config or {}).get("brand_official_domains_effective")
@@ -3646,6 +3667,9 @@ class FolderAuditService:
             scan_context=scan_context,
             db_session=db_session,
         )
+
+        if getattr(scam_eval, "domain_badge", None):
+            info.domain_badge = scam_eval.domain_badge
 
         if scam_eval.is_scam:
             info.category = TrashCategory.SCAM

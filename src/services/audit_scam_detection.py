@@ -254,6 +254,7 @@ class ScamEvaluation:
     llm_priority: int = 0
     llm_unusable: bool = False
     llm_skip_reason: Optional[str] = None  # budget | quota | error (nur offen)
+    domain_badge: Optional[str] = None
 
 
 _DEDUPE_UNUSABLE = object()
@@ -980,6 +981,9 @@ def clear_audit_scam_caches() -> None:
     _dbl_circuit_open = False
     _gray_dns_lookups_this_scan = 0
     _gray_rdap_lookups_this_scan = 0
+    from src.services.audit_domain_intel import reset_domain_intel_budget
+
+    reset_domain_intel_budget()
 
 
 def new_audit_scan_context() -> AuditScanContext:
@@ -2022,7 +2026,11 @@ def evaluate_scam_risk(
         db_session=db_session,
     )
     out = partial
-    if is_scam:
+    from src.services.audit_domain_intel import apply_domain_intel
+
+    apply_domain_intel(meta, out, db_session=db_session)
+    if out.is_scam or is_scam:
+        out.is_scam = True
         return out
 
     if suggest_llm and not skip_dbl:

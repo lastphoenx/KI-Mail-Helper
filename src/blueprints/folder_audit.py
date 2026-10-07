@@ -74,6 +74,17 @@ def _audit_quality_settings_payload(account) -> dict:
         "transaction_safe_after_days": clamp_age_days(
             getattr(account, "audit_transaction_safe_after_days", None), 30
         ),
+        "domain_intel_enabled": (
+            True
+            if getattr(account, "audit_domain_intel_enabled", None) is None
+            else bool(account.audit_domain_intel_enabled)
+        ),
+        "domain_young_days": clamp_age_days(
+            getattr(account, "audit_domain_young_days", None), 30
+        ),
+        "domain_caution_days": clamp_age_days(
+            getattr(account, "audit_domain_caution_days", None), 90
+        ),
     }
 
 
@@ -273,6 +284,52 @@ def get_folders(account_id):
                 fetcher.disconnect()
 
 
+@folder_audit_bp.route("/folder-audit/notable-domains/<int:account_id>", methods=["GET"])
+@login_required
+def notable_sender_domains(account_id):
+    """Cache-Liste: Domain fehlt, ist jung oder neu. Keine Live-Abfrage."""
+    from src.services.audit_domain_intel import notable_kind
+    from src.services.audit_quality_rules import clamp_age_days
+
+    kind_filter = (request.args.get("kind") or "all").strip().lower()
+    with get_db_session() as db:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        models = _get_models()
+        account = (
+            db.query(models.MailAccount)
+            .filter(
+                models.MailAccount.id == account_id,
+                models.MailAccount.user_id == user.id,
+            )
+            .first()
+        )
+        if not account:
+            return jsonify({"error": "Account nicht gefunden"}), 404
+        young = clamp_age_days(account.audit_domain_young_days, 30)
+        caution = clamp_age_days(account.audit_domain_caution_days, 90)
+        rows = db.query(models.AuditDomainIntelCache).all()
+        items = []
+        for row in rows:
+            kind = notable_kind(row.dns_status, row.age_days, young, caution)
+            if kind is None:
+                continue
+            if kind_filter not in ("all", kind):
+                continue
+            items.append(
+                {
+                    "domain": row.domain,
+                    "kind": kind,
+                    "dns_status": row.dns_status,
+                    "age_days": row.age_days,
+                    "checked_at": row.checked_at.isoformat() if row.checked_at else None,
+                }
+            )
+        items.sort(key=lambda item: (item["kind"], item["domain"]))
+        return jsonify({"success": True, "domains": items})
+
+
 @folder_audit_bp.route("/folder-audit/scan-settings/<int:account_id>", methods=["GET"])
 @login_required
 def get_scan_settings(account_id):
@@ -323,6 +380,9 @@ def save_scan_settings():
             "curated_folder_patterns",
             "success_safe_after_days",
             "transaction_safe_after_days",
+            "domain_intel_enabled",
+            "domain_young_days",
+            "domain_caution_days",
         )
         if exclude_folders is None and own_domains is None and not any(
             k in data for k in quality_keys
@@ -395,6 +455,19 @@ def save_scan_settings():
             if "transaction_safe_after_days" in data:
                 account.audit_transaction_safe_after_days = clamp_age_days(
                     data.get("transaction_safe_after_days"), 30
+                )
+        if "domain_intel_enabled" in data:
+            account.audit_domain_intel_enabled = bool(data.get("domain_intel_enabled"))
+        if "domain_young_days" in data or "domain_caution_days" in data:
+            from src.services.audit_quality_rules import clamp_age_days
+
+            if "domain_young_days" in data:
+                account.audit_domain_young_days = clamp_age_days(
+                    data.get("domain_young_days"), 30
+                )
+            if "domain_caution_days" in data:
+                account.audit_domain_caution_days = clamp_age_days(
+                    data.get("domain_caution_days"), 90
                 )
         db.commit()
 

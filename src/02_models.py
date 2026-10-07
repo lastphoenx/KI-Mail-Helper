@@ -713,6 +713,9 @@ class MailAccount(Base):
     audit_curated_folder_patterns = Column(Text, nullable=True)  # JSON: wichtige Ordner-Muster
     audit_success_safe_after_days = Column(Integer, nullable=True)  # Erfolgsmeldung → SAFE ab N Tagen
     audit_transaction_safe_after_days = Column(Integer, nullable=True)  # Sendungsstatus → SAFE ab N Tagen
+    audit_domain_intel_enabled = Column(Boolean, nullable=True)  # NULL = an; DNS/RDAP nur im Zweifel
+    audit_domain_young_days = Column(Integer, nullable=True)  # unter N Tagen = jung (Standard 30)
+    audit_domain_caution_days = Column(Integer, nullable=True)  # unter N Tagen = neu (Standard 90)
     audit_contacts_import_enabled = Column(Boolean, default=False, nullable=False)
     audit_contacts_import_state = Column(Text, nullable=True)  # JSON: last UID pro Sent-Ordner
 
@@ -2357,6 +2360,18 @@ class DomainReputationCache(Base):
     dbl_status = Column(String(16), nullable=False)
     """clean | listed | unavailable"""
     dbl_detail = Column(String(255), nullable=True)
+    checked_at = Column(DateTime, nullable=False)
+
+
+class AuditDomainIntelCache(Base):
+    """DNS/RDAP-Hinweis pro registrierbarer Domain. Positiv 30 Tage, NXDOMAIN 7 Tage."""
+
+    __tablename__ = "audit_domain_intel_cache"
+
+    domain = Column(String(253), primary_key=True)
+    dns_status = Column(String(16), nullable=False)
+    """exists | nxdomain | unknown"""
+    age_days = Column(Integer, nullable=True)
     checked_at = Column(DateTime, nullable=False)
 
 

@@ -861,6 +861,45 @@
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
                         </div>
+                        <hr>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="auditDomainIntelEnabled" checked>
+                            <label class="form-check-label" for="auditDomainIntelEnabled">Domain-Abfrage im Zweifelsfall (DNS und RDAP)</label>
+                        </div>
+                        <p class="text-muted small mb-2">Nur bei Markentreffer, Verdacht oder fehlender Auth. Timeout zählt nicht als «existiert nicht». Abschalten stoppt Abfragen nach aussen.</p>
+                        <div class="row g-2">
+                            <div class="col-sm-6">
+                                <label class="form-label small mb-1" for="auditDomainYoungDays">Jung unter Tagen (mit Markentreffer: Scam)</label>
+                                <input type="number" class="form-control form-control-sm" id="auditDomainYoungDays" min="1" max="3650" value="30">
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label small mb-1" for="auditDomainCautionDays">Hinweis unter Tagen (nur Badge)</label>
+                                <input type="number" class="form-control form-control-sm" id="auditDomainCautionDays" min="1" max="3650" value="90">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditNotableDomainsSection">
+                        <i class="bi bi-signpost me-2 text-primary"></i>
+                        Auffällige Absender-Domains
+                    </button>
+                </h2>
+                <div id="auditNotableDomainsSection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <div class="d-flex gap-2 mb-2">
+                            <select class="form-select form-select-sm" id="auditNotableDomainFilter" style="max-width: 16rem;">
+                                <option value="all">Alle Auffälligen</option>
+                                <option value="missing">Existiert nicht</option>
+                                <option value="young">Jung</option>
+                                <option value="caution">Neu</option>
+                            </select>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="reloadNotableDomainsBtn">Aktualisieren</button>
+                        </div>
+                        <div id="auditNotableDomainsList" class="small text-muted">Noch nicht geladen.</div>
                     </div>
                 </div>
             </div>
@@ -1712,6 +1751,14 @@
         if (saveAuditQualityBtn) {
             saveAuditQualityBtn.addEventListener('click', saveAuditScanFolderSettings);
         }
+        const reloadNotableDomainsBtn = document.getElementById('reloadNotableDomainsBtn');
+        if (reloadNotableDomainsBtn) {
+            reloadNotableDomainsBtn.addEventListener('click', loadNotableDomains);
+        }
+        const notableFilter = document.getElementById('auditNotableDomainFilter');
+        if (notableFilter) {
+            notableFilter.addEventListener('change', loadNotableDomains);
+        }
         const saveOwnDomainsBtn = document.getElementById('saveOwnDomainsBtn');
         if (saveOwnDomainsBtn) {
             saveOwnDomainsBtn.addEventListener('click', async function() {
@@ -2047,6 +2094,12 @@
                 if (txnDays && data.transaction_safe_after_days) {
                     txnDays.value = String(data.transaction_safe_after_days);
                 }
+                const intelOn = document.getElementById('auditDomainIntelEnabled');
+                if (intelOn) intelOn.checked = data.domain_intel_enabled !== false;
+                const youngDays = document.getElementById('auditDomainYoungDays');
+                if (youngDays && data.domain_young_days) youngDays.value = String(data.domain_young_days);
+                const cautionDays = document.getElementById('auditDomainCautionDays');
+                if (cautionDays && data.domain_caution_days) cautionDays.value = String(data.domain_caution_days);
             }
         } catch (e) {
             excluded = [];
@@ -2069,6 +2122,36 @@
 
         renderAuditExcludeFolderCheckboxes(folders, excluded);
         refreshScanFolderSelectLabels();
+    }
+
+    async function loadNotableDomains() {
+        const box = document.getElementById('auditNotableDomainsList');
+        const accountId = getSelectedAuditAccountId();
+        const kindEl = document.getElementById('auditNotableDomainFilter');
+        const kind = kindEl ? kindEl.value : 'all';
+        if (!box) return;
+        if (!accountId) {
+            box.textContent = 'Zuerst einen Account wählen.';
+            return;
+        }
+        box.textContent = 'Laden…';
+        try {
+            const resp = await fetch('/folder-audit/notable-domains/' + accountId + '?kind=' + encodeURIComponent(kind));
+            const data = await parseJsonResponse(resp);
+            const rows = data.domains || [];
+            if (!rows.length) {
+                box.textContent = 'Keine auffälligen Domains im Cache.';
+                return;
+            }
+            const labels = { missing: 'existiert nicht', young: 'jung', caution: 'neu' };
+            box.innerHTML = '<ul class="mb-0">' + rows.map(function(row) {
+                const age = row.age_days == null ? '' : (' · ' + row.age_days + ' Tage');
+                return '<li><code>' + escapeHtml(row.domain) + '</code> · '
+                    + escapeHtml(labels[row.kind] || row.kind) + age + '</li>';
+            }).join('') + '</ul>';
+        } catch (e) {
+            box.textContent = e.message;
+        }
     }
 
     async function saveAuditScanFolderSettings() {
@@ -2116,6 +2199,18 @@
                     transaction_safe_after_days: (function() {
                         const el = document.getElementById('auditTransactionSafeDays');
                         return el ? parseInt(el.value, 10) : 30;
+                    })(),
+                    domain_intel_enabled: (function() {
+                        const el = document.getElementById('auditDomainIntelEnabled');
+                        return el ? el.checked : true;
+                    })(),
+                    domain_young_days: (function() {
+                        const el = document.getElementById('auditDomainYoungDays');
+                        return el ? parseInt(el.value, 10) : 30;
+                    })(),
+                    domain_caution_days: (function() {
+                        const el = document.getElementById('auditDomainCautionDays');
+                        return el ? parseInt(el.value, 10) : 90;
                     })(),
                 }),
             });
@@ -2929,7 +3024,7 @@
                      data-category="${email.category}">
                     <div class="d-flex justify-content-between align-items-start">
                         <div class="flex-grow-1" style="min-width: 0;">
-                            <div class="email-subject">${escapeHtml(email.subject || '(Kein Betreff)')}${emailHasAttachmentHint(email) ? ` <span class="badge bg-info text-dark cluster-email-attach-badge" title="${escapeHtml(attachmentSummary(email))}">📎</span>` : ''}</div>
+                            <div class="email-subject">${escapeHtml(email.subject || '(Kein Betreff)')}${email.domain_badge ? ` <span class="badge bg-warning text-dark">${escapeHtml(email.domain_badge)}</span>` : ''}${emailHasAttachmentHint(email) ? ` <span class="badge bg-info text-dark cluster-email-attach-badge" title="${escapeHtml(attachmentSummary(email))}">📎</span>` : ''}</div>
                             <div class="email-sender">
                                 ${senderDisplay}
                                 ${email.folder ? `<span class="badge bg-secondary ms-2" style="font-size: 0.7em; vertical-align: middle;">📁 ${escapeHtml(email.folder)}</span>` : ''}
