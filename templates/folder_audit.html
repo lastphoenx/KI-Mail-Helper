@@ -4675,6 +4675,20 @@
         if (s.effective_domains != null) {
             lines.push('<strong>Scan gesamt:</strong> ' + s.effective_domains + ' unique Domains');
         }
+        if (s.custom_domains != null && s.system_only_domains != null && s.effective_domains != null) {
+            lines.push(
+                '<span class="text-muted small">Domain-Zählung: ' + s.custom_domains +
+                ' (Ihre) + ' + s.system_only_domains + ' (nur System) = ' +
+                s.effective_domains + ' (vereinigt, ohne Doppel)</span>'
+            );
+        }
+        if (s.effective_brands != null) {
+            lines.push(
+                '<span class="text-muted small">Marken im Scan: ' + s.effective_brands +
+                ' (System ' + (s.builtin_brands != null ? s.builtin_brands : '?') +
+                ' + Ihre ' + customBrands + ')</span>'
+            );
+        }
         if (s.health_verified != null && s.health_pending != null) {
             let healthLine = '<strong>Health (nur Ihre Domains):</strong> ' +
                 s.health_verified + ' verifiziert, ' + s.health_pending + ' offen';

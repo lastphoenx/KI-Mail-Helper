@@ -166,6 +166,18 @@ LLM_PLACEHOLDER_RE = re.compile(
     re.I,
 )
 
+LLM_REASON_REJECT_RE = re.compile(
+    r"(?i)(halluzin|erfunden|fiktiv|does not exist|nicht existier|"
+    r"keine echte (version|software)|unbekannte version|denkprozess|"
+    r"chain of thought|"
+    r"version \d+(\.\d+)+ (gibt es nicht|existiert nicht))"
+)
+
+_THINK_BLOCK_RE = re.compile(
+    r"<\s*think(?:ing)?\s*>[\s\S]*?<\s*/\s*think(?:ing)?\s*>",
+    re.I,
+)
+
 IDENTITY_PROMPT = """Du prüfst NUR diese eine E-Mail auf Identitäts-Betrug.
 Erfinde nichts. Nenne keine Marken, die in den Feldern unten nicht vorkommen.
 
@@ -188,6 +200,7 @@ JSON, sonst nichts:
 
 IDENTITY_PROMPT_V2 = """Du bewertest NUR die sichtbare Identität dieser E-Mail.
 Nutze ausschließlich Anzeigename, From-Adresse und Betreff. Keine Annahmen zu Provider, Auth oder Newsletter.
+Kein Denkprotokoll, keine erfundenen Softwareversionen oder Marken. reason: ein kurzer Satz Deutsch oder null.
 
 Absendername:  {display_name}
 From-Adresse:  {from_address}
@@ -346,10 +359,16 @@ def should_never_scam(
                 continue
             if dom == od or dom.endswith("." + od):
                 return True
+        if account_email:
+            acc_dom = extract_domain(account_email.strip().lower())
+            if acc_dom and (dom == acc_dom or dom.endswith("." + acc_dom)):
+                return True
 
     local = extract_local_part(meta.sender or "").lower()
-    if local in SYSTEM_LOCAL_PARTS:
+    if local == "mailer-daemon":
         return True
+    if local == "postmaster":
+        return False
     return False
 
 
@@ -1185,7 +1204,7 @@ def _ollama_chat_json(
         content = (resp.json().get("message") or {}).get("content", "")
         if not content:
             return None
-        parsed = json.loads(content)
+        parsed = _parse_identity_llm_json_content(content)
         return parsed if isinstance(parsed, dict) else None
     except Exception as exc:
         logger.warning("Audit identity LLM failed: %s", type(exc).__name__)
@@ -1208,6 +1227,36 @@ def _cloud_chat_json(prompt: str, cfg: AuditScamLlmConfig) -> Optional[dict]:
     return None
 
 
+def _parse_identity_llm_json_content(content: str) -> Optional[dict]:
+    text = _THINK_BLOCK_RE.sub("", content or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            return None
+        try:
+            parsed = json.loads(match.group(0))
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            return None
+
+
+def _sanitize_llm_identity_reason(reason: str) -> Optional[str]:
+    r = (reason or "").strip()
+    if not r:
+        return None
+    r = _THINK_BLOCK_RE.sub("", r).strip()
+    if not r or LLM_PLACEHOLDER_RE.search(r) or LLM_REASON_REJECT_RE.search(r):
+        return None
+    if len(r) > 240:
+        r = r[:237].rstrip() + "…"
+    return r
+
+
 def _audit_identity_llm_json(
     prompt: str,
     cfg: Optional[AuditScamLlmConfig] = None,
@@ -1223,7 +1272,7 @@ def _llm_result_usable(llm: dict, meta: EmailMeta) -> Optional[dict]:
     if not isinstance(llm, dict):
         return None
 
-    reason = str(llm.get("reason") or "").strip()
+    reason = _sanitize_llm_identity_reason(str(llm.get("reason") or ""))
     impersonated = llm.get("impersonated")
     if impersonated is not None:
         impersonated = str(impersonated).strip()
@@ -1231,8 +1280,7 @@ def _llm_result_usable(llm: dict, meta: EmailMeta) -> Optional[dict]:
             impersonated = None
             llm = {**llm, "impersonated": None}
 
-    if reason and LLM_PLACEHOLDER_RE.search(reason):
-        return None
+    llm = {**llm, "reason": reason}
     if impersonated and LLM_PLACEHOLDER_RE.search(impersonated):
         return None
 
@@ -1306,7 +1354,7 @@ def _merge_hybrid_llm_identity(
     if not verdict:
         return
 
-    reason = str(llm.get("reason") or "").strip()
+    reason = _sanitize_llm_identity_reason(str(llm.get("reason") or ""))
     impersonated = llm.get("impersonated")
     if impersonated is not None:
         impersonated = str(impersonated).strip()
@@ -1390,6 +1438,7 @@ def _layer1_blocks_llm_calibration(meta: EmailMeta, brand_map=None) -> bool:
     return find_brand_token_in_unofficial_host(
         meta.sender or "",
         brand_map,
+        sender_name=meta.sender_name or "",
     ) is not None
 
 
@@ -1728,6 +1777,7 @@ def _layer1_decision(
                 meta.sender or "",
                 brand_map,
                 trusted_domains=trusted_set,
+                sender_name=meta.sender_name or "",
             )
             if b2_hit:
                 id_rules.append("B2")

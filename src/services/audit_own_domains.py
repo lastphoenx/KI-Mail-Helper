@@ -39,6 +39,21 @@ def is_valid_own_domain_syntax(domain: str) -> bool:
     return True
 
 
+def sender_on_own_domains(sender: str, own_domains: Optional[Set[str]]) -> bool:
+    from src.services.audit_scam_detection import extract_domain, normalize_sender_email
+
+    dom = extract_domain(normalize_sender_email(sender or "") or "")
+    if not dom:
+        return False
+    for od in own_domains or set():
+        od = str(od or "").lower().strip().strip(".")
+        if not od:
+            continue
+        if dom == od or dom.endswith("." + od):
+            return True
+    return False
+
+
 def own_domains_set_from_items(items: Sequence) -> Set[str]:
     """Runtime: expand legacy comma-in-one-string JSON entries."""
     out: Set[str] = set()

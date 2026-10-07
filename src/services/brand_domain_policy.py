@@ -487,6 +487,7 @@ def find_brand_token_in_unofficial_host(
     brand_map: Mapping[str, List[str]],
     *,
     trusted_domains: Optional[Set[str]] = None,
+    sender_name: str = "",
 ) -> Optional[BrandMismatch]:
     """Marke im Domain-String (volles Label), aber nicht offizielle Domain (Lookalike-Host)."""
     from src.services.audit_scam_detection import is_relay_sender_domain
@@ -498,9 +499,6 @@ def find_brand_token_in_unofficial_host(
     if is_relay_sender_domain(sender_email):
         return None
     reg = registrable_domain_from_host(host)
-    store = get_tranco_store()
-    if store and reg and store.is_in_top_n(reg, tranco_top_n_threshold()):
-        return None
     labels = {p for p in re.split(r"[.-]", host.lower()) if p}
     for brand, valid_domains in brand_map.items():
         bk = brand.lower().strip()
@@ -522,6 +520,10 @@ def find_brand_token_in_unofficial_host(
                     label_hit = True
                     break
         if not label_hit:
+            continue
+        from src.services.tranco_popularity import tranco_exempts_brand_mismatch
+
+        if tranco_exempts_brand_mismatch(sender_name, sender_email):
             continue
         label_brand = _brand_display_label(brand)
         return BrandMismatch(

@@ -3004,6 +3004,19 @@ class FolderAuditService:
             plat = _detect_mailer_platform(dom)
             return bool(dom) and plat not in (dom, "unbekannt", "")
 
+        def _repeat_sender_marketing_signal(item: TrashEmailInfo) -> bool:
+            if _bulk_marketing_evidence(item):
+                return True
+            subj = (item.subject or "").lower()
+            for pattern in SAFE_SUBJECT_PATTERNS:
+                if re.search(pattern, subj):
+                    return True
+            blob = " ".join(item.reasons or []).lower()
+            return any(
+                k in blob
+                for k in ("marketing", "newsletter", "safe-pattern", "list-unsubscribe")
+            )
+
         groups: Dict[str, List[TrashEmailInfo]] = defaultdict(list)
         for e in emails:
             if e.is_reply or e.has_attachments:
@@ -3026,7 +3039,8 @@ class FolderAuditService:
             if len(items) < min_group:
                 continue
             bulk_n = sum(1 for x in items if _bulk_marketing_evidence(x))
-            if bulk_n <= len(items) // 2:
+            marketing_n = sum(1 for x in items if _repeat_sender_marketing_signal(x))
+            if bulk_n <= len(items) // 2 and marketing_n <= len(items) // 2:
                 continue
             for x in items:
                 if x.category != TrashCategory.REVIEW:
@@ -3040,8 +3054,9 @@ class FolderAuditService:
                     for r in x.reasons
                 )
                 if not only_default and not x.has_list_unsubscribe:
-                    continue
-                if not _bulk_marketing_evidence(x):
+                    if not _repeat_sender_marketing_signal(x):
+                        continue
+                if not _repeat_sender_marketing_signal(x):
                     continue
                 x.category = TrashCategory.SAFE
                 x.reasons = [
@@ -3286,14 +3301,18 @@ class FolderAuditService:
                 is_success_status = True
                 break
         
-        # Kombination: System-Mail + Erfolgsmeldung = sehr sicher löschbar
-        if is_system_mail and is_success_status:
+        from src.services.audit_own_domains import sender_on_own_domains
+
+        sender_on_own = sender_on_own_domains(info.sender or "", own_domains)
+
+        # Kombination: System-Mail + Erfolgsmeldung = sehr sicher löschbar (nicht eigene Domains)
+        if is_system_mail and is_success_status and not sender_on_own:
             score += 1.5  # Starkes Signal für SAFE
             reasons.append("🖥️ System-Statusmeldung (erfolgreich)")
-        elif is_system_mail:
+        elif is_system_mail and not sender_on_own:
             score += 0.8  # System-Mail allein
             reasons.append("🖥️ System-Mail")
-        elif is_success_status:
+        elif is_success_status and not sender_on_own:
             # Erfolgs-Status ohne System-Sender: Alter prüfen
             if info.date:
                 age_days = (datetime.now(UTC) - info.date).days if info.date.tzinfo else (datetime.now() - info.date).days
@@ -3337,12 +3356,16 @@ class FolderAuditService:
                 reasons.append(f"Marketing-Betreff")
                 break
         
-        # DB Safe Subject Patterns (zusätzlich zu hardcoded)
+        # DB Safe Subject Patterns — allein kein Newsletter-Schutz (nur mit List-Unsubscribe)
         for pattern in audit_config.get('safe_subject_patterns', set()):
             if pattern in subject_lower:
-                is_marketing = True
-                score += 0.6
-                reasons.append(f"Safe-Pattern (DB)")
+                if info.has_list_unsubscribe:
+                    is_marketing = True
+                    score += 0.6
+                    reasons.append("Safe-Pattern (DB)")
+                else:
+                    score += 0.25
+                    reasons.append("Safe-Pattern (DB, kein List-Unsubscribe)")
                 break
         
         # Marketing Sender Patterns (mailings@, newsletter@, etc.)
@@ -3456,10 +3479,6 @@ class FolderAuditService:
             
             # Zeitlich abgelaufene Relevanz: Bestimmte Mail-Typen werden mit der Zeit irrelevant
             time_expired_patterns = [
-                # Versand/Lieferung (nach 60 Tagen sicher angekommen oder verloren)
-                (r'(versendet|versandt|shipped|dispatched|unterwegs|on.?the.?way)', 60),
-                (r'(geliefert|zugestellt|delivered|angekommen|arrived)', 30),
-                (r'(tracking|sendungsverfolgung|paket.*status)', 60),
                 # Aktivierung/Registrierung (nach 30 Tagen ignoriert = unwichtig)
                 (r'(aktivier|activate|verify.?your|bestätig.*registr)', 30),
                 (r'(willkommen|welcome|getting.?started)', 60),
@@ -3557,6 +3576,24 @@ class FolderAuditService:
         # Schwache Layer-1-Flags (z.B. GMX junk:2) nicht in die UI kippen.
         
         # --- Kategorie bestimmen ---
+        from src.services.audit_identity_helpers import ROLE_LOCAL_PARTS
+
+        if score <= -0.3:
+            sl = sender_lower.split("@")[0] if "@" in sender_lower else sender_lower
+            routine_local = sl in ROLE_LOCAL_PARTS or sl in {
+                "mailer-daemon",
+                "postmaster",
+                "noreply",
+                "no-reply",
+            }
+            important_kw_hit = any(kw in subject_lower for kw in db_keywords)
+            important_subj_hit = any(
+                re.search(p, subject_lower) for p in IMPORTANT_SUBJECT_PATTERNS
+            )
+            if routine_local and not important_kw_hit and not important_subj_hit:
+                score = max(score, -0.25)
+                reasons.append("Routine-Absender (kein Wichtig-Signal)")
+
         if score >= 0.6:  # Balanciert: Newsletter (List-Unsubscribe=0.8) → SAFE
             info.category = TrashCategory.SAFE
             info.confidence = min(1.0, score)

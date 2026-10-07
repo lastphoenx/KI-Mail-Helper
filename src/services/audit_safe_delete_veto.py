@@ -148,9 +148,21 @@ def safe_delete_veto_reason(
     is_marketing: bool = False,
 ) -> Optional[str]:
     """Ein Grund genügt — Mail darf nicht «sicher löschbar» bleiben."""
+    from src.services.audit_identity_helpers import is_curated_inbox_context
+
     folder = getattr(info, "folder", "") or ""
     if is_sent_or_drafts_folder(folder):
         return "Ordner Gesendet/Entwürfe (kein Lösch-Audit)"
+
+    if is_curated_inbox_context(info):
+        return "Wichtiger Ordner (kuratierte INBOX)"
+
+    spam_score = getattr(info, "spam_score", None)
+    if is_marketing and (
+        getattr(info, "server_spam_flag", False)
+        or (spam_score is not None and spam_score >= 5.0)
+    ):
+        return "Provider-Spam trotz Newsletter-Merkmalen"
 
     if should_never_scam(
         info,
@@ -199,5 +211,16 @@ def safe_delete_veto_reason(
     sender = normalize_sender_email(getattr(info, "sender", "") or "")
     if sender and account_email and sender == account_email.strip().lower():
         return "Eigene Absender-Adresse"
+
+    from src.services.audit_own_domains import sender_on_own_domains
+
+    if own_domains and sender_on_own_domains(sender, own_domains):
+        blob = reason_blob + " " + subject.lower()
+        if re.search(
+            r"(?i)(system-mail|system-status|erfolgsmeldung|backup|cron|"
+            r"erfolgreich|completed successfully)",
+            blob,
+        ):
+            return "Eigene Server-/Statusmail"
 
     return None
