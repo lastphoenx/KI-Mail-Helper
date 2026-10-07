@@ -126,6 +126,9 @@ class AuditConfigCache:
             'auto_delete_rules': [],  # Liste von Regeln
             'cluster_settings_raw': {},
             'cluster_settings': resolve_effective_cluster_settings({}),
+            'curated_folder_patterns': [],
+            'success_safe_after_days': 30,
+            'transaction_safe_after_days': 30,
         }
         load_ok = False
         
@@ -241,6 +244,33 @@ class AuditConfigCache:
                             models.MailAccount.user_id == user_id,
                         )
                         .first()
+                    )
+                    from src.services.audit_quality_rules import (
+                        clamp_age_days,
+                        clean_folder_patterns,
+                    )
+
+                    raw_curated = (
+                        getattr(acc, "audit_curated_folder_patterns", None) if acc else None
+                    )
+                    if raw_curated:
+                        try:
+                            parsed_curated = json.loads(raw_curated)
+                        except (TypeError, json.JSONDecodeError):
+                            parsed_curated = []
+                        if isinstance(parsed_curated, list):
+                            config["curated_folder_patterns"] = clean_folder_patterns(
+                                parsed_curated
+                            )
+                    config["success_safe_after_days"] = clamp_age_days(
+                        getattr(acc, "audit_success_safe_after_days", None) if acc else None,
+                        30,
+                    )
+                    config["transaction_safe_after_days"] = clamp_age_days(
+                        getattr(acc, "audit_transaction_safe_after_days", None)
+                        if acc
+                        else None,
+                        30,
                     )
                     raw_own = getattr(acc, "audit_own_domains", None) if acc else None
                     if raw_own:
@@ -1048,7 +1078,7 @@ IMPORTANT_SUBJECT_PATTERNS = [
     r"kündigung|cancellation|termination",
     r"mahnung|reminder.*payment|overdue",
     r"(ihr|your|dein).?termin|termin.?(am|um|bei|bestätig)|appointment|meeting\s+(invite|request)",
-    r"bewerbung|application|job",
+    r"bewerbung|stellenangebot|jobangebot|job\s+offer|\bapplication\b",
     r"gehalt|salary|payroll",
     r"steuer|tax\s+(return|document)",
     r"versicherung|insurance\s+(claim|policy)",
@@ -1056,7 +1086,7 @@ IMPORTANT_SUBJECT_PATTERNS = [
     r"anwalt|lawyer|legal",
     r"gericht|court",
     r"polizei|police",
-    r"bank|konto|account.*statement",
+    r"\bbank\b|\bkonto\b|account.*statement",
     r"passwort|password.*reset",
     r"zwei.?faktor|2fa|verification\s+code",
     r"(sehr\s+)?wichtig|important\s+(notice|update)|urgent|dringend",
@@ -3045,6 +3075,10 @@ class FolderAuditService:
             for x in items:
                 if x.category != TrashCategory.REVIEW:
                     continue
+                from src.services.audit_quality_rules import subject_has_operational_alarm
+
+                if subject_has_operational_alarm(x.subject or ""):
+                    continue
                 if is_curated_inbox_context(x):
                     continue
                 if safe_delete_veto_reason(x, is_marketing=True):
@@ -3144,6 +3178,18 @@ class FolderAuditService:
             info.sender, 
             audit_config.get('vip_senders', set()),
             audit_config.get('vip_pattern_types', {})
+        )
+        info.vip_matched = bool(vip_match)
+        from src.services.audit_quality_rules import clamp_age_days
+
+        info.curated_folder_patterns = list(
+            audit_config.get("curated_folder_patterns") or []
+        )
+        info.success_safe_after_days = clamp_age_days(
+            audit_config.get("success_safe_after_days"), 30
+        )
+        info.transaction_safe_after_days = clamp_age_days(
+            audit_config.get("transaction_safe_after_days"), 30
         )
         if vip_match:
             score -= 1.0  # Stark wichtig
@@ -3304,24 +3350,18 @@ class FolderAuditService:
         from src.services.audit_own_domains import sender_on_own_domains
 
         sender_on_own = sender_on_own_domains(info.sender or "", own_domains)
+        from src.services.audit_quality_rules import (
+            email_age_days,
+            is_routine_status_subject,
+            is_success_status_subject,
+            is_transaction_status_subject,
+            subject_has_operational_alarm,
+        )
 
-        # Kombination: System-Mail + Erfolgsmeldung = sehr sicher löschbar (nicht eigene Domains)
-        if is_system_mail and is_success_status and not sender_on_own:
-            score += 1.5  # Starkes Signal für SAFE
-            reasons.append("🖥️ System-Statusmeldung (erfolgreich)")
-        elif is_system_mail and not sender_on_own:
-            score += 0.8  # System-Mail allein
-            reasons.append("🖥️ System-Mail")
-        elif is_success_status and not sender_on_own:
-            # Erfolgs-Status ohne System-Sender: Alter prüfen
-            if info.date:
-                age_days = (datetime.now(UTC) - info.date).days if info.date.tzinfo else (datetime.now() - info.date).days
-                if age_days > 30:
-                    score += 1.2  # Alte Erfolgsmeldung = definitiv safe
-                    reasons.append(f"✅ Erfolgsmeldung (vor {age_days} Tagen)")
-                else:
-                    score += 0.5
-                    reasons.append("✅ Erfolgsmeldung")
+        if is_success_status_subject(subject):
+            is_success_status = True
+        info.operational_alarm = subject_has_operational_alarm(subject)
+        info.routine_status = is_routine_status_subject(subject)
         
         # --- POWER HEADERS (Server-Vorarbeit nutzen!) ---
         
@@ -3410,11 +3450,19 @@ class FolderAuditService:
         
         # 3. Prüfe globale Trusted Swiss Domains (hardcoded fallback)
         is_trusted = is_user_trusted or is_db_trusted or FolderAuditService._is_trusted_domain(info.sender)
+        status_or_routine = (
+            is_success_status or info.routine_status or info.operational_alarm
+        )
         if is_trusted and score < 1.0:  # Kein Scam erkannt
             # Trusted + Marketing = sicher löschbar (Newsletter)
             if is_marketing:
                 # Trusted Marketing ist sicher löschbar, keine Penalty
                 pass
+            elif status_or_routine:
+                if is_db_trusted:
+                    reasons.append("Vertrauenswürdig (DB)")
+                else:
+                    reasons.append("Vertrauenswürdiger Absender")
             else:
                 # Trusted aber kein Marketing = evtl. wichtig
                 score -= 0.3
@@ -3422,6 +3470,54 @@ class FolderAuditService:
                     reasons.append("Vertrauenswürdig (DB)")
                 else:
                     reasons.append("Vertrauenswürdiger Absender")
+
+        trusted_or_own = bool(sender_on_own or is_trusted)
+        age_days = email_age_days(info.date)
+        if info.operational_alarm:
+            score -= 0.8
+            reasons.append("Betriebs-/Alarmmeldung (nicht löschbar)")
+        elif is_system_mail and is_success_status and trusted_or_own:
+            n_success = info.success_safe_after_days
+            if age_days is not None and age_days >= n_success:
+                score += 1.5
+                info.aged_success_safe = True
+                reasons.append(
+                    f"✅ Erfolgs-/Statusmeldung (älter als {n_success} Tage)"
+                )
+            else:
+                score += 0.2
+                reasons.append("✅ Erfolgsmeldung")
+        elif is_system_mail and is_success_status:
+            score += 1.5
+            reasons.append("🖥️ System-Statusmeldung (erfolgreich)")
+        elif is_system_mail and not sender_on_own and not is_trusted:
+            score += 0.8
+            reasons.append("🖥️ System-Mail")
+        elif is_success_status and trusted_or_own:
+            n_success = info.success_safe_after_days
+            if age_days is not None and age_days >= n_success:
+                score += 1.5
+                info.aged_success_safe = True
+                reasons.append(
+                    f"✅ Erfolgs-/Statusmeldung (älter als {n_success} Tage)"
+                )
+            else:
+                score += 0.2
+                reasons.append("✅ Erfolgsmeldung")
+        elif is_success_status:
+            if age_days is not None and age_days > 30:
+                score += 1.2
+                reasons.append(f"✅ Erfolgsmeldung (vor {age_days} Tagen)")
+            else:
+                score += 0.5
+                reasons.append("✅ Erfolgsmeldung")
+
+        if is_transaction_status_subject(subject) and not info.operational_alarm:
+            n_txn = info.transaction_safe_after_days
+            if age_days is not None and age_days >= n_txn:
+                info.aged_transaction_safe = True
+            else:
+                info.transaction_hold = True
         
         # --- Newsletter-Detection (vorhandene Logik) ---
         newsletter_conf = known_newsletters.classify_newsletter_confidence(
@@ -3531,6 +3627,7 @@ class FolderAuditService:
 
             if is_known_contact_email(ctx, info.sender or ""):
                 skip_identity = True
+                info.known_contact = True
         info.skip_identity_rules = skip_identity
 
         trusted_domains = audit_config.get('trusted_domains', set()) if audit_config else set()
@@ -3597,12 +3694,41 @@ class FolderAuditService:
         if score >= 0.6:  # Balanciert: Newsletter (List-Unsubscribe=0.8) → SAFE
             info.category = TrashCategory.SAFE
             info.confidence = min(1.0, score)
-        elif score <= -0.3:
+        elif score < -0.3:
             info.category = TrashCategory.IMPORTANT
             info.confidence = min(1.0, abs(score))
         else:
             info.category = TrashCategory.REVIEW
             info.confidence = 0.5
+
+        from src.services.audit_quality_rules import provider_spam_newsletter_safe
+
+        if info.operational_alarm:
+            info.category = TrashCategory.IMPORTANT
+            info.confidence = min(1.0, abs(score) if score < 0 else 0.8)
+        elif provider_spam_newsletter_safe(info):
+            info.category = TrashCategory.SAFE
+            info.confidence = min(1.0, max(score, 0.7))
+            reasons.append("Newsletter trotz Provider-Spam (kein Markentreffer)")
+        elif getattr(info, "aged_success_safe", False):
+            info.category = TrashCategory.SAFE
+            info.confidence = min(1.0, max(score, 0.7))
+        elif getattr(info, "aged_transaction_safe", False):
+            info.category = TrashCategory.SAFE
+            info.confidence = min(1.0, max(score, 0.7))
+            reasons.append(
+                f"Sendungsstatus älter als {info.transaction_safe_after_days} Tage"
+            )
+        elif getattr(info, "transaction_hold", False) and info.category == TrashCategory.SAFE:
+            info.category = TrashCategory.REVIEW
+            info.confidence = 0.5
+            reasons.append(
+                f"Sendungsstatus (löschbar nach {info.transaction_safe_after_days} Tagen)"
+            )
+        elif info.routine_status and info.category == TrashCategory.IMPORTANT:
+            info.category = TrashCategory.REVIEW
+            info.confidence = 0.5
+            reasons.append("Routine-Status (kein Wichtig-Signal)")
 
         from src.services.audit_safe_delete_veto import safe_delete_veto_reason
 
@@ -3615,7 +3741,10 @@ class FolderAuditService:
                 is_marketing=is_marketing,
             )
             if veto:
-                info.category = TrashCategory.REVIEW
+                if veto == "Betriebs-/Alarmmeldung":
+                    info.category = TrashCategory.IMPORTANT
+                else:
+                    info.category = TrashCategory.REVIEW
                 info.confidence = 0.5
                 reasons.append(f"🛡️ Löschschutz: {veto}")
         

@@ -1,5 +1,7 @@
 """Scan-Hinweis: Konfigurations-Zusammenfassung."""
 
+import re
+
 from src.services.audit_scan_config_notice import build_audit_scan_config_notice
 
 
@@ -34,6 +36,13 @@ def test_build_notice_from_scan_config_snapshot():
     assert "Meine Domains: 1" in notice
     assert "Muster Betreff: 1" in notice
     assert "Muster Absender: 0" in notice
+    match = re.search(
+        r"(\d+) Marken aktiv \((\d+) nur eigene, (\d+) nur System, (\d+) in beiden\)",
+        notice,
+    )
+    assert match
+    total, own_only, system_only, both = (int(x) for x in match.groups())
+    assert own_only + system_only + both == total
 
 
 def test_build_notice_load_failed_no_fake_counts():

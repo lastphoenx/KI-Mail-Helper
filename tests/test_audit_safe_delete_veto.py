@@ -30,9 +30,9 @@ def _veto_subject(subject: str) -> bool:
     info = _Info(
         subject=subject,
         sender="news@marketing.example",
-        has_list_unsubscribe=True,
+        has_list_unsubscribe=False,
     )
-    return "geschütztes Muster" in (safe_delete_veto_reason(info, is_marketing=True) or "")
+    return "geschütztes Muster" in (safe_delete_veto_reason(info, is_marketing=False) or "")
 
 
 @pytest.mark.parametrize(
@@ -111,9 +111,11 @@ def test_safe_veto_ticket_subject():
     info = _Info(
         subject="[#101922024] Gehackt",
         sender="support@shop.example",
-        has_list_unsubscribe=True,
     )
-    assert "geschütztes Muster" in (safe_delete_veto_reason(info, is_marketing=True) or "")
+    assert "geschütztes Muster" in (safe_delete_veto_reason(info, is_marketing=False) or "")
+    info.has_list_unsubscribe = True
+    reason = safe_delete_veto_reason(info, is_marketing=True) or ""
+    assert "geschütztes Muster" not in reason
 
 
 def test_analyze_safe_veto_downgrades_to_review():

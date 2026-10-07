@@ -54,6 +54,29 @@ def _parse_audit_own_domains(account) -> list:
     return []
 
 
+def _audit_quality_settings_payload(account) -> dict:
+    from src.services.audit_quality_rules import clamp_age_days, clean_folder_patterns
+
+    patterns: list = []
+    raw_patterns = getattr(account, "audit_curated_folder_patterns", None)
+    if raw_patterns:
+        try:
+            parsed = json.loads(raw_patterns)
+        except (TypeError, json.JSONDecodeError):
+            parsed = []
+        if isinstance(parsed, list):
+            patterns = clean_folder_patterns(parsed)
+    return {
+        "curated_folder_patterns": patterns,
+        "success_safe_after_days": clamp_age_days(
+            getattr(account, "audit_success_safe_after_days", None), 30
+        ),
+        "transaction_safe_after_days": clamp_age_days(
+            getattr(account, "audit_transaction_safe_after_days", None), 30
+        ),
+    }
+
+
 def _parse_scan_account_id(raw) -> int:
     try:
         account_id = int(raw)
@@ -274,6 +297,7 @@ def get_scan_settings(account_id):
         return jsonify({
             "success": True,
             "account_id": account_id,
+            **_audit_quality_settings_payload(account),
             "exclude_folders": _parse_audit_exclude_folders(account),
             "own_domains": _parse_audit_own_domains(account),
         })
@@ -295,7 +319,14 @@ def save_scan_settings():
 
         if not account_id:
             return jsonify({"error": "account_id erforderlich"}), 400
-        if exclude_folders is None and own_domains is None:
+        quality_keys = (
+            "curated_folder_patterns",
+            "success_safe_after_days",
+            "transaction_safe_after_days",
+        )
+        if exclude_folders is None and own_domains is None and not any(
+            k in data for k in quality_keys
+        ):
             return jsonify({"error": "exclude_folders oder own_domains erforderlich"}), 400
         if exclude_folders is not None and not isinstance(exclude_folders, list):
             return jsonify({"error": "exclude_folders muss eine Liste sein"}), 400
@@ -342,6 +373,29 @@ def save_scan_settings():
             account.audit_exclude_folders = json.dumps(cleaned) if cleaned else None
         if own_domains is not None:
             account.audit_own_domains = json.dumps(cleaned_domains) if cleaned_domains else None
+        if "curated_folder_patterns" in data:
+            from src.services.audit_quality_rules import clean_folder_patterns
+
+            raw_patterns = data.get("curated_folder_patterns")
+            if isinstance(raw_patterns, str):
+                raw_patterns = raw_patterns.replace(";", "\n").replace(",", "\n").splitlines()
+            if raw_patterns is not None and not isinstance(raw_patterns, list):
+                return jsonify({"error": "curated_folder_patterns muss eine Liste sein"}), 400
+            cleaned_patterns = clean_folder_patterns(raw_patterns or [])
+            account.audit_curated_folder_patterns = (
+                json.dumps(cleaned_patterns) if cleaned_patterns else None
+            )
+        if "success_safe_after_days" in data or "transaction_safe_after_days" in data:
+            from src.services.audit_quality_rules import clamp_age_days
+
+            if "success_safe_after_days" in data:
+                account.audit_success_safe_after_days = clamp_age_days(
+                    data.get("success_safe_after_days"), 30
+                )
+            if "transaction_safe_after_days" in data:
+                account.audit_transaction_safe_after_days = clamp_age_days(
+                    data.get("transaction_safe_after_days"), 30
+                )
         db.commit()
 
         from src.services.folder_audit_service import AuditConfigCache
@@ -350,6 +404,7 @@ def save_scan_settings():
         return jsonify({
             "success": True,
             "account_id": account_id,
+            **_audit_quality_settings_payload(account),
             "exclude_folders": _parse_audit_exclude_folders(account),
             "own_domains": _parse_audit_own_domains(account),
         })

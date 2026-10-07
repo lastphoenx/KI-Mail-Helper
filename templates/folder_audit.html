@@ -827,6 +827,43 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Wichtige Ordner + Alter (pro Account) -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditQualitySection">
+                        <i class="bi bi-folder-check me-2 text-primary"></i>
+                        Wichtige Ordner und Alter
+                    </button>
+                </h2>
+                <div id="auditQualitySection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <p class="text-muted mb-2">
+                            Ordner-Muster, die <strong>nicht</strong> sicher löschbar werden (pro Account).
+                            Der normale Posteingang gilt nie. Muster: exakter Pfad, ein Pfad-Segment oder Teilstring.
+                            Beispiel: <code>Dringend/Bank</code>
+                        </p>
+                        <textarea class="form-control form-control-sm font-monospace" id="auditCuratedFoldersInput" rows="3"
+                                  placeholder="Dringend/Bank&#10;Wichtig/Rechnungen"></textarea>
+                        <div class="row g-2 mt-2">
+                            <div class="col-sm-6">
+                                <label class="form-label small mb-1" for="auditSuccessSafeDays">Erfolgs-/Statusmail löschbar nach Tagen</label>
+                                <input type="number" class="form-control form-control-sm" id="auditSuccessSafeDays" min="1" max="3650" value="30">
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label small mb-1" for="auditTransactionSafeDays">Sendungsstatus löschbar nach Tagen</label>
+                                <input type="number" class="form-control form-control-sm" id="auditTransactionSafeDays" min="1" max="3650" value="30">
+                            </div>
+                        </div>
+                        <div class="mt-2 d-flex justify-content-between align-items-center">
+                            <small class="text-muted">Fehler und Alarme bleiben immer. Gespeichert mit «Speichern».</small>
+                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditQualityBtn">
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
             
             <!-- Marken-Domains (Scam / LLM-Kalibrierung) -->
             <div class="accordion-item">
@@ -1199,8 +1236,8 @@
                     <div class="accordion-body">
                         <p class="text-muted mb-3">
                             Absender, die du <strong>priorisieren</strong> willst (exakte Adresse vor Domain vor Teilstring).
-                            <strong>Heute:</strong> starker Bonus Richtung «wichtig» im Score — blockiert Identitäts-Verdacht noch nicht vollständig
-                            (geplant: feste Regel «wichtig» in der Entscheidungs-Kaskade).
+                            VIP übersteuert weiche Identitätsregeln, solange die Authentifizierung nicht fehlschlägt.
+                            Harte Markentreffer (Marke, Domain passt nicht) bleiben.
                             Format: <code>chef@firma.ch</code>, <code>@firma.ch</code>, <code>firma.ch</code>
                         </p>
                         <textarea id="vipSendersInput" class="form-control font-monospace" rows="4" 
@@ -1671,6 +1708,10 @@
 
         document.getElementById('reloadAuditFoldersBtn').addEventListener('click', loadAuditScanFolderSettings);
         document.getElementById('saveAuditExcludeFoldersBtn').addEventListener('click', saveAuditScanFolderSettings);
+        const saveAuditQualityBtn = document.getElementById('saveAuditQualityBtn');
+        if (saveAuditQualityBtn) {
+            saveAuditQualityBtn.addEventListener('click', saveAuditScanFolderSettings);
+        }
         const saveOwnDomainsBtn = document.getElementById('saveOwnDomainsBtn');
         if (saveOwnDomainsBtn) {
             saveOwnDomainsBtn.addEventListener('click', async function() {
@@ -1994,6 +2035,18 @@
                 excluded = data.exclude_folders || [];
                 ownDomains = data.own_domains || [];
                 auditOwnDomainsCache = ownDomains || [];
+                const curatedInput = document.getElementById('auditCuratedFoldersInput');
+                if (curatedInput) {
+                    curatedInput.value = (data.curated_folder_patterns || []).join('\n');
+                }
+                const successDays = document.getElementById('auditSuccessSafeDays');
+                if (successDays && data.success_safe_after_days) {
+                    successDays.value = String(data.success_safe_after_days);
+                }
+                const txnDays = document.getElementById('auditTransactionSafeDays');
+                if (txnDays && data.transaction_safe_after_days) {
+                    txnDays.value = String(data.transaction_safe_after_days);
+                }
             }
         } catch (e) {
             excluded = [];
@@ -2051,6 +2104,19 @@
                     account_id: parseInt(accountId, 10),
                     exclude_folders: excluded,
                     own_domains: own_domains,
+                    curated_folder_patterns: (function() {
+                        const el = document.getElementById('auditCuratedFoldersInput');
+                        if (!el) return [];
+                        return el.value.split(/[\n,;]+/).map(function(s) { return s.trim(); }).filter(Boolean);
+                    })(),
+                    success_safe_after_days: (function() {
+                        const el = document.getElementById('auditSuccessSafeDays');
+                        return el ? parseInt(el.value, 10) : 30;
+                    })(),
+                    transaction_safe_after_days: (function() {
+                        const el = document.getElementById('auditTransactionSafeDays');
+                        return el ? parseInt(el.value, 10) : 30;
+                    })(),
                 }),
             });
             const data = await parseJsonResponse(response);

@@ -178,19 +178,16 @@ def local_reflects_person_name(display_name: str, sender: str) -> bool:
 
 
 def is_curated_inbox_context(meta) -> bool:
-    """Eigene Ablage — ohne Spam/Junk keine Identitäts-Verdacht-Kachel."""
+    """Nur Ordner aus der Kontoliste. Plain INBOX zählt nie. Spam bleibt prüfbar."""
     if getattr(meta, "server_spam_flag", False):
         return False
     junk = getattr(meta, "provider_junk_score", None)
     if junk is not None and junk >= 5:
         return False
-    folder = (getattr(meta, "folder", "") or "").replace("\\", "/").lower()
-    if not folder.startswith("inbox"):
-        return False
-    if folder in ("inbox",):
-        return True
-    markers = ("wichtig", "dringend", "informativ", "important", "urgent")
-    return any(m in folder for m in markers)
+    from src.services.audit_quality_rules import folder_is_curated
+
+    patterns = getattr(meta, "curated_folder_patterns", None) or []
+    return folder_is_curated(getattr(meta, "folder", "") or "", patterns)
 
 
 def identity_rules_warrant_suspicion(

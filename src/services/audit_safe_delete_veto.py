@@ -149,22 +149,42 @@ def safe_delete_veto_reason(
 ) -> Optional[str]:
     """Ein Grund genügt — Mail darf nicht «sicher löschbar» bleiben."""
     from src.services.audit_identity_helpers import is_curated_inbox_context
+    from src.services.audit_quality_rules import (
+        aged_success_applies,
+        aged_transaction_applies,
+        has_bulk_signal,
+        provider_spam_newsletter_safe,
+        subject_has_operational_alarm,
+    )
 
     folder = getattr(info, "folder", "") or ""
+    subject = getattr(info, "subject", "") or ""
+    if subject_has_operational_alarm(subject):
+        return "Betriebs-/Alarmmeldung"
+
     if is_sent_or_drafts_folder(folder):
         return "Ordner Gesendet/Entwürfe (kein Lösch-Audit)"
 
     if is_curated_inbox_context(info):
-        return "Wichtiger Ordner (kuratierte INBOX)"
+        return "Wichtiger Ordner (Konfiguration)"
 
-    spam_score = getattr(info, "spam_score", None)
-    if is_marketing and (
-        getattr(info, "server_spam_flag", False)
-        or (spam_score is not None and spam_score >= 5.0)
+    bulk = has_bulk_signal(info)
+    aged_ok = aged_success_applies(info)
+    aged_txn = aged_transaction_applies(info)
+    if (
+        is_marketing
+        and not provider_spam_newsletter_safe(info)
+        and (
+            getattr(info, "server_spam_flag", False)
+            or (
+                getattr(info, "spam_score", None) is not None
+                and getattr(info, "spam_score", None) >= 5.0
+            )
+        )
     ):
         return "Provider-Spam trotz Newsletter-Merkmalen"
 
-    if should_never_scam(
+    if not aged_ok and should_never_scam(
         info,
         account_email=account_email,
         own_domains=own_domains,
@@ -176,16 +196,18 @@ def safe_delete_veto_reason(
     reason_blob = " ".join(reasons).lower()
     if getattr(info, "is_reply", False) or "konversation" in reason_blob:
         return "Teil einer Konversation"
-    if REPLY_SUBJECT_RE.search(getattr(info, "subject", "") or ""):
+    if REPLY_SUBJECT_RE.search(subject):
         return "Antwort-Betreff (Re:/AW:)"
 
-    if is_user_trusted or "vertrauenswürdig" in reason_blob:
+    if not aged_ok and (is_user_trusted or "vertrauenswürdig" in reason_blob):
         return "Vertrauenswürdiger Absender"
 
-    subject = getattr(info, "subject", "") or ""
     from src.services.audit_identity_helpers import DOCUMENT_SUBJECT_RE
 
-    if SAFE_DELETE_VETO_SUBJECT_RE.search(subject) or DOCUMENT_SUBJECT_RE.search(subject):
+    subject_protected = bool(
+        SAFE_DELETE_VETO_SUBJECT_RE.search(subject) or DOCUMENT_SUBJECT_RE.search(subject)
+    )
+    if subject_protected and not bulk and not aged_txn:
         return "Betreff: geschütztes Muster (Ticket/Sicherheit/Zahlung/Angebot)"
 
     has_unsub = bool(getattr(info, "has_list_unsubscribe", False))
@@ -196,10 +218,7 @@ def safe_delete_veto_reason(
     if "\\Flagged" in flags or "$Flagged" in flags:
         return "Als wichtig markiert (Flag)"
 
-    doc_in_subject = bool(
-        SAFE_DELETE_VETO_SUBJECT_RE.search(subject)
-        or DOCUMENT_SUBJECT_RE.search(subject)
-    )
+    doc_in_subject = subject_protected and not bulk and not aged_txn
     if getattr(info, "has_attachments", False):
         if doc_in_subject:
             return "Anhang mit geschütztem Betreff"
@@ -209,12 +228,17 @@ def safe_delete_veto_reason(
             return "Anhang ohne Newsletter-Einstufung"
 
     sender = normalize_sender_email(getattr(info, "sender", "") or "")
-    if sender and account_email and sender == account_email.strip().lower():
+    if (
+        not aged_ok
+        and sender
+        and account_email
+        and sender == account_email.strip().lower()
+    ):
         return "Eigene Absender-Adresse"
 
     from src.services.audit_own_domains import sender_on_own_domains
 
-    if own_domains and sender_on_own_domains(sender, own_domains):
+    if not aged_ok and own_domains and sender_on_own_domains(sender, own_domains):
         blob = reason_blob + " " + subject.lower()
         if re.search(
             r"(?i)(system-mail|system-status|erfolgsmeldung|backup|cron|"

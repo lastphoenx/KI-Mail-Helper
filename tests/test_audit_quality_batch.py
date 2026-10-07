@@ -56,7 +56,7 @@ def test_safe_veto_provider_spam_with_newsletter():
         server_spam_flag=True,
     )
     reason = safe_delete_veto_reason(info, is_marketing=True)
-    assert reason == "Provider-Spam trotz Newsletter-Merkmalen"
+    assert reason is None
 
 
 def test_safe_veto_curated_inbox_folder():
@@ -72,8 +72,10 @@ def test_safe_veto_curated_inbox_folder():
         folder="INBOX.Wichtig",
         has_list_unsubscribe=True,
     )
+    assert safe_delete_veto_reason(info, is_marketing=True) is None
+    info.curated_folder_patterns = ["Wichtig"]
     assert safe_delete_veto_reason(info, is_marketing=True) == (
-        "Wichtiger Ordner (kuratierte INBOX)"
+        "Wichtiger Ordner (Konfiguration)"
     )
 
 

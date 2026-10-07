@@ -154,7 +154,7 @@ def test_integrated_category_suspicion():
         },
         llm_enabled=False,
     )
-    assert out.category == TrashCategory.SUSPICION
+    assert out.category == TrashCategory.SCAM
     assert any(r.startswith("Identität:") for r in out.reasons)
 
 

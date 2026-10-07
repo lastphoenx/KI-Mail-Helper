@@ -170,6 +170,7 @@ LLM_REASON_REJECT_RE = re.compile(
     r"(?i)(halluzin|erfunden|fiktiv|does not exist|nicht existier|"
     r"keine echte (version|software)|unbekannte version|denkprozess|"
     r"chain of thought|"
+    r"ich muss|also sollte|u wählen|u waehlen|"
     r"version \d+(\.\d+)+ (gibt es nicht|existiert nicht))"
 )
 
@@ -360,9 +361,12 @@ def should_never_scam(
             if dom == od or dom.endswith("." + od):
                 return True
         if account_email:
+            from src.services.audit_quality_rules import account_domain_counts_as_own
+
             acc_dom = extract_domain(account_email.strip().lower())
-            if acc_dom and (dom == acc_dom or dom.endswith("." + acc_dom)):
-                return True
+            if acc_dom and account_domain_counts_as_own(acc_dom):
+                if dom == acc_dom or dom.endswith("." + acc_dom):
+                    return True
 
     local = extract_local_part(meta.sender or "").lower()
     if local == "mailer-daemon":
@@ -1252,8 +1256,13 @@ def _sanitize_llm_identity_reason(reason: str) -> Optional[str]:
     r = _THINK_BLOCK_RE.sub("", r).strip()
     if not r or LLM_PLACEHOLDER_RE.search(r) or LLM_REASON_REJECT_RE.search(r):
         return None
-    if len(r) > 240:
-        r = r[:237].rstrip() + "…"
+    from src.services.audit_quality_rules import first_sentence
+
+    r = first_sentence(r)
+    if not r or LLM_REASON_REJECT_RE.search(r):
+        return None
+    if len(r) > 220:
+        r = r[:217].rstrip() + "…"
     return r
 
 
@@ -1370,28 +1379,28 @@ def _merge_hybrid_llm_identity(
         if is_curated_inbox_context(meta):
             return
         out.needs_review_boost = True
-        if reason:
-            out.reasons = out.reasons + [f"Identität (KI): {reason}"]
         return
 
     if verdict != "S":
         return
 
+    ki_line = None
+    if reason:
+        ki_line = f"Identität (KI): {reason}"
+    elif impersonated:
+        ki_line = f"Identität (KI): behauptet {impersonated}"
+
     if hybrid_second_evidence(out, meta):
         out.is_scam = True
         out.confidence = max(out.confidence, 0.75)
-        extra: List[str] = []
-        if impersonated:
-            extra.append(f"Identität (KI): behauptet {impersonated}")
-        if reason:
-            extra.append(f"Identität (KI): {reason}")
-        out.reasons = out.reasons + extra
+        if ki_line:
+            out.reasons = out.reasons + [ki_line]
         return
 
     out.identity_suspicion = True
     out.needs_review_boost = False
-    if reason:
-        out.reasons = out.reasons + [f"Identität (KI): {reason}"]
+    if ki_line:
+        out.reasons = out.reasons + [ki_line]
     return
 
 
@@ -1795,6 +1804,25 @@ def _layer1_decision(
             id_msgs.append(i1_hit.message)
             id_score += 55
 
+        from src.services.brand_domain_policy import find_brand_in_local_part
+
+        e10_hit = find_brand_in_local_part(
+            meta.sender or "",
+            brand_map,
+            trusted_domains=trusted_set,
+        )
+        if e10_hit and "E10" not in id_rules:
+            id_rules.append("E10")
+            id_msgs.append(e10_hit.message)
+            id_score += 55
+
+    try:
+        from src.services.audit_quality_rules import HARD_BRAND_RULES
+
+        setattr(meta, "identity_brand_hit", bool(set(id_rules) & HARD_BRAND_RULES))
+    except (AttributeError, TypeError):
+        pass
+
     if _auth_strong_pass(meta) and brand_hit:
         id_msgs.append(
             "Auth bestanden, aber Domain gehört nicht zur genannten Marke"
@@ -1844,6 +1872,22 @@ def _layer1_decision(
         out.identity_suspicion = True
         return False, False, True, combined, out
 
+    from src.services.audit_quality_rules import (
+        HARD_BRAND_RULES,
+        brand_hit_has_warning,
+        vip_suppresses_soft_identity,
+    )
+
+    hard_brand = bool(set(id_rules) & HARD_BRAND_RULES)
+    if hard_brand and brand_hit_has_warning(meta, auth_failed=auth_forces):
+        out.is_scam = True
+        out.confidence = min(1.0, max(id_score, transport_score, auth_score, 80) / 100.0)
+        return True, False, False, combined, out
+
+    vip_soft = vip_suppresses_soft_identity(
+        meta, id_rules, auth_failed=auth_forces
+    )
+
     if "E1" in id_rules:
         out.is_scam = True
         out.confidence = min(1.0, max(id_score, auth_score, 80) / 100.0)
@@ -1884,7 +1928,7 @@ def _layer1_decision(
         )
         return _mark_verdacht()
 
-    if brand_hit or b2_hit or i1_hit:
+    if brand_hit or b2_hit or i1_hit or "E10" in id_rules:
         return _mark_verdacht()
 
     from src.services.audit_identity_helpers import (
@@ -1893,16 +1937,16 @@ def _layer1_decision(
     )
 
     force_verdacht = {"E9", "E8"} & set(id_rules)
-    if force_verdacht:
+    if force_verdacht and not vip_soft:
         return _mark_verdacht()
 
-    if identity_rules_warrant_suspicion(id_rules, strong_transport=strong_t):
+    if identity_rules_warrant_suspicion(id_rules, strong_transport=strong_t) and not vip_soft:
         if is_curated_inbox_context(meta) and not strong_t:
             pass
         else:
             return _mark_verdacht()
 
-    if id_score >= LAYER1_AUTO_SCAM and not second_evidence:
+    if id_score >= LAYER1_AUTO_SCAM and not second_evidence and not vip_soft:
         if not (is_curated_inbox_context(meta) and not strong_t):
             return _mark_verdacht()
 

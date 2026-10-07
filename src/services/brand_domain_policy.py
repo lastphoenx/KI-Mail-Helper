@@ -300,7 +300,11 @@ def _brand_key_matches_display_name(brand_key: str, name_lower: str) -> bool:
         return False
     if re.search(rf"\b{re.escape(bk)}\b", name_lower):
         return True
+    from src.services.audit_quality_rules import compound_brand_token
+
     for tok in _display_name_tokens(name_lower):
+        if compound_brand_token(bk, tok):
+            return True
         if len(bk) >= _BRAND_PREFIX_MIN_KEY_LEN and tok.startswith(bk):
             extra = len(tok) - len(bk)
             if 0 < extra <= _BRAND_PREFIX_MAX_SUFFIX_LEN:
@@ -548,6 +552,44 @@ def _host_on_marketing_platform(host: str) -> bool:
         if reg == plat or reg.endswith("." + plat):
             return True
     return False
+
+
+def find_brand_in_local_part(
+    sender_email: str,
+    brand_map: Mapping[str, List[str]],
+    *,
+    trusted_domains: Optional[Set[str]] = None,
+) -> Optional[BrandMismatch]:
+    """Marke als Token im Local-Part, Domain ist nicht offiziell."""
+    from src.services.audit_scam_detection import extract_local_part, is_relay_sender_domain
+
+    if not sender_email or is_relay_sender_domain(sender_email):
+        return None
+    host = _sender_host(sender_email)
+    if not host or _trusted_or_whitelist_skips(host, trusted_domains):
+        return None
+    local = extract_local_part(sender_email).lower()
+    tokens = [t for t in re.split(r"[._+\-]+", local) if t]
+    if not tokens:
+        return None
+    for brand, valid_domains in brand_map.items():
+        bk = brand.lower().strip()
+        if len(bk) < 5 or bk in AMBIGUOUS_SHORT_BRANDS:
+            continue
+        if bk not in tokens:
+            continue
+        if host_matches_official_domain(host, valid_domains):
+            continue
+        label_brand = _brand_display_label(brand)
+        return BrandMismatch(
+            brand_key=brand,
+            message=(
+                f"Marke «{label_brand}» im Local-Part, "
+                f"Domain «{host}» ist nicht offiziell"
+            ),
+            host=host,
+        )
+    return None
 
 
 def find_shared_infra_brand_local_mismatch(

@@ -10,14 +10,20 @@ logger = logging.getLogger(__name__)
 
 def _counts_from_audit_config(
     audit_config: Dict[str, Any],
-) -> Tuple[int, int, int, int, int, int, int, int, int, int]:
+) -> Tuple[int, int, int, int, int, int, int, int, int, int, int, int]:
     from src.services.brand_domain_policy import BUILTIN_BRAND_OFFICIAL_DOMAINS
 
     custom_map = audit_config.get("brand_official_domains_custom") or {}
     effective_map = audit_config.get("brand_official_domains_effective") or {}
-    custom_brands = len(custom_map)
-    effective_brands = len(effective_map)
-    builtin_brands = len(BUILTIN_BRAND_OFFICIAL_DOMAINS)
+    custom_keys = set(custom_map)
+    builtin_keys = set(BUILTIN_BRAND_OFFICIAL_DOMAINS)
+    effective_keys = set(effective_map) or (custom_keys | builtin_keys)
+    overlap = len(custom_keys & builtin_keys & effective_keys)
+    custom_only = len((custom_keys & effective_keys) - builtin_keys)
+    builtin_only = len(effective_keys - custom_keys)
+    effective_brands = len(effective_keys)
+    custom_brands = custom_only
+    builtin_brands = builtin_only
 
     n_own = len(audit_config.get("own_domains") or [])
     n_trusted = len(audit_config.get("trusted_domains") or [])
@@ -37,6 +43,8 @@ def _counts_from_audit_config(
         n_safe_subject,
         n_safe_sender,
         n_exclude,
+        overlap,
+        len(custom_keys),
     )
 
 
@@ -81,11 +89,13 @@ def build_audit_scan_config_notice(
         n_safe_subject,
         n_safe_sender,
         n_exclude,
+        overlap,
+        custom_entry_count,
     ) = _counts_from_audit_config(audit_config)
 
     brand_json_warn = False
     row_hint = audit_config.get("_brand_json_bytes")
-    if row_hint and isinstance(row_hint, int) and row_hint > 10 and custom_brands == 0:
+    if row_hint and isinstance(row_hint, int) and row_hint > 10 and custom_entry_count == 0:
         brand_json_warn = True
         logger.warning(
             "Marken-JSON (%s Bytes) aber 0 Custom-Keys in Scan-Config (user_id=%s)",
@@ -95,7 +105,7 @@ def build_audit_scan_config_notice(
 
     parts = [
         f"Konfiguration im Scan: {effective_brands} Marken aktiv "
-        f"(davon {custom_brands} von dir eingetragen, {builtin_brands} System)",
+        f"({custom_brands} nur eigene, {builtin_brands} nur System, {overlap} in beiden)",
         f"Meine Domains: {n_own}",
         f"Vertrauenswürdige Domains: {n_trusted}",
         f"VIP: {n_vip}",
