@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from src.services.audit_quality_rules import (
     BRAND_COMPOUND_SUFFIXES,
     folder_is_curated,
+    subject_is_sensitive,
 )
 from src.services.audit_safe_delete_veto import safe_delete_veto_reason
 from src.services.audit_scam_detection import (
@@ -71,6 +72,51 @@ def test_compound_brand_and_random_suffix_not_official():
     assert not _brand_key_matches_display_name(brand, f"{brand}xyz")
 
 
+def test_sensitive_subject_includes_fr_it_tokens():
+    assert subject_is_sensitive(f"Vérification {_token()} compte")
+    assert subject_is_sensitive(f"sécurité paiement {_token()}")
+    assert subject_is_sensitive(f"Facture commande {_token()}")
+    assert subject_is_sensitive(f"Verifica sicurezza {_token()}")
+    assert subject_is_sensitive(f"Fattura {_token()} pagamento")
+    assert subject_is_sensitive(f"Ordine conto {_token()}")
+    assert not subject_is_sensitive(f"Wochennotiz {_token()}")
+
+
+def test_e10_subject_alone_is_not_scam_subdomain_subject_is_scam():
+    brand = _token()
+    brand_map = {brand: [f"{brand}.example"]}
+    foreign = f"{_token()}.example"
+    local_sender = f"no_reply_login.{brand}@{foreign}"
+
+    subject_only = _mail(
+        sender=local_sender,
+        sender_name="Qx",
+        subject="Rechnung",
+    )
+    subject_only.auth_results = "dkim=pass; spf=pass; dmarc=pass"
+    ev_subject = evaluate_scam_risk(subject_only, llm_enabled=False, brand_map=brand_map)
+    assert "E10" in ev_subject.identity_rules
+    assert ev_subject.identity_suspicion
+    assert not ev_subject.is_scam
+
+    spam = _mail(sender=local_sender, sender_name="Qx", subject="Rechnung")
+    spam.auth_results = "dkim=pass; spf=pass; dmarc=pass"
+    spam.spam_score = 6.0
+    ev_spam = evaluate_scam_risk(spam, llm_enabled=False, brand_map=brand_map)
+    assert ev_spam.is_scam
+
+    auth_fail = _mail(sender=local_sender, sender_name="Qx", subject="Wochennotiz")
+    auth_fail.auth_results = "spf=fail"
+    ev_auth = evaluate_scam_risk(auth_fail, llm_enabled=False, brand_map=brand_map)
+    assert ev_auth.is_scam
+
+    sub_sender = f"news@{brand}.{foreign}"
+    sub = _mail(sender=sub_sender, sender_name="Qx", subject="Rechnung")
+    sub.auth_results = "dkim=pass; spf=pass; dmarc=pass"
+    ev_sub = evaluate_scam_risk(sub, llm_enabled=False, brand_map=brand_map)
+    assert ev_sub.is_scam
+
+
 def test_hard_brand_plus_warning_is_scam_local_part_without_warning_is_suspicion():
     brand = _token()
     brand_map = {brand: [f"{brand}.example"]}
@@ -120,14 +166,41 @@ def test_alarm_not_safe_via_repeat_sender():
         item.category = TrashCategory.REVIEW
         emails.append(item)
     FolderAuditService._harmonize_repeat_marketing_senders(emails)
-    assert all(item.category == TrashCategory.REVIEW for item in emails)
+    assert all(item.category == TrashCategory.SAFE for item in emails)
+
+    plain_domain = f"{_token()}.example"
+    plains = []
+    for i in range(5):
+        item = _mail(
+            uid=10 + i,
+            subject=f"Offline device {_token()}",
+            sender=f"monitor{i}@{plain_domain}",
+        )
+        item.category = TrashCategory.REVIEW
+        plains.append(item)
+    FolderAuditService._harmonize_repeat_marketing_senders(plains)
+    assert all(item.category == TrashCategory.REVIEW for item in plains)
 
     alert = _mail(
         subject=f"Alert: {_token()} scan",
         has_list_unsubscribe=True,
     )
     out = FolderAuditService.analyze_email(alert, audit_config=_cfg(), llm_enabled=False)
-    assert out.category == TrashCategory.IMPORTANT
+    assert out.category != TrashCategory.IMPORTANT
+
+    own_domain = f"{_token()}.example"
+    own_alert = _mail(
+        subject=f"Disk failed {_token()}",
+        sender=f"root@{own_domain}",
+        sender_name="root",
+    )
+    own_out = FolderAuditService.analyze_email(
+        own_alert,
+        account_email=f"root@{own_domain}",
+        audit_config=_cfg(own_domains={own_domain}),
+        llm_enabled=False,
+    )
+    assert own_out.category == TrashCategory.IMPORTANT
 
 
 def test_aged_success_on_own_domain_is_safe_recent_is_not_important():

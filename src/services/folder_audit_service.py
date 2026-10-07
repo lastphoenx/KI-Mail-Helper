@@ -3075,9 +3075,9 @@ class FolderAuditService:
             for x in items:
                 if x.category != TrashCategory.REVIEW:
                     continue
-                from src.services.audit_quality_rules import subject_has_operational_alarm
+                from src.services.audit_quality_rules import alarm_counts_as_important
 
-                if subject_has_operational_alarm(x.subject or ""):
+                if alarm_counts_as_important(x):
                     continue
                 if is_curated_inbox_context(x):
                     continue
@@ -3473,7 +3473,9 @@ class FolderAuditService:
 
         trusted_or_own = bool(sender_on_own or is_trusted)
         age_days = email_age_days(info.date)
-        if info.operational_alarm:
+        from src.services.audit_quality_rules import alarm_counts_as_important, has_bulk_signal
+
+        if info.operational_alarm and not has_bulk_signal(info):
             score -= 0.8
             reasons.append("Betriebs-/Alarmmeldung (nicht löschbar)")
         elif is_system_mail and is_success_status and trusted_or_own:
@@ -3703,7 +3705,7 @@ class FolderAuditService:
 
         from src.services.audit_quality_rules import provider_spam_newsletter_safe
 
-        if info.operational_alarm:
+        if alarm_counts_as_important(info):
             info.category = TrashCategory.IMPORTANT
             info.confidence = min(1.0, abs(score) if score < 0 else 0.8)
         elif provider_spam_newsletter_safe(info):

@@ -88,14 +88,45 @@ _TRANSACTION_STATUS_RE = re.compile(
     r")"
 )
 
+# Betreff-Schutz, mehrsprachig (DE/EN plus FR/IT für CH-Postfächer).
+SENSITIVE_SUBJECT_TOKENS: tuple[str, ...] = (
+    "sicherheit",
+    "security",
+    "sécurité",
+    "securite",
+    "sicurezza",
+    "passwort",
+    "password",
+    "privatkonto",
+    "konto",
+    "account",
+    "compte",
+    "conto",
+    "verifizierung",
+    "verification",
+    "vérification",
+    "verifica",
+    "login",
+    "zugang",
+    "rechnung",
+    "invoice",
+    "facture",
+    "fattura",
+    "bestellung",
+    "commande",
+    "ordine",
+    "payment",
+    "paiement",
+    "pagamento",
+    "refund",
+    "rückerstattung",
+    "rueckerstattung",
+)
+
 _SENSITIVE_SUBJECT_RE = re.compile(
-    r"(?i)("
-    r"sicherheit|security|passwort|password|"
-    r"\bprivatkonto\b|\bkonto\b|\baccount\b|"
-    r"verifiz|verification|\blogin\b|\bzugang\b|"
-    r"\brechnung\b|\binvoice\b|\bbestellung\b|\bpayment\b|"
-    r"\brefund\b|rückerstattung|rueckerstattung"
-    r")"
+    r"(?i)(?:verifiz|(?<![a-z0-9])(?:"
+    + "|".join(re.escape(tok) for tok in SENSITIVE_SUBJECT_TOKENS)
+    + r")(?![a-z0-9]))"
 )
 
 _REPLY_SUBJECT_RE = re.compile(r"^\s*(re|aw|sv|vs|antw)\s*[:]\s*", re.I)
@@ -127,6 +158,20 @@ def clamp_age_days(value, default: int = DEFAULT_SUCCESS_SAFE_AFTER_DAYS) -> int
 
 def subject_has_operational_alarm(subject: str) -> bool:
     return bool(_ALARM_RE.search(subject or ""))
+
+
+def alarm_counts_as_important(info) -> bool:
+    """Alarmwörter nur ohne Werbe-Signal (List-Unsubscribe) Richtung Wichtig.
+
+    Werbung mit Bulk bleibt Werbung. Eigene, vertraute und sonstige
+    Nicht-Werbe-Absender behalten den Alarm.
+    """
+    subject = getattr(info, "subject", "") or ""
+    if not subject_has_operational_alarm(subject):
+        return False
+    if has_bulk_signal(info):
+        return False
+    return True
 
 
 def is_success_status_subject(subject: str) -> bool:
@@ -260,8 +305,6 @@ def provider_spam_newsletter_safe(info) -> bool:
         return False
     if getattr(info, "identity_brand_hit", False):
         return False
-    if subject_has_operational_alarm(getattr(info, "subject", "") or ""):
-        return False
     return True
 
 
@@ -283,7 +326,28 @@ def aged_transaction_applies(info) -> bool:
     return True
 
 
-def brand_hit_has_warning(meta, *, auth_failed: bool = False) -> bool:
+def _e10_only(rule_ids) -> bool:
+    """Marke nur im Local-Part, nicht zusätzlich in Domain oder Anzeigename."""
+    rules = set(rule_ids or [])
+    if "E10" not in rules:
+        return False
+    return not (rules & (HARD_BRAND_RULES - {"E10"}))
+
+
+def brand_hit_has_warning(meta, *, auth_failed: bool = False, rule_ids=None) -> bool:
+    """Hart + Warnung => Scam.
+
+    E10 (nur Local-Part): Spam-Score >= 5 oder Auth-Fehler.
+    Der Betreff allein reicht dort nicht. Domain, Unterdomäne und
+    Anzeigename bleiben: auch ein sensibler Betreff ist die Warnung.
+    """
+    if _e10_only(rule_ids):
+        if auth_failed:
+            return True
+        if getattr(meta, "server_spam_flag", False):
+            return True
+        score = getattr(meta, "spam_score", None)
+        return score is not None and score >= 5
     if auth_failed:
         return True
     if _provider_spam(meta):

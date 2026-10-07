@@ -1277,6 +1277,22 @@ def _audit_identity_llm_json(
     return _cloud_chat_json(prompt, cfg)
 
 
+def _llm_text_leaks_unmentioned_brand(blob: str, hay: str) -> bool:
+    """KI nennt eine System-Marke, die in der Mail nicht vorkommt."""
+    from src.services.brand_domain_policy import BUILTIN_BRAND_OFFICIAL_DOMAINS
+
+    for brand, domains in BUILTIN_BRAND_OFFICIAL_DOMAINS.items():
+        needles = [brand.lower(), *(d.lower() for d in domains)]
+        for needle in needles:
+            if len(needle) < 5:
+                continue
+            if needle in blob and needle not in hay:
+                return True
+    if "v1p3rbox" in blob and "v1p3rbox" not in hay:
+        return True
+    return False
+
+
 def _llm_result_usable(llm: dict, meta: EmailMeta) -> Optional[dict]:
     if not isinstance(llm, dict):
         return None
@@ -1300,11 +1316,9 @@ def _llm_result_usable(llm: dict, meta: EmailMeta) -> Optional[dict]:
         )
     ).lower()
 
-    leak_needles = ("serafech", "serafe.ch", "v1p3rbox")
     blob = f"{reason} {impersonated or ''}".lower()
-    for needle in leak_needles:
-        if needle in blob and needle not in hay:
-            return None
+    if _llm_text_leaks_unmentioned_brand(blob, hay):
+        return None
 
     return llm
 
@@ -1879,7 +1893,9 @@ def _layer1_decision(
     )
 
     hard_brand = bool(set(id_rules) & HARD_BRAND_RULES)
-    if hard_brand and brand_hit_has_warning(meta, auth_failed=auth_forces):
+    if hard_brand and brand_hit_has_warning(
+        meta, auth_failed=auth_forces, rule_ids=id_rules
+    ):
         out.is_scam = True
         out.confidence = min(1.0, max(id_score, transport_score, auth_score, 80) / 100.0)
         return True, False, False, combined, out

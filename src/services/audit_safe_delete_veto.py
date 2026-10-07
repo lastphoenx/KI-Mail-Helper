@@ -153,13 +153,13 @@ def safe_delete_veto_reason(
         aged_success_applies,
         aged_transaction_applies,
         has_bulk_signal,
+        alarm_counts_as_important,
         provider_spam_newsletter_safe,
-        subject_has_operational_alarm,
     )
 
     folder = getattr(info, "folder", "") or ""
     subject = getattr(info, "subject", "") or ""
-    if subject_has_operational_alarm(subject):
+    if alarm_counts_as_important(info):
         return "Betriebs-/Alarmmeldung"
 
     if is_sent_or_drafts_folder(folder):
