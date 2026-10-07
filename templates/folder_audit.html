@@ -816,9 +816,9 @@
                             Pro <strong>Mail-Account</strong> (Dropdown im Tab «Ordner scannen»). Gespeichert mit «Speichern» unten.
                         </div>
                         <textarea class="form-control form-control-sm font-monospace" id="auditOwnDomainsInput" rows="4"
-                                  placeholder="meine-domain.ch&#10;cloud.meine-domain.ch" disabled></textarea>
+                                  placeholder="shop.example.test&#10;mail.example.test, cloud.example.test" disabled></textarea>
                         <div class="mt-2 d-flex justify-content-between align-items-center">
-                            <small class="text-muted">Eine Domain pro Zeile, ohne @</small>
+                            <small class="text-muted">Eine Domain pro Zeile oder mit Komma/Semikolon getrennt, ohne @</small>
                             <button type="button" class="btn btn-sm btn-primary" id="saveOwnDomainsBtn" disabled>
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
@@ -893,11 +893,18 @@
                                     <button type="button" class="btn btn-outline-secondary" data-brand-health-filter="warn">Hinweis</button>
                                     <button type="button" class="btn btn-outline-secondary" data-brand-health-filter="failed">RDAP fehlgeschlagen</button>
                                 </div>
+                                <div class="btn-group btn-group-sm mb-2" role="group" id="brandHealthSourceFilters">
+                                    <button type="button" class="btn btn-outline-secondary active" data-brand-source-filter="all">Quelle: alle</button>
+                                    <button type="button" class="btn btn-outline-secondary" data-brand-source-filter="marke">Marke</button>
+                                    <button type="button" class="btn btn-outline-secondary" data-brand-source-filter="own">Meine Domains</button>
+                                    <button type="button" class="btn btn-outline-secondary" data-brand-source-filter="trusted">Vertrauenswürdig</button>
+                                </div>
                                 <div class="table-responsive border rounded" style="max-height:260px;overflow:auto;">
                                     <table class="table table-sm table-hover mb-0">
                                         <thead class="table-light sticky-top">
                                             <tr>
                                                 <th>Domain</th>
+                                                <th>Quelle</th>
                                                 <th>DNS</th>
                                                 <th>DBL</th>
                                                 <th>RDAP</th>
@@ -915,9 +922,10 @@
                                     <i class="bi bi-funnel-fill me-1"></i>Marken-Tabelle filtern
                                 </label>
                                 <p class="small text-muted mb-2 mb-0">
-                                    Durchsucht <strong>Marke</strong> und <strong>offizielle Domains</strong> in der Tabelle unten.
-                                    Mehrere Wörter: alle müssen irgendwo passen (UND).
+                                    Durchsucht <strong>Marke</strong> und <strong>offizielle Domains</strong> (Groß/Klein egal).
+                                    Mehrere Wörter: jedes Wort muss als <strong>zusammenhängender Teilstring</strong> vorkommen (UND).
                                 </p>
+                                <div id="brandOwnDomainCollisionWarn" class="alert alert-warning py-2 px-3 small d-none mb-2" role="alert"></div>
                                 <div class="input-group input-group-sm mt-2">
                                     <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
                                     <input type="search" class="form-control border-primary" id="brandTableFilter"
@@ -1578,6 +1586,28 @@
                 renderBrandHealthDashboard(brandHealthData);
             });
         });
+        document.querySelectorAll('#brandHealthSourceFilters [data-brand-source-filter]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                brandHealthDetailSourceFilter = btn.getAttribute('data-brand-source-filter') || 'all';
+                document.querySelectorAll('#brandHealthSourceFilters [data-brand-source-filter]').forEach(function(b) {
+                    b.classList.toggle('active', b === btn);
+                });
+                renderBrandHealthDashboard(brandHealthData);
+            });
+        });
+        const ownDomInput = document.getElementById('auditOwnDomainsInput');
+        if (ownDomInput) {
+            ownDomInput.addEventListener('input', function() {
+                refreshBrandOwnDomainCollisionWarn();
+                renderBrandHealthDashboard(brandHealthData);
+            });
+        }
+        const trustedDomInput = document.getElementById('trustedDomainsInput');
+        if (trustedDomInput) {
+            trustedDomInput.addEventListener('input', function() {
+                renderBrandHealthDashboard(brandHealthData);
+            });
+        }
         const brandTableDetailToggle = document.getElementById('brandTableShowDetail');
         if (brandTableDetailToggle) {
             brandTableDetailToggle.addEventListener('change', function() {
@@ -1963,6 +1993,7 @@
             if (data.success) {
                 excluded = data.exclude_folders || [];
                 ownDomains = data.own_domains || [];
+                auditOwnDomainsCache = ownDomains || [];
             }
         } catch (e) {
             excluded = [];
@@ -1973,6 +2004,7 @@
             ownInput.disabled = false;
             ownInput.value = (ownDomains || []).join('\n');
         }
+        refreshBrandOwnDomainCollisionWarn();
         const ownBadge = document.getElementById('ownDomainsBadge');
         if (ownBadge) ownBadge.textContent = String((ownDomains || []).length);
         const saveOwnBtn = document.getElementById('saveOwnDomainsBtn');
@@ -2005,9 +2037,7 @@
             }
         });
         const ownInput = document.getElementById('auditOwnDomainsInput');
-        const own_domains = ownInput
-            ? ownInput.value.split(/\r?\n/).map(s => s.trim().toLowerCase().replace(/^@/, '')).filter(Boolean)
-            : [];
+        const own_domains = ownInput ? parseAuditOwnDomainsText(ownInput.value) : [];
 
         if (statusEl) statusEl.textContent = 'Speichern…';
         try {
@@ -2025,9 +2055,18 @@
             });
             const data = await parseJsonResponse(response);
             if (!response.ok || !data.success) {
-                throw new Error(data.error || 'Speichern fehlgeschlagen');
+                const detail = (data.domain_errors && data.domain_errors.length)
+                    ? '\n' + data.domain_errors.join('\n')
+                    : '';
+                throw new Error((data.error || 'Speichern fehlgeschlagen') + detail);
             }
             auditExcludeFolderSet = new Set(data.exclude_folders || []);
+            if (data.own_domains) {
+                auditOwnDomainsCache = data.own_domains;
+                const ownBadge = document.getElementById('ownDomainsBadge');
+                if (ownBadge) ownBadge.textContent = String(data.own_domains.length);
+            }
+            refreshBrandOwnDomainCollisionWarn();
             const badge = document.getElementById('auditExcludeBadge');
             if (badge) badge.textContent = String(auditExcludeFolderSet.size);
             if (statusEl) statusEl.textContent = 'Gespeichert für «' + getSelectedAuditAccountLabel() + '».';
@@ -3811,6 +3850,7 @@
             const resp = await fetch('/api/audit-config/trusted-domains');
             const data = await resp.json();
             document.getElementById('trustedDomainsInput').value = data.comma_separated || '';
+            if (brandHealthData) renderBrandHealthDashboard(brandHealthData);
         } catch (e) { console.error(e); }
         
         // Load Important Keywords
@@ -3859,6 +3899,8 @@
     let brandOfficialCustomMap = {};
     let brandDblBlocked = [];
     let brandHealthDetailFilter = 'all';
+    let brandHealthDetailSourceFilter = 'all';
+    let auditOwnDomainsCache = [];
     let brandTableShowDetail = false;
     let brandTableSearchQuery = '';
     let brandTableFilterTimer = null;
@@ -4029,9 +4071,19 @@
             '<td class="brand-row-health small text-muted align-middle">—</td>' +
             '<td class="brand-row-verified small text-muted align-middle">—</td>' +
             '<td><button type="button" class="btn btn-sm btn-outline-danger brand-row-del" title="Entfernen">&times;</button></td>';
-        tr.querySelector('.brand-row-del').addEventListener('click', function() { tr.remove(); });
+        tr.querySelector('.brand-row-del').addEventListener('click', function() {
+            tr.remove();
+            refreshBrandOwnDomainCollisionWarn();
+        });
+        tr.querySelectorAll('.brand-row-name, .brand-row-domains').forEach(function(inp) {
+            inp.addEventListener('input', function() {
+                syncBrandRowSearchDataset(tr);
+                refreshBrandOwnDomainCollisionWarn();
+            });
+        });
         tr.dataset.brandSearch = brandRowSearchText(brand || '', domainsCsv || '');
         tbody.appendChild(tr);
+        refreshBrandOwnDomainCollisionWarn();
         return tr;
     }
 
@@ -4060,49 +4112,110 @@
         tr.dataset.brandSearch = brandRowSearchText(name, doms);
     }
 
-    function isAdjacentTransposition(a, b) {
-        if (a.length !== b.length || a.length < 2) return false;
-        let diffs = 0;
-        for (let i = 0; i < a.length; i++) {
-            if (a[i] !== b[i]) diffs++;
-        }
-        if (diffs !== 2) return false;
-        for (let i = 0; i < a.length - 1; i++) {
-            if (a[i] !== b[i] && a[i] === b[i + 1] && a[i + 1] === b[i]) {
-                let ok = true;
-                for (let j = 0; j < a.length; j++) {
-                    if (j === i || j === i + 1) continue;
-                    if (a[j] !== b[j]) ok = false;
-                }
-                if (ok) return true;
+    function normalizeAuditDomainKey(domain) {
+        return String(domain || '').trim().toLowerCase().replace(/^@/, '').replace(/\.$/, '');
+    }
+
+    function parseAuditOwnDomainsText(text) {
+        return String(text || '')
+            .split(/[\s,;]+/)
+            .map(function(s) { return normalizeAuditDomainKey(s); })
+            .filter(Boolean);
+    }
+
+    function getAuditOwnDomainsSet() {
+        const ownInput = document.getElementById('auditOwnDomainsInput');
+        const fromInput = ownInput && !ownInput.disabled ? parseAuditOwnDomainsText(ownInput.value) : [];
+        const merged = (auditOwnDomainsCache || []).concat(fromInput);
+        const seen = {};
+        const out = [];
+        merged.forEach(function(d) {
+            if (!seen[d]) {
+                seen[d] = true;
+                out.push(d);
             }
+        });
+        return out;
+    }
+
+    function buildAuditDomainSourceMap() {
+        const map = {};
+        function add(dom, label) {
+            const d = String(dom || '').trim().toLowerCase().replace(/^@/, '').replace(/\.$/, '');
+            if (!d) return;
+            if (!map[d]) map[d] = [];
+            if (map[d].indexOf(label) === -1) map[d].push(label);
         }
-        return false;
+        const trustedEl = document.getElementById('trustedDomainsInput');
+        if (trustedEl && trustedEl.value) {
+            parseAuditOwnDomainsText(trustedEl.value).forEach(function(d) {
+                add(d, 'Vertrauenswürdig');
+            });
+        }
+        getAuditOwnDomainsSet().forEach(function(d) { add(d, 'Meine Domains'); });
+        Object.keys(brandOfficialCustomMap || {}).forEach(function(brand) {
+            (brandOfficialCustomMap[brand] || []).forEach(function(d) { add(d, 'Marke'); });
+        });
+        document.querySelectorAll('#brandCustomTableBody tr').forEach(function(tr) {
+            if (tr.id === 'brandCustomTableLoadingRow') return;
+            const doms = ((tr.querySelector('.brand-row-domains') || {}).value || '')
+                .split(/[\s,;]+/).map(function(x) { return x.trim().toLowerCase(); }).filter(Boolean);
+            doms.forEach(function(d) { add(d, 'Marke'); });
+        });
+        return map;
+    }
+
+    function formatDomainQuelleCell(domain, sourceMap) {
+        const key = normalizeAuditDomainKey(domain);
+        const labels = (sourceMap && sourceMap[key]) || [];
+        if (!labels.length) return '<span class="text-muted">—</span>';
+        return labels.map(function(l) {
+            return '<span class="badge bg-light text-dark border me-1">' + escapeHtml(l) + '</span>';
+        }).join('');
+    }
+
+    function domainMatchesSourceFilter(domain, sourceMap, filter) {
+        if (!filter || filter === 'all') return true;
+        const key = normalizeAuditDomainKey(domain);
+        const labels = (sourceMap && sourceMap[key]) || [];
+        if (filter === 'marke') return labels.indexOf('Marke') !== -1;
+        if (filter === 'own') return labels.indexOf('Meine Domains') !== -1;
+        if (filter === 'trusted') return labels.indexOf('Vertrauenswürdig') !== -1;
+        return true;
+    }
+
+    function refreshBrandOwnDomainCollisionWarn() {
+        const el = document.getElementById('brandOwnDomainCollisionWarn');
+        if (!el) return;
+        const ownSet = {};
+        getAuditOwnDomainsSet().forEach(function(d) { ownSet[d] = true; });
+        const hits = [];
+        document.querySelectorAll('#brandCustomTableBody tr').forEach(function(tr) {
+            if (tr.id === 'brandCustomTableLoadingRow') return;
+            const brand = ((tr.querySelector('.brand-row-name') || {}).value || '').trim();
+            const doms = ((tr.querySelector('.brand-row-domains') || {}).value || '')
+                .split(/[\s,;]+/).map(function(x) { return x.trim().toLowerCase(); }).filter(Boolean);
+            doms.forEach(function(d) {
+                if (ownSet[d]) hits.push({ brand: brand || '(ohne Name)', domain: d });
+            });
+        });
+        if (!hits.length) {
+            el.classList.add('d-none');
+            el.textContent = '';
+            return;
+        }
+        el.classList.remove('d-none');
+        el.innerHTML = '<strong>Hinweis:</strong> Diese Marke(n) nutzen dieselbe Domain wie «Meine Domains» — ' +
+            'für eigene Absender reicht «Meine Domains», Marken-Tabelle ist für Fremd-Phishing gedacht.<ul class="mb-0 mt-1">' +
+            hits.slice(0, 8).map(function(h) {
+                return '<li><code>' + escapeHtml(h.domain) + '</code> (Marke: ' + escapeHtml(h.brand) + ')</li>';
+            }).join('') + (hits.length > 8 ? '<li>…</li>' : '') + '</ul>';
     }
 
     function brandFilterTokenMatches(token, haystack) {
         if (!token) return true;
         if (!haystack) return false;
-        if (haystack.indexOf(token) !== -1) return true;
-        if (token.length < 2) return false;
-        const parts = haystack.split(/[\s,;@.]+/).filter(function(p) { return p.length >= 2; });
-        for (let i = 0; i < parts.length; i++) {
-            const w = parts[i];
-            if (w.indexOf(token) !== -1 || token.indexOf(w) !== -1) return true;
-            if (token.length >= 3 && w.length >= 3) {
-                if (isAdjacentTransposition(token, w)) return true;
-                if (Math.abs(token.length - w.length) <= 1) {
-                    let dist = 0;
-                    const minLen = Math.min(token.length, w.length);
-                    for (let j = 0; j < minLen; j++) {
-                        if (token[j] !== w[j]) dist++;
-                    }
-                    dist += Math.abs(token.length - w.length);
-                    if (dist <= 1) return true;
-                }
-            }
-        }
-        return false;
+        return haystack.indexOf(token) !== -1;
     }
 
     function brandSearchQueryMatches(text, query) {
@@ -4141,6 +4254,7 @@
         });
         refreshBrandTableHealthCells();
         applyBrandTableFilter();
+        refreshBrandOwnDomainCollisionWarn();
     }
 
     function refreshBrandTableHealthCells() {
@@ -4261,12 +4375,13 @@
         return '';
     }
 
-    function domainMatchesHealthFilter(domain, h, filter) {
+    function domainMatchesHealthFilter(domain, h, filter, sourceMap, sourceFilter) {
         if (brandTableSearchQuery && String(brandTableSearchQuery).trim()) {
             if (!brandSearchQueryMatches(domain, brandTableSearchQuery)) {
                 return false;
             }
         }
+        if (!domainMatchesSourceFilter(domain, sourceMap, sourceFilter)) return false;
         if (filter === 'all') return true;
         if (filter === 'pending') {
             const pending = (brandHealthData && brandHealthData.pending_verification) || [];
@@ -4285,7 +4400,13 @@
         const doms = (health && health.domains) || {};
         const domKeys = Object.keys(doms);
         const pendingList = (health && health.pending_verification) || [];
-        if (!domKeys.length && !pendingList.length) {
+        const sourceMap = buildAuditDomainSourceMap();
+        const allDomainSet = {};
+        domKeys.forEach(function(d) { allDomainSet[d] = true; });
+        pendingList.forEach(function(d) { allDomainSet[d] = true; });
+        Object.keys(sourceMap).forEach(function(d) { allDomainSet[d] = true; });
+        const allDomainKeys = Object.keys(allDomainSet);
+        if (!allDomainKeys.length) {
             wrap.classList.add('d-none');
             return;
         }
@@ -4316,11 +4437,7 @@
         statsEl.innerHTML = pills.map(function(p) {
             return '<span class="badge ' + p.cls + '">' + escapeHtml(p.label) + '</span>';
         }).join(' ');
-        const rowDomains = domKeys.slice();
-        pendingList.forEach(function(d) {
-            if (rowDomains.indexOf(d) === -1) rowDomains.push(d);
-        });
-        const rows = rowDomains.sort(function(a, b) {
+        const rows = allDomainKeys.sort(function(a, b) {
             const ha = doms[a];
             const hb = doms[b];
             const rank = { error: 0, warn: 1, ok: 2 };
@@ -4328,14 +4445,17 @@
             const rb = hb ? (rank[hb.severity] || 9) : 8;
             return ra - rb || a.localeCompare(b);
         }).filter(function(d) {
-            return domainMatchesHealthFilter(d, doms[d], brandHealthDetailFilter);
+            return domainMatchesHealthFilter(
+                d, doms[d], brandHealthDetailFilter, sourceMap, brandHealthDetailSourceFilter);
         });
         body.innerHTML = rows.map(function(d) {
             const h = doms[d];
+            const quelle = formatDomainQuelleCell(d, sourceMap);
             if (!h) {
                 return '<tr class="">' +
                     '<td><strong>' + escapeHtml(d) + '</strong></td>' +
-                    '<td colspan="3" class="text-muted">noch nicht geprüft</td>' +
+                    '<td class="small">' + quelle + '</td>' +
+                    '<td colspan="4" class="text-muted">noch nicht geprüft</td>' +
                     '<td class="small text-muted">offen</td></tr>';
             }
             const dns = h.dns_status || '—';
@@ -4354,11 +4474,13 @@
                 : (h.checked_at ? 'offen' : '—');
             return '<tr class="' + domainHealthDetailRowClass(h) + '">' +
                 '<td><strong>' + escapeHtml(d) + '</strong></td>' +
+                '<td class="small">' + quelle + '</td>' +
                 '<td>' + escapeHtml(String(dns)) + '</td>' +
                 '<td>' + escapeHtml(dbl) + '</td>' +
                 '<td>' + escapeHtml(String(rdap)) + '</td>' +
                 '<td class="small">' + escapeHtml(String(ver)) + '</td></tr>';
-        }).join('') || '<tr><td colspan="5" class="text-muted">Keine Treffer für Filter.</td></tr>';
+        }).join('') || '<tr><td colspan="6" class="text-muted">Keine Treffer für Filter.</td></tr>';
+        refreshBrandOwnDomainCollisionWarn();
     }
 
     function renderBrandHealthSummaryPanel(health, warnings, removed, errors, meta) {

@@ -39,13 +39,16 @@ def _parse_audit_exclude_folders(account) -> list:
 
 
 def _parse_audit_own_domains(account) -> list:
+    from src.services.audit_own_domains import clean_own_domains_for_save
+
     raw = getattr(account, "audit_own_domains", None)
     if not raw:
         return []
     try:
         data = json.loads(raw)
         if isinstance(data, list):
-            return [str(x).strip().lower() for x in data if str(x).strip()]
+            cleaned, _errors = clean_own_domains_for_save(data)
+            return cleaned
     except (TypeError, json.JSONDecodeError):
         logger.warning("Invalid audit_own_domains JSON for account %s", getattr(account, "id", "?"))
     return []
@@ -310,14 +313,18 @@ def save_scan_settings():
                 cleaned.append(name)
 
         cleaned_domains = []
-        seen_dom = set()
+        domain_errors: list = []
         if own_domains is not None:
-            for item in own_domains:
-                dom = str(item).strip().lower().lstrip("@")
-                if not dom or dom in seen_dom:
-                    continue
-                seen_dom.add(dom)
-                cleaned_domains.append(dom)
+            from src.services.audit_own_domains import clean_own_domains_for_save
+
+            cleaned_domains, domain_errors = clean_own_domains_for_save(own_domains)
+            if domain_errors:
+                return jsonify(
+                    {
+                        "error": "Ungültige Einträge in Meine Domains",
+                        "domain_errors": domain_errors[:20],
+                    }
+                ), 400
 
         models = _get_models()
         account = (
