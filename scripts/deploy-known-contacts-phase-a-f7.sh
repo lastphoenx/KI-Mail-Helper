@@ -8,6 +8,8 @@ source "${SCRIPT_DIR}/deploy-known-contacts-lib.sh"
 
 sudo mkdir -p "$PGBACKUP_DIR"
 kmh_load_prod_database_url
+cd "$KMH_APP_ROOT"
+kmh_expect_db "$PGDATABASE"
 
 kmh_stop_services
 
@@ -19,7 +21,6 @@ ls -la "$PGBACKUP_DIR" | tail -5
 
 kmh_pull_code
 cd "$KMH_APP_ROOT"
-kmh_expect_db "$PGDATABASE"
 alembic upgrade f7a8b9c0d1e2
 alembic current
 

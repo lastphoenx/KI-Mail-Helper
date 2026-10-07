@@ -169,6 +169,123 @@ def test_verify_ok_when_fully_encrypted(monkeypatch, user_with_dek):
     assert stats.failures == 0
 
 
+def test_verify_ok_encrypted_only_neuaufbau(monkeypatch, user_with_dek):
+    from src.services.audit_known_contacts_operator import (
+        _PlainContactRow,
+        run_verify_encryption,
+    )
+
+    _, _, dek = user_with_dek
+    hmac_val, enc_email, enc_name = encrypt_contact_fields(
+        "friend@example.com", "Example Friend", dek
+    )
+    monkeypatch.setattr(
+        "src.services.audit_known_contacts_operator._fetch_plaintext_rows",
+        lambda _s, _uid: [
+            _PlainContactRow(
+                id=10,
+                account_id=10,
+                email_normalized=None,
+                display_name=None,
+                encrypted_email=enc_email,
+                encrypted_display_name=enc_name,
+                email_lookup_hmac=hmac_val,
+            )
+        ],
+    )
+    stats, errors = run_verify_encryption(
+        object(),
+        None,
+        user_id=1,
+        master_key=dek,
+        require_full=True,
+        sample=0,
+    )
+    assert not errors
+    assert stats.failures == 0
+    assert stats.plain == 0
+    assert stats.encrypted == 1
+
+
+def test_verify_ok_mixed_plain_and_encrypted_only(monkeypatch, user_with_dek):
+    from src.services.audit_known_contacts_operator import (
+        _PlainContactRow,
+        run_verify_encryption,
+    )
+
+    _, _, dek = user_with_dek
+    hmac_val, enc_email, enc_name = encrypt_contact_fields(
+        "friend@example.com", "Example Friend", dek
+    )
+    monkeypatch.setattr(
+        "src.services.audit_known_contacts_operator._fetch_plaintext_rows",
+        lambda _s, _uid: [
+            _PlainContactRow(
+                id=11,
+                account_id=10,
+                email_normalized="friend@example.com",
+                display_name="Example Friend",
+                encrypted_email=enc_email,
+                encrypted_display_name=enc_name,
+                email_lookup_hmac=hmac_val,
+            ),
+            _PlainContactRow(
+                id=12,
+                account_id=10,
+                email_normalized=None,
+                display_name=None,
+                encrypted_email=enc_email,
+                encrypted_display_name=enc_name,
+                email_lookup_hmac=hmac_val,
+            ),
+        ],
+    )
+    stats, errors = run_verify_encryption(
+        object(),
+        None,
+        user_id=1,
+        master_key=dek,
+        require_full=True,
+        sample=0,
+    )
+    assert not errors
+    assert stats.plain_only == 0
+
+
+def test_verify_fails_plain_only(monkeypatch, user_with_dek):
+    from src.services.audit_known_contacts_operator import (
+        _PlainContactRow,
+        run_verify_encryption,
+    )
+
+    _, _, dek = user_with_dek
+    monkeypatch.setattr(
+        "src.services.audit_known_contacts_operator._fetch_plaintext_rows",
+        lambda _s, _uid: [
+            _PlainContactRow(
+                id=13,
+                account_id=10,
+                email_normalized="orphan@example.com",
+                display_name="Orphan",
+                encrypted_email=None,
+                encrypted_display_name=None,
+                email_lookup_hmac=None,
+            )
+        ],
+    )
+    stats, errors = run_verify_encryption(
+        object(),
+        None,
+        user_id=1,
+        master_key=dek,
+        require_full=True,
+        sample=0,
+    )
+    assert stats.plain_only == 1
+    assert errors
+    assert any("Klartext ohne Verschlüsselung" in e for e in errors)
+
+
 def test_backfill_merges_plaintext_with_encrypted_duplicate(monkeypatch, user_with_dek):
     from src.services.audit_known_contacts_operator import (
         _PlainContactRow,

@@ -261,18 +261,10 @@ def _verify_compare_row(row: _PlainContactRow, master_key: str) -> Tuple[bool, s
         return False, "display_name Klartext ohne encrypted_display_name"
     if not row.encrypted_email:
         return False, "encrypted_email fehlt"
-    plain_em = row.email_normalized or ""
-    if not plain_em:
-        return False, "email_normalized fehlt (pre-f8 Transition)"
 
-    norm_plain = normalize_contact_email(plain_em)
-    if not norm_plain:
-        return False, "email_normalized nicht normalisierbar"
-
-    hmac_expected = contact_email_lookup_hmac(norm_plain, master_key)
     hmac_stored = (row.email_lookup_hmac or "").strip()
-    if not hmac_stored or hmac_stored != hmac_expected:
-        return False, "email_lookup_hmac stimmt nicht"
+    if not hmac_stored:
+        return False, "email_lookup_hmac fehlt"
 
     wrapper = type(
         "Row",
@@ -284,10 +276,22 @@ def _verify_compare_row(row: _PlainContactRow, master_key: str) -> Tuple[bool, s
     )()
     dec_em, dec_name = decrypt_contact_row(wrapper, master_key)
     dec_em = normalize_contact_email(dec_em)
-    if dec_em != norm_plain:
-        return False, "entschlüsselte E-Mail weicht ab"
-    if row.encrypted_display_name and plain_name and dec_name.strip() != plain_name:
-        return False, "Anzeigename weicht ab"
+    if not dec_em:
+        return False, "entschlüsselte E-Mail leer"
+
+    hmac_expected = contact_email_lookup_hmac(dec_em, master_key)
+    if hmac_stored != hmac_expected:
+        return False, "email_lookup_hmac stimmt nicht"
+
+    plain_em = row.email_normalized or ""
+    if plain_em:
+        norm_plain = normalize_contact_email(plain_em)
+        if not norm_plain:
+            return False, "email_normalized nicht normalisierbar"
+        if dec_em != norm_plain:
+            return False, "entschlüsselte E-Mail weicht ab"
+        if row.encrypted_display_name and plain_name and dec_name.strip() != plain_name:
+            return False, "Anzeigename weicht ab"
     return True, "ok"
 
 
@@ -327,12 +331,10 @@ def run_verify_encryption(
         )
     if require_full and stats.plain_only:
         errors.append(f"{stats.plain_only} Zeile(n) Klartext ohne Verschlüsselung")
-    if require_full and stats.plain != stats.encrypted:
-        errors.append("Anzahl Klartext != Anzahl verschlüsselt")
 
-    candidates = [r for r in rows if r.email_normalized and r.encrypted_email]
-    if not candidates and stats.total:
-        errors.append("keine Zeilen mit Klartext+Verschlüsselung")
+    candidates = [r for r in rows if r.encrypted_email]
+    if require_full and stats.total and not candidates:
+        errors.append("keine verschlüsselten Zeilen")
 
     sample_n = 0 if require_full else sample
     if sample_n and sample_n < len(candidates):
