@@ -246,11 +246,9 @@ class AuditConfigCache:
                     if raw_own:
                         parsed = json.loads(raw_own)
                         if isinstance(parsed, list):
-                            config["own_domains"] = {
-                                str(d).lower().strip()
-                                for d in parsed
-                                if d and str(d).strip()
-                            }
+                            from src.services.audit_own_domains import own_domains_set_from_items
+
+                            config["own_domains"] = own_domains_set_from_items(parsed)
                     raw_ex = getattr(acc, "audit_exclude_folders", None) if acc else None
                     if raw_ex:
                         ex_parsed = json.loads(raw_ex)
