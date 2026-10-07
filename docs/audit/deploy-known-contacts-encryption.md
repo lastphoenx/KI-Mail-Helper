@@ -2,7 +2,7 @@
 
 **Code:** `origin/main` (Skripte `scripts/deploy-known-contacts-*.sh`)
 
-**Sicherheitsnetz:** `pg_dump` vor f7 (in `deploy-known-contacts-phase-a-f7.sh`). Kein separater DB-Drill — eine Drill-`DATABASE_URL` überlebt nicht den Skript-Prozess; Phase-Skripte laden Prod aus `.env`.
+**Sicherheitsnetz:** `pg_dump` vor f7 (in `deploy-known-contacts-phase-a-f7.sh`, **während die Dienste noch laufen**). Backup-Verzeichnis: `sudo install -d -o postgres -g postgres -m 750 /var/backups/mail-helper` (in Skripten: `kmh_ensure_backup_dir`).
 
 | Mechanismus | Details |
 |-------------|---------|
@@ -32,7 +32,7 @@ bash /opt/KI-Mail-Helper/scripts/deploy-known-contacts-phase-b.sh
 
 ### Alternative: Backfill (Klartext-Zeilen behalten)
 
-Nach `phase-a-f7.sh`, **ohne** DELETE, Dienste laufen lassen:
+Nach `phase-a-f7.sh` sind die Dienste **gestoppt** (bis `neuaufbau.sh` oder manuell `kmh_start_services`). **Ohne** DELETE:
 
 ```bash
 cd /opt/KI-Mail-Helper && source venv/bin/activate
@@ -52,10 +52,10 @@ Kein Kontakt-Import vor Verify (sonst Duplikat-Zeilen — Backfill führt zusamm
 | Skript | Aktion |
 |--------|--------|
 | `deploy-known-contacts-lib.sh` | Variablen, `KMH_PYTHON`, `kmh_*` (gesourct) |
-| `deploy-known-contacts-phase-a-f7.sh` | `expect-db` → Stop → pre-f7 dump → pull → `alembic f7` |
+| `deploy-known-contacts-phase-a-f7.sh` | `pull` → `expect-db` → pre-f7 dump (Dienste laufen) → Stop → `alembic f7` |
 | `deploy-known-contacts-phase-a-neuaufbau.sh` | DELETE Kontakte → Dienste starten |
 | `deploy-known-contacts-phase-a-verify.sh` | `verify --require-full` |
-| `deploy-known-contacts-phase-b.sh` | `expect-db` + verify → Stop → pre-f8 dump → `alembic f8` → Start → smoke |
+| `deploy-known-contacts-phase-b.sh` | verify → pre-f8 dump (Dienste laufen) → Stop → `alembic f8` → Start → smoke |
 
 `export KMH_USER_ID=1` / `PGDATABASE=mail_helper` vor Aufruf möglich.
 
@@ -77,6 +77,10 @@ sudo -u postgres createdb -O postgres mail_helper
 sudo -u postgres pg_restore -d mail_helper /var/backups/mail-helper/mail_helper-pre-f8-….dump
 sudo systemctl start mail-helper mail-helper-celery-worker mail-helper-celery-beat
 ```
+
+---
+
+**Skript-Test (CT/WSL, vor Push):** `bash scripts/test-deploy-known-contacts-scripts.sh`
 
 ---
 
