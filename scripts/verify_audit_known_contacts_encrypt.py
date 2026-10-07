@@ -27,6 +27,13 @@ def main() -> int:
     )
     parser.add_argument("--require-full", action="store_true")
     parser.add_argument(
+        "--expect-min",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Bei --require-full: Abbruch wenn weniger als N Kontakte (z. B. 1 nach UI-Import)",
+    )
+    parser.add_argument(
         "--expect-db",
         metavar="NAME",
         help="Abbruch wenn current_database() != NAME (Deploy/Drill)",
@@ -67,6 +74,7 @@ def main() -> int:
             master_key=master_key,
             sample=args.sample,
             require_full=args.require_full,
+            expect_min=args.expect_min,
         )
         print(
             f"user_id={args.user_id} total={stats.total} plain={stats.plain} "
@@ -78,6 +86,12 @@ def main() -> int:
             print(f"FAIL: {err}", file=sys.stderr)
         print(f"  checked={stats.checked} failures={stats.failures}")
         if errors or stats.failures:
+            return 1
+        if args.require_full and stats.total == 0 and args.expect_min is None:
+            print(
+                "WARNUNG: keine Kontakte (total=0). Nach Neuaufbau --expect-min 1 setzen.",
+                file=sys.stderr,
+            )
             return 1
         print("OK")
         return 0

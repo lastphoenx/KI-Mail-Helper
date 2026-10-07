@@ -320,3 +320,20 @@ def clear_known_contacts(db_session, user_id: int, account_id: int) -> int:
         account.audit_contacts_import_state = None
     db_session.commit()
     return count
+
+
+def clear_known_contacts_for_user(db_session, user_id: int) -> int:
+    """Alle Kontakte des Users löschen + Import-UID-State pro Mail-Account zurücksetzen."""
+    import importlib
+
+    models = importlib.import_module(".02_models", "src")
+    q = db_session.query(models.AuditKnownContact).filter_by(user_id=user_id)
+    count = q.count()
+    q.delete(synchronize_session=False)
+    accounts = (
+        db_session.query(models.MailAccount).filter_by(user_id=user_id).all()
+    )
+    for account in accounts:
+        account.audit_contacts_import_state = None
+    db_session.commit()
+    return count

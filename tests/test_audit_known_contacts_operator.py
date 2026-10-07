@@ -252,6 +252,26 @@ def test_verify_ok_mixed_plain_and_encrypted_only(monkeypatch, user_with_dek):
     assert stats.plain_only == 0
 
 
+def test_verify_fails_expect_min_when_empty(monkeypatch, user_with_dek):
+    monkeypatch.setattr(
+        "src.services.audit_known_contacts_operator._fetch_plaintext_rows",
+        lambda _s, _uid: [],
+    )
+    _, _, dek = user_with_dek
+    stats, errors = run_verify_encryption(
+        object(),
+        None,
+        user_id=1,
+        master_key=dek,
+        require_full=True,
+        sample=0,
+        expect_min=1,
+    )
+    assert stats.total == 0
+    assert errors
+    assert any("mindestens 1" in e for e in errors)
+
+
 def test_verify_fails_plain_only(monkeypatch, user_with_dek):
     from src.services.audit_known_contacts_operator import (
         _PlainContactRow,

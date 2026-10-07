@@ -303,6 +303,7 @@ def run_verify_encryption(
     master_key: str,
     sample: int = 10,
     require_full: bool = False,
+    expect_min: Optional[int] = None,
 ) -> Tuple[VerifyStats, List[str]]:
     stats = VerifyStats()
     errors: List[str] = []
@@ -331,6 +332,10 @@ def run_verify_encryption(
         )
     if require_full and stats.plain_only:
         errors.append(f"{stats.plain_only} Zeile(n) Klartext ohne Verschlüsselung")
+    if require_full and expect_min is not None and stats.total < expect_min:
+        errors.append(
+            f"keine oder zu wenige Kontakte (total={stats.total}, erwartet mindestens {expect_min})"
+        )
 
     candidates = [r for r in rows if r.encrypted_email]
     if require_full and stats.total and not candidates:

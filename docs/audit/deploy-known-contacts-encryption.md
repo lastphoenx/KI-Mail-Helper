@@ -59,7 +59,9 @@ Kein Kontakt-Import vor Verify (sonst Duplikat-Zeilen — Backfill führt zusamm
 
 `export KMH_USER_ID=1` / `PGDATABASE=mail_helper` vor Aufruf möglich.
 
-**Verify (`--require-full`):** Jede Zeile mit `encrypted_email` + HMAC muss sich entschlüsseln lassen. Klartext nur optional (Backfill-Übergang). Fehler: `plain_only`, Klartext-Name ohne `encrypted_display_name`, HMAC/Decrypt mismatch. `total=0` ist ok.
+**Neuaufbau:** `clear_audit_known_contacts_user.py` löscht Kontakte **und** setzt `mail_accounts.audit_contacts_import_state` zurück (sonst Import 0 Mails).
+
+**Verify (`--require-full`):** Entschlüsselung/HMAC pro Zeile; `--expect-min 1` in `phase-a-verify.sh` (Override: `KMH_EXPECT_MIN_CONTACTS`). Ohne `--expect-min` und `total=0` → Warnung, Exit 1.
 
 ---
 
