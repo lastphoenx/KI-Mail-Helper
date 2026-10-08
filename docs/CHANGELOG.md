@@ -6,7 +6,7 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
-## [Unreleased]
+## [2.3.0] - 2026-10-08
 
 ### Ordner-Audit — Scam, Marken, DBL
 
@@ -18,6 +18,8 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ### Ordner-Audit — Qualität und Konfiguration
 
+- Meine Domains und Meine Adressen: weiche Identität und Marken-Abweichung aus. Verdacht nur, wenn SPF, DKIM und DMARC alle drei fehlschlagen oder Spamhaus trifft. Vertrauens-Domains: Auth-Fehler kein Verdacht, Spamhaus bleibt.
+- Detailansicht zeigt «Entscheidend». Regel-Test: Absender und Betreff, dieselbe Logik wie der Scan, ohne den Ordner zu lesen.
 - Scam/Verdacht: Marken im Absender-Teil (Compound, Local-Part), VIP-Domains, harte Markentreffer mit Warnsignal; Verdacht bei Domain-Alter (DNS/RDAP, Cache).
 - Sicher löschbar: Routine-Mails nach N Tagen (Erfolg, Versand), Provider-Spam-Newsletter.
 - Konfiguration pro Account: wichtige Ordner (Ordnerliste), Aufbewahrung, Meine Adressen, Wortlisten (sensibel, Alarm, Erfolg, Versand), Domain-Abfrage.

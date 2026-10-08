@@ -56,12 +56,10 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## Status
 
-**Version:** 2.2.2 (veröffentlicht)  
+**Version:** 2.3.0  
 **Development:** Aktiv  
 **Architecture:** Flask Blueprints + PostgreSQL + Celery  
 **Stability:** Production-ready  
-
-Die Zeilen unter «In Arbeit» sind auf main, aber noch kein Release. Die Versionsnummer steigt erst mit dem nächsten Schnitt.
 
 **v2.0 Highlights:**
 - ✅ Multi-User mit vollständiger User-Isolation
@@ -86,7 +84,7 @@ Die Zeilen unter «In Arbeit» sind auf main, aber noch kein Release. Die Versio
 - ✅ Auto-Regeln: Pattern-basierte Disposition (SAFE/IMPORTANT/SCAM/REVIEW)
 - ✅ Cluster-Dropdown: Einheitliches UI für alle 6 Konfigurationslisten
 
-**In Arbeit (noch kein Release):**
+**v2.3.0 Highlights (Oktober 2026):**
 - ✅ Scam- und Verdacht-Kachel im Ordner-Audit
 - ✅ Marken-Tabelle mit Domain-Status
 - ✅ Wichtige Ordner aus der Ordnerliste (Ordner plus Unterordner)
@@ -1048,6 +1046,8 @@ Wenig dringend     🟢 Score 2-3       |  🟢 Score 3-4    |  🟡 Score 5
 - 🟡 **Gelb** – Zeitnah bearbeiten (Score 5-7)
 - 🟢 **Grün** – Später bearbeiten (Score 1-4)
 
+Die Matrix gilt für die Priorisierung im Posteingang, nicht für das Ordner-Audit.
+
 ---
 
 ## 🛠️ Entwicklung
@@ -1058,22 +1058,18 @@ Wenig dringend     🟢 Score 2-3       |  🟢 Score 3-4    |  🟡 Score 5
 
 | Priorität | Feature | Beschreibung |
 |-----------|---------|--------------|
-| 🔴 High | **Kalendereintrag-Erkennung** | Automatische Erkennung von Terminen, Deadlines in Emails |
-| 🔴 High | **Todo-Listen-Extraktion** | Aufgaben aus Emails extrahieren und als Todo markieren |
-| 🟡 Medium | **Presidio Integration** | Microsoft Presidio für erweiterte PII-Erkennung |
+| ✅ Done | **iCalendar-Einladungen** | Einladungen in Mails werden erkannt |
 | ✅ Done | **Attachment-Handling** | Anhänge anzeigen, herunterladen (PDF, Word, Excel, Bilder ≤25MB) |
 | ✅ Done | **Ordner-Audit** | Beliebige Ordner: Scam/Verdacht, wichtige Ordner, Aufbewahrung, vier Wortlisten, Domain-Alter |
-| 🟡 Medium | **Email-Vorlagen** | Wiederverwendbare Templates für häufige Antworten |
-| 🟢 Low | **CalDAV/CardDAV Sync** | Kalender- und Kontakte-Integration |
+| 🟡 Mittel | **Newsletter-Abmelde-Hilfe** | Nur bei vertrauenswürdigen Absendern, nur auf Klick, nie bei Scam, Verdacht oder Auth-Fehler |
+| 🟡 Mittel | **Export von Terminen und Kontakten** | Datei `.ics` und `.vcf`, ohne Sync |
 | 🟢 Low | **Mobile PWA** | Progressive Web App für Mobilgeräte |
-| 🟢 Low | **Webhook-Integration** | Benachrichtigungen an externe Dienste |
-| 🟢 Low | **Admin-Dashboard** | Benutzer-Verwaltung für Admins |
+
+**Ideen, nicht geplant:**
+- Termine und Todos aus Freitext (Stapel, erst nach Bestätigung)
 
 **Langfristig:**
-- 📊 Analytics Dashboard (Email-Statistiken, Antwortzeiten)
-- 🔗 JIRA/GitHub Issue-Erstellung aus Emails
 - 🌍 Mehrsprachige AI-Analyse
-- 📱 Native Mobile Apps (iOS/Android)
 
 ### Testing
 
