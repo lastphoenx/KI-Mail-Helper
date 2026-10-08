@@ -1330,7 +1330,7 @@ def _llm_result_usable(llm: dict, meta: EmailMeta) -> Optional[dict]:
 
     blob = f"{reason} {impersonated or ''}".lower()
     if _llm_text_leaks_unmentioned_brand(blob, hay):
-            return None
+        return None
 
     return llm
 
@@ -1563,15 +1563,15 @@ def identity_llm_check(
             provider_spam += f" (Junk {meta.provider_junk_score})"
         auth = (meta.auth_results or "")[:300] or "(leer)"
         list_unsub = "ja" if getattr(meta, "list_unsubscribe", None) else "nein"
-    prompt = IDENTITY_PROMPT.format(
-        display_name=display,
+        prompt = IDENTITY_PROMPT.format(
+            display_name=display,
             from_address=from_address,
-        replyto_domain=reply_domain,
-        subject=subject or "(leer)",
+            replyto_domain=reply_domain,
+            subject=subject or "(leer)",
             provider_spam=provider_spam,
             auth_summary=auth,
             list_unsub=list_unsub,
-    )
+        )
     result = _audit_identity_llm_json(prompt, cfg=cfg)
     if result is not None:
         _identity_llm_cache[cache_key] = result
@@ -2165,10 +2165,10 @@ def evaluate_scam_risk(
         out.reasons = list(out.layer1_flags)
 
     if out.identity_suspicion and not out.is_scam:
-                return out
+        return out
 
     if out.needs_review_boost and out.reasons:
-                return out
+        return out
 
     if combined >= LAYER1_LLM_GATE_MIN and not out.is_scam:
         out.needs_review_boost = True
