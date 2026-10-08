@@ -46,6 +46,17 @@ Implementiert schrittweise (Quick win: Transport + Auth → Verdacht ohne Identi
 
 **Löschschutz:** Jede Entscheidung **«sicher löschbar»** (Nutzer-Pattern, Auto-Regel, Score, Harmonize, …) durchläuft den Lösch-Veto — unabhängig von der Regel-Nummer.
 
+### Reihenfolge im Lösch-Veto (implementiert)
+
+`safe_delete_veto_reason` prüft in dieser Reihenfolge. Der erste Treffer verhindert «sicher löschbar»:
+
+1. **Alarm.** Ein Alarmwort ohne Werbe-Signal (kein List-Unsubscribe) bleibt wichtig. Fehler und Alarme werden nie nach den Aufbewahrungstagen freigegeben.
+2. **Löschschutz der Ordner.** Gesendet und Entwürfe. Danach ein wichtiger Ordner aus der Kontoliste: genau dieser Ordner oder ein Ordner darin. Der Hinweis nennt den Ordnernamen.
+3. **Provider-Spam.** Direkt danach: ein Newsletter, den der Provider als Spam markiert hat, wird nicht allein wegen des Newsletter-Merkmals sicher löschbar («Provider-Spam trotz Newsletter-Merkmalen»). Gibt `provider_spam_newsletter_safe` die Mail frei, greift dieser Veto nicht.
+4. **Aufbewahrung.** Kein eigener Veto-Satz. Ist die Erfolgsfrist erreicht, entfallen danach der Schutz «eigene Adresse oder Domain» und «vertrauenswürdiger Absender». Ist die Versandfrist erreicht, entfällt der Schutz für geschützte Betreffmuster. Davor bleiben diese Mails in Prüfen. Fristen pro Konto, 1–3650 Tage. Wörter in «Status- und Erfolgswörter» und «Versand-Wörter».
+
+Danach, soweit die Aufbewahrung sie nicht ausnimmt: eigene Adresse oder Domain, Konversation, Antwort-Betreff, vertrauenswürdiger Absender, geschützte Betreffmuster.
+
 **Harmonize (Clustering):** Keine reine Anzeige. Hebt Mails von **Prüfen** auf **sicher löschbar** (Kategorie-Entscheidung). Folgt **Löschschutz** und **kuratierten Ordnern** wie jede andere SAFE-Entscheidung.
 
 ## Nummerierte Kaskade (Nutzer- + Systemregeln)
