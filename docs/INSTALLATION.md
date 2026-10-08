@@ -242,7 +242,18 @@ source venv/bin/activate
 alembic upgrade head
 ```
 
-Dies erstellt automatisch alle ~23 Tabellen (users, emails, email_tags, auto_rules, etc.) mit korrekten Indizes und Foreign Keys.
+Dies erstellt automatisch alle Tabellen (users, emails, email_tags, auto_rules, etc.) mit korrekten Indizes und Foreign Keys.
+
+### Migrationen prüfen
+
+```bash
+alembic upgrade head
+alembic current
+```
+
+`alembic current` soll `(head)` zeigen. Die Revisions-ID nicht von Hand in diese Anleitung schreiben; sie ändert sich mit jeder Migration.
+
+Die Domain-Prüfung (Alter der Absender-Domain) braucht `dnspython`. Das Paket steht in `requirements.txt`.
 
 ### Tabellen prüfen
 
