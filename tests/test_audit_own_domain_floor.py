@@ -134,9 +134,11 @@ def test_spamhaus_hits_own_and_trusted_domains(monkeypatch):
 
 
 def test_rule_preview_names_the_fallback_and_the_alarm():
-    sender = f"ada-{_token()}@{_token()}.example"
+    sender = "ada.beispiel@nordlicht.example"
     cfg = _cfg()
-    plain = FolderAuditService.preview_rule_decision(sender, _token(), cfg)
+    plain = FolderAuditService.preview_rule_decision(
+        sender, "Kurze Notiz zum Termin", cfg
+    )
     assert plain["category"] == TrashCategory.REVIEW.value
     assert plain["decision"] == REVIEW_DEFAULT_REASON
 
