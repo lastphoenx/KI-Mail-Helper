@@ -4,10 +4,10 @@
 
 | Was | Wo |
 |-----|-----|
-| **Python-venv** | Eine venv, getrennt vom Repo: `~/kmh-venv` auf WSL-ext4. **Nie** `venv/` oder `pip install` unter `/mnt/c/…/OneDrive/…`. Kein Symlink ins Repo |
-| **Tests** | WSL: `source ~/kmh-venv/bin/activate`, dann im **bestehenden** Repo (auch `/mnt/c/…/KI-Mail-Helper-Dev`) `bash scripts/pre-push-dev-check.sh`. PowerShell-`python` zählt nicht |
-
-Kein zweites `git clone`. Die venv wird nicht ins Repo verlinkt.
+| **Python-venv** | Eine venv, getrennt vom Repo: `~/kmh-venv` auf WSL-ext4. Liegt schon. Kein Symlink ins Repo. **Nie** `venv/` oder `pip install` unter OneDrive |
+| **Arbeitskopie** | `~/src/KI-Mail-Helper-Dev` auf WSL-ext4. Dort wird gelesen und getestet. Die OneDrive-Kopie bleibt die Sicherung und der Editor-Ordner |
+| **Tests** | Erst die Sicherung nach `~/src/KI-Mail-Helper-Dev` spiegeln, dann dort `source ~/kmh-venv/bin/activate` und `bash scripts/pre-push-dev-check.sh`. PowerShell-`python` zählt nicht |
+| **Spiegel** | `public` (öffentliches KI-Mail-Helper) nur auf ausdrückliche Nutzeranweisung, von diesem Dev-Repo aus. Sonst kein Sync dorthin |
 
 **CT-Server** (`/opt/KI-Mail-Helper/venv`): siehe Deploy — nicht mit der Dev-PC-WSL verwechseln.
 
@@ -36,13 +36,13 @@ Kanonisch auf `main`: `requirements.txt`, `requirements-venv.txt`, `requirements
 | Ort | venv | Befehl |
 |-----|------|--------|
 | **CT Produktion** (`/opt/KI-Mail-Helper`) | bestehendes `venv/` | `source venv/bin/activate` → `pip install -r requirements.txt` → optional `pip uninstall -y <Paket>` wenn aus requirements entfernt (z. B. `mistralai`) → `pip check` → `bash scripts/pre-push-dev-check.sh` |
-| **WSL (Windows-Dev)** | `~/kmh-venv` auf dem Linux-Dateisystem, nie unter OneDrive | siehe Block unten |
+| **WSL (Windows-Dev)** | `~/kmh-venv` auf ext4, Tests nur in `~/src/KI-Mail-Helper-Dev` | siehe Block unten |
 | **PowerShell ohne WSL** | oft **kein** brauchbares Python | Store-Alias `python`/`python3` reicht **nicht** — nicht als «Tests gelaufen» melden |
 | **CI** | frisch in Workflow | wie Zeile «Vor Push» |
 
-### WSL: venv **nicht** unter OneDrive (`/mnt/c/…/OneDrive/…`)
+### WSL: lesen und testen auf ext4, OneDrive bleibt die Sicherung
 
-**Richtig:** venv nur im WSL-Home, `~/kmh-venv`. Nie `venv/` im OneDrive-Baum, auch nicht «nur kurz».
+**Richtig:** venv `~/kmh-venv`. Arbeitskopie `~/src/KI-Mail-Helper-Dev`. Beides auf der Linux-Platte. Die OneDrive-Kopie wird nicht verschoben und ist nicht das pytest-Verzeichnis. Kein zweites Clone von GitHub: die Arbeitskopie ist eine lokale Spiegelung der Sicherung.
 
 **WSL — einmalig, nur wenn `~/kmh-venv` fehlt** (sie liegt schon):
 
@@ -52,23 +52,32 @@ source ~/kmh-venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**WSL — Gate vor Push** (im bestehenden Repo, auch unter `/mnt/c/…/OneDrive/…/KI-Mail-Helper-Dev`):
+**WSL — Arbeitskopie spiegeln, dann Gate vor Push.** `QUELLE` ist das geöffnete Repo (OneDrive-Sicherung). Den Windows-Benutzerpfad nicht in diese Datei schreiben.
 
 ```bash
+mkdir -p ~/src
+rsync -a --delete \
+  --exclude '.pytest_cache/' \
+  --exclude '__pycache__/' \
+  --exclude 'venv/' \
+  --exclude '.venv/' \
+  "$QUELLE/" ~/src/KI-Mail-Helper-Dev/
+cd ~/src/KI-Mail-Helper-Dev
 source ~/kmh-venv/bin/activate
 bash scripts/pre-push-dev-check.sh
 ```
 
-**WSL — einzelne Tests:**
+**WSL — einzelne Tests** (nur in der Arbeitskopie, nach dem Spiegeln):
 
 ```bash
+cd ~/src/KI-Mail-Helper-Dev
 source ~/kmh-venv/bin/activate
 PYTHONPATH=. python -m pytest tests/test_audit_own_domains.py -q
 ```
 
-**Falsch:** `python3 -m venv` oder `pip install` unter `/mnt/c/…/OneDrive/…`. PowerShell-`python` ohne WSL zählt nicht.
+**Falsch:** `pytest` mit cwd unter OneDrive. `python3 -m venv` oder `pip install` unter OneDrive. PowerShell-`python` ohne WSL zählt nicht.
 
-**Agent-Pflicht:** Kein `pip`/`venv` unter `/mnt/c/` + `OneDrive`. Vor «grün» / Push: **`pre-push-dev-check.sh` in WSL** mit `~/kmh-venv` (oder CT-Ergebnis vom Betreiber). Nach Entfernen von Pins aus `requirements.txt`: auf dem CT **`pip uninstall`** + **`pip check`**.
+**Agent-Pflicht:** Kein `pip`/`venv` unter OneDrive. Kein zweites Clone von GitHub. Lesen und Testen nur in `~/src/KI-Mail-Helper-Dev`, vorher aus der Sicherung spiegeln. `public` nicht anfassen, ausser der Nutzer verlangt den Spiegel. Vor «grün» / Push: **`pre-push-dev-check.sh` in der Arbeitskopie** mit `~/kmh-venv` (oder CT-Ergebnis vom Betreiber). Nach Entfernen von Pins aus `requirements.txt`: auf dem CT **`pip uninstall`** + **`pip check`**.
 
 **CT:** Produktion nur **`/opt/KI-Mail-Helper/venv`** — kein separates `/tmp`-Test-venv als Deploy-Schritt.
 
@@ -90,7 +99,7 @@ PYTHONPATH=. python -m pytest tests/test_audit_own_domains.py -q
 
 **Hooks (dieses Repo):** Lokale Sperrliste **`~/.config/kmh-denylist.txt`** (Windows: **`%USERPROFILE%\.config\kmh-denylist.txt`**) — **nicht** ins Repo (Vorlage: `scripts/kmh-denylist.example.txt`; Kopien `kmh-denylist.txt` / `denylist.txt` im Tree → `.gitignore`). **Syntax:** Teilstring (Punkte literal); **`=Wort`** = ganzes Wort; Domains **ohne** `@`; UTF-8 **ohne BOM**. Zusätzlich Safe-CLI `git-hooks/denylist.txt` (gitignored). Unter PowerShell ist **`bash`** oft **WSL** — **`"C:\Program Files\Git\bin\bash.exe" scripts/…`** oder **`KMH_DENYLIST_FILE`**. Install: `powershell -File scripts/install-git-hooks-kmh.ps1`. **Liste:** `scripts/bootstrap-kmh-denylist.ps1` + optional `~/.config/kmh-denylist-broad-words.txt`. Tests: `scripts/test-kmh-denylist-hook*.sh`, `scripts/test-bootstrap-kmh-denylist.ps1`.
 
-**Remotes:** Deploy **`origin`** → `KI-Mail-Helper-Dev`. `public` ist Spiegel — «ahead of public/main» ist normal.
+**Remotes:** Deploy **`origin`** → `KI-Mail-Helper-Dev`. `public` ist der Spiegel ins öffentliche KI-Mail-Helper — nur auf ausdrückliche Nutzeranweisung, von Dev nach `public`. «ahead of public/main» ist normal.
 
 **Produktion nach Force-Push auf `main`:** `git fetch origin && git reset --hard origin/main` (kein Merge-Pull), dann Deploy/Restart — Ablauf im privaten Betriebsdokument.
 

@@ -381,12 +381,6 @@
         margin-top: 6px;
     }
 
-    .audit-help {
-        cursor: help;
-        font-weight: 600;
-        opacity: 0.75;
-    }
-
     /* Clustering-Konfig: Sekundär-Buttons erkennbar, Speichern mit sichtbarem Hover */
     .btn-audit-advanced-toggle {
         font-weight: 600;
@@ -851,7 +845,6 @@
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditQualitySection">
                         <i class="bi bi-folder-check me-2 text-primary"></i>
                         Wichtige Ordner und Alter
-                        <span class="audit-help ms-2" aria-label="Kurzinfo" data-bs-toggle="tooltip" data-bs-placement="right" title="Wichtige Ordner werden angeschaut, ihre Mails nie «Sicher löschbar». Ausgenommene Ordner werden gar nicht angeschaut." onclick="event.stopPropagation()">(?)</span>
                     </button>
                 </h2>
                 <div id="auditQualitySection" class="accordion-collapse collapse">
@@ -916,7 +909,6 @@
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditWordListsSection">
                         <i class="bi bi-list-check me-2 text-primary"></i>
                         Wortlisten
-                        <span class="audit-help ms-2" aria-label="Kurzinfo" data-bs-toggle="tooltip" data-bs-placement="right" title="Feste Betreffwörter ergänzen oder einzelne abschalten. Wirkt ab dem nächsten Scan." onclick="event.stopPropagation()">(?)</span>
                     </button>
                 </h2>
                 <div id="auditWordListsSection" class="accordion-collapse collapse">
@@ -925,7 +917,7 @@
                             Die festen Wörter gelten für alle und sind nur zum Lesen.
                             <strong>Eigene</strong>: ein Wort, das in deinem Postfach vorkommt und in der festen Liste fehlt.
                             <strong>Deaktivieren</strong>: ein festes Wort, das bei dir falsch trifft. Eintragen, dann gilt es nicht mehr.
-                            Ein Wort pro Zeile.
+                            Ein Wort pro Zeile. Das gilt ab dem nächsten Scan.
                         </p>
                         <div id="auditWordListsMount"></div>
                         <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
@@ -943,7 +935,6 @@
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditNotableDomainsSection">
                         <i class="bi bi-signpost me-2 text-primary"></i>
                         Auffällige Absender-Domains
-                        <span class="audit-help ms-2" aria-label="Kurzinfo" data-bs-toggle="tooltip" data-bs-placement="right" title="Junge oder unbekannte Absender-Adressen aus verdächtigen Mails. Nur zur Info." onclick="event.stopPropagation()">(?)</span>
                     </button>
                 </h2>
                 <div id="auditNotableDomainsSection" class="accordion-collapse collapse">
@@ -1826,11 +1817,6 @@
                 saveAuditScanFolderSettings().then(function(ok) {
                     if (st) st.textContent = ok ? 'Gespeichert.' : '';
                 });
-            });
-        }
-        if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
-            document.querySelectorAll('#configAccordion [data-bs-toggle="tooltip"]').forEach(function(el) {
-                new bootstrap.Tooltip(el);
             });
         }
         const reloadNotableDomainsBtn = document.getElementById('reloadNotableDomainsBtn');
