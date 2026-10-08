@@ -318,10 +318,20 @@ def get_folders(account_id):
             priority = {"INBOX": 0, "Trash": 1, "Deleted": 1, "Junk": 2, "Spam": 2, 
                        "Sent": 3, "Drafts": 4, "Archive": 5}
             folders.sort(key=lambda f: (priority.get(f["name"], 99), f["name"]))
-            
+            names = [f["name"] for f in folders]
+            from src.services.audit_quality_rules import (
+                curated_marks,
+                is_plain_inbox_folder,
+            )
+
+            patterns = _audit_quality_settings_payload(account).get(
+                "curated_folder_patterns"
+            ) or []
             return jsonify({
                 "success": True,
-                "folders": [f["name"] for f in folders],
+                "folders": names,
+                "curated": curated_marks(names, patterns),
+                "locked_folders": [name for name in names if is_plain_inbox_folder(name)],
             })
             
         except Exception as e:

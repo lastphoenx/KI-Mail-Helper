@@ -7,6 +7,7 @@ from src.services.audit_quality_rules import (
     BRAND_COMPOUND_SUFFIXES,
     OPERATIONAL_ALARM_TOKENS,
     SENSITIVE_SUBJECT_TOKENS,
+    curated_marks,
     folder_is_curated,
     is_success_status_subject,
     subject_has_operational_alarm,
@@ -309,18 +310,34 @@ def test_transaction_age_follows_ui_days():
 
 
 def test_checked_folder_covers_children_not_a_sibling():
-    parent = f"Dringend/{_token()}"
+    leaf = _token()
+    parent = f"X/{leaf}"
     assert folder_is_curated(parent, [parent])
-    assert folder_is_curated(f"{parent}/2024", [parent])
-    assert not folder_is_curated(f"Archiv/{_token()}", [parent])
+    assert folder_is_curated(f"{parent}/Kind", [parent])
+    assert folder_is_curated(parent.replace("/", "."), [parent])
+    assert folder_is_curated(f"{parent}/Kind", [parent.replace("/", ".")])
+    assert not folder_is_curated(f"{parent}-Archiv", [parent])
+    assert not folder_is_curated(f"Archiv/{leaf}", [leaf])
+    assert not folder_is_curated(f"Archiv.{leaf}", [leaf])
     assert not folder_is_curated("INBOX", [parent])
+    marks = curated_marks(
+        [parent, f"{parent}/Kind", f"{parent}-Archiv", f"Archiv/{leaf}", "INBOX"],
+        [parent],
+    )
+    assert marks[parent] is True
+    assert marks[f"{parent}/Kind"] is True
+    assert marks[f"{parent}-Archiv"] is False
+    assert marks[f"Archiv/{leaf}"] is False
+    assert marks["INBOX"] is False
 
 
 def test_plain_inbox_never_curated_pattern_list_is():
     assert not folder_is_curated("INBOX", ["inbox", "Dringend"])
     token = _token()
     assert not folder_is_curated(f"INBOX/{token}/Newsletter", [])
-    assert folder_is_curated(f"INBOX/{token}/Newsletter", [token])
+    assert not folder_is_curated(f"INBOX/{token}/Newsletter", [token])
+    assert folder_is_curated(f"INBOX/{token}/Newsletter", [f"INBOX/{token}"])
+    assert folder_is_curated(f"INBOX.{token}.Newsletter", [f"INBOX/{token}"])
 
 
 def test_bulk_verification_subject_is_not_important():

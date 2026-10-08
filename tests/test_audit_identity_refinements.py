@@ -115,7 +115,7 @@ def test_curated_inbox_identity_only_not_verdacht():
         folder="INBOX/wichtig",
         provider_junk_score=2,
     )
-    meta.curated_folder_patterns = ["wichtig"]
+    meta.curated_folder_patterns = ["INBOX/wichtig"]
     ev = evaluate_scam_risk(meta, llm_enabled=False)
     assert ev.identity_rules
     assert not ev.identity_suspicion
@@ -257,11 +257,13 @@ def test_review_default_reason():
 def test_is_curated_inbox_context():
     plain = _Meta(folder="INBOX/Dringend")
     assert not is_curated_inbox_context(plain)
-    plain.curated_folder_patterns = ["Dringend"]
+    plain.curated_folder_patterns = ["INBOX/Dringend"]
     assert is_curated_inbox_context(plain)
+    plain.curated_folder_patterns = ["Dringend"]
+    assert not is_curated_inbox_context(plain)
     assert not is_curated_inbox_context(_Meta(folder="INBOX"))
     flagged = _Meta(folder="INBOX/Spamverdacht", server_spam_flag=True)
-    flagged.curated_folder_patterns = ["Spamverdacht"]
+    flagged.curated_folder_patterns = ["INBOX/Spamverdacht"]
     assert not is_curated_inbox_context(flagged)
 
 

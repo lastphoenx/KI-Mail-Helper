@@ -167,6 +167,9 @@ def safe_delete_veto_reason(
         return "Ordner Gesendet/Entwürfe (kein Lösch-Audit)"
 
     if is_curated_inbox_context(info):
+        shown = str(folder or "").strip()
+        if shown:
+            return f"Wichtiger Ordner (Konfiguration): {shown}"
         return "Wichtiger Ordner (Konfiguration)"
 
     bulk = has_bulk_signal(info)

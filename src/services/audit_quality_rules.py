@@ -335,7 +335,12 @@ def clean_folder_patterns(items: Sequence) -> list[str]:
 
 
 def folder_is_curated(folder: str, patterns: Optional[Iterable[str]]) -> bool:
-    """Plain INBOX nie. Treffer nur über die pro Konto gespeicherten Muster."""
+    """Genau dieser Ordner oder ein Ordner darin. Plain INBOX nie.
+
+    «.» und «/» sind dasselbe Trennzeichen. Ein Präfix ohne Trenner
+    (Bank gegen Bank-Archiv) und ein Segment an anderer Stelle
+    (Bank gegen Archiv/Bank) zählen nicht.
+    """
     if is_plain_inbox_folder(folder):
         return False
     path = normalize_folder_path(folder)
@@ -345,9 +350,14 @@ def folder_is_curated(folder: str, patterns: Optional[Iterable[str]]) -> bool:
         pat = normalize_folder_path(str(raw or ""))
         if not pat or pat == "inbox":
             continue
-        if pat == path or pat in path.split("/") or pat in path:
+        if path == pat or path.startswith(pat + "/"):
             return True
     return False
+
+
+def curated_marks(folders: Sequence[str], patterns: Optional[Iterable[str]]) -> dict:
+    """Pro Ordnername, ob er nach der exakten Regel wichtig ist."""
+    return {str(name): folder_is_curated(str(name), patterns) for name in folders or []}
 
 
 def _has_thread(info) -> bool:

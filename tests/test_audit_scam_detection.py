@@ -289,7 +289,7 @@ def test_llm_unclear_in_curated_inbox_no_review_boost():
         subject="Info",
         folder="INBOX/wichtig",
     )
-    meta.curated_folder_patterns = ["wichtig"]
+    meta.curated_folder_patterns = ["INBOX/wichtig"]
     out = ScamEvaluation(needs_review_boost=False)
     _merge_hybrid_llm_identity(
         out,

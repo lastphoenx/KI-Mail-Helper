@@ -73,9 +73,9 @@ def test_safe_veto_curated_inbox_folder():
         has_list_unsubscribe=True,
     )
     assert safe_delete_veto_reason(info, is_marketing=True) is None
-    info.curated_folder_patterns = ["Wichtig"]
+    info.curated_folder_patterns = ["INBOX.Wichtig"]
     assert safe_delete_veto_reason(info, is_marketing=True) == (
-        "Wichtiger Ordner (Konfiguration)"
+        "Wichtiger Ordner (Konfiguration): INBOX.Wichtig"
     )
 
 

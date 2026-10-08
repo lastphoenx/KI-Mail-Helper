@@ -1902,6 +1902,8 @@
             
             if (data.success && data.folders) {
                 auditFolderNamesCache = data.folders.slice();
+                auditCuratedFlags = data.curated || {};
+                auditLockedFolders = data.locked_folders || [];
                 await loadAuditScanFolderSettings(data.folders);
                 refreshScanFolderSelectLabels(pickDefaultAuditFolderValue(data.folders));
                 folderSelect.disabled = false;
@@ -1939,6 +1941,8 @@
     let auditExcludeFolderSet = new Set();
     let auditFolderNamesCache = [];
     let auditCuratedPatternsCache = [];
+    let auditCuratedFlags = {};
+    let auditLockedFolders = [];
 
     function pickDefaultAuditFolderValue(folders) {
         if (!folders || !folders.length) return '';
@@ -2152,7 +2156,7 @@
         if (!accountId) {
             auditCuratedPatternsCache = [];
             renderAuditExcludeFolderCheckboxes([], [], { noAccount: true });
-            renderAuditCuratedFolderCheckboxes([], []);
+            renderAuditCuratedFolderCheckboxes([]);
             return;
         }
 
@@ -2163,6 +2167,8 @@
                 const data = await parseJsonResponse(resp);
                 if (data.success && data.folders) {
                     folders = data.folders;
+                    auditCuratedFlags = data.curated || {};
+                    auditLockedFolders = data.locked_folders || [];
                 }
             } catch (e) {
                 renderAuditExcludeFolderCheckboxes([], []);
@@ -2227,34 +2233,11 @@
         }
 
         renderAuditExcludeFolderCheckboxes(folders, excluded);
-        renderAuditCuratedFolderCheckboxes(folders, auditCuratedPatternsCache);
+        renderAuditCuratedFolderCheckboxes(folders);
         refreshScanFolderSelectLabels();
     }
 
-    function auditNormalizeFolderPath(folder) {
-        return String(folder || '').replace(/\\/g, '/').split(/[./]/)
-            .map(function(s) { return s.trim().toLowerCase(); })
-            .filter(Boolean)
-            .join('/');
-    }
-
-    function auditFolderIsPlainInbox(name) {
-        return auditNormalizeFolderPath(name) === 'inbox';
-    }
-
-    function auditFolderIsCurated(folder, patterns) {
-        const path = auditNormalizeFolderPath(folder);
-        if (!path || path === 'inbox') return false;
-        const parts = path.split('/');
-        for (let i = 0; i < (patterns || []).length; i++) {
-            const pat = auditNormalizeFolderPath(patterns[i]);
-            if (!pat || pat === 'inbox') continue;
-            if (pat === path || parts.indexOf(pat) !== -1 || path.indexOf(pat) !== -1) return true;
-        }
-        return false;
-    }
-
-    function renderAuditCuratedFolderCheckboxes(folders, patterns) {
+    function renderAuditCuratedFolderCheckboxes(folders) {
         const container = document.getElementById('auditCuratedFoldersList');
         if (!container) return;
         const accountId = getSelectedAuditAccountId();
@@ -2266,12 +2249,15 @@
             container.innerHTML = '<span class="text-muted">Keine Ordner geladen. Unter «Ordner vom Scan ausnehmen» auf «Ordnerliste laden».</span>';
             return;
         }
+        const locked = {};
+        (auditLockedFolders || []).forEach(function(name) { locked[name] = true; });
+        const curated = auditCuratedFlags || {};
         container.innerHTML = folders.map(function(name) {
-            const inbox = auditFolderIsPlainInbox(name);
-            const checked = (!inbox && auditFolderIsCurated(name, patterns)) ? ' checked' : '';
-            const disabled = inbox ? ' disabled' : '';
+            const isLocked = !!locked[name];
+            const checked = (!isLocked && curated[name]) ? ' checked' : '';
+            const disabled = isLocked ? ' disabled' : '';
             const id = 'audit-cur-' + btoa(unescape(encodeURIComponent(name))).replace(/=/g, '');
-            const suffix = inbox ? ' <span class="badge bg-secondary ms-1">Posteingang, gilt nie</span>' : '';
+            const suffix = isLocked ? ' <span class="badge bg-secondary ms-1">Posteingang, gilt nie</span>' : '';
             return '<div class="form-check">'
                 + '<input class="form-check-input audit-curated-folder-cb" type="checkbox" value="'
                 + escapeHtml(name) + '" id="' + id + '"' + checked + disabled + '>'
