@@ -897,6 +897,18 @@ const RulesManager = {
         if (document.getElementById('rule-stop-processing').checked) {
             actions.stop_processing = true;
         }
+
+        const realConditions = Object.keys(conditions).filter(function(key) {
+            return key !== 'match_mode' && key !== 'ai_confidence_threshold';
+        });
+        const movesOrDeletes = !!(actions.move_to_folder || actions.delete);
+        if (realConditions.length === 1 && realConditions[0] === 'older_than_days' && movesOrDeletes) {
+            const proceed = confirm(
+                'Diese Regel gilt für alle Mails älter als ' + conditions.older_than_days
+                + ' Tage. Erst mit \'T\' testen.'
+            );
+            if (!proceed) return;
+        }
         
         const enableLearning = document.getElementById('rule-enable-learning').checked;
         console.log('📚 enable_learning wird gespeichert:', enableLearning);
