@@ -1554,7 +1554,8 @@
                                             Tage <span class="text-danger" aria-hidden="true">*</span>
                                         </label>
                                         <input type="number" class="form-control form-control-sm"
-                                               id="newRuleMaxAge" placeholder="Tage eingeben, z. B. 14" min="1" required>
+                                               id="newRuleMaxAge" placeholder="Tage eingeben, z. B. 14" min="0" required>
+                                        <div class="form-text">0 = sofort</div>
                                         <div class="small text-danger d-none" id="newRuleMaxAgeError">
                                             Bei «Sicher löschbar» muss eine Anzahl Tage angegeben werden.
                                         </div>
@@ -6422,13 +6423,20 @@
         
         const ageError = document.getElementById('newRuleMaxAgeError');
         const ageInput = document.getElementById('newRuleMaxAge');
-        if (disposition === 'SAFE' && !maxAge) {
+        const maxAgeNum = maxAge === '' ? null : parseInt(maxAge, 10);
+        if (disposition === 'SAFE' && (maxAgeNum === null || Number.isNaN(maxAgeNum))) {
             ageInput.classList.add('is-invalid');
             ageError.classList.remove('d-none');
             return;
         }
         ageInput.classList.remove('is-invalid');
         ageError.classList.add('d-none');
+        if (disposition === 'SAFE' && maxAgeNum === 0) {
+            const ok = confirm('Mails, die auf diese Regel passen, gelten sofort als sicher löschbar, auch ganz frische. Fortfahren?');
+            if (!ok) {
+                return;
+            }
+        }
         
         try {
             const response = await fetch('/api/audit-config/auto-delete-rules', {
@@ -6441,7 +6449,7 @@
                     sender_pattern: sender || null,
                     subject_pattern: subject || null,
                     disposition: disposition,
-                    max_age_days: maxAge ? parseInt(maxAge) : null,
+                    max_age_days: disposition === 'SAFE' ? maxAgeNum : null,
                     description: description || null
                 })
             });
@@ -6500,6 +6508,7 @@
         wrap.classList.toggle('d-none', !show);
         ageInput.required = show;
         if (!show) {
+            ageInput.value = '';
             ageInput.classList.remove('is-invalid');
             ageError.classList.add('d-none');
         }
@@ -6511,20 +6520,7 @@
     });
     syncAuditAgeField();
     document.getElementById('addAutoDeleteRuleBtn').addEventListener('click', addAutoDeleteRule);
-    
-    // Disposition-Änderung: Tage-Feld aktivieren/deaktivieren
-    document.getElementById('newRuleDisposition').addEventListener('change', function() {
-        const maxAgeInput = document.getElementById('newRuleMaxAge');
-        if (this.value === 'SAFE') {
-            maxAgeInput.disabled = false;
-            maxAgeInput.placeholder = '14';
-        } else {
-            maxAgeInput.disabled = true;
-            maxAgeInput.value = '';
-            maxAgeInput.placeholder = '-';
-        }
-    });
-    
+
     // Load Defaults Button
     const ruleTestLabels = {
         safe: 'Sicher löschbar',
