@@ -27,7 +27,7 @@ from src.helpers.task_ownership import track_celery_task, verify_celery_task_acc
 rules_bp = Blueprint("rules", __name__)
 logger = logging.getLogger(__name__)
 
-from src.auto_rules_engine import age_only_confirm_error
+from src.auto_rules_engine import age_only_confirm_error, update_touches_rule_body
 
 
 def _checked_rule_conditions(conditions):
@@ -272,13 +272,16 @@ def api_update_rule(rule_id):
             if "enable_learning" in data:
                 rule.enable_learning = bool(data["enable_learning"])
 
-            age_block = age_only_confirm_error(
-                rule.conditions or {},
-                rule.actions or {},
-                bool(data.get("confirm_age_only")),
-            )
-            if age_block:
-                return jsonify({"error": age_block, "needs_age_confirm": True}), 400
+            # Nur wenn Bedingung oder Aktion mitkommen. is_active, Learning,
+            # Name und Priorität bleiben frei — Ausschalten darf nicht 400 werden.
+            if update_touches_rule_body(data):
+                age_block = age_only_confirm_error(
+                    rule.conditions or {},
+                    rule.actions or {},
+                    bool(data.get("confirm_age_only")),
+                )
+                if age_block:
+                    return jsonify({"error": age_block, "needs_age_confirm": True}), 400
             
             try:
                 db.commit()

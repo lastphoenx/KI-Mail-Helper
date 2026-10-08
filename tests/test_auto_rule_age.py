@@ -9,6 +9,7 @@ from src.auto_rules_engine import (
     is_age_only_destructive,
     mail_is_older_than,
     parse_rule_age_days,
+    update_touches_rule_body,
 )
 
 
@@ -124,3 +125,24 @@ def test_server_rejects_age_only_move_or_delete_without_confirm():
     assert not is_age_only_destructive(only_age, {"mark_as_read": True})
     assert age_only_confirm_error(only_age, {"delete": True}, False)
     assert age_only_confirm_error(only_age, {"delete": True}, True) is None
+
+
+def test_status_toggle_of_existing_age_rule_is_not_blocked():
+    """PUT nur mit is_active/Learning/Name/Priorität prüft die Alters-Warnung nicht."""
+    stored = {"older_than_days": 30}
+    destructive = {"move_to_folder": "Archive", "delete": True}
+    for payload in (
+        {"is_active": False},
+        {"is_active": True},
+        {"enable_learning": True},
+        {"name": "umbenannt"},
+        {"description": "hinweis"},
+        {"priority": 5},
+    ):
+        assert not update_touches_rule_body(payload)
+        assert age_only_confirm_error(stored, destructive, False)
+    action_change = {"actions": {"delete": True}}
+    assert update_touches_rule_body(action_change)
+    assert age_only_confirm_error(stored, action_change["actions"], False)
+    confirmed = {"actions": {"delete": True}, "confirm_age_only": True}
+    assert age_only_confirm_error(stored, confirmed["actions"], True) is None

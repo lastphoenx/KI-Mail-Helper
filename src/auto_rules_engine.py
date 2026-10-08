@@ -98,6 +98,13 @@ def is_age_only_destructive(conditions, actions) -> bool:
     return moves or deletes
 
 
+def update_touches_rule_body(payload) -> bool:
+    """True, wenn der PUT Bedingungen oder Aktionen ändert."""
+    if not isinstance(payload, dict):
+        return False
+    return "conditions" in payload or "actions" in payload
+
+
 def age_only_confirm_error(conditions, actions, confirmed) -> Optional[str]:
     if not is_age_only_destructive(conditions, actions) or confirmed:
         return None
