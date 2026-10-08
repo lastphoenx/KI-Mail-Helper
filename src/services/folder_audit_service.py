@@ -3710,20 +3710,26 @@ class FolderAuditService:
         if getattr(scam_eval, "domain_badge", None):
             info.domain_badge = scam_eval.domain_badge
 
+        from src.services.audit_quality_rules import reasons_for_decision, with_domain_badge
+
         if scam_eval.is_scam:
             info.category = TrashCategory.SCAM
             info.confidence = scam_eval.confidence
-            info.reasons = scam_eval.reasons or scam_eval.layer1_flags
+            info.reasons = with_domain_badge(
+                scam_eval.reasons or scam_eval.layer1_flags,
+                info.domain_badge,
+            )
             return info
 
         if scam_eval.identity_suspicion and not never_scam:
             info.category = TrashCategory.SUSPICION
             info.confidence = max(0.75, scam_eval.confidence or 0.0)
-            from src.services.audit_quality_rules import reasons_for_decision
-
-            info.reasons = reasons_for_decision(
-                "identity_suspicion",
-                identity_lines=scam_eval.layer1_flags or scam_eval.reasons or [],
+            info.reasons = with_domain_badge(
+                reasons_for_decision(
+                    "identity_suspicion",
+                    identity_lines=scam_eval.layer1_flags or scam_eval.reasons or [],
+                ),
+                info.domain_badge,
             )
             return info
 

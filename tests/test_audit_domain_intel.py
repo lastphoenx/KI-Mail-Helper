@@ -11,7 +11,7 @@ from src.services.audit_domain_intel import (
     reset_domain_intel_budget,
 )
 from src.services.audit_scam_detection import evaluate_scam_risk
-from src.services.folder_audit_service import TrashEmailInfo
+from src.services.folder_audit_service import FolderAuditService, TrashCategory, TrashEmailInfo
 
 
 class _NX(Exception):
@@ -126,6 +126,64 @@ def test_nxdomain_badge_and_young_brand_is_scam_young_alone_is_not():
     assert not ev_plain.is_scam
     assert ev_plain.domain_badge == "Domain 12 Tage alt"
     assert not hard_brand_plus_intel_is_scam([], missing, 30)
+
+
+def _intel_cfg(brand_map):
+    return {
+        "trusted_domains": set(),
+        "own_domains": set(),
+        "own_addresses": set(),
+        "important_keywords": set(),
+        "safe_subject_patterns": set(),
+        "safe_sender_patterns": set(),
+        "vip_senders": set(),
+        "vip_pattern_types": {},
+        "domain_intel_enabled": True,
+        "domain_young_days": 30,
+        "domain_caution_days": 90,
+        "brand_official_domains_effective": brand_map,
+    }
+
+
+def test_brand_hit_keeps_domain_age_in_reason_text():
+    reset_domain_intel_budget()
+    brand = _token()
+    foreign = f"{_token()}.example"
+    young = _mail(
+        sender=f"news@{brand}.{foreign}",
+        sender_name="Qx",
+        subject="Hallo",
+    )
+    young.auth_results = "dkim=pass; spf=pass; dmarc=pass"
+    young._dns_lookup = lambda domain: "exists"
+    young._rdap_lookup = lambda domain: 12
+    out = FolderAuditService.analyze_email(
+        young,
+        audit_config=_intel_cfg({brand: [f"{brand}.example"]}),
+        llm_enabled=False,
+    )
+    assert out.category == TrashCategory.SCAM
+    assert out.domain_badge == "Domain 12 Tage alt"
+    assert any(r == "Domain 12 Tage alt" for r in out.reasons)
+
+    reset_domain_intel_budget()
+    cautious = _mail(
+        sender=f"no_reply_login.{brand}@{foreign}",
+        sender_name="Qx",
+        subject="Hallo",
+    )
+    cautious.auth_results = "dkim=pass; spf=pass; dmarc=pass"
+    cautious._dns_lookup = lambda domain: "exists"
+    cautious._rdap_lookup = lambda domain: 45
+    soft = FolderAuditService.analyze_email(
+        cautious,
+        audit_config=_intel_cfg({brand: [f"{brand}.example"]}),
+        llm_enabled=False,
+    )
+    assert soft.category == TrashCategory.SUSPICION
+    assert soft.domain_badge == "Domain 45 Tage alt"
+    assert any(r == "Domain 45 Tage alt" for r in soft.reasons)
+    assert any(r.startswith("Identität:") for r in soft.reasons)
 
 
 def test_no_answer_means_domain_exists():

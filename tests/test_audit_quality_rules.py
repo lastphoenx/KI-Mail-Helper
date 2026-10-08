@@ -308,6 +308,14 @@ def test_transaction_age_follows_ui_days():
     assert out_old.category == TrashCategory.SAFE
 
 
+def test_checked_folder_covers_children_not_a_sibling():
+    parent = f"Dringend/{_token()}"
+    assert folder_is_curated(parent, [parent])
+    assert folder_is_curated(f"{parent}/2024", [parent])
+    assert not folder_is_curated(f"Archiv/{_token()}", [parent])
+    assert not folder_is_curated("INBOX", [parent])
+
+
 def test_plain_inbox_never_curated_pattern_list_is():
     assert not folder_is_curated("INBOX", ["inbox", "Dringend"])
     token = _token()

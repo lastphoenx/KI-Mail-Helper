@@ -398,6 +398,15 @@ def reasons_for_decision(rule_id: str, *, identity_lines=None, **fields) -> list
     return [text]
 
 
+def with_domain_badge(lines, badge) -> list:
+    """Identitätszeilen behalten das Domain-Badge, auch wenn es nicht in layer1_flags steht."""
+    out = [str(line) for line in (lines or []) if line]
+    text = str(badge or "").strip()
+    if text and text not in out:
+        out.append(text)
+    return out
+
+
 def has_bulk_signal(info) -> bool:
     if getattr(info, "has_list_unsubscribe", False):
         return True

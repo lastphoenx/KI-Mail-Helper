@@ -817,24 +817,40 @@
                         </div>
                         <textarea class="form-control form-control-sm font-monospace" id="auditOwnDomainsInput" rows="4"
                                   placeholder="shop.example.com&#10;mail.example.com, cloud.example.com" disabled></textarea>
-                        <div class="mt-3">
-                            <label class="form-label small mb-1" for="auditOwnAddressesInput">Meine Adressen</label>
-                            <p class="text-muted small mb-1">
-                                Volle Absender-Adressen, die dir gehören, zum Beispiel eine Arbeits- oder Zweitadresse.
-                                Eine Mail von genau dieser Adresse gilt wie eine Mail von «Meine Domains».
-                                Die übrige Domain bleibt fremd. Eine Freemail-Domain wird dadurch nicht komplett freigegeben.
-                                Beispiel: <code>arbeit@example.com</code>
-                            </p>
-                            <textarea class="form-control form-control-sm font-monospace" id="auditOwnAddressesInput" rows="3"
-                                      placeholder="arbeit@example.com" disabled></textarea>
-                        </div>
                         <div class="mt-2 d-flex justify-content-between align-items-center">
-                            <small class="text-muted">Domain ohne @. Adresse mit @. Eine pro Zeile.</small>
+                            <small class="text-muted">Eine Domain pro Zeile, ohne @</small>
                             <button type="button" class="btn btn-sm btn-primary" id="saveOwnDomainsBtn" disabled>
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
                         </div>
                         <span class="small text-muted" id="ownDomainsSaveStatus"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#ownAddressesSection">
+                        <i class="bi bi-person-check me-2 text-info"></i>
+                        Meine Adressen
+                        <span class="badge bg-info text-dark ms-2" id="ownAddressesBadge">0</span>
+                    </button>
+                </h2>
+                <div id="ownAddressesSection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <p class="text-muted mb-2">
+                            Gilt nur für diese eine Adresse, nicht für die ganze Domain.
+                            Zum Beispiel eine Arbeits- oder Zweitadresse. Eine Freemail-Domain wird dadurch nicht komplett freigegeben.
+                            Beispiel: <code>arbeit@example.com</code>
+                        </p>
+                        <textarea class="form-control form-control-sm font-monospace" id="auditOwnAddressesInput" rows="3"
+                                  placeholder="arbeit@example.com" disabled></textarea>
+                        <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
+                            <span class="small text-muted" id="ownAddressesSaveStatus"></span>
+                            <button type="button" class="btn btn-sm btn-primary" id="saveOwnAddressesBtn" disabled>
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -853,11 +869,13 @@
                             Das ist nicht «Ordner vom Scan ausnehmen».
                             Ein ausgenommener Ordner wird <strong>nicht gescannt</strong>.
                             Ein wichtiger Ordner <strong>wird gescannt</strong>, die Mails darin werden aber <strong>nie «Sicher löschbar»</strong>.
-                            Beispiel: <code>Dringend/Bank</code> bleibt immer zur Prüfung, auch wenn der Inhalt harmlos aussieht.
+                            Häkchen setzen wie bei den ausgenommenen Ordnern, dieselbe Liste.
+                            Ein Häkchen gilt auch für die Ordner darin. Der normale Posteingang lässt sich nicht auswählen.
+                            Beispiel: <code>Dringend/Bank</code> anhaken, dann bleibt der Ordner und alles darin zur Prüfung.
                         </p>
-                        <label class="form-label small mb-1" for="auditCuratedFoldersInput">Wichtige Ordner, ein Ordner pro Zeile</label>
-                        <textarea class="form-control form-control-sm font-monospace" id="auditCuratedFoldersInput" rows="3"
-                                  placeholder="Dringend/Bank&#10;Wichtig/Rechnungen"></textarea>
+                        <div id="auditCuratedFoldersList" class="border rounded p-2 bg-light" style="max-height: 320px; overflow-y: auto;">
+                            <span class="text-muted">Im Tab «Ordner scannen» oben einen Account wählen, dann unter «Ordner vom Scan ausnehmen» auf «Ordnerliste laden».</span>
+                        </div>
                         <p class="text-muted small mt-3 mb-2">
                             Backup- und Erfolgsmails gelten nach den eingetragenen Tagen als sicher löschbar.
                             Davor bleiben sie in Prüfen. Dasselbe gilt für Versand-Meldungen im zweiten Feld.
@@ -1827,6 +1845,15 @@
         if (notableFilter) {
             notableFilter.addEventListener('change', loadNotableDomains);
         }
+        const saveOwnAddressesBtn = document.getElementById('saveOwnAddressesBtn');
+        if (saveOwnAddressesBtn) {
+            saveOwnAddressesBtn.addEventListener('click', async function() {
+                const st = document.getElementById('ownAddressesSaveStatus');
+                if (st) st.textContent = 'Speichern…';
+                const ok = await saveAuditScanFolderSettings();
+                if (st) st.textContent = ok ? 'Gespeichert.' : '';
+            });
+        }
         const saveOwnDomainsBtn = document.getElementById('saveOwnDomainsBtn');
         if (saveOwnDomainsBtn) {
             saveOwnDomainsBtn.addEventListener('click', async function() {
@@ -1911,6 +1938,7 @@
 
     let auditExcludeFolderSet = new Set();
     let auditFolderNamesCache = [];
+    let auditCuratedPatternsCache = [];
 
     function pickDefaultAuditFolderValue(folders) {
         if (!folders || !folders.length) return '';
@@ -2122,7 +2150,9 @@
         updateAuditExcludeAccountContext();
 
         if (!accountId) {
+            auditCuratedPatternsCache = [];
             renderAuditExcludeFolderCheckboxes([], [], { noAccount: true });
+            renderAuditCuratedFolderCheckboxes([], []);
             return;
         }
 
@@ -2151,14 +2181,16 @@
                 ownDomains = data.own_domains || [];
                 auditOwnDomainsCache = ownDomains || [];
                 const addrInput = document.getElementById('auditOwnAddressesInput');
+                const ownAddresses = data.own_addresses || [];
                 if (addrInput) {
                     addrInput.disabled = false;
-                    addrInput.value = (data.own_addresses || []).join('\n');
+                    addrInput.value = ownAddresses.join('\n');
                 }
-                const curatedInput = document.getElementById('auditCuratedFoldersInput');
-                if (curatedInput) {
-                    curatedInput.value = (data.curated_folder_patterns || []).join('\n');
-                }
+                const addrBadge = document.getElementById('ownAddressesBadge');
+                if (addrBadge) addrBadge.textContent = String(ownAddresses.length);
+                const saveAddrBtn = document.getElementById('saveOwnAddressesBtn');
+                if (saveAddrBtn) saveAddrBtn.disabled = false;
+                auditCuratedPatternsCache = (data.curated_folder_patterns || []).slice();
                 const successDays = document.getElementById('auditSuccessSafeDays');
                 if (successDays && data.success_safe_after_days) {
                     successDays.value = String(data.success_safe_after_days);
@@ -2195,7 +2227,67 @@
         }
 
         renderAuditExcludeFolderCheckboxes(folders, excluded);
+        renderAuditCuratedFolderCheckboxes(folders, auditCuratedPatternsCache);
         refreshScanFolderSelectLabels();
+    }
+
+    function auditNormalizeFolderPath(folder) {
+        return String(folder || '').replace(/\\/g, '/').split(/[./]/)
+            .map(function(s) { return s.trim().toLowerCase(); })
+            .filter(Boolean)
+            .join('/');
+    }
+
+    function auditFolderIsPlainInbox(name) {
+        return auditNormalizeFolderPath(name) === 'inbox';
+    }
+
+    function auditFolderIsCurated(folder, patterns) {
+        const path = auditNormalizeFolderPath(folder);
+        if (!path || path === 'inbox') return false;
+        const parts = path.split('/');
+        for (let i = 0; i < (patterns || []).length; i++) {
+            const pat = auditNormalizeFolderPath(patterns[i]);
+            if (!pat || pat === 'inbox') continue;
+            if (pat === path || parts.indexOf(pat) !== -1 || path.indexOf(pat) !== -1) return true;
+        }
+        return false;
+    }
+
+    function renderAuditCuratedFolderCheckboxes(folders, patterns) {
+        const container = document.getElementById('auditCuratedFoldersList');
+        if (!container) return;
+        const accountId = getSelectedAuditAccountId();
+        if (!accountId) {
+            container.innerHTML = auditExcludeNoAccountHtml();
+            return;
+        }
+        if (!folders || !folders.length) {
+            container.innerHTML = '<span class="text-muted">Keine Ordner geladen. Unter «Ordner vom Scan ausnehmen» auf «Ordnerliste laden».</span>';
+            return;
+        }
+        container.innerHTML = folders.map(function(name) {
+            const inbox = auditFolderIsPlainInbox(name);
+            const checked = (!inbox && auditFolderIsCurated(name, patterns)) ? ' checked' : '';
+            const disabled = inbox ? ' disabled' : '';
+            const id = 'audit-cur-' + btoa(unescape(encodeURIComponent(name))).replace(/=/g, '');
+            const suffix = inbox ? ' <span class="badge bg-secondary ms-1">Posteingang, gilt nie</span>' : '';
+            return '<div class="form-check">'
+                + '<input class="form-check-input audit-curated-folder-cb" type="checkbox" value="'
+                + escapeHtml(name) + '" id="' + id + '"' + checked + disabled + '>'
+                + '<label class="form-check-label font-monospace small" for="' + id + '">'
+                + escapeHtml(name) + suffix + '</label></div>';
+        }).join('');
+    }
+
+    function collectCuratedFolders() {
+        const boxes = document.querySelectorAll('.audit-curated-folder-cb');
+        if (!boxes.length) return (auditCuratedPatternsCache || []).slice();
+        const selected = [];
+        boxes.forEach(function(cb) {
+            if (cb.checked && !cb.disabled) selected.push(cb.value);
+        });
+        return selected;
     }
 
     function renderAuditWordLists(lists) {
@@ -2314,11 +2406,7 @@
                         if (!el) return [];
                         return el.value.split(/[\n,;]+/).map(function(s) { return s.trim(); }).filter(Boolean);
                     })(),
-                    curated_folder_patterns: (function() {
-                        const el = document.getElementById('auditCuratedFoldersInput');
-                        if (!el) return [];
-                        return el.value.split(/[\n,;]+/).map(function(s) { return s.trim(); }).filter(Boolean);
-                    })(),
+                    curated_folder_patterns: collectCuratedFolders(),
                     success_safe_after_days: (function() {
                         const el = document.getElementById('auditSuccessSafeDays');
                         return el ? parseInt(el.value, 10) : 30;
@@ -2354,6 +2442,10 @@
                 auditOwnDomainsCache = data.own_domains;
                 const ownBadge = document.getElementById('ownDomainsBadge');
                 if (ownBadge) ownBadge.textContent = String(data.own_domains.length);
+            }
+            if (Array.isArray(data.own_addresses)) {
+                const addrBadge = document.getElementById('ownAddressesBadge');
+                if (addrBadge) addrBadge.textContent = String(data.own_addresses.length);
             }
             refreshBrandOwnDomainCollisionWarn();
             const badge = document.getElementById('auditExcludeBadge');
