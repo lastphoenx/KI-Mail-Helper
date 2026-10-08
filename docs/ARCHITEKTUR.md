@@ -61,7 +61,7 @@
 | `api_bp` | `/api` | REST API Endpoints |
 | `dashboard_bp` | `/dashboard` | Prioritäts-Matrix, Statistiken |
 | `tags_bp` | `/tags` | Tag-Verwaltung, Suggestions |
-| `rules_bp` | `/rules` | Auto-Rules Engine |
+| `rules_bp` | `/rules` | Aktions-Regeln |
 | `settings_bp` | `/settings` | User-Einstellungen, AI-Config |
 | `threads_bp` | `/threads` | Conversation View |
 | `main_bp` | `/` | Index, Static Routes |

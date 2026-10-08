@@ -158,7 +158,7 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
 - 🏷️ Mit KI-gestützten Tag-Vorschlägen versieht
 - 💡 Mit Handlungsempfehlungen versieht
 - 📧 **SMTP-Versand** mit automatischer Sent-Ordner-Synchronisation ermöglicht
-- � **AI Action Engine**: Antwort-Entwürfe generieren + Auto-Rules für Email-Aktionen
+- � **AI Action Engine**: Antwort-Entwürfe generieren + Aktions-Regeln für Email-Aktionen
 - �🧵 In **Thread-View** mit Konversations-Context darstellt
 - 🔍 Mit **semantischer Suche** durchsuchbar macht
 
@@ -234,7 +234,7 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
   - **Performance**: Preloading aller Tag-Embeddings (1× Batch statt 11-13× einzelne Calls)
 - **🤖 AI Action Engine (Phase G)** – Automatisierung & KI-Assistenz
   - **G.1 Reply Draft Generator**: KI generiert Antwort-Entwürfe mit 4 Ton-Varianten (Formell/Freundlich/Kurz/Ablehnend)
-  - **G.2 Auto-Rules Engine**: Automatische Email-Aktionen mit Bedingungen & Aktionen
+  - **G.2 Aktions-Regeln**: Automatische Email-Aktionen mit Bedingungen & Aktionen
     - 15 Bedingungstypen (inkl. Mail-Alter): Sender, Subject, Body, Regex, Tags, KI-Vorschläge, Alter
     - 6 Aktionstypen: Move, Tag, Flag, Read, Priority, Delete
     - Farbige Tag-Indikatoren (CSS-Kreise)
