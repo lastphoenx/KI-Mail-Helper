@@ -16,6 +16,19 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - Doku: `docs/audit/` (Index, `ordner-audit-scam.md`, `spamhaus-dbl.md`, `tranco-popularity.md`).
 - Tranco: Celery-Task-Import, dynamische Listen-ID, SQLite-Reload bei Dateiwechsel, Redirect-Härtung, Admin-only async Update, gemeinsame Shared-Infrastructure-Liste.
 
+### Ordner-Audit — Qualität und Konfiguration
+
+- Scam/Verdacht: Marken im Absender-Teil (Compound, Local-Part), VIP-Domains, harte Markentreffer mit Warnsignal; Verdacht bei Domain-Alter (DNS/RDAP, Cache).
+- Sicher löschbar: Routine-Mails nach N Tagen (Erfolg, Versand), Provider-Spam-Newsletter.
+- Konfiguration pro Account: wichtige Ordner (Ordnerliste), Aufbewahrung, Meine Adressen, Wortlisten (sensibel, Alarm, Erfolg, Versand), Domain-Abfrage.
+- Bekannte Kontakte verschlüsselt; Deploy-Skripte und Verify.
+- Auto-Rules: Bedingung «Mail älter als N Tage», Vorschau über «T». Eine Regel, die nur aus dem Alter besteht und verschiebt oder löscht, braucht `confirm_age_only`.
+- Sicherheit: `fsspec` 2026.6.0 (CVE-2026-104851, ReferenceFileSystem).
+
+### Migrationen
+
+`a9c0d1e2f3a4`, `b1d2e3f4a5b6`, `c2e3f4a5b6c7`, `d4e5f6a7b8c9` (siehe INSTALLATION: `alembic upgrade head`, danach `alembic current`).
+
 ---
 
 ## [2.2.2] - 2026-01-26
