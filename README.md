@@ -1,14 +1,14 @@
 # 📧 KI-Mail-Helper
 
-**Lokaler KI-Mail-Assistent mit Zero-Knowledge-Architektur**
+**Lokaler KI-Mail-Assistent, selbst betrieben**
 
-Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschlüsselung kombiniert. Der Server sieht niemals Klartext-Daten – Entschlüsselung erfolgt ausschließlich im Browser mit deinem Passwort. Das ist für mich auch primär ein Projekt um Erfahrungen mit KI zusammeln und um Potentiale zu entdecken und erschliessen - insbesondere auch um leichtgewichtige Lokale Lösungen auszuarbeiten.
+Ein selbst-gehosteter Email-Organizer. Mail-Inhalte und Zugangsdaten liegen verschlüsselt in der Datenbank. Solange du angemeldet bist, entschlüsselt der Server sie, um Mails anzuzeigen, abzuholen und zu bewerten. Das ist Verschlüsselung im Ruhezustand, kein Zero-Knowledge im engen Sinn: der Betreiber des Servers kann den Klartext sehen, während eine Sitzung läuft. Das Projekt dient dem eigenen Betrieb und dem Ausprobieren lokaler Modelle.
 
 ---
 
 ## Kernfeatures
 
-- **Zero-Knowledge Encryption** – AES-256-GCM, DEK/KEK-Pattern, Master-Key nur im RAM
+- **Verschlüsselung im Ruhezustand** – AES-256-GCM, DEK/KEK. Klartext nur, solange die Sitzung den Schlüssel hält
 - **3×3 Prioritäts-Matrix** – Dringlichkeit × Wichtigkeit mit Farbcodierung + Account-Filter
 - **KI-gestützte Priorisierung** – spaCy NLP (80%) + Keywords (20%) + Ensemble Learning
 - **Multi-Provider AI** – Lokale Modelle (Ollama) oder Cloud (Claude, OpenAI, Mistral)
@@ -56,17 +56,18 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## Status
 
-**Version:** 2.3.0  
-**Development:** Aktiv  
+**Version:** 2.3.0 (Oktober 2026)  
+**Betrieb:** Produktiv, Schwerpunkt Benutzung  
+**Development:** Keine aktive Feature-Entwicklung  
 **Architecture:** Flask Blueprints + PostgreSQL + Celery  
-**Stability:** Production-ready  
+**Stability:** Im eigenen Betrieb 
 
 **v2.0 Highlights:**
 - ✅ Multi-User mit vollständiger User-Isolation
 - ✅ PostgreSQL statt SQLite (skalierbar)
 - ✅ Celery Task Queue (asynchrone Verarbeitung)
 - ✅ Blueprint-basierte Modularisierung (10 Blueprints)
-- ✅ Zero-Knowledge Encryption (DEK/KEK Pattern)
+- ✅ Verschlüsselung im Ruhezustand (DEK/KEK)
 - ✅ Mandatory 2FA für alle Accounts
 
 **v2.2.1 Highlights (Januar 2026):**
@@ -96,22 +97,22 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## ⚠️ Haftungsausschluss / Disclaimer (AI-Generated Code)
 
-> **🚧 WORK IN PROGRESS**: Dieses Projekt befindet sich in Entwicklung. Neue Features werden noch hinzugefügt, bestehende getestet und verbessert. Für produktive Nutzung bitte eigene Tests durchführen und regelmäßig Updates prüfen (requirments).
+> **Betrieb:** Die Software läuft produktiv. Neue Features sind zurzeit nicht der Schwerpunkt. Vor einem Update trotzdem die eigenen Tests machen.
 
 ### 🇩🇪 Deutsch
 
-**Hinweis: KI-generierter Code (in aktiver Entwicklung)**
+**Hinweis: KI-generierter Code (im Betrieb)**
 
 Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher **vollständig von KI erzeugt**; keine Zeile wurde manuell von einem Menschen geschrieben. Die gesamte Entwicklung erfolgte in **Microsoft Visual Studio Code (VS Code)** mit GitHub Copilot als primärem Entwickler.
 
-**Aktuelle Features (Stand Januar 2026):**
-- 🎯 **KI-Priorisierung:** spaCy NLP (80%) + Keywords (20%) + Ensemble Learning mit SGD
-- 🛡️ **Email-Anonymisierung:** spaCy PII-Entfernung (3 Levels: Regex, Light, Full) vor Cloud-AI-Übertragung
-- 📊 **Confidence Tracking:** Transparenz über AI-Analyse-Qualität mit ai_confidence/optimize_confidence
-- 🤖 **Core System:** Zero-Knowledge Encryption, 3×3 Prioritäts-Matrix, Multi-Provider AI
-- 🧠 **Hybrid Score-Learning:** Global + Personal Classifier mit TTL-Caching, Fallback-Hierarchie und Auto-Training
-- 🧠 **Online-Learning:** SGD-Classifier mit inkrementellem Training aus User-Korrekturen (D/W/Spam/Kategorie)
-- 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
+**Aktuelle Features (Stand Oktober 2026):**
+- 🎯 **KI-Priorisierung:** spaCy plus Keywords, dazu ein optionaler zweiter Durchlauf (Optimize) für die Posteingang-Bewertung
+- 📁 **Ordner-Audit:** Regeln für Scam, Verdacht, wichtige Ordner, Aufbewahrung und Wortlisten. Eine optionale Identitäts-KI nur in der Grauzone, nicht der Optimize-Durchlauf
+- 🛡️ **Email-Anonymisierung:** spaCy-PII-Entfernung vor einer Cloud-Bewertung der Posteingang-Analyse
+- 📊 **Confidence Tracking:** getrennte Werte für den ersten und den optionalen zweiten Durchlauf
+- 🤖 **Kern:** Verschlüsselung im Ruhezustand, 3×3-Matrix, lokale oder Cloud-Modelle
+- 🧠 **Lernen:** Globaler und persönlicher Classifier, plus Korrekturen aus der Benutzung
+- 🔐 **Sicherheit:** Rate Limiting, Pflicht-2FA, Sperre nach Fehlversuchen
 - 📥 **Fetch:** IMAP/Gmail OAuth mit account-spezifischen Filtern (Ordner, Datum, UNSEEN)
 - 📤 **Send:** SMTP-Versand mit automatischer Sent-Ordner-Synchronisation
 - 🧵 **Thread-View:** Konversations-basierte Email-Ansicht mit KI-Context
@@ -123,20 +124,20 @@ Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher
 
 ### 🇬🇧 English
 
-**Notice: AI-generated code (Active Development)**
+**Notice: AI-generated code (in production use)**
 
-> **🚧 WORK IN PROGRESS**: This project is under active development. New features are being added, while others are testet and improved. For production use, please conduct your own testing and check for updates regularly.
+> **In use:** The software runs in production. New features are not the current focus. Still test before you update.
 
 This repository was created with multiple AI systems. So far, the codebase has been generated **entirely by AI** — not a single line was written manually by a human. All development work was performed in **Microsoft Visual Studio Code (VS Code)** with GitHub Copilot as primary developer.
 
-**Current Features (January 2026):**
-- 🎯 **AI Prioritization:** spaCy NLP (80%) + Keywords (20%) + Ensemble Learning with SGD
-- 🛡️ **Email Anonymization:** spaCy PII removal (3 levels: Regex, Light, Full) before Cloud-AI transmission
-- 📊 **Confidence Tracking:** Transparency in AI analysis quality with ai_confidence/optimize_confidence
-- 🤖 **Core System:** Zero-Knowledge Encryption, 3×3 Priority Matrix, Multi-Provider AI
-- 🧠 **Hybrid Score-Learning:** Global + Personal classifiers with TTL caching, fallback hierarchy and auto-training
-- 🧠 **Online-Learning:** SGD classifiers with incremental training from user corrections (D/W/Spam/Category)
-- 🔐 **Security:** Production-hardened (98/100 Score), Rate Limiting, 2FA, Account Lockout
+**Current Features (October 2026):**
+- 🎯 **AI prioritization:** spaCy plus keywords, plus an optional second pass for the inbox score
+- 📁 **Folder audit:** scam, suspicion, important folders, retention and word lists. An optional identity model only in the gray zone, separate from the inbox optimize pass
+- 🛡️ **Anonymization:** spaCy PII removal before a cloud inbox analysis
+- 📊 **Confidence:** separate values for the first pass and the optional second pass
+- 🤖 **Core:** encryption at rest, 3×3 matrix, local or cloud models
+- 🧠 **Learning:** global and personal classifiers, plus corrections from use
+- 🔐 **Security:** rate limiting, mandatory 2FA, lockout after failed logins
 - 📥 **Fetch:** IMAP/Gmail OAuth with account-specific filters (folders, date, UNSEEN)
 - 📤 **Send:** SMTP with automatic Sent folder sync
 - 🧵 **Thread-View:** Conversation-based email view with AI context
@@ -150,36 +151,31 @@ This repository was created with multiple AI systems. So far, the codebase has b
 
 ## 🎯 Was ist KI-Mail-Helper?
 
-Ein lokaler Mail-Assistent, der E-Mails automatisch:
-- ✅ Von IMAP-Servern (GMX, Yahoo, Hotmail) & Gmail OAuth abholt
-- 🔒 **Zero-Knowledge verschlüsselt** – Server hat keinen Zugriff auf Klartext-Daten
-- 🤖 Mit lokalem LLM (Ollama: llama3.2, mistral, etc.) oder Cloud-KI analysiert
-- 📊 In einem **3×3-Prioritäten-Dashboard** darstellt (Wichtigkeit × Dringlichkeit)
-- 🏷️ Mit KI-gestützten Tag-Vorschlägen versieht
-- 💡 Mit Handlungsempfehlungen versieht
-- 📧 **SMTP-Versand** mit automatischer Sent-Ordner-Synchronisation ermöglicht
-- � **AI Action Engine**: Antwort-Entwürfe generieren + Aktions-Regeln für Email-Aktionen
-- �🧵 In **Thread-View** mit Konversations-Context darstellt
-- 🔍 Mit **semantischer Suche** durchsuchbar macht
+Ein lokaler Mail-Assistent, der E-Mails:
+- von IMAP-Konten und über Gmail OAuth abholt
+- im Ruhezustand verschlüsselt speichert und während der Sitzung entschlüsselt
+- mit einem lokalen Modell (Ollama, Modell in den Einstellungen) oder einer Cloud-KI bewertet
+- in der **3×3-Matrix** zeigt (Wichtigkeit × Dringlichkeit, nur der Posteingang)
+- im **Ordner-Audit** nach Regeln einstuft (Scam, Verdacht, prüfen, sicher löschbar)
+- mit Aktions-Regeln verschiebt oder markiert, getrennt von den Einstufungs-Regeln
+- als Threads und über die semantische Suche erreichbar macht
 
 ---
 
 ## ✨ Features
 
 ### Kernfunktionen
-- **🔐 Zero-Knowledge Encryption (Phase 8)** – AES-256-GCM End-to-End Verschlüsselung (Überblick in [docs/SECURITY.md](docs/SECURITY.md); das lange Krypto-Dokument liegt nicht in diesem Repo)
-  - **DEK/KEK Pattern** – Passwort ändern ohne E-Mails neu zu verschlüsseln
-  - Alle E-Mails verschlüsselt (Sender, Subject, Body, AI-Ergebnisse)
-  - Alle Credentials verschlüsselt (IMAP/SMTP Server, Usernames, Passwords)
-  - DEK (Data Encryption Key) nur in Server-RAM (Flask Server-Side Sessions)
-  - Server kann niemals auf Klartext-Daten zugreifen
-- **🔒 Production Security (Phase 9)** – Enterprise-Grade Hardening (siehe [docs/SECURITY.md](docs/SECURITY.md); Host, systemd und `.env` stehen im privaten Betriebsdokument des Betreibers)
+- **🔐 Verschlüsselung im Ruhezustand** – AES-256-GCM, DEK/KEK ([docs/SECURITY.md](docs/SECURITY.md))
+  - Mails, KI-Texte und IMAP/SMTP-Zugangsdaten liegen verschlüsselt in PostgreSQL
+  - Passwort ändern verschlüsselt nur den DEK neu, nicht jede Mail
+  - Während der Anmeldung liegt der DEK in der Server-Sitzung. Hintergrundjobs bekommen einen kurzlebigen Dienst-Token
+  - Ein Datenbank-Dump ohne Sitzung und ohne diesen Token zeigt keinen Mail-Klartext. Wer den Server oder die Sitzungsdateien liest, kann den Klartext sehen
+- **🔒 Härtung** – siehe [docs/SECURITY.md](docs/SECURITY.md). Host, systemd und `.env` stehen im privaten Betriebsdokument des Betreibers
   - **Flask-Limiter**: Rate Limiting (5 requests/min Login/2FA)
   - **Account Lockout**: 5 Failed → 15min Ban
   - **Session Timeout**: 30min Inaktivität → Auto-Logout
   - **Fail2Ban Integration**: Network-Level IP Banning
   - **Audit Logging**: Strukturierte Security-Events für Monitoring
-  - **Security Score: 98/100** 🔒
 - **📥 Fetch-System** – Intelligente Mail-Synchronisation
   - **IMAP** – GMX, Yahoo, Hotmail, custom servers
   - **Gmail OAuth2** – Google API mit automatischer Token-Refresh
@@ -203,7 +199,7 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
   - **Sent-Sync**: Automatisches APPEND in IMAP Sent-Ordner
   - **Thread-Support**: In-Reply-To + References Headers
   - **DB-Synchronisation**: Gesendete Mails als ProcessedEmail
-  - **Zero-Knowledge**: SMTP-Credentials verschlüsselt
+  - **Zugangsdaten**: SMTP-Credentials verschlüsselt gespeichert
 - **🧵 Thread-View (Phase E)** – Konversations-basierte Ansicht
   - **Thread-ID Berechnung**: SHA256(normalized_subject + participants)
   - **Conversation-Grouping**: Emails mit gleichem Thread-ID gruppiert
@@ -277,8 +273,8 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
   - **Begründung**: Rule-basierte Systeme (spaCy) funktionieren nur bei expliziten Signalen (Rechnungen, Deadlines). 
     Für Newsletter/Marketing-Mails mit subtilen Mustern ist ML-Learning aus User-Korrekturen überlegen.
 - **Dynamic Provider-Dropdowns** – Auto-Erkennung verfügbarer KI-Modelle basierend auf API-Keys
-- **Flexible Modellauswahl** – Keine Hardcodierung! llama3.2, mistral, oder beliebige Ollama/Cloud-Modelle
-- **Two-Pass Optimization** – Base-Pass (schnell) + Optimize-Pass (optional, bessere Kategorisierung)
+- **Modellauswahl in den Einstellungen** – lokale Ollama-Modelle oder Cloud. Denkende Modelle (zum Beispiel Qwen) brauchen für JSON-Antworten das Denken aus
+- **Zwei Durchläufe nur für die Posteingang-Bewertung** – erster Durchlauf, optional ein zweiter für hohe Scores. Das Ordner-Audit nutzt das nicht
 - **Learning System (Phase 9 ML)** – Human-in-the-Loop Training mit User-Korrektionen
 - **Datenschutz-Sanitizer** – 3 Level (Volltext → Pseudonymisierung)
 - **Multi-Provider KI-Analyse** – Lokal (Ollama) oder Cloud (OpenAI, Anthropic, Mistral)
@@ -295,13 +291,15 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
 4. **Thread-View** – Konversations-basierte Gruppierung mit Context
 5. **Detail-Ansicht** – Vollständige Mail-Info + Aktionen + Tag-Management + SMTP-Reply
 6. **Tag-Management** – `/tags` Route für CRUD-Operationen + Statistiken
-7. **Semantic Search** – `/search` mit "Finde ähnliche" Button
+7. **Semantic Search** – `/search` mit «Finde ähnliche»
+8. **Ordner-Audit** – `/folder-audit`, Kacheln und Einstufungs-Regeln
+9. **Aktions-Regeln** – `/rules`, verschieben und markieren
 
 ---
 
 ## 🏗️ Architektur
 
-> **v2.0 Multi-User Edition** – Blueprint-basierte Flask-Architektur mit PostgreSQL + Celery
+> **Stand 2.3.0** – Flask, PostgreSQL, Celery. Ordner-Audit und Aktions-Regeln sind getrennte Wege.
 
 ```
 KI-Mail-Helper/
@@ -310,18 +308,18 @@ KI-Mail-Helper/
 │   ├── app_factory.py          # Flask Application Factory
 │   ├── celery_app.py           # Celery Worker Configuration
 │   ├── 00_env_validator.py     # Environment Validation
-│   ├── 02_models.py            # SQLAlchemy Models (23 Tabellen)
+│   ├── 02_models.py            # SQLAlchemy-Modelle
 │   ├── 03_ai_client.py         # Multi-Provider AI Client
 │   ├── 05_embedding_api.py     # Embedding API (Semantic Search)
 │   ├── 06_mail_fetcher.py      # IMAP Client (UID/Folder/Flags)
 │   ├── 07_auth.py              # Auth + Master-Key + 2FA
-│   ├── 08_encryption.py        # Zero-Knowledge AES-256-GCM
+│   ├── 08_encryption.py        # AES-256-GCM, DEK/KEK (Ruhezustand)
 │   ├── 12_processing.py        # Email Processing Pipeline
 │   ├── 19_smtp_sender.py       # SMTP + Sent-Sync
-│   ├── auto_rules_engine.py    # Auto-Rules Engine
+│   ├── auto_rules_engine.py    # Aktions-Regeln (/rules)
 │   ├── reply_generator.py      # AI Reply Generator
 │   ├── semantic_search.py      # Vector Search
-│   ├── blueprints/             # Flask Blueprints (10 Module)
+│   ├── blueprints/             # Flask Blueprints
 │   │   ├── __init__.py
 │   │   ├── auth.py             # Login, Register, 2FA
 │   │   ├── accounts.py         # Mail-Account CRUD
@@ -329,7 +327,9 @@ KI-Mail-Helper/
 │   │   ├── api.py              # REST API
 │   │   ├── dashboard.py        # Main Dashboard
 │   │   ├── tags.py             # Tag Management
-│   │   ├── rules.py            # Auto-Rules
+│   │   ├── rules.py            # Aktions-Regeln
+│   │   ├── folder_audit.py     # Ordner-Audit
+│   │   ├── audit_config.py     # Einstufungs-Regeln und Audit-Konfiguration
 │   │   ├── settings.py         # User Settings
 │   │   └── threads.py          # Thread View
 │   ├── tasks/                  # Celery Tasks
@@ -390,8 +390,8 @@ curl -fsSL https://ollama.com/install.sh | sh
 sudo systemctl start ollama
 sudo systemctl enable ollama
 
-# Modell laden (~10 Min, ~8GB)
-ollama pull llama3.2
+# Modell, das du danach in den Einstellungen wählst
+ollama pull <modellname>
 
 # Überprüfen
 systemctl status ollama
@@ -471,8 +471,9 @@ python3 -m src.00_main --serve --https
 1. **Account erstellen** → `/register`
 2. **2FA einrichten** → Dashboard → 2FA-Setup
 3. **Mail-Account hinzufügen** → Settings → Add IMAP or Gmail OAuth
-4. **Mails abrufen** → Dashboard → "Jetzt verarbeiten"
-5. **Tags verwalten** → Navigation → "🏷️ Tags"
+4. **Mails abrufen** → Dashboard → «Jetzt verarbeiten»
+5. **Ordner prüfen** → `/folder-audit`
+6. **Tags verwalten** → Navigation → Tags
 
 ### Tag-System (Phase 10)
 
@@ -488,7 +489,7 @@ python3 -m src.00_main --serve --https
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  KI-ANALYSE (all-minilm:22m / llama3.2)                     │
+│  KI-ANALYSE (Modell aus den Einstellungen)                  │
 │  ├─ Dringlichkeit (1-3)        ← System-Feld für Scoring   │
 │  ├─ Wichtigkeit (1-3)          ← System-Feld für Scoring   │
 │  ├─ Kategorie/Aktion (3 Werte) ← System-Feld für Workflow  │
@@ -692,6 +693,16 @@ fetch('/api/tags', {
 
 ### 5️⃣ UI-Komponenten
 
+Die Skizzen A–C beschreiben die Tag-Oberfläche. Dazu kommen Ordner-Audit und Aktions-Regeln.
+
+#### **D) Ordner-Audit (`/folder-audit`)**
+Konto und Ordner wählen, Scan, Kacheln (Scam, Verdacht, sicher löschbar, prüfen, möglicherweise wichtig). Konfiguration: Einstufungs-Regeln, wichtige Ordner, Wortlisten, Aufbewahrung. Die Tage einer Einstufungs-Regel gelten nur bei «Sicher löschbar»; 0 heisst sofort, mit Rückfrage.
+
+#### **E) Aktions-Regeln (`/rules`)**
+Bedingungen und Aktionen (verschieben, markieren, löschen). Der Test-Knopf zeigt Treffer, bevor die Regel scharf ist. Das ist nicht die Einstufung im Ordner-Audit.
+
+### 5️⃣ UI-Komponenten (Tags)
+
 #### **A) Tag-Management (`/tags`)**
 ```
 Navigation → 🏷️ Tags
@@ -758,20 +769,18 @@ tag_assignments = (
 
 ### 6️⃣ Wichtige Code-Stellen
 
-| Komponente | Datei | Zeilen | Beschreibung |
-|------------|-------|--------|--------------|
-| **KI-Prompt** | `src/03_ai_client.py` | 78-130 | OLLAMA_SYSTEM_PROMPT mit suggested_tags |
-| **Validation** | `src/03_ai_client.py` | 276-287 | _validate_ai_payload() extrahiert suggested_tags |
-| **Auto-Assignment** | `src/12_processing.py` | 206-245 | KI-Tags → EmailTag + Assignment |
-| **Tag-Manager** | `src/services/tag_manager.py` | 1-332 | 8 Methoden für CRUD + Assignment |
-| **Models** | `src/02_models.py` | 87-125 | EmailTag + EmailTagAssignment |
-| **Migration** | `migrations/versions/ph10_email_tags.py` | - | Alembic Migration |
-| **API Routes** | `src/blueprints/api.py` | - | 67 REST Endpoints |
-| **Tag-UI** | `templates/tags.html` | 1-302 | Tag-Management Seite |
-| **Email-Detail** | `templates/email_detail.html` | 90-787 | Tag-Badges + Modal |
-| **Learning-Modal** | `templates/base.html` | 124-210 | "Bewertung korrigieren" |
-| **Filter** | `templates/list_view.html` | 8-88 | Multi-Select Tag-Filter |
-| **Learning Helper** | `src/blueprints/email_actions.py` | - | _update_user_override_tags() |
+Die Zeilennummern in älteren Notizen veralten. Massgeblich sind die Dateien.
+
+| Komponente | Datei | Beschreibung |
+|------------|-------|--------------|
+| **KI-Prompt** | `src/03_ai_client.py` | System-Prompt und Prüfung der KI-Antwort |
+| **Verarbeitung** | `src/12_processing.py` | Posteingang-Pipeline, inkl. optionalem zweiten Durchlauf |
+| **Tag-Manager** | `src/services/tag_manager.py` | Tags anlegen und zuweisen |
+| **Modelle** | `src/02_models.py` | Tabellen, inkl. Audit-Konfiguration |
+| **Aktions-Regeln** | `src/blueprints/rules.py` | `/rules` |
+| **Ordner-Audit** | `src/blueprints/folder_audit.py` | Scan und Kacheln |
+| **Audit-Regeln** | `src/services/audit_quality_rules.py` | Wortlisten, wichtige Ordner, Aufbewahrung |
+| **Scam** | `src/services/audit_scam_detection.py` | Feste Ebene und optionale Identitäts-KI |
 
 ---
 
@@ -860,11 +869,7 @@ python3 -m src.00_main --serve
 # Dashboard auf: http://localhost:5000
 ```
 
-**Worker starten (Background-Verarbeitung):**
-```bash
-python3 -m src.00_main --worker
-# Verarbeitet Mails im Hintergrund (alle 5 Sekunden prüfen)
-```
+**Hintergrund im Betrieb:** Celery-Worker und Celery-Beat, nicht ein Schleifen-Prozess alle paar Sekunden. Der lokale Eintrag `--worker` bleibt für Versuche ohne die Dienst-Units.
 
 **Mail-Verarbeitung einmalig:**
 ```bash
@@ -907,35 +912,32 @@ python3 scripts/reset_base_pass.py --force
 python3 scripts/reset_base_pass.py --account=1 --force
 ```
 
-Weitere Maintenance-Befehle: siehe **[MAINTENANCE.md](./docs/MAINTENANCE.md)**
+Weitere Hilfsskripte: **[scripts/README.md](scripts/README.md)**
 
 ---
 
-## 🤖 KI-Provider & Two-Pass Optimization
+## 🤖 KI-Provider und zwei Durchläufe
 
 ### Verfügbare Provider
 
-Das System unterstützt **automatische Erkennung** verfügbarer KI-Provider mit **dynamischer Modellauswahl** (keine Hardcodierung!):
+Modelle werden in den Einstellungen gewählt, nicht im Code festgeschrieben. Lokal ist das Ollama. Cloud sind OpenAI, Anthropic und Mistral, wenn ein Schlüssel gesetzt ist.
 
-| Provider | Modelle | Modus | Schnelligkeit |
-|----------|---------|-------|---------------|
-| **Ollama** (lokal) | llama3.2, **all-minilm:22m** *, etc. | Base-Pass + Optimize | ⚡ Fast (lokal) |
-| **OpenAI** | GPT-4o, GPT-4-Turbo, GPT-3.5 | Base-Pass + Optimize | 🚀 Schnell |
-| **Anthropic** | Claude-3.5-Sonnet, Claude-Opus | Base-Pass + Optimize | 🚀 Schnell |
-| **Mistral** | Mistral-Large, Mistral-Small | Base-Pass + Optimize | 🚀 Schnell |
+| Provider | Wo | Rolle |
+|----------|-----|--------|
+| **Ollama** | auf demselben Rechner | Posteingang (erster und optionaler zweiter Durchlauf) und, wenn eingeschaltet, die Identitäts-KI im Ordner-Audit |
+| **OpenAI, Anthropic, Mistral** | Cloud | dieselben Rollen, wenn du sie statt Ollama wählst |
 
-*\* Keine Hardcodierung mehr! Alle installierten Ollama-Modelle können frei gewählt werden. `all-minilm:22m` für Optimize-Pass besonders geeignet.*
+Denkende lokale Modelle antworten sonst mit leerem JSON. In den Einstellungen bleibt das Denken für diese JSON-Aufrufe aus.
 
-### Two-Pass System
+### Zwei Durchläufe (nur Posteingang)
 
-**Base-Pass (schnell):**
-- Initiale Email-Analyse mit konfig. Provider
-- Erzeugt Score, Kategorie, Tags, deutsche Zusammenfassung
+**Erster Durchlauf:** Score, Kategorie, Tags, Zusammenfassung.
 
-**Optimize-Pass (optional):**
-- Nur für High-Priority-Emails (Score ≥ 8)
-- Verwendet sekundären Provider für bessere Kategorisierung
-- Kann mit leichterem Modell für Kostenersparnis konfiguriert werden
+**Zweiter Durchlauf (optional):** nur für hohe Scores, mit einem zweiten Modell. Das ist die Posteingang-Priorisierung, nicht das Ordner-Audit.
+
+### Ordner-Audit
+
+Die Kacheln kommen aus Regeln (Marken, Auth, Domain-Alter, Wortlisten, wichtige Ordner). Eine Identitäts-KI läuft nur in der Grauzone und ist pro Scan begrenzt. Sie ist ein eigener Aufruf, kein zweiter Durchlauf der Posteingang-Bewertung. Abgeschaltet bleiben die festen Regeln.
 
 **Konfiguration in Settings-UI:**
 - Dropdown für Base-Durchlauf (Provider/Modelle)
@@ -960,27 +962,19 @@ MISTRAL_API_KEY=placeholder
 
 **Denken (think) in `/settings`:** pro Rolle Base/Optimize und Identitäts-KI — Schalter nur bei Modus «umschaltbar»; Regler wirkt auf `/api/chat`-Feld `think` inkl. Modelle mit Ollama-Capability `thinking` (nicht nur Qwen3).
 
-## 🔐 Zero-Knowledge Security
+## 🔐 Verschlüsselung
 
-Das System verwendet **echte Zero-Knowledge Architektur**:
+Das ist **Verschlüsselung im Ruhezustand**, nicht Zero-Knowledge. Bei Zero-Knowledge könnte der Betreiber den Klartext auch während der Nutzung nicht lesen. Hier kann er es, solange eine Sitzung oder ein Dienst-Token den DEK hält.
 
-### Was bedeutet Zero-Knowledge?
-- **Server speichert nur verschlüsselte Daten** (AES-256-GCM)
-- **Master-Key existiert NUR im RAM** (Server-Side Sessions, nie in DB)
-- **Server kann niemals auf Klartext zugreifen** (E-Mails, Passwörter, etc.)
-- **Bei Logout wird Master-Key gelöscht** (keine Persistierung)
+### Was gilt
+- In PostgreSQL liegen Mails, KI-Texte und Zugangsdaten als AES-256-GCM
+- Der DEK wird mit einem Schlüssel aus dem Passwort gewickelt (PBKDF2-HMAC-SHA256, 600.000 Runden)
+- Nach der Anmeldung liegt der DEK in der Server-Sitzung (Dateien unter `.flask_sessions/`)
+- Celery holt Mails mit einem kurzlebigen Token. Der DEK darin ist mit dem Anwendungs-Geheimnis gewickelt und wird beim Abmelden gelöscht
+- Abmelden löscht die Sitzung. Ein Datenbank-Dump ohne Sitzung und ohne gültigen Token zeigt keinen Mail-Klartext
 
-### Was ist verschlüsselt?
-✅ Alle E-Mail-Inhalte (Sender, Subject, Body)  
-✅ Alle AI-Ergebnisse (Zusammenfassungen, Tags, Übersetzungen)  
-✅ Alle Zugangsdaten (IMAP/SMTP Server, Usernames, Passwords)  
-✅ OAuth Tokens (Gmail API)
-
-### Technische Details
-- **Master-Key-Ableitung:** PBKDF2-HMAC-SHA256 (100.000 Iterationen)
-- **Verschlüsselung:** AES-256-GCM (Authenticated Encryption)
-- **Session-Storage:** Flask Server-Side Sessions (`.flask_sessions/`)
-- **Keine Cron-Jobs:** Zero-Knowledge verhindert automatische Hintergrund-Jobs (Master-Key fehlt)
+### Was es nicht ist
+Wer den App-Server, die Sitzungsdateien oder das Anwendungs-Geheimnis zusammen mit einem aktiven Token liest, kommt an den Klartext. Die Grenzen stehen in [docs/SECURITY.md](docs/SECURITY.md).
 
 **📖 Überblick:** [docs/SECURITY.md](docs/SECURITY.md). Das lange Krypto-Dokument liegt nicht in diesem Repo.
 
@@ -995,40 +989,31 @@ FLASK_SECRET_KEY=placeholder     # Für Session-Signierung (z. B. secrets.token_
 
 ## 🔒 Datenschutz-Level
 
-| Level | Beschreibung | Verwendung |
-|-------|-------------|------------|
-| **1** | Volltext (keine Änderungen) | Nur bei 100% lokalem Betrieb |
-| **2** | Ohne Signatur + Historie | Standard für Ollama (lokal) |
-| **3** | + Pseudonymisierung | **Pflicht** für Cloud-KI! |
+Für die Posteingang-Bewertung hängt die Stufe am Provider (`src/tasks/email_processing_tasks.py`):
 
-**Level 3 ersetzt:**
-- E-Mail-Adressen → `[EMAIL_1]`, `[EMAIL_2]`
-- Telefonnummern → `[PHONE_1]`
-- IBANs → `[IBAN_1]`
-- URLs → `[URL_1]`
-- Kreditkarten → `[CC_1]`
+| Provider | Was das Modell sieht |
+|----------|----------------------|
+| **Lokal (Ollama)** | den Mailtext, ohne die Cloud-Anonymisierung |
+| **Cloud** | spaCy ersetzt Namen, Orte und Organisationen. Regex ersetzt Adresse, Telefon, IBAN und URL |
+
+`src/04_sanitizer.py` kennt daneben eine ältere Leiter (Volltext, ohne Signatur und Zitate, Regex-Pseudonyme). Die Cloud-Stufe des Workers ist die spaCy-Stufe, nicht nur diese Regex-Leiter.
+
+Die Identitäts-KI im Ordner-Audit schickt Anzeigename, Adresse und Betreff an das gewählte Modell. Das ist ein eigener Aufruf. Lokal bleibt der Text auf dem Server, in der Cloud verlässt er ihn.
+
+Die Regex-Ersetzung schreibt Platzhalter: `[EMAIL_1]`, `[PHONE_1]`, `[IBAN_1]`, `[URL_1]`, `[CC_1]`.
 
 ---
 
-## 🔄 Automatisierung (Cron-Jobs)
+## 🔄 Hintergrund
 
-Mails können automatisch alle **15 Minuten** verarbeitet werden:
+Abruf, Bewertung und Aktions-Regeln laufen über Celery. Der Zeitplan kommt von Celery Beat, nicht von einem eigenen Timer-Dienst.
 
-**Setup:**
 ```bash
-sudo systemctl enable mail-helper-processor.timer
-sudo systemctl start mail-helper-processor.timer
-
-# Status überprüfen
-sudo systemctl status mail-helper-processor.timer
-sudo journalctl -u mail-helper-processor -n 50 -f  # Logs folgen
+sudo systemctl enable mail-helper mail-helper-celery-worker mail-helper-celery-beat
+sudo systemctl start mail-helper mail-helper-celery-worker mail-helper-celery-beat
 ```
 
-**Timer-Konfiguration ändern:**
-```bash
-sudo systemctl edit mail-helper-processor.timer
-# OnUnitActiveSec=15m  → auf gewünschtes Intervall ändern
-```
+Der Worker braucht einen gültigen Dienst-Token des angemeldeten Kontos. Ohne den Token kann er die Mails nicht entschlüsseln.
 
 ---
 
@@ -1148,10 +1133,10 @@ your-domain.com {
 }
 ```
 
-**5. Systemd Service:**
+**5. Systemd:**
 ```bash
-sudo systemctl enable mail-helper-processor.service
-sudo systemctl start mail-helper-processor.service
+sudo systemctl enable mail-helper mail-helper-celery-worker mail-helper-celery-beat
+sudo systemctl start mail-helper mail-helper-celery-worker mail-helper-celery-beat
 ```
 
 ---
@@ -1161,7 +1146,7 @@ sudo systemctl start mail-helper-processor.service
 - **Python:** 3.13 (mit SQLAlchemy 2.0)
 - **Web:** Flask 3.x + Bootstrap 5
 - **DB:** PostgreSQL + SQLAlchemy 2.0 + Alembic (Migrations)
-- **LLM:** Ollama (llama3.2, mistral, etc.) + OpenAI + Anthropic + Mistral APIs
+- **LLM:** Ollama (Modell in den Einstellungen) oder OpenAI, Anthropic, Mistral
 - **Auth:** Flask-Login + pyotp (TOTP 2FA) + Google OAuth2
 - **Encryption:** cryptography (AES-256-GCM) + PBKDF2 + DEK/KEK Pattern
 - **Security:** 
@@ -1181,10 +1166,12 @@ sudo systemctl start mail-helper-processor.service
 
 ## 📚 Dokumentation
 
-- **[Instruction_&_goal.md](Instruction_&_goal.md)** – Vollständige Projekt-Spezifikation (Phase 0-9)
-- **[SECURITY.md](docs/SECURITY.md)** – Threat Model und Härtung
-- **[INSTALLATION.md](docs/INSTALLATION.md)** – Schritt-für-Schritt Installation
-- **[docs/audit/](docs/audit/)** – Ordner-Audit
+- **[BENUTZERHANDBUCH.md](docs/BENUTZERHANDBUCH.md)** – Bedienung, inkl. Ordner-Audit
+- **[SECURITY.md](docs/SECURITY.md)** – Verschlüsselung und Grenzen
+- **[ARCHITEKTUR.md](docs/ARCHITEKTUR.md)** – Aufbau
+- **[INSTALLATION.md](docs/INSTALLATION.md)** – Installation
+- **[CHANGELOG.md](docs/CHANGELOG.md)** – Änderungen
+- **[docs/audit/](docs/audit/)** – Regeln des Ordner-Audits
 - Deployment, systemd und `.env`: privates Betriebsdokument des Betreibers (nicht in diesem Repo)
 
 ---
@@ -1198,26 +1185,13 @@ curl -fsSL https://ollama.com/install.sh | sh
 ```
 
 **Problem:** `IMAP Fehler: authentication failed`
-```bash
-# Master-Key mismatch – Web-UI besuchen und:
-# Settings → Mail Accounts → Edit → Speichern
-# Das aktualisiert den Cron Master-Key!
-```
+Konto in der Oberfläche erneut speichern, nachdem du angemeldet bist. Der DEK der Sitzung muss die Zugangsdaten neu schreiben können.
 
-**Problem:** `Keine Emails in der Liste, obwohl fetch funktioniert`
-```bash
-# RawEmails existieren, aber AI-Verarbeitung läuft nicht
-python3 -m src.00_main --process-once
-# Oder auf Cron Timer warten (alle 15 Min)
-```
+**Problem:** `Keine Emails in der Liste, obwohl der Abruf funktioniert`
+Die Rohmails liegen da, die Bewertung läuft über den Celery-Worker. Prüfen, ob der Worker läuft. Ein einzelner Lauf geht mit `python3 -m src.00_main --process-once`.
 
-**Problem:** `Ollama zu langsam`
-```bash
-# Kleineres Modell nehmen:
-ollama pull mistral  # 4GB, schneller
-# In .env:
-# USE_CLOUD_AI=false
-```
+**Problem:** `Ollama zu langsam oder leeres JSON`
+In den Einstellungen ein kleineres lokales Modell wählen. Bei denkenden Modellen das Denken für die JSON-Rolle ausschalten.
 
 ---
 
@@ -1225,24 +1199,22 @@ ollama pull mistral  # 4GB, schneller
 
 | Status | Details |
 |--------|---------|
-| **Version** | 2.0.0 (Multi-User Edition) |
-| **Development** | Active - Major refactoring complete |
+| **Version** | 2.3.0 (Oktober 2026) |
+| **Stand** | Produktiv. Schwerpunkt ist die Benutzung, nicht neue Features |
 | **Architecture** | Flask Blueprints + PostgreSQL + Celery |
-| **Tested Platforms** | Linux (Debian 12), Ubuntu 24.04 |
-| **Python Version** | 3.11+ (empfohlen: 3.12) |
-| **Production Ready** | ✅ Multi-User tested |
+| **Python** | 3.13 |
 | **License** | AGPL-3.0 |
 
 ---
 
 ## 🔒 Security
 
-- **Zero-Knowledge Architecture** - Server kann Daten nicht entschlüsseln
-- **AES-256-GCM** für alle E-Mail-Inhalte
-- **DEK/KEK Pattern** - Passwort ändern ohne Daten neu zu verschlüsseln  
-- **PBKDF2** mit 600.000 Iterationen (OWASP 2024 Standard)
-- **Mandatory 2FA** für alle Accounts
-- **Keine Klartext-Credentials** - nur verschlüsselt in DB
+- **Verschlüsselung im Ruhezustand** – der Server liest Klartext, solange die Sitzung den DEK hält
+- **AES-256-GCM** für Mail-Inhalte und Zugangsdaten
+- **DEK/KEK** – Passwort ändern ohne jede Mail neu zu verschlüsseln
+- **PBKDF2** mit 600.000 Runden
+- **Pflicht-2FA**
+- Grenzen (Sitzungsdateien, Dienst-Token): [SECURITY.md](./docs/SECURITY.md)
 
 Siehe [SECURITY.md](./docs/SECURITY.md) für Details.
 
@@ -1271,4 +1243,4 @@ Bitte lies [SECURITY.md](./docs/SECURITY.md) für Sicherheitsfragen und öffne G
 
 ---
 
-**Verwendung auf eigene Gefahr** – Code vollständig von KI geschrieben. Größte Bemühungen durch gute Prompts und intelligentes Hinterfragen, um ein datenschutzfreundliches, lokal betriebenes KI-Mail-Helper Tool zu bauen. Optional: Cloud-KI-APIs statt lokaler Ollama. Bisher keine Praxiserfahrung in der Verwendung der Software.
+**Verwendung auf eigene Gefahr.** Der Code ist weitgehend von KI geschrieben und läuft im eigenen Betrieb. Lokal mit Ollama oder, wenn du es einschaltest, mit einer Cloud-KI. Die Verschlüsselung schützt die Datenbank im Ruhezustand, nicht gegen einen Zugriff auf den laufenden Server.
