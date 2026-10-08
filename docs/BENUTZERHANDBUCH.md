@@ -645,7 +645,7 @@ Das Ordner-Audit bewertet Mails in **beliebigen Ordnern**, nicht nur im Papierko
 
 ### Scam und Verdacht
 
-Scam entsteht aus festen Signalen, nicht aus einer freien Texteinschätzung. Beispiele: der Anzeigename trägt eine Marke, die Absender-Domain steht nicht in der Marken-Tabelle; die Anmeldung der Mail ist fehlgeschlagen; die Absender-Domain ist sehr jung und der Name enthält eine Marke.
+Scam entsteht aus festen Signalen, nicht aus einer freien Texteinschätzung. Beispiele: der Anzeigename trägt eine Marke, die Absender-Domain steht nicht in der Marken-Tabelle; die Absenderprüfung der Mail (SPF, DKIM oder DMARC) ist fehlgeschlagen; die Absender-Domain ist sehr jung und der Name enthält eine Marke.
 
 Verdacht ist die Stufe darunter. Die Mail ist auffällig, das Urteil «Betrug» reicht aber nicht. Ein **Domain-Badge** an der Mail nennt das Alter der Absender-Domain oder dass die Domain nicht existiert. Das Badge ist ein Hinweis. Es macht die Mail allein nicht zu Scam.
 

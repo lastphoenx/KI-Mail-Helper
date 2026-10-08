@@ -23,7 +23,7 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - Konfiguration pro Account: wichtige Ordner (Ordnerliste), Aufbewahrung, Meine Adressen, Wortlisten (sensibel, Alarm, Erfolg, Versand), Domain-Abfrage.
 - Bekannte Kontakte verschlüsselt; Deploy-Skripte und Verify.
 - Auto-Rules: Bedingung «Mail älter als N Tage», Vorschau über «T». Eine Regel, die nur aus dem Alter besteht und verschiebt oder löscht, braucht `confirm_age_only`.
-- Sicherheit: `fsspec` 2026.6.0 (CVE-2026-104851, ReferenceFileSystem).
+- Sicherheit: `fsspec` 2026.6.0. Dependabot-Alert: [GHSA-27vj-qcqg-25rc](https://github.com/advisories/GHSA-27vj-qcqg-25rc) (CVE-2026-104851), ReferenceFileSystem, behoben ab 2026.6.0.
 - Abhängigkeiten: anyio 4.15.1, black 26.5.1, MarkupSafe 3.0.4, orjson 3.12.0, platformdirs 4.12.3, pyflakes 4.0.2, pylint 4.1.2, pytest 9.1.1, tldextract 5.4.0. Domain-Zerlegung unverändert (`domain` + `suffix`, private Suffixe an).
 
 ### Migrationen

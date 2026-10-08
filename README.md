@@ -56,10 +56,12 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 
 ## Status
 
-**Version:** 2.2.2  
+**Version:** 2.2.2 (veröffentlicht)  
 **Development:** Aktiv  
 **Architecture:** Flask Blueprints + PostgreSQL + Celery  
 **Stability:** Production-ready  
+
+Die Zeilen unter «In Arbeit» sind auf main, aber noch kein Release. Die Versionsnummer steigt erst mit dem nächsten Schnitt.
 
 **v2.0 Highlights:**
 - ✅ Multi-User mit vollständiger User-Isolation
@@ -69,28 +71,28 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ Zero-Knowledge Encryption (DEK/KEK Pattern)
 - ✅ Mandatory 2FA für alle Accounts
 
-**v2.2.2 Highlights (Januar 2026):**
-- ✅ Ordner-Audit: erste UI-Konfiguration (Domains, Keywords, VIP, Patterns)
-- ✅ UI-Konfiguration: Vertrauenswürdige Domains, Keywords, Patterns, VIP-Absender
-- ✅ Mehrsprachige Defaults: CH/DE/IT/FR Keywords und Patterns
-- ✅ VIP-Absender: Wildcard (*@firma.ch) und Regex-Unterstützung
-- ✅ Auto-Regeln: Pattern-basierte Disposition (SAFE/IMPORTANT/SCAM/REVIEW)
-- ✅ Cluster-Dropdown: Einheitliches UI für alle 6 Konfigurationslisten
-
-**v2.3 Highlights:**
-- ✅ Scam- und Verdacht-Kachel im Ordner-Audit
-- ✅ Marken-Tabelle mit Domain-Status
-- ✅ Wichtige Ordner aus der Ordnerliste (Ordner plus Unterordner)
-- ✅ Aufbewahrung von Routine-Mails (Erfolg und Versand, 1–3650 Tage)
-- ✅ Wortlisten: sensibel, Alarm, Erfolg, Versand
-- ✅ Auto-Rule «Mail älter als N Tage», Test-Knopf zeigt die Treffer vorher
-
 **v2.2.1 Highlights (Januar 2026):**
 - ✅ Robuste Mail-Verarbeitung: Fortsetzung unvollständiger Emails
 - ✅ Live-Status-Tracking: Erfolg/Fehler/Warnungen mit Delta-Anzeige
 - ✅ Verbessertes Opus-MT: inscriptis-Konfiguration + Token-Count-Präzision
 - ✅ Prozess-Reihenfolge: Älteste unverarbeitete Emails zuerst
 - ✅ SQL-Wartungsbefehle: Schnelle DB-Operationen für Status-Reset & Debugging
+
+**v2.2.2 Highlights (Januar 2026):**
+- ✅ Ordner-Audit: erste UI-Konfiguration (Domains, Keywords, VIP, Patterns)
+- ✅ UI-Konfiguration: Vertrauenswürdige Domains, Keywords, Patterns, VIP-Absender
+- ✅ Mehrsprachige Defaults: CH/DE/IT/FR Keywords und Patterns
+- ✅ VIP-Absender: Wildcard (`*@firma.example`) und Regex-Unterstützung
+- ✅ Auto-Regeln: Pattern-basierte Disposition (SAFE/IMPORTANT/SCAM/REVIEW)
+- ✅ Cluster-Dropdown: Einheitliches UI für alle 6 Konfigurationslisten
+
+**In Arbeit (noch kein Release):**
+- ✅ Scam- und Verdacht-Kachel im Ordner-Audit
+- ✅ Marken-Tabelle mit Domain-Status
+- ✅ Wichtige Ordner aus der Ordnerliste (Ordner plus Unterordner)
+- ✅ Aufbewahrung von Routine-Mails (Erfolg und Versand, 1–3650 Tage)
+- ✅ Wortlisten: sensibel, Alarm, Erfolg, Versand
+- ✅ Auto-Rule «Mail älter als N Tage», Test-Knopf zeigt die Treffer vorher
 
 ---
 
@@ -371,7 +373,7 @@ KI-Mail-Helper/
 
 | Komponente | Technologie |
 |------------|-------------|
-| **Backend** | Flask 3.0 + Blueprints |
+| **Backend** | Flask 3.1 + Blueprints |
 | **Database** | PostgreSQL 17 |
 | **Cache/Queue** | Redis 8 |
 | **Task Queue** | Celery 5.6 |
@@ -1060,6 +1062,7 @@ Wenig dringend     🟢 Score 2-3       |  🟢 Score 3-4    |  🟡 Score 5
 | 🔴 High | **Todo-Listen-Extraktion** | Aufgaben aus Emails extrahieren und als Todo markieren |
 | 🟡 Medium | **Presidio Integration** | Microsoft Presidio für erweiterte PII-Erkennung |
 | ✅ Done | **Attachment-Handling** | Anhänge anzeigen, herunterladen (PDF, Word, Excel, Bilder ≤25MB) |
+| ✅ Done | **Ordner-Audit** | Beliebige Ordner: Scam/Verdacht, wichtige Ordner, Aufbewahrung, vier Wortlisten, Domain-Alter |
 | 🟡 Medium | **Email-Vorlagen** | Wiederverwendbare Templates für häufige Antworten |
 | 🟢 Low | **CalDAV/CardDAV Sync** | Kalender- und Kontakte-Integration |
 | 🟢 Low | **Mobile PWA** | Progressive Web App für Mobilgeräte |
@@ -1161,7 +1164,7 @@ sudo systemctl start mail-helper-processor.service
 
 - **Python:** 3.13 (mit SQLAlchemy 2.0)
 - **Web:** Flask 3.x + Bootstrap 5
-- **DB:** SQLite + SQLAlchemy ORM + Alembic (Migrations)
+- **DB:** PostgreSQL + SQLAlchemy 2.0 + Alembic (Migrations)
 - **LLM:** Ollama (llama3.2, mistral, etc.) + OpenAI + Anthropic + Mistral APIs
 - **Auth:** Flask-Login + pyotp (TOTP 2FA) + Google OAuth2
 - **Encryption:** cryptography (AES-256-GCM) + PBKDF2 + DEK/KEK Pattern
@@ -1173,7 +1176,7 @@ sudo systemctl start mail-helper-processor.service
   - Account Lockout + Session Timeout
   - HIBP Password Validation (500M+ compromised passwords)
 - **Production:** Gunicorn + Systemd + Automated Backups
-- **Background:** Threading + systemd Timer für Cron-Jobs
+- **Background:** Celery + Redis (nicht nur Threads)
 - **Testing:** pytest + mock + test_db_schema
 - **Migration:** Alembic für DB-Schema-Versionierung
 - **Security:** Soft-Delete, Foreign-Key-Constraints, Input-Validation
