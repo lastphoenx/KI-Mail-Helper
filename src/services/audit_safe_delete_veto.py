@@ -144,6 +144,7 @@ def safe_delete_veto_reason(
     *,
     account_email: Optional[str] = None,
     own_domains: Optional[Set[str]] = None,
+    own_addresses: Optional[Set[str]] = None,
     is_user_trusted: bool = False,
     is_marketing: bool = False,
 ) -> Optional[str]:
@@ -188,6 +189,7 @@ def safe_delete_veto_reason(
         info,
         account_email=account_email,
         own_domains=own_domains,
+        own_addresses=own_addresses,
         folder=folder,
     ):
         return "Eigene Adresse oder Domain"

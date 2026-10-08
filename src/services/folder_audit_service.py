@@ -118,6 +118,7 @@ class AuditConfigCache:
         config = {
             'trusted_domains': set(),
             'own_domains': set(),
+            'own_addresses': set(),
             'important_keywords': set(),
             'safe_subject_patterns': set(),
             'safe_sender_patterns': set(),
@@ -303,6 +304,20 @@ class AuditConfigCache:
                             from src.services.audit_own_domains import own_domains_set_from_items
 
                             config["own_domains"] = own_domains_set_from_items(parsed)
+                    raw_addr = getattr(acc, "audit_own_addresses", None) if acc else None
+                    if raw_addr:
+                        try:
+                            parsed_addr = json.loads(raw_addr)
+                        except (TypeError, json.JSONDecodeError):
+                            parsed_addr = []
+                        if isinstance(parsed_addr, list):
+                            from src.services.audit_own_domains import (
+                                own_addresses_set_from_items,
+                            )
+
+                            config["own_addresses"] = own_addresses_set_from_items(
+                                parsed_addr
+                            )
                     raw_ex = getattr(acc, "audit_exclude_folders", None) if acc else None
                     if raw_ex:
                         ex_parsed = json.loads(raw_ex)
@@ -3176,6 +3191,7 @@ class FolderAuditService:
             audit_config = {
                 'trusted_domains': set(),
                 'own_domains': set(),
+                'own_addresses': set(),
                 'important_keywords': set(),
                 'safe_subject_patterns': set(),
                 'safe_sender_patterns': set(),
@@ -3277,10 +3293,12 @@ class FolderAuditService:
         from src.services.audit_scam_detection import should_never_scam
 
         own_domains = audit_config.get('own_domains', set()) if audit_config else set()
+        own_addresses = audit_config.get('own_addresses', set()) if audit_config else set()
         never_scam = should_never_scam(
             info,
             account_email=account_email,
             own_domains=own_domains,
+            own_addresses=own_addresses,
             folder=info.folder,
         )
 
@@ -3373,9 +3391,14 @@ class FolderAuditService:
                 is_success_status = True
                 break
         
-        from src.services.audit_own_domains import sender_on_own_domains
+        from src.services.audit_own_domains import (
+            sender_matches_own_address,
+            sender_on_own_domains,
+        )
 
-        sender_on_own = sender_on_own_domains(info.sender or "", own_domains)
+        sender_on_own = sender_on_own_domains(
+            info.sender or "", own_domains
+        ) or sender_matches_own_address(info.sender or "", own_addresses)
         from src.services.audit_quality_rules import (
             email_age_days,
             is_routine_status_subject,
@@ -3563,21 +3586,26 @@ class FolderAuditService:
             reasons.append(f"Newsletter ({newsletter_conf:.0%})")
         
         # --- Important Subject Patterns (hardcoded) ---
+        # Bei Massenmail kein Abzug: derselbe Schutz wie bei Alarmwörtern.
+        bulk_mail = has_bulk_signal(info)
+        important_subject_applied = False
+        important_keyword = None
         for pattern in IMPORTANT_SUBJECT_PATTERNS:
             if re.search(pattern, subject_lower):
-                # Bei Scam-Erkennung ignorieren wir "wichtige" Betreffzeilen
-                if score < 1.0:  # Kein Scam
+                if score < 1.0 and not bulk_mail:
                     score -= 0.5
-                    reasons.append(f"Wichtiger Betreff")
+                    reasons.append("Wichtiger Betreff")
+                    important_subject_applied = True
                 break
-        
+
         # --- Important Keywords from DB (multilingual: fattura, bolletta, etc.) ---
         db_keywords = audit_config.get('important_keywords', set())
         for keyword in db_keywords:
             if keyword in subject_lower:
-                if score < 1.0:  # Kein Scam
+                if score < 1.0 and not bulk_mail:
                     score -= 0.5
                     reasons.append(f"Wichtig: '{keyword}'")
+                    important_keyword = keyword
                 break
         
         # --- Important Sender Patterns ---
@@ -3691,11 +3719,12 @@ class FolderAuditService:
         if scam_eval.identity_suspicion and not never_scam:
             info.category = TrashCategory.SUSPICION
             info.confidence = max(0.75, scam_eval.confidence or 0.0)
-            merged = list(scam_eval.layer1_flags or scam_eval.reasons or [])
-            for r in reasons:
-                if r not in merged:
-                    merged.append(r)
-            info.reasons = merged
+            from src.services.audit_quality_rules import reasons_for_decision
+
+            info.reasons = reasons_for_decision(
+                "identity_suspicion",
+                identity_lines=scam_eval.layer1_flags or scam_eval.reasons or [],
+            )
             return info
 
         if scam_eval.llm_deferred:
@@ -3728,6 +3757,8 @@ class FolderAuditService:
                 score = max(score, -0.25)
                 reasons.append("Routine-Absender (kein Wichtig-Signal)")
 
+        decision_rule = None
+        decision_fields = {}
         if score >= 0.6:  # Balanciert: Newsletter (List-Unsubscribe=0.8) → SAFE
             info.category = TrashCategory.SAFE
             info.confidence = min(1.0, score)
@@ -3743,29 +3774,33 @@ class FolderAuditService:
         if alarm_counts_as_important(info):
             info.category = TrashCategory.IMPORTANT
             info.confidence = min(1.0, abs(score) if score < 0 else 0.8)
+            decision_rule = "important_alarm"
+            decision_fields = {}
         elif provider_spam_newsletter_safe(info):
             info.category = TrashCategory.SAFE
             info.confidence = min(1.0, max(score, 0.7))
-            reasons.append("Newsletter trotz Provider-Spam (kein Markentreffer)")
+            decision_rule = "safe_provider_newsletter"
+            decision_fields = {}
         elif getattr(info, "aged_success_safe", False):
             info.category = TrashCategory.SAFE
             info.confidence = min(1.0, max(score, 0.7))
+            decision_rule = "safe_aged_success"
+            decision_fields = {"days": info.success_safe_after_days}
         elif getattr(info, "aged_transaction_safe", False):
             info.category = TrashCategory.SAFE
             info.confidence = min(1.0, max(score, 0.7))
-            reasons.append(
-                f"Sendungsstatus älter als {info.transaction_safe_after_days} Tage"
-            )
+            decision_rule = "safe_aged_transaction"
+            decision_fields = {"days": info.transaction_safe_after_days}
         elif getattr(info, "transaction_hold", False) and info.category == TrashCategory.SAFE:
             info.category = TrashCategory.REVIEW
             info.confidence = 0.5
-            reasons.append(
-                f"Sendungsstatus (löschbar nach {info.transaction_safe_after_days} Tagen)"
-            )
+            decision_rule = "review_transaction_hold"
+            decision_fields = {"days": info.transaction_safe_after_days}
         elif info.routine_status and info.category == TrashCategory.IMPORTANT:
             info.category = TrashCategory.REVIEW
             info.confidence = 0.5
-            reasons.append("Routine-Status (kein Wichtig-Signal)")
+            decision_rule = "review_routine"
+            decision_fields = {}
 
         from src.services.audit_safe_delete_veto import safe_delete_veto_reason
 
@@ -3774,18 +3809,39 @@ class FolderAuditService:
                 info,
                 account_email=account_email,
                 own_domains=own_domains,
+                own_addresses=own_addresses,
                 is_user_trusted=is_user_trusted,
                 is_marketing=is_marketing,
             )
             if veto:
                 if veto == "Betriebs-/Alarmmeldung":
                     info.category = TrashCategory.IMPORTANT
+                    decision_rule = "important_veto_alarm"
                 else:
                     info.category = TrashCategory.REVIEW
+                    decision_rule = "review_veto"
+                decision_fields = {"veto": veto}
                 info.confidence = 0.5
-                reasons.append(f"🛡️ Löschschutz: {veto}")
-        
-        info.reasons = reasons
+
+        if decision_rule is None:
+            if info.category == TrashCategory.SAFE and is_marketing:
+                decision_rule = "safe_bulk"
+            elif info.category == TrashCategory.IMPORTANT and important_subject_applied:
+                decision_rule = "important_subject"
+            elif info.category == TrashCategory.IMPORTANT and important_keyword:
+                decision_rule = "important_keyword"
+                decision_fields = {"keyword": important_keyword}
+            elif info.category == TrashCategory.REVIEW and any(
+                "kein List-Unsubscribe" in r for r in reasons
+            ):
+                decision_rule = "review_db_safe_pattern"
+
+        from src.services.audit_quality_rules import reasons_for_decision
+
+        if decision_rule:
+            info.reasons = reasons_for_decision(decision_rule, **decision_fields)
+        else:
+            info.reasons = reasons
         FolderAuditService._ensure_review_reasons(info)
         return info
     

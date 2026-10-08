@@ -823,8 +823,19 @@
                         </div>
                         <textarea class="form-control form-control-sm font-monospace" id="auditOwnDomainsInput" rows="4"
                                   placeholder="shop.example.com&#10;mail.example.com, cloud.example.com" disabled></textarea>
+                        <div class="mt-3">
+                            <label class="form-label small mb-1" for="auditOwnAddressesInput">Meine Adressen</label>
+                            <p class="text-muted small mb-1">
+                                Volle Absender-Adressen, die dir gehören, zum Beispiel eine Arbeits- oder Zweitadresse.
+                                Eine Mail von genau dieser Adresse gilt wie eine Mail von «Meine Domains».
+                                Die übrige Domain bleibt fremd. Eine Freemail-Domain wird dadurch nicht komplett freigegeben.
+                                Beispiel: <code>arbeit@example.com</code>
+                            </p>
+                            <textarea class="form-control form-control-sm font-monospace" id="auditOwnAddressesInput" rows="3"
+                                      placeholder="arbeit@example.com" disabled></textarea>
+                        </div>
                         <div class="mt-2 d-flex justify-content-between align-items-center">
-                            <small class="text-muted">Eine Domain pro Zeile oder mit Komma/Semikolon getrennt, ohne @</small>
+                            <small class="text-muted">Domain ohne @. Adresse mit @. Eine pro Zeile.</small>
                             <button type="button" class="btn btn-sm btn-primary" id="saveOwnDomainsBtn" disabled>
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
@@ -2153,6 +2164,11 @@
                 excluded = data.exclude_folders || [];
                 ownDomains = data.own_domains || [];
                 auditOwnDomainsCache = ownDomains || [];
+                const addrInput = document.getElementById('auditOwnAddressesInput');
+                if (addrInput) {
+                    addrInput.disabled = false;
+                    addrInput.value = (data.own_addresses || []).join('\n');
+                }
                 const curatedInput = document.getElementById('auditCuratedFoldersInput');
                 if (curatedInput) {
                     curatedInput.value = (data.curated_folder_patterns || []).join('\n');
@@ -2307,6 +2323,11 @@
                     account_id: parseInt(accountId, 10),
                     exclude_folders: excluded,
                     own_domains: own_domains,
+                    own_addresses: (function() {
+                        const el = document.getElementById('auditOwnAddressesInput');
+                        if (!el) return [];
+                        return el.value.split(/[\n,;]+/).map(function(s) { return s.trim(); }).filter(Boolean);
+                    })(),
                     curated_folder_patterns: (function() {
                         const el = document.getElementById('auditCuratedFoldersInput');
                         if (!el) return [];

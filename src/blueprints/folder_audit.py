@@ -38,6 +38,22 @@ def _parse_audit_exclude_folders(account) -> list:
     return []
 
 
+def _parse_audit_own_addresses(account) -> list:
+    from src.services.audit_own_domains import clean_own_addresses_for_save
+
+    raw = getattr(account, "audit_own_addresses", None)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list):
+            cleaned, _errors = clean_own_addresses_for_save(data)
+            return cleaned
+    except (TypeError, json.JSONDecodeError):
+        logger.warning("Invalid audit_own_addresses JSON for account %s", getattr(account, "id", "?"))
+    return []
+
+
 def _parse_audit_own_domains(account) -> list:
     from src.services.audit_own_domains import clean_own_domains_for_save
 
@@ -389,6 +405,7 @@ def get_scan_settings(account_id):
             **_audit_quality_settings_payload(account),
             "exclude_folders": _parse_audit_exclude_folders(account),
             "own_domains": _parse_audit_own_domains(account),
+            "own_addresses": _parse_audit_own_addresses(account),
         })
 
 
@@ -405,6 +422,7 @@ def save_scan_settings():
         account_id = data.get("account_id")
         exclude_folders = data.get("exclude_folders")
         own_domains = data.get("own_domains")
+        own_addresses = data.get("own_addresses")
 
         if not account_id:
             return jsonify({"error": "account_id erforderlich"}), 400
@@ -416,8 +434,9 @@ def save_scan_settings():
             "domain_young_days",
             "domain_caution_days",
             "word_lists",
+            "own_addresses",
         )
-        if exclude_folders is None and own_domains is None and not any(
+        if exclude_folders is None and own_domains is None and own_addresses is None and not any(
             k in data for k in quality_keys
         ):
             return jsonify({"error": "exclude_folders oder own_domains erforderlich"}), 400
@@ -425,6 +444,8 @@ def save_scan_settings():
             return jsonify({"error": "exclude_folders muss eine Liste sein"}), 400
         if own_domains is not None and not isinstance(own_domains, list):
             return jsonify({"error": "own_domains muss eine Liste sein"}), 400
+        if own_addresses is not None and not isinstance(own_addresses, list):
+            return jsonify({"error": "own_addresses muss eine Liste sein"}), 400
 
         cleaned = []
         seen = set()
@@ -466,6 +487,20 @@ def save_scan_settings():
             account.audit_exclude_folders = json.dumps(cleaned) if cleaned else None
         if own_domains is not None:
             account.audit_own_domains = json.dumps(cleaned_domains) if cleaned_domains else None
+        if own_addresses is not None:
+            from src.services.audit_own_domains import clean_own_addresses_for_save
+
+            cleaned_addresses, address_errors = clean_own_addresses_for_save(own_addresses)
+            if address_errors:
+                return jsonify(
+                    {
+                        "error": "Ungültige Einträge in Meine Adressen",
+                        "domain_errors": address_errors[:20],
+                    }
+                ), 400
+            account.audit_own_addresses = (
+                json.dumps(cleaned_addresses) if cleaned_addresses else None
+            )
         if "curated_folder_patterns" in data:
             from src.services.audit_quality_rules import clean_folder_patterns
 
@@ -520,6 +555,7 @@ def save_scan_settings():
             **_audit_quality_settings_payload(account),
             "exclude_folders": _parse_audit_exclude_folders(account),
             "own_domains": _parse_audit_own_domains(account),
+            "own_addresses": _parse_audit_own_addresses(account),
         })
 
 

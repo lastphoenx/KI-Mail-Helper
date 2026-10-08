@@ -315,6 +315,83 @@ def test_plain_inbox_never_curated_pattern_list_is():
     assert folder_is_curated(f"INBOX/{token}/Newsletter", [token])
 
 
+def test_bulk_verification_subject_is_not_important():
+    bulk = _mail(
+        subject="Verification code",
+        sender=f"news@{_token()}.example",
+        sender_name="Qx",
+        has_list_unsubscribe=True,
+    )
+    out = FolderAuditService.analyze_email(bulk, audit_config=_cfg(), llm_enabled=False)
+    assert out.category != TrashCategory.IMPORTANT
+    assert not any("Wichtiger Betreff" in r for r in out.reasons)
+
+    plain = _mail(
+        subject="Verification code",
+        sender=f"person@{_token()}.example",
+        sender_name="Qx",
+        has_list_unsubscribe=False,
+    )
+    plain_out = FolderAuditService.analyze_email(
+        plain, audit_config=_cfg(), llm_enabled=False
+    )
+    assert plain_out.category == TrashCategory.IMPORTANT
+    assert plain_out.reasons == ["Wichtiger Betreff"]
+
+
+def test_suspicion_reason_comes_from_the_identity_rule():
+    brand = _token()
+    foreign = f"{_token()}.example"
+    mail = _mail(
+        sender=f"no_reply_login.{brand}@{foreign}",
+        sender_name="Qx",
+        subject="Verification code",
+        has_list_unsubscribe=False,
+    )
+    mail.auth_results = "dkim=pass; spf=pass; dmarc=pass"
+    out = FolderAuditService.analyze_email(
+        mail,
+        audit_config=_cfg(
+            brand_official_domains_effective={brand: [f"{brand}.example"]},
+        ),
+        llm_enabled=False,
+    )
+    assert out.category == TrashCategory.SUSPICION
+    assert out.reasons
+    assert not any("Wichtiger Betreff" in r for r in out.reasons)
+    assert any(r.startswith("Identität:") for r in out.reasons)
+
+
+def test_own_address_does_not_free_the_domain():
+    from src.services.audit_own_domains import (
+        clean_own_addresses_for_save,
+        sender_on_own_domains,
+    )
+
+    freemail = sorted(FREEMAIL_REGISTRABLE)[0]
+    mine = f"{_token()}@{freemail}"
+    other = f"{_token()}@{freemail}"
+    assert should_never_scam(_mail(sender=mine), own_addresses={mine})
+    assert not should_never_scam(_mail(sender=other), own_addresses={mine})
+    cleaned, errors = clean_own_addresses_for_save([mine, freemail])
+    assert cleaned == [mine]
+    assert errors
+    assert not sender_on_own_domains(other, set())
+    assert freemail not in cleaned
+
+    brand = _token()
+    owned = _mail(sender=mine, sender_name=brand, subject="Verification code")
+    owned_out = FolderAuditService.analyze_email(
+        owned,
+        audit_config=_cfg(
+            own_addresses={mine},
+            brand_official_domains_effective={brand: [f"{brand}.example"]},
+        ),
+        llm_enabled=False,
+    )
+    assert owned_out.category not in (TrashCategory.SCAM, TrashCategory.SUSPICION)
+
+
 def test_freemail_login_domain_is_not_own_domain():
     freemail = sorted(FREEMAIL_REGISTRABLE)[0]
     account = f"a@{freemail}"

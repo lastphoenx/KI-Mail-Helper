@@ -710,6 +710,7 @@ class MailAccount(Base):
     fetch_exclude_folders = Column(Text, nullable=True)  # JSON: ["Spam", "Trash"]
     audit_exclude_folders = Column(Text, nullable=True)  # JSON: Ordner-Audit Scan/Cluster überspringen
     audit_own_domains = Column(Text, nullable=True)  # JSON: Meine Domains (never_scam, nicht Login-Freemail)
+    audit_own_addresses = Column(Text, nullable=True)  # JSON: volle eigene Absenderadressen, nicht die Domain
     audit_curated_folder_patterns = Column(Text, nullable=True)  # JSON: wichtige Ordner-Muster
     audit_success_safe_after_days = Column(Integer, nullable=True)  # Erfolgsmeldung → SAFE ab N Tagen
     audit_transaction_safe_after_days = Column(Integer, nullable=True)  # Sendungsstatus → SAFE ab N Tagen

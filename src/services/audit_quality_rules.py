@@ -366,6 +366,38 @@ def _provider_spam(info) -> bool:
     return junk is not None and junk >= 5
 
 
+# Angezeigter Grund = die Regel, die die Kategorie gesetzt hat.
+# Identität/Scam liefern ihre eigenen Zeilen; hier nur der Ersatztext.
+DECISION_REASON_TEXT = {
+    "important_alarm": "Betriebs-/Alarmmeldung (nicht löschbar)",
+    "important_subject": "Wichtiger Betreff",
+    "important_keyword": "Wichtig: '{keyword}'",
+    "safe_bulk": "Newsletter oder Marketing (Massenmail)",
+    "safe_provider_newsletter": "Newsletter trotz Provider-Spam (kein Markentreffer)",
+    "safe_aged_success": "Erfolgs-/Statusmeldung (älter als {days} Tage)",
+    "safe_aged_transaction": "Sendungsstatus älter als {days} Tage",
+    "review_transaction_hold": "Sendungsstatus (löschbar nach {days} Tagen)",
+    "review_routine": "Routine-Status (kein Wichtig-Signal)",
+    "review_veto": "Löschschutz: {veto}",
+    "important_veto_alarm": "Löschschutz: {veto}",
+    "review_db_safe_pattern": "Safe-Pattern (DB, kein List-Unsubscribe)",
+    "identity_suspicion": "Verdacht: Absender passt nicht zur genannten Marke",
+    "scam": "Scam: Absender passt nicht zur genannten Marke",
+}
+
+
+def reasons_for_decision(rule_id: str, *, identity_lines=None, **fields) -> list:
+    """Eine Zeile aus der Entscheidungsregel. Keine angesammelten Score-Bausteine."""
+    if rule_id in ("identity_suspicion", "scam"):
+        lines = [str(line) for line in (identity_lines or []) if line]
+        if lines:
+            return lines
+    text = DECISION_REASON_TEXT[rule_id]
+    if fields:
+        text = text.format(**fields)
+    return [text]
+
+
 def has_bulk_signal(info) -> bool:
     if getattr(info, "has_list_unsubscribe", False):
         return True

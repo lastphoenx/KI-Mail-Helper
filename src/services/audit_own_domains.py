@@ -39,6 +39,62 @@ def is_valid_own_domain_syntax(domain: str) -> bool:
     return True
 
 
+_ADDRESS_RE = re.compile(
+    "^" + r"[a-z0-9._%+\-]+" + "@" + r"[a-z0-9][a-z0-9.\-]*\.[a-z]{2,}$"
+)
+
+
+def normalize_own_address(raw: str) -> str:
+    from src.services.audit_scam_detection import normalize_sender_email
+
+    return normalize_sender_email(raw or "")
+
+
+def is_valid_own_address_syntax(address: str) -> bool:
+    addr = normalize_own_address(address)
+    if not addr or len(addr) > 254 or addr.count("@") != 1:
+        return False
+    return bool(_ADDRESS_RE.fullmatch(addr))
+
+
+def sender_matches_own_address(sender: str, own_addresses: Optional[Set[str]]) -> bool:
+    """Nur diese Adresse, nie die ganze Domain."""
+    addr = normalize_own_address(sender or "")
+    if not addr:
+        return False
+    return addr in {normalize_own_address(item) for item in (own_addresses or set()) if item}
+
+
+def own_addresses_set_from_items(items: Sequence) -> Set[str]:
+    cleaned, _errors = clean_own_addresses_for_save(items)
+    return set(cleaned)
+
+
+def clean_own_addresses_for_save(items: Sequence) -> Tuple[List[str], List[str]]:
+    """Volle Adressen. Eine Freemail-Adresse gibt ihre Domain nicht frei."""
+    errors: List[str] = []
+    cleaned: List[str] = []
+    seen = set()
+    for raw in expand_own_domain_tokens(items):
+        if any(ch.isspace() for ch in raw):
+            errors.append(f"Ungültige Adresse (Leerzeichen): {raw!r}")
+            continue
+        addr = normalize_own_address(raw)
+        if not addr:
+            continue
+        if "@" not in addr:
+            errors.append(f"Keine volle Adresse (fehlt @): {raw!r}")
+            continue
+        if not is_valid_own_address_syntax(addr):
+            errors.append(f"Ungültige Adresse: {raw!r}")
+            continue
+        if addr in seen:
+            continue
+        seen.add(addr)
+        cleaned.append(addr)
+    return cleaned, errors
+
+
 def sender_on_own_domains(sender: str, own_domains: Optional[Set[str]]) -> bool:
     from src.services.audit_scam_detection import extract_domain, normalize_sender_email
 

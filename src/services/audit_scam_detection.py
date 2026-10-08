@@ -336,9 +336,13 @@ def should_never_scam(
     *,
     account_email: Optional[str] = None,
     own_domains: Optional[Set[str]] = None,
+    own_addresses: Optional[Set[str]] = None,
     folder: Optional[str] = None,
 ) -> bool:
-    """Nur eigene Adresse, eigene Domains (Meine Domains), Sent/Drafts, echte System-Absender."""
+    """Eigene Login-Adresse, eingetragene Adressen, eigene Domains, Sent/Drafts, System-Absender.
+
+    Eine eingetragene Adresse gilt nur für sich. Ihre Domain wird nicht zur eigenen Domain.
+    """
     own = own_domains or set()
     from src.services.audit_safe_delete_veto import is_sent_or_drafts_folder
 
@@ -351,6 +355,10 @@ def should_never_scam(
 
     sender_norm = normalize_sender_email(meta.sender or "")
     if account_email and sender_norm == account_email.strip().lower():
+        return True
+    from src.services.audit_own_domains import sender_matches_own_address
+
+    if sender_matches_own_address(sender_norm, own_addresses):
         return True
 
     dom = extract_domain(sender_norm or meta.sender or "")
