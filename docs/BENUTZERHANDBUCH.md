@@ -657,7 +657,7 @@ Alles gilt **pro Konto**. Die Texte in der Oberfläche sagen Zweck und Beispiel.
 
 **Marken.** Tabelle Marke plus offizielle Domains, zum Beispiel Marke `Beispiel` und Domain `beispiel.example`. Passt der Anzeigename zur Marke, die Domain aber nicht, wird die Mail Scam. «Domains prüfen» schaut DNS und Blocklisten, bevor eine Domain gespeichert wird.
 
-**Meine Domains.** Domains, die dir gehören, zum Beispiel `firma.example`. Mails von dort werden nicht als fremde Marken-Imitation gewertet. Ein Auth-Fehler bleibt sichtbar. Freemail-Domains werden nicht zur eigenen Domain.
+**Meine Domains.** Domains, die dir gehören, zum Beispiel `firma.example`. Mails von dort werden nicht als fremde Marken-Imitation gewertet. Verdacht bleibt, wenn SPF, DKIM und DMARC alle drei fehlschlagen oder die Domain auf der Spamhaus-Liste steht. Eine einzelne fehlgeschlagene Prüfung reicht nicht. Dieselbe Grenze gilt für eine einzelne Adresse unter «Meine Adressen». Freemail-Domains werden nicht zur eigenen Domain.
 
 **Meine Adressen.** Eine einzelne Adresse, zum Beispiel `arbeit@example.com`. Gilt nur für diese Adresse, nicht für die ganze Domain.
 

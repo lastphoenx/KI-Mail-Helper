@@ -8,6 +8,7 @@ Endpoints:
     POST /folder-audit/scan    - Startet Scan async (Celery)
     POST /folder-audit/delete  - Löscht ausgewählte Emails permanent
     POST /folder-audit/preview - Textanfang einer Mail (IMAP PEEK, on-demand)
+    POST /folder-audit/rule-test - Absender und Betreff, ohne IMAP-Scan
     POST /folder-audit/identity-check - Manueller Identitäts-Check (Layer1 + LLM)
 """
 
@@ -911,6 +912,47 @@ def delete_trash_emails():
         finally:
             if fetcher:
                 fetcher.disconnect()
+
+
+@folder_audit_bp.route("/folder-audit/rule-test", methods=["POST"])
+@login_required
+def folder_audit_rule_test():
+    """Absender und Betreff gegen die Scan-Logik, ohne Ordner zu lesen."""
+    data = request.get_json(silent=True) or {}
+    sender = str(data.get("sender") or "").strip()
+    subject = str(data.get("subject") or "").strip()
+    if "@" not in sender or len(sender) > 200:
+        return jsonify({"error": "Absender braucht eine Adresse mit @"}), 400
+    if len(subject) > 300:
+        return jsonify({"error": "Betreff ist zu lang"}), 400
+
+    with get_db_session() as db:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+
+        cfg = None
+        account_raw = data.get("account_id")
+        if account_raw not in (None, ""):
+            try:
+                account_id = int(account_raw)
+            except (TypeError, ValueError):
+                return jsonify({"error": "account_id ungültig"}), 400
+            models = _get_models()
+            account = (
+                db.query(models.MailAccount)
+                .filter(
+                    models.MailAccount.id == account_id,
+                    models.MailAccount.user_id == user.id,
+                )
+                .first()
+            )
+            if not account:
+                return jsonify({"error": "Account nicht gefunden"}), 404
+            cfg = AuditConfigCache.get_config(db, user.id, account.id)
+
+        result = FolderAuditService.preview_rule_decision(sender, subject, cfg)
+        return jsonify({"success": True, **result})
 
 
 @folder_audit_bp.route("/folder-audit/identity-check", methods=["POST"])

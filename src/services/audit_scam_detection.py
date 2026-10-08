@@ -1330,7 +1330,7 @@ def _llm_result_usable(llm: dict, meta: EmailMeta) -> Optional[dict]:
 
     blob = f"{reason} {impersonated or ''}".lower()
     if _llm_text_leaks_unmentioned_brand(blob, hay):
-        return None
+            return None
 
     return llm
 
@@ -1563,15 +1563,15 @@ def identity_llm_check(
             provider_spam += f" (Junk {meta.provider_junk_score})"
         auth = (meta.auth_results or "")[:300] or "(leer)"
         list_unsub = "ja" if getattr(meta, "list_unsubscribe", None) else "nein"
-        prompt = IDENTITY_PROMPT.format(
-            display_name=display,
+    prompt = IDENTITY_PROMPT.format(
+        display_name=display,
             from_address=from_address,
-            replyto_domain=reply_domain,
-            subject=subject or "(leer)",
+        replyto_domain=reply_domain,
+        subject=subject or "(leer)",
             provider_spam=provider_spam,
             auth_summary=auth,
             list_unsub=list_unsub,
-        )
+    )
     result = _audit_identity_llm_json(prompt, cfg=cfg)
     if result is not None:
         _identity_llm_cache[cache_key] = result
@@ -2001,6 +2001,62 @@ def _layer1_decision(
     return False, out.needs_review_boost, suggest, combined, out
 
 
+def auth_completely_forged(auth: str) -> bool:
+    """True nur wenn SPF, DKIM und DMARC alle drei fail sind. none oder ein einzelner Fail reicht nicht."""
+    a = (auth or "").lower()
+    return "spf=fail" in a and "dkim=fail" in a and "dmarc=fail" in a
+
+
+def _sender_on_trusted_domain(meta: EmailMeta, trusted_domains: Optional[Set[str]]) -> bool:
+    if not trusted_domains:
+        return False
+    from_domain = extract_domain(getattr(meta, "sender", "") or "")
+    if not from_domain:
+        return False
+    return from_domain in trusted_domains or any(
+        from_domain.endswith("." + d) for d in trusted_domains
+    )
+
+
+def _spamhaus_floor_reason(meta: EmailMeta, db_session) -> Optional[str]:
+    from_domain = extract_domain(getattr(meta, "sender", "") or "")
+    if not from_domain:
+        return None
+    from src.services.brand_domain_policy import registrable_domain_from_host
+
+    reg = registrable_domain_from_host(from_domain) or from_domain
+    listed, detail = check_dbl(reg, db_session)
+    if not listed:
+        return None
+    label = (detail or "Spamhaus DBL").strip()
+    return f"Domain-Blockliste ({label})"
+
+
+def hard_security_suspicion(
+    meta: EmailMeta,
+    *,
+    check_auth: bool,
+    check_spamhaus: bool,
+    db_session=None,
+) -> Optional[ScamEvaluation]:
+    """Verdacht aus der festen Ebene. Weiche Identität und Marken bleiben aussen vor."""
+    reasons: List[str] = []
+    if check_auth and auth_completely_forged(getattr(meta, "auth_results", "") or ""):
+        reasons.append("Auth: SPF fail; DKIM fail; DMARC fail")
+    if check_spamhaus:
+        hit = _spamhaus_floor_reason(meta, db_session)
+        if hit:
+            reasons.append(hit)
+    if not reasons:
+        return None
+    out = ScamEvaluation()
+    out.identity_suspicion = True
+    out.confidence = 0.75
+    out.reasons = reasons
+    out.layer1_flags = list(reasons)
+    return out
+
+
 def evaluate_scam_risk(
     meta: EmailMeta,
     *,
@@ -2015,17 +2071,20 @@ def evaluate_scam_risk(
     db_session=None,
 ) -> ScamEvaluation:
     out = ScamEvaluation()
-    if never_scam:
-        return out
-
-    from_domain = extract_domain(meta.sender or "")
-    if trusted_domains and from_domain:
-        if from_domain in trusted_domains or any(
-            from_domain.endswith("." + d) for d in trusted_domains
-        ):
-            return out
-
+    # Live-DBL folgt dem bestehenden Schalter: bei ausgeschalteter Identitäts-KI kein DNS.
     skip_dbl = llm_enabled is False
+    on_trusted = _sender_on_trusted_domain(meta, trusted_domains)
+    if never_scam or on_trusted:
+        # Eigene Domain/Adresse: Auth nur bei komplett gefälscht. Vertrauens-Domain: kein Auth
+        # (Weiterleitung), nur Spamhaus. Weiche Identität und Marken-Mismatch bleiben aus.
+        hard = hard_security_suspicion(
+            meta,
+            check_auth=bool(never_scam),
+            check_spamhaus=not skip_dbl,
+            db_session=db_session,
+        )
+        return hard or out
+
     is_scam, _review, suggest_llm, combined, partial = _layer1_decision(
         meta,
         skip_dbl=skip_dbl,
@@ -2106,10 +2165,10 @@ def evaluate_scam_risk(
         out.reasons = list(out.layer1_flags)
 
     if out.identity_suspicion and not out.is_scam:
-        return out
+                return out
 
     if out.needs_review_boost and out.reasons:
-        return out
+                return out
 
     if combined >= LAYER1_LLM_GATE_MIN and not out.is_scam:
         out.needs_review_boost = True

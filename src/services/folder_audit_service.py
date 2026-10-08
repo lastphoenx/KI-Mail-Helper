@@ -596,6 +596,7 @@ class TrashEmailInfo:
     llm_unusable: bool = False         # KI antwortete, Antwort verworfen
     llm_skip_reason: Optional[str] = None  # budget | quota | error wenn offen
     domain_badge: Optional[str] = None
+    decision_reason: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -629,6 +630,7 @@ class TrashEmailInfo:
             "llm_unusable": self.llm_unusable,
             "llm_skip_reason": self.llm_skip_reason,
             "domain_badge": self.domain_badge,
+            "decision_reason": self.decision_reason,
         }
 
 
@@ -3149,6 +3151,37 @@ class FolderAuditService:
         ]
         if not substantive:
             info.reasons = [REVIEW_DEFAULT_REASON]
+            info.decision_reason = REVIEW_DEFAULT_REASON
+            return
+        if not (info.decision_reason or "").strip():
+            info.decision_reason = substantive[0]
+
+    @staticmethod
+    def preview_rule_decision(
+        sender: str,
+        subject: str,
+        audit_config: Optional[dict] = None,
+    ) -> dict:
+        """Absender und Betreff durch dieselbe Analyse wie der Scan, ohne IMAP."""
+        info = TrashEmailInfo(
+            uid=0,
+            subject=subject or "",
+            sender=sender or "",
+            sender_name="",
+            date=datetime.now(UTC),
+            has_attachments=False,
+            flags=[],
+            size=0,
+        )
+        out = FolderAuditService.analyze_email(
+            info,
+            audit_config=audit_config,
+            llm_enabled=False,
+        )
+        text = (out.decision_reason or "").strip()
+        if not text and out.reasons:
+            text = out.reasons[0]
+        return {"category": out.category.value, "decision": text}
 
     @staticmethod
     def analyze_email(
@@ -3719,9 +3752,11 @@ class FolderAuditService:
                 scam_eval.reasons or scam_eval.layer1_flags,
                 info.domain_badge,
             )
+            if info.reasons:
+                info.decision_reason = info.reasons[0]
             return info
 
-        if scam_eval.identity_suspicion and not never_scam:
+        if scam_eval.identity_suspicion:
             info.category = TrashCategory.SUSPICION
             info.confidence = max(0.75, scam_eval.confidence or 0.0)
             info.reasons = with_domain_badge(
@@ -3731,6 +3766,8 @@ class FolderAuditService:
                 ),
                 info.domain_badge,
             )
+            if info.reasons:
+                info.decision_reason = info.reasons[0]
             return info
 
         if scam_eval.llm_deferred:
@@ -3846,8 +3883,12 @@ class FolderAuditService:
 
         if decision_rule:
             info.reasons = reasons_for_decision(decision_rule, **decision_fields)
+            if info.reasons:
+                info.decision_reason = info.reasons[0]
         else:
             info.reasons = reasons
+            if info.reasons and not (info.decision_reason or "").strip():
+                info.decision_reason = info.reasons[0]
         FolderAuditService._ensure_review_reasons(info)
         return info
     

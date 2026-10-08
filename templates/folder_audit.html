@@ -762,6 +762,30 @@
             <p class="small text-muted mb-0" id="auditFirstnamesGlobalSource"></p>
         </div>
         
+        <div class="card mb-4">
+            <div class="card-body">
+                <h2 class="h6 mb-2">Regel testen</h2>
+                <p class="text-muted small mb-3">
+                    Absender und Betreff durch dieselbe Entscheidung wie der Scan, ohne den Ordner zu lesen.
+                    Es gilt die Konfiguration des oben gewählten Kontos.
+                </p>
+                <div class="row g-2">
+                    <div class="col-md-5">
+                        <label class="form-label small" for="ruleTestSender">Absender</label>
+                        <input type="text" class="form-control form-control-sm" id="ruleTestSender" placeholder="news@firma.example" autocomplete="off">
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label small" for="ruleTestSubject">Betreff</label>
+                        <input type="text" class="form-control form-control-sm" id="ruleTestSubject" placeholder="Hinweis" autocomplete="off">
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button type="button" class="btn btn-sm btn-outline-primary w-100" id="ruleTestBtn">Testen</button>
+                    </div>
+                </div>
+                <p class="small mt-2 mb-0" id="ruleTestResult"></p>
+            </div>
+        </div>
+
         <!-- Config Sections -->
         <div class="accordion" id="configAccordion">
             
@@ -780,6 +804,8 @@
                             Domains von Firmen und Personen, denen du vertraust (z.&nbsp;B. Bank, Arzt, Lieferant).
                             <strong>Verdachtsregeln</strong> (Identität, Marken-Mismatch) werden dort abgeschwächt —
                             die Mail wird <strong>nicht automatisch wichtig</strong> oder sicher löschbar.
+                            Eine fehlgeschlagene Absenderprüfung allein wird hier kein Verdacht.
+                            Ein Spamhaus-Treffer bleibt Verdacht.
                             Beispiel: <code>bank-beispiel.ch</code>, <code>arztpraxis.example</code>
                         </p>
                         <textarea id="trustedDomainsInput" class="form-control font-monospace" rows="5" 
@@ -807,9 +833,10 @@
                     <div class="accordion-body">
                         <p class="text-muted mb-2">
                             Domains, die <strong>dir gehören</strong> (eigene Server, Websites, Homelab).
-                            Mails von diesen Absendern werden <strong>nie als Scam oder Verdacht</strong> markiert
-                            <span class="text-muted">(Stand heute im Code; ab Regel-Kaskade Phase B gilt das nur für weiche Identitätsregeln — Auth-Spoofing bleibt Verdacht).</span>
-                            Sie werden <strong>nicht automatisch</strong> wichtig oder sicher löschbar — dafür brauchst du VIP, Patterns oder Auto-Regeln.
+                            Weiche Identitätsregeln und Marken-Abweichungen gelten hier nicht.
+                            Verdacht bleibt, wenn SPF, DKIM und DMARC alle drei fehlschlagen oder die Domain auf der Spamhaus-Liste steht.
+                            Eine einzelne fehlgeschlagene Prüfung reicht nicht.
+                            Die Mails werden <strong>nicht automatisch</strong> wichtig oder sicher löschbar — dafür brauchst du VIP, Patterns oder Auto-Regeln.
                             Beispiel: <code>meine-domain.ch</code>, <code>cloud.meine-domain.ch</code>
                         </p>
                         <div id="auditOwnDomainsAccountHint" class="alert alert-info py-2 small mb-2">
@@ -841,6 +868,7 @@
                         <p class="text-muted mb-2">
                             Gilt nur für diese eine Adresse, nicht für die ganze Domain.
                             Zum Beispiel eine Arbeits- oder Zweitadresse. Eine Freemail-Domain wird dadurch nicht komplett freigegeben.
+                            Dieselbe Grenze wie bei Meine Domains: Verdacht nur, wenn SPF, DKIM und DMARC alle drei fehlschlagen oder Spamhaus trifft.
                             Beispiel: <code>arbeit@example.com</code>
                         </p>
                         <textarea class="form-control form-control-sm font-monospace" id="auditOwnAddressesInput" rows="3"
@@ -2997,6 +3025,7 @@
 
     function headerMetaRows(email) {
         const rows = [];
+        if (email.decision_reason) rows.push(['Entscheidend', email.decision_reason]);
         if (email.reply_to) rows.push(['Reply-To', email.reply_to]);
         if (email.to_header) rows.push(['To', email.to_header]);
         if (email.auth_results) rows.push(['Auth (SPF/DKIM/DMARC)', email.auth_results]);
@@ -6466,6 +6495,47 @@
     });
     
     // Load Defaults Button
+    const ruleTestLabels = {
+        safe: 'Sicher löschbar',
+        review: 'Prüfen',
+        important: 'Möglicherweise wichtig',
+        suspicion: 'Verdacht',
+        scam: 'Scam'
+    };
+    document.getElementById('ruleTestBtn').addEventListener('click', async function() {
+        const sender = document.getElementById('ruleTestSender').value.trim();
+        const subject = document.getElementById('ruleTestSubject').value.trim();
+        const out = document.getElementById('ruleTestResult');
+        const accountId = document.getElementById('accountSelect').value;
+        if (!sender) {
+            out.textContent = 'Absender fehlt.';
+            return;
+        }
+        out.textContent = 'Prüfe…';
+        try {
+            const response = await fetch('/folder-audit/rule-test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    sender: sender,
+                    subject: subject,
+                    account_id: accountId ? parseInt(accountId, 10) : null
+                })
+            });
+            const data = await parseJsonResponse(response);
+            if (!response.ok) {
+                throw new Error(data.error || 'Test fehlgeschlagen');
+            }
+            const label = ruleTestLabels[data.category] || data.category;
+            out.textContent = 'Entscheidend: ' + (data.decision || '') + ' (' + label + ')';
+        } catch (err) {
+            out.textContent = err.message || 'Test fehlgeschlagen';
+        }
+    });
+
     document.getElementById('loadDefaultsBtn').addEventListener('click', async function() {
         if (!confirm('System-Defaults laden?\n\nDies fügt vordefinierte Listen für CH, DE, IT, FR hinzu.\nBestehende eigene Einträge bleiben erhalten.')) {
             return;

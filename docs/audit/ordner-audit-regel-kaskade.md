@@ -1,50 +1,28 @@
-# Ordner-Audit — Regel-Kaskade (Design)
+# Ordner-Audit — Regel-Kaskade
 
-Stand: Planungsdokument für Umstellung von **Score + frühen Ausstiegen** auf **nummerierte Entscheidungsregeln**.
+Stand: was der Scan heute entscheidet, und was bewusst nicht als nummerierte Kaskade gebaut ist.
 
-## Problem heute
+## Umgesetzt
 
-- VIP, Vertrauens-Domains und Marketing-Patterns verschieben nur **Punkte** oder liefern **Hinweise**.
-- **Identitäts-Layer** (E9, Marken-Mismatch) kann Nutzerlisten **übersteuern**.
-- UI-Labels («VIP = wichtig», «Pattern = sicher löschbar») weichen vom Verhalten ab.
-- Scan-Hinweis und geladene Config waren schwer nachvollziehbar (behoben: `audit_scan_config_notice.py`).
+Der Scan bleibt die bestehende Entscheidung (Score, frühe Ausstiege, Lösch-Veto). Die folgenden Punkte sind im Code, nicht nur im Plan.
 
-## Zielbild
+**Ordner-Ausschluss.** Ordner in «vom Scan ausnehmen», dazu Gesendet und Entwürfe, werden nicht bewertet.
 
-1. **Erste passende Regel** setzt die **Kategorie** (SAFE / REVIEW / IMPORTANT / SUSPICION / SCAM).
-2. Alle anderen Signale bleiben **informativ** in der Detailansicht.
-3. Detailzeile: **`Entscheidend: Regel Nr. X — …`**
-4. **Regel-Test** in der UI: Absender + Betreff → welche Regel würde entscheiden (ohne IMAP-Scan).
-5. **Konflikt-Warnung** bei widersprüchlichen Einträgen (z. B. VIP + Newsletter-Pattern auf derselben Domain).
+**Meine Domains und Meine Adressen.** Weiche Identitätsregeln und Marken-Abweichung gelten nicht. Die feste Ebene bleibt: Verdacht, wenn SPF, DKIM und DMARC alle drei `fail` sind, oder wenn die Absender-Domain auf der Spamhaus-Liste steht. Ein einzelner Fail oder `none` reicht nicht. Die Mail wird dadurch nicht automatisch wichtig oder sicher löschbar.
 
-## Spezifität (über alle Stufen)
+**Vertrauenswürdige Domains.** Identität und Marken-Abweichung gelten nicht. Ein Auth-Fehler wird kein Verdacht (Weiterleitungen und Listen erzeugen sonst Fehlalarme). Ein Spamhaus-Treffer bleibt Verdacht.
 
-Bei mehreren passenden Regeln gilt **zuerst** die **genauere** Bedingung, **dann** die niedrigere Stufen-Nummer:
+**Bekannte Kontakte und VIP.** Schalten die weiche Identität aus. Ein harter Markentreffer bleibt.
 
-**exakte Adresse > Domain > Teilstring**
+**Wichtige Ordner.** Genau dieser Ordner oder ein Ordner darin. Der Löschschutz nennt den Ordnernamen. Der reine Posteingang ist nie ein wichtiger Ordner.
 
-Das gilt **über Stufen hinweg**. Beispiel: exaktes Newsletter-Pattern auf `newsletter@firma.example` schlägt VIP nur auf `@firma.example` (Domain), auch wenn VIP numerisch früher in der Kaskade steht.
+**Aufbewahrung und Wortlisten.** Vier Listen: sensibel, Alarm, Erfolg, Versand. Fristen pro Konto, 1–3650 Tage. Alarm ohne Werbe-Signal bleibt wichtig. Erfolg und Versand werden erst nach der Frist sicher löschbar.
 
-**Teilstring** ist nur für **Newsletter-/Marketing-Pattern** erlaubt, nicht für VIP (UI: VIP nur Adresse oder Domain).
+**Domain-Alter.** Nur im Zweifel (verdächtig oder Markenname). «Jünger als N Tage» mit Markenname kann Scam sein. Ein zweites, höheres N setzt nur den Hinweis.
 
-## Feste Sicherheitsebene (über allen Nutzerregeln)
+**Fallback.** Trifft nichts zu, bleibt die Kategorie Prüfen mit dem Text «Keine Signale, Absender unbekannt».
 
-Gilt **auch** bei Vertrauens-Domain, VIP und **Meine Domains** — nur **Ordner-Ausschluss** (Nr. 0) kann Scam-Analyse ganz aussetzen:
-
-| Signal | Typische Aktion |
-|--------|-----------------|
-| Auth gefälscht / verifizierter Fail | Verdacht / Scam |
-| DMARC-Fail + Spam-Flag (Junk ≥ 5) | Verdacht |
-| Verdächtiger Anhang ohne Bulk-Kontext | Verdacht |
-| Spamhaus DBL (Absender-Domain) | Verdacht / Scam |
-
-**Meine Domains (Nr. 1):** hebt **weiche** Identitätsregeln und Marken-Mismatch ab (`never_scam` für E9-Pfad), **nicht** die feste Sicherheitsebene. Spoofing der eigenen Domain (DMARC-Fail, Auth-Fail) bleibt sichtbar als Verdacht/Scam.
-
-Implementiert schrittweise (Quick win: Transport + Auth → Verdacht ohne Identitätsregel).
-
-## Querschnitt — gilt für alle Stufen
-
-**Löschschutz:** Jede Entscheidung **«sicher löschbar»** (Nutzer-Pattern, Auto-Regel, Score, Harmonize, …) durchläuft den Lösch-Veto — unabhängig von der Regel-Nummer.
+**Entscheidend.** Die Detailansicht zeigt die Zeile, die die Kategorie gesetzt hat (`decision_reason`, aus `DECISION_REASON_TEXT` oder der Identitätszeile). Der Regel-Test schickt Absender und Betreff durch `analyze_email`, ohne den Ordner zu lesen.
 
 ### Reihenfolge im Lösch-Veto (implementiert)
 
@@ -57,58 +35,20 @@ Implementiert schrittweise (Quick win: Transport + Auth → Verdacht ohne Identi
 
 Danach, soweit die Aufbewahrung sie nicht ausnimmt: eigene Adresse oder Domain, Konversation, Antwort-Betreff, vertrauenswürdiger Absender, geschützte Betreffmuster.
 
-**Harmonize (Clustering):** Keine reine Anzeige. Hebt Mails von **Prüfen** auf **sicher löschbar** (Kategorie-Entscheidung). Folgt **Löschschutz** und **kuratierten Ordnern** wie jede andere SAFE-Entscheidung.
+**Harmonize (Clustering):** Hebt Mails von Prüfen auf sicher löschbar. Folgt dem Löschschutz wie jede andere SAFE-Entscheidung.
 
-## Nummerierte Kaskade (Nutzer- + Systemregeln)
+## Zurückgestellt
 
-| Nr. | Bedingung | Aktion (Ziel-Kategorie) |
-|-----|-----------|-------------------------|
-| 0 | Ordner in «vom Scan ausnehmen» (+ Gesendet/Entwürfe) | nicht analysieren |
-| 1 | **Meine Domains** / eigene Adresse | never_scam (weich); Kategorie über Regeln 3–9; **kein** Bypass der festen Sicherheitsebene (**Phase B** — heute im Code voller Scam-Bypass, UI entsprechend) |
-| 2 | **Harte Gefahr** (feste Sicherheitsebene) | Verdacht / Scam |
-| 3 | **Bekannte Kontakte** (exakte Adresse) | wichtig; Identität aus |
-| 4 | **VIP** (nur exakt oder Domain) | wichtig; Identität aus |
-| 5 | **Auto-Regeln** (Nutzer: Absender + Betreff + Aktion) | gemäß Disposition; untereinander nach Spezifität |
-| 6 | **Vertrauenswürdige Domains** | Identität aus; Rest über Regeln 7–8 / Score |
-| 7 | **Newsletter-/Marketing-Pattern** (exakt > Domain > Teilstring) | sicher löschbar |
-| 8 | **Marken + Identitätsregeln** | Scam / Verdacht |
-| 9 | Keywords, Rest-Score | SAFE / REVIEW / IMPORTANT |
-| 10 | **Clustering / Harmonize** | sicher löschbar (nach Querschnitt Löschschutz) |
+Nicht gebaut, und nicht als Ersatz der heutigen Logik vorgesehen:
 
-Konflikt-Auflösung: **Spezifität** (siehe oben), dann **Nr.** — nicht allein Listen-Typ.
+- Die nummerierte Kaskade Nr. 5 bis 10 (Auto-Regeln, Newsletter-Pattern, Marken, Keywords, Clustering) als einzige Entscheidungsquelle mit `deciding_rule_id`.
+- Spezifität über alle Stufen (exakte Adresse schlägt Domain schlägt Teilstring, auch über Listen hinweg).
+- Konflikt-Warnungen (zum Beispiel VIP und Newsletter-Pattern auf derselben Domain).
 
-## Fallback «Prüfen»
-
-Trifft **keine** Regel zu: Kategorie **Prüfen** mit Begründung **«Keine Regel passt»** — kein Alters- oder Heuristik-Hinweis als Ersatz-«Grund».
-
-## Beschriftung in der Konfiguration (Phase A/B)
-
-Jede Liste in der UI: **ein Satz**, was sie **auslöst** und was **nicht** (z. B. VIP ≠ «alles von der Domain ist Newsletter»; Vertrauens-Domain ≠ Scam-Ausnahme bei Auth-Fail).
-
-## Abnahmekriterien (pro Stufe / Phase B)
-
-| Kriterium | Erkennbar wenn … |
-|-----------|------------------|
-| Regel implementiert | Synthetischer Testfall pro Nr.; erwartete Kategorie + `deciding_rule_id` |
-| Regel-Test = Scan | Regel-Test-API liefert dieselbe Nr. wie Analyse im Ordner-Audit für denselben Absender/Betreff |
-| Spezifität | Konflikt-Test (exaktes Pattern vs. Domain-VIP) entscheidet für die genauere Regel |
-| Meine Domains + Spoof | Synthetisch: From eigene Domain, DMARC-Fail → Verdacht/Scam, nicht «sicher» |
-| Löschschutz | SAFE aus Nr. 7/10/Auto-Regel wird bei Veto auf Prüfen zurückgestellt |
-| Keine Regel | Score/Keyword trifft nicht → «Keine Regel passt», nicht Alters-Text |
-
-## Migration
-
-| Phase | Inhalt |
-|-------|--------|
-| **A (teilweise)** | Scan-Hinweis aus **Scan-Config-Snapshot** (+ Ladefehler); LLM-aus → Hinweis trotzdem; Transport+Auth → Verdacht ohne Identität; Auth-Deduplizierung; **E3-Bulk: List-Unsubscribe + Auth pass** (ohne Tranco/Plattform); UI-Texte Meine Domains Phase-B-Hinweis |
-| **B** | `deciding_rule_id` in `TrashEmailInfo`; Kaskade in `analyze_email`; Tests pro Regel; Spezifität über Stufen |
-| **C** | Regel-Test-API + UI; VIP/Pattern/Auto-Regeln in eine Regelliste; Konflikt-Warnungen |
-
-## Auto-Regeln heute
-
-`AuditAutoDeleteRule` mit Disposition — gleiche Priorität wie andere **Nutzerregeln** (Nr. 5), sortiert nach Spezifität; Vorbild für einheitliches Regelmodell in Phase C.
+Die heutige Logik erklärt die Kategorie über «Entscheidend» und den Regel-Test. Eine spätere Konflikt-Warnung kann dazukommen, ohne die Kaskade umzubauen.
 
 ## Referenz
 
 - Betrieb Scam-Layer: [ordner-audit-scam.md](ordner-audit-scam.md)
+- Konfiguration: [ordner-audit-konfiguration.md](ordner-audit-konfiguration.md)
 - Scan-Hinweis: `src/services/audit_scan_config_notice.py`
