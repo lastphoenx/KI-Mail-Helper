@@ -13,7 +13,7 @@
 4. [Email-Liste & Suche](#4-email-liste--suche)
 5. [Email-Detailansicht](#5-email-detailansicht)
 6. [Tag-Verwaltung](#6-tag-verwaltung)
-7. [Auto-Rules](#7-auto-rules)
+7. [Aktions-Regeln](#7-aktions-regeln)
 8. [Antwort-Stile](#8-antwort-stile)
 9. [KI-Priorisierung](#9-ki-priorisierung)
 10. [Mail-Verarbeitung & Status](#10-mail-verarbeitung--status)
@@ -39,7 +39,7 @@ KI-Mail-Helper ist ein selbst-gehosteter Email-Organizer mit Multi-User-Support,
 | **🛡️ Email-Anonymisierung** | spaCy PII-Entfernung vor Cloud-AI (DSGVO-konform) |
 | **🔍 Semantische Suche** | Finde Emails nach Bedeutung, nicht nur Keywords |
 | **✉️ KI-Antworten + Versand** | Generierte Antwort-Entwürfe direkt per SMTP senden |
-| **⚡ Auto-Rules Engine** | Automatische Aktionen basierend auf Regeln |
+| **⚡ Aktions-Regeln** | Aktionen auf Mails (verschieben, markieren), Menü `/rules` |
 | **🏷️ Intelligente Tags** | KI schlägt Tags vor, lernt aus deinem Verhalten |
 | **📁 IMAP-Aktionen** | Löschen, Verschieben, Flaggen direkt aus der App |
 | **🔐 Zero-Knowledge** | Server sieht niemals Klartext-Daten |
@@ -295,13 +295,13 @@ Die KI schlägt Tags basierend auf dem Email-Inhalt vor:
 
 ---
 
-## 7. Auto-Rules
+## 7. Aktions-Regeln
 
-Auto-Rules führen automatisch Aktionen aus, wenn eine Email Bedingungen erfüllt.
+Aktions-Regeln (`/rules`) führen Aktionen aus, wenn eine Mail Bedingungen erfüllt. Sie sind nicht die Einstufungs-Regeln im Ordner-Audit.
 
 ### Regel erstellen
 
-1. Gehe zu **⚡ Auto-Rules**
+1. Gehe zu **⚡ Aktions-Regeln**
 2. Klicke auf **"➕ Neue Regel"**
 3. Definiere Bedingungen (z.B. "Absender enthält 'newsletter'")
 4. Definiere Aktionen (z.B. "Tag 'Newsletter' zuweisen")
@@ -449,7 +449,7 @@ Jede Email durchläuft dann 5 Verarbeitungs-Schritte:
 | **10** | **Embedding** | Semantische Vektorisierung für Suche | ~0.5-2s |
 | **20** | **Translation** | Spracherkennung + Übersetzung (wenn nicht DE/EN) | ~1-5s |
 | **40** | **AI-Classified** | KI-Priorisierung (Dringlichkeit × Wichtigkeit) | ~2-10s |
-| **50** | **Auto-Rules** | Automatische Regelverarbeitung | ~0.1-1s |
+| **50** | **Aktions-Regeln** | Automatische Regelverarbeitung | ~0.1-1s |
 | **100** | **Complete** | Vollständig verarbeitet | — |
 
 **Typischer Gesamtablauf:**
@@ -508,7 +508,7 @@ Das System nutzt **individuelle Timestamps** für jeden Verarbeitungsschritt, st
 | `embedding_generated_at` | Embedding | Wann wurde semantische Vektorisierung abgeschlossen? |
 | `translation_completed_at` | Translation | Wann wurde Übersetzung abgeschlossen? |
 | `ai_classification_completed_at` | AI-Classification | Wann wurde KI-Priorisierung abgeschlossen? |
-| `auto_rules_completed_at` | Auto-Rules | Wann wurden Regelverarbeitung abgeschlossen? |
+| `auto_rules_completed_at` | Aktions-Regeln | Wann wurde die Regelverarbeitung abgeschlossen? |
 
 **Vorteile:**
 - ✅ **Einzelne Steps nachholbar:** Nur fehlende Schritte werden wiederholt
@@ -528,13 +528,13 @@ WHERE id = 1276;
 -- ✅ Embedding: Übersprungen (Timestamp vorhanden)
 -- 🔄 Translation: Wird nachgeholt (Timestamp fehlt)
 -- ✅ AI-Classification: Übersprungen (Timestamp vorhanden)
--- ✅ Auto-Rules: Übersprungen (Timestamp vorhanden)
+-- ✅ Aktions-Regeln: Übersprungen (Timestamp vorhanden)
 ```
 
 **Dependencies:**
 - **Translation** benötigt: Embedding (für Context)
 - **AI-Classification** benötigt: Embedding (für Semantic Features)
-- **Auto-Rules** benötigt: AI-Classification (für Kategorien/Scores)
+- **Aktions-Regeln** benötigen: AI-Classification (für Kategorien/Scores)
 
 ---
 
@@ -674,7 +674,7 @@ Alles gilt **pro Konto**. Die Texte in der Oberfläche sagen Zweck und Beispiel.
 
 **Domain-Abfrage.** Alter der Absender-Domain, nicht Alter der Mail. Nur im Zweifel (verdächtig oder Markenname). «Absender-Domain jünger als N Tage» mit Markenname kann Scam sein. Ein zweites, höheres N setzt nur den Hinweis, kein Urteil. Häkchen weg: keine Nachfragen nach aussen.
 
-Ältere Listen bleiben: vertrauenswürdige Domains, Keywords, sichere Patterns, Auto-Regeln mit Disposition. Beispiele dort nur mit `example.com` und erfundenen Wörtern eintragen, nicht mit echten Behörden oder Banken.
+Ältere Listen bleiben: vertrauenswürdige Domains, Keywords, sichere Patterns, Einstufungs-Regeln mit Disposition. Beispiele dort nur mit `example.com` und erfundenen Wörtern eintragen, nicht mit echten Behörden oder Banken.
 
 ### Empfohlene Reihenfolge fürs erste Mal
 
@@ -685,9 +685,9 @@ Alles gilt **pro Konto**. Die Texte in der Oberfläche sagen Zweck und Beispiel.
 5. Scannen.
 6. Zuerst die Kachel Scam sichten, dann Verdacht.
 
-### Auto-Rules und das Alter
+### Aktions-Regeln und das Alter
 
-Die Auto-Action-Rules (Menü Auto-Rules, nicht die Audit-Disposition) haben die Bedingung **Mail älter als N Tage**. Sie zählt das Empfangsdatum und lässt sich mit Absender, Betreff und den anderen Bedingungen verbinden.
+Die Aktions-Regeln (Menü `/rules`, nicht die Einstufungs-Regeln im Ordner-Audit) haben die Bedingung **Mail älter als N Tage**. Sie zählt das Empfangsdatum und lässt sich mit Absender, Betreff und den anderen Bedingungen verbinden.
 
 Besteht eine Regel nur aus diesem Alter und verschiebt oder löscht sie, trifft sie alle alten Mails. Beim Speichern kommt die Rückfrage «Diese Regel gilt für alle Mails älter als N Tage. Erst mit 'T' testen.» Ohne Bestätigung speichert der Server nicht. **T** zeigt die betroffenen Mails, bevor die Regel scharf läuft.
 

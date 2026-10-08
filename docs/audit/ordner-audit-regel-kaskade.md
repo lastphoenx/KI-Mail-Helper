@@ -41,7 +41,7 @@ Danach, soweit die Aufbewahrung sie nicht ausnimmt: eigene Adresse oder Domain, 
 
 Nicht gebaut, und nicht als Ersatz der heutigen Logik vorgesehen:
 
-- Die nummerierte Kaskade Nr. 5 bis 10 (Auto-Regeln, Newsletter-Pattern, Marken, Keywords, Clustering) als einzige Entscheidungsquelle mit `deciding_rule_id`.
+- Die nummerierte Kaskade Nr. 5 bis 10 (Einstufungs-Regeln, Newsletter-Pattern, Marken, Keywords, Clustering) als einzige Entscheidungsquelle mit `deciding_rule_id`.
 - Spezifität über alle Stufen (exakte Adresse schlägt Domain schlägt Teilstring, auch über Listen hinweg).
 - Konflikt-Warnungen (zum Beispiel VIP und Newsletter-Pattern auf derselben Domain).
 

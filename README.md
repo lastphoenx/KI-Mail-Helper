@@ -29,7 +29,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
   - UI-Toggle in Settings: "Persönlich trainierte Modelle bevorzugen"
   - Fallback-Hierarchie: Personal → Global → AI-Only
 - **Online-Learning System** – SGD-Classifier lernt aus User-Korrekturen (4 Classifier: D/W/Spam/Kategorie)
-- **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (15 Bedingungen, inkl. Mail-Alter, Learning pro Regel)
+- **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Aktions-Regeln (15 Bedingungen, inkl. Mail-Alter, Learning pro Regel)
 - **Customizable Reply Styles** – Anrede, Grussformel, Signatur & Instructions pro Stil + Account-spezifisch
 - **Account-Specific Signatures** – Individuelle Signaturen pro Mail-Account (Geschäft/Privat/Uni)
 - **Trusted Senders + UrgencyBooster** – Account-basierte Whitelist mit Urgency-Override (Global + Per-Account)
@@ -81,7 +81,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ UI-Konfiguration: Vertrauenswürdige Domains, Keywords, Patterns, VIP-Absender
 - ✅ Mehrsprachige Defaults: CH/DE/IT/FR Keywords und Patterns
 - ✅ VIP-Absender: Wildcard (`*@firma.example`) und Regex-Unterstützung
-- ✅ Auto-Regeln: Pattern-basierte Disposition (SAFE/IMPORTANT/SCAM/REVIEW)
+- ✅ Einstufungs-Regeln: Pattern-basierte Disposition (SAFE/IMPORTANT/SCAM/REVIEW)
 - ✅ Cluster-Dropdown: Einheitliches UI für alle 6 Konfigurationslisten
 
 **v2.3.0 Highlights (Oktober 2026):**
@@ -90,7 +90,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ Wichtige Ordner aus der Ordnerliste (Ordner plus Unterordner)
 - ✅ Aufbewahrung von Routine-Mails (Erfolg und Versand, 1–3650 Tage)
 - ✅ Wortlisten: sensibel, Alarm, Erfolg, Versand
-- ✅ Auto-Rule «Mail älter als N Tage», Test-Knopf zeigt die Treffer vorher
+- ✅ Aktions-Regeln: «Mail älter als N Tage», Test-Knopf zeigt die Treffer vorher
 
 ---
 
@@ -117,7 +117,7 @@ Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher
 - 🧵 **Thread-View:** Konversations-basierte Email-Ansicht mit KI-Context
 - 🔍 **Semantic Search:** Vector-basierte Suche mit Embeddings (OpenAI, Mistral, etc.)
 - 🏷️ **Smart Tags:** KI-Vorschläge + Learning-System + Multi-Tag-Filter
-- 🤖 **AI Actions:** Reply Draft Generator (4 Ton-Varianten) + Auto-Rules Engine (15 Bedingungen, inkl. Mail-Alter)
+- 🤖 **AI Actions:** Reply Draft Generator (4 Ton-Varianten) + Aktions-Regeln (15 Bedingungen, inkl. Mail-Alter)
 
 **Trotz größter Sorgfalt beim Prompting, kritischem Hinterfragen und wiederholten Reviews erfolgt die Verwendung auf eigenes Risiko.** Die Software wird „wie gesehen" (as is) bereitgestellt – ohne Gewährleistung und ohne Zusicherung hinsichtlich Korrektheit, Sicherheit oder Eignung. Wenn du das Tool mit echten Mail-Accounts oder sensiblen Daten nutzen willst, führe bitte eigene Tests, Threat-Modeling und ein unabhängiges Security-Review durch.
 
@@ -142,7 +142,7 @@ This repository was created with multiple AI systems. So far, the codebase has b
 - 🧵 **Thread-View:** Conversation-based email view with AI context
 - 🔍 **Semantic Search:** Vector-based search with embeddings (OpenAI, Mistral, etc.)
 - 🏷️ **Smart Tags:** AI suggestions + learning system + multi-tag filters
-- 🤖 **AI Actions:** Reply Draft Generator (4 tone variants) + Auto-Rules Engine (15 conditions, including mail age)
+- 🤖 **AI Actions:** Reply Draft Generator (4 tone variants) + action rules (15 conditions, including mail age)
 
 **Despite careful prompting, critical challenge/verification, and repeated reviews, use is at your own risk.** The software is provided "as is", without warranty, and with no guarantee of correctness, security, or fitness for a particular purpose. If you plan to use it with real email accounts or sensitive data, please conduct your own testing, threat modeling, and an independent security review first.
 
