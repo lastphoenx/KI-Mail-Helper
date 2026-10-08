@@ -29,7 +29,7 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
   - UI-Toggle in Settings: "Persönlich trainierte Modelle bevorzugen"
   - Fallback-Hierarchie: Personal → Global → AI-Only
 - **Online-Learning System** – SGD-Classifier lernt aus User-Korrekturen (4 Classifier: D/W/Spam/Kategorie)
-- **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (14 Bedingungen, Learning pro Regel)
+- **AI Action Engine** – Reply Draft Generator (4 Ton-Varianten) + Auto-Rules (15 Bedingungen, inkl. Mail-Alter, Learning pro Regel)
 - **Customizable Reply Styles** – Anrede, Grussformel, Signatur & Instructions pro Stil + Account-spezifisch
 - **Account-Specific Signatures** – Individuelle Signaturen pro Mail-Account (Geschäft/Privat/Uni)
 - **Trusted Senders + UrgencyBooster** – Account-basierte Whitelist mit Urgency-Override (Global + Per-Account)
@@ -47,11 +47,10 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - **Kalender-Erkennung** – Automatische Erkennung von iCalendar-Einladungen (REQUEST/REPLY/CANCEL)
   - Farbcodierte Kalender-Karte in Detailansicht (blau/grün/rot)
   - Filter-Dropdown und Badges in Listenansicht
-- **Ordner-Audit** – Analyse von Papierkorb-Ordnern auf potenziell wichtige Emails
-  - Mehrsprachige Keywords (CH/DE/IT/FR) für Behörden, Finanzen, Verträge
-  - UI-Konfiguration für Domains, Keywords, Patterns, VIP-Absender, Auto-Regeln
-  - Wildcard (*@firma.ch) und Regex-Unterstützung für VIP-Absender
-  - Auto-Regeln: Automatische Disposition (SAFE/IMPORTANT/SCAM/REVIEW) nach Sender/Betreff-Pattern
+- **Ordner-Audit** – Bewertet Mails in beliebigen Ordnern: sicher löschbar, prüfen, möglicherweise wichtig, Scam/Betrug und Verdacht
+  - Scam-Erkennung ohne fest eingebaute Konten: Marken-Imitation, Auth-Fehler, Domain-Alter (DNS/RDAP), optional KI-Identitätsprüfung nur bei Grauzone
+  - Alles konfigurierbar pro Account in der UI: Marken, Meine Domains/Adressen, VIP, wichtige Ordner, Wortlisten, Aufbewahrungsfristen
+  - Bekannte Kontakte verschlüsselt (wie Mails)
 
 ---
 
@@ -71,12 +70,20 @@ Ein selbst-gehosteter Email-Organizer, der KI-Analyse mit clientseitiger Verschl
 - ✅ Mandatory 2FA für alle Accounts
 
 **v2.2.2 Highlights (Januar 2026):**
-- ✅ Ordner-Audit: Analyse von Papierkorb-Ordnern auf wichtige Emails
+- ✅ Ordner-Audit: erste UI-Konfiguration (Domains, Keywords, VIP, Patterns)
 - ✅ UI-Konfiguration: Vertrauenswürdige Domains, Keywords, Patterns, VIP-Absender
 - ✅ Mehrsprachige Defaults: CH/DE/IT/FR Keywords und Patterns
 - ✅ VIP-Absender: Wildcard (*@firma.ch) und Regex-Unterstützung
 - ✅ Auto-Regeln: Pattern-basierte Disposition (SAFE/IMPORTANT/SCAM/REVIEW)
 - ✅ Cluster-Dropdown: Einheitliches UI für alle 6 Konfigurationslisten
+
+**v2.3 Highlights:**
+- ✅ Scam- und Verdacht-Kachel im Ordner-Audit
+- ✅ Marken-Tabelle mit Domain-Status
+- ✅ Wichtige Ordner aus der Ordnerliste (Ordner plus Unterordner)
+- ✅ Aufbewahrung von Routine-Mails (Erfolg und Versand, 1–3650 Tage)
+- ✅ Wortlisten: sensibel, Alarm, Erfolg, Versand
+- ✅ Auto-Rule «Mail älter als N Tage», Test-Knopf zeigt die Treffer vorher
 
 **v2.2.1 Highlights (Januar 2026):**
 - ✅ Robuste Mail-Verarbeitung: Fortsetzung unvollständiger Emails
@@ -110,7 +117,7 @@ Dieses Repository wurde mit mehreren KI-Systemen erstellt. Der Code wurde bisher
 - 🧵 **Thread-View:** Konversations-basierte Email-Ansicht mit KI-Context
 - 🔍 **Semantic Search:** Vector-basierte Suche mit Embeddings (OpenAI, Mistral, etc.)
 - 🏷️ **Smart Tags:** KI-Vorschläge + Learning-System + Multi-Tag-Filter
-- 🤖 **AI Actions:** Reply Draft Generator (4 Ton-Varianten) + Auto-Rules Engine (14 Bedingungen)
+- 🤖 **AI Actions:** Reply Draft Generator (4 Ton-Varianten) + Auto-Rules Engine (15 Bedingungen, inkl. Mail-Alter)
 
 **Trotz größter Sorgfalt beim Prompting, kritischem Hinterfragen und wiederholten Reviews erfolgt die Verwendung auf eigenes Risiko.** Die Software wird „wie gesehen" (as is) bereitgestellt – ohne Gewährleistung und ohne Zusicherung hinsichtlich Korrektheit, Sicherheit oder Eignung. Wenn du das Tool mit echten Mail-Accounts oder sensiblen Daten nutzen willst, führe bitte eigene Tests, Threat-Modeling und ein unabhängiges Security-Review durch.
 
@@ -135,7 +142,7 @@ This repository was created with multiple AI systems. So far, the codebase has b
 - 🧵 **Thread-View:** Conversation-based email view with AI context
 - 🔍 **Semantic Search:** Vector-based search with embeddings (OpenAI, Mistral, etc.)
 - 🏷️ **Smart Tags:** AI suggestions + learning system + multi-tag filters
-- 🤖 **AI Actions:** Reply Draft Generator (4 tone variants) + Auto-Rules Engine (14 conditions)
+- 🤖 **AI Actions:** Reply Draft Generator (4 tone variants) + Auto-Rules Engine (15 conditions, including mail age)
 
 **Despite careful prompting, critical challenge/verification, and repeated reviews, use is at your own risk.** The software is provided "as is", without warranty, and with no guarantee of correctness, security, or fitness for a particular purpose. If you plan to use it with real email accounts or sensitive data, please conduct your own testing, threat modeling, and an independent security review first.
 
@@ -160,13 +167,13 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
 ## ✨ Features
 
 ### Kernfunktionen
-- **🔐 Zero-Knowledge Encryption (Phase 8)** – AES-256-GCM End-to-End Verschlüsselung (siehe [docs/ZERO_KNOWLEDGE_COMPLETE.md](docs/ZERO_KNOWLEDGE_COMPLETE.md))
+- **🔐 Zero-Knowledge Encryption (Phase 8)** – AES-256-GCM End-to-End Verschlüsselung (Überblick in [docs/SECURITY.md](docs/SECURITY.md); das lange Krypto-Dokument liegt nicht in diesem Repo)
   - **DEK/KEK Pattern** – Passwort ändern ohne E-Mails neu zu verschlüsseln
   - Alle E-Mails verschlüsselt (Sender, Subject, Body, AI-Ergebnisse)
   - Alle Credentials verschlüsselt (IMAP/SMTP Server, Usernames, Passwords)
   - DEK (Data Encryption Key) nur in Server-RAM (Flask Server-Side Sessions)
   - Server kann niemals auf Klartext-Daten zugreifen
-- **🔒 Production Security (Phase 9)** – Enterprise-Grade Hardening (siehe [DEPLOYMENT.md](docs/DEPLOYMENT.md))
+- **🔒 Production Security (Phase 9)** – Enterprise-Grade Hardening (siehe [docs/SECURITY.md](docs/SECURITY.md); Host, systemd und `.env` stehen im privaten Betriebsdokument des Betreibers)
   - **Flask-Limiter**: Rate Limiting (5 requests/min Login/2FA)
   - **Account Lockout**: 5 Failed → 15min Ban
   - **Session Timeout**: 30min Inaktivität → Auto-Logout
@@ -228,7 +235,7 @@ Ein lokaler Mail-Assistent, der E-Mails automatisch:
 - **🤖 AI Action Engine (Phase G)** – Automatisierung & KI-Assistenz
   - **G.1 Reply Draft Generator**: KI generiert Antwort-Entwürfe mit 4 Ton-Varianten (Formell/Freundlich/Kurz/Ablehnend)
   - **G.2 Auto-Rules Engine**: Automatische Email-Aktionen mit Bedingungen & Aktionen
-    - 14 Bedingungstypen: Sender, Subject, Body, Regex, Tags, KI-Vorschläge
+    - 15 Bedingungstypen (inkl. Mail-Alter): Sender, Subject, Body, Regex, Tags, KI-Vorschläge, Alter
     - 6 Aktionstypen: Move, Tag, Flag, Read, Priority, Delete
     - Farbige Tag-Indikatoren (CSS-Kreise)
     - Regel-Ketten mit `has_tag` / `not_has_tag` Conditions
@@ -451,9 +458,9 @@ python3 -m src.00_main --serve --https
 
 **Before you deploy to production, read:**
 - **[SECURITY.md](./docs/SECURITY.md)** – Threat Model, Security Features, Known Limitations
-- **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** – Production Setup (Gunicorn, Systemd, Fail2Ban, Backups)
 - **[INSTALLATION.md](./docs/INSTALLATION.md)** – Detailed step-by-step installation guide
-- **[docs/ZERO_KNOWLEDGE_COMPLETE.md](./docs/ZERO_KNOWLEDGE_COMPLETE.md)** – Cryptography & Encryption Details
+- **[docs/audit/](./docs/audit/)** – Ordner-Audit (Scam, Konfiguration, Regel-Kaskade)
+- Deployment, systemd und `.env`: privates Betriebsdokument des Betreibers (nicht in diesem Repo)
 
 ---
 
@@ -975,7 +982,7 @@ Das System verwendet **echte Zero-Knowledge Architektur**:
 - **Session-Storage:** Flask Server-Side Sessions (`.flask_sessions/`)
 - **Keine Cron-Jobs:** Zero-Knowledge verhindert automatische Hintergrund-Jobs (Master-Key fehlt)
 
-**📖 Vollständige Dokumentation:** [docs/ZERO_KNOWLEDGE_COMPLETE.md](docs/ZERO_KNOWLEDGE_COMPLETE.md)
+**📖 Überblick:** [docs/SECURITY.md](docs/SECURITY.md). Das lange Krypto-Dokument liegt nicht in diesem Repo.
 
 **Setup in `.env`:**
 ```bash
@@ -1176,12 +1183,10 @@ sudo systemctl start mail-helper-processor.service
 ## 📚 Dokumentation
 
 - **[Instruction_&_goal.md](Instruction_&_goal.md)** – Vollständige Projekt-Spezifikation (Phase 0-9)
-- **[DEPLOYMENT.md](docs/DEPLOYMENT.md)** – Production Deployment Guide (Gunicorn, Nginx, Fail2Ban)
+- **[SECURITY.md](docs/SECURITY.md)** – Threat Model und Härtung
 - **[INSTALLATION.md](docs/INSTALLATION.md)** – Schritt-für-Schritt Installation
-- **[MAINTENANCE.md](docs/MAINTENANCE.md)** – Maintenance & Helper-Skripte
-- **[OAUTH_AND_IMAP_SETUP.md](docs/OAUTH_AND_IMAP_SETUP.md)** – OAuth & IMAP Konfiguration
-- **[TESTING_GUIDE.md](docs/TESTING_GUIDE.md)** – Testing-Workflow
-- **[ZERO_KNOWLEDGE_COMPLETE.md](docs/ZERO_KNOWLEDGE_COMPLETE.md)** – Zero-Knowledge Implementierung
+- **[docs/audit/](docs/audit/)** – Ordner-Audit
+- Deployment, systemd und `.env`: privates Betriebsdokument des Betreibers (nicht in diesem Repo)
 
 ---
 
