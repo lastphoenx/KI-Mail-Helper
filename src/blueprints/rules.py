@@ -27,6 +27,8 @@ from src.helpers.task_ownership import track_celery_task, verify_celery_task_acc
 rules_bp = Blueprint("rules", __name__)
 logger = logging.getLogger(__name__)
 
+from src.auto_rules_engine import age_only_confirm_error
+
 
 def _checked_rule_conditions(conditions):
     """older_than_days nur als ganze Zahl 1..3650. Andere Bedingungen bleiben."""
@@ -176,6 +178,12 @@ def api_create_rule():
             
             if not actions:
                 return jsonify({"error": "Mindestens eine Aktion erforderlich"}), 400
+
+            age_block = age_only_confirm_error(
+                conditions, actions, bool(data.get("confirm_age_only"))
+            )
+            if age_block:
+                return jsonify({"error": age_block, "needs_age_confirm": True}), 400
             
             rule = models.AutoRule(
                 user_id=user.id,
@@ -263,6 +271,14 @@ def api_update_rule(rule_id):
                 rule.actions = data["actions"]
             if "enable_learning" in data:
                 rule.enable_learning = bool(data["enable_learning"])
+
+            age_block = age_only_confirm_error(
+                rule.conditions or {},
+                rule.actions or {},
+                bool(data.get("confirm_age_only")),
+            )
+            if age_block:
+                return jsonify({"error": age_block, "needs_age_confirm": True}), 400
             
             try:
                 db.commit()

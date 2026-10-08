@@ -83,6 +83,30 @@ def mail_age_days(when: Optional[datetime], now: Optional[datetime] = None) -> O
         return None
 
 
+_AGE_CONDITION_META_KEYS = frozenset({"match_mode", "ai_confidence_threshold"})
+
+
+def is_age_only_destructive(conditions, actions) -> bool:
+    """Nur «älter als N Tage», plus Verschieben oder Löschen."""
+    if not isinstance(conditions, dict) or not isinstance(actions, dict):
+        return False
+    real = [key for key in conditions.keys() if key not in _AGE_CONDITION_META_KEYS]
+    if len(real) != 1 or real[0] != "older_than_days":
+        return False
+    moves = bool(str(actions.get("move_to_folder") or "").strip())
+    deletes = bool(actions.get("delete"))
+    return moves or deletes
+
+
+def age_only_confirm_error(conditions, actions, confirmed) -> Optional[str]:
+    if not is_age_only_destructive(conditions, actions) or confirmed:
+        return None
+    n = conditions.get("older_than_days")
+    return (
+        f"Diese Regel gilt für alle Mails älter als {n} Tage. Erst mit 'T' testen."
+    )
+
+
 def mail_is_older_than(when: Optional[datetime], days, now: Optional[datetime] = None) -> bool:
     n = parse_rule_age_days(days)
     age = mail_age_days(when, now)

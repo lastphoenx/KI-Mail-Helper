@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 
 from src.auto_rules_engine import (
     AutoRulesEngine,
+    age_only_confirm_error,
+    is_age_only_destructive,
     mail_is_older_than,
     parse_rule_age_days,
 )
@@ -109,3 +111,16 @@ def test_preview_lists_old_mail_and_does_not_run_the_delete():
     assert hits[0]["age_days"] >= 30
     assert hits[0]["actions_would_execute"] == ["delete"]
     assert "received_at" in hits[0]
+
+
+def test_server_rejects_age_only_move_or_delete_without_confirm():
+    only_age = {"match_mode": "all", "older_than_days": 30}
+    assert is_age_only_destructive(only_age, {"delete": True})
+    assert is_age_only_destructive(only_age, {"move_to_folder": "Archive"})
+    assert not is_age_only_destructive(
+        {"older_than_days": 30, "subject_contains": _token()},
+        {"delete": True},
+    )
+    assert not is_age_only_destructive(only_age, {"mark_as_read": True})
+    assert age_only_confirm_error(only_age, {"delete": True}, False)
+    assert age_only_confirm_error(only_age, {"delete": True}, True) is None

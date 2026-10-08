@@ -902,12 +902,14 @@ const RulesManager = {
             return key !== 'match_mode' && key !== 'ai_confidence_threshold';
         });
         const movesOrDeletes = !!(actions.move_to_folder || actions.delete);
+        let confirmAgeOnly = false;
         if (realConditions.length === 1 && realConditions[0] === 'older_than_days' && movesOrDeletes) {
             const proceed = confirm(
                 'Diese Regel gilt für alle Mails älter als ' + conditions.older_than_days
                 + ' Tage. Erst mit \'T\' testen.'
             );
             if (!proceed) return;
+            confirmAgeOnly = true;
         }
         
         const enableLearning = document.getElementById('rule-enable-learning').checked;
@@ -922,6 +924,7 @@ const RulesManager = {
             actions: actions,
             enable_learning: enableLearning
         };
+        if (confirmAgeOnly) ruleData.confirm_age_only = true;
         
         console.log('📤 Sende ruleData:', JSON.stringify(ruleData, null, 2));
         
