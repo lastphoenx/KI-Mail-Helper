@@ -122,6 +122,20 @@ Email → spaCy NLP (80%) → Detektoren → Ensemble Combiner → Score
          Keywords (20%) ──────────────────────
 ```
 
+### 5. Ordner-Audit
+
+Blueprint `folder_audit_bp` (`/folder-audit`). Die Bewertung liegt in Diensten, nicht in der Oberfläche:
+
+| Dienst | Aufgabe |
+|--------|---------|
+| `audit_quality_rules` | Kategorien, Wortlisten, Aufbewahrungsfristen, wichtige Ordner |
+| `audit_domain_intel` | DNS/RDAP nur im Zweifel, Cache, Domain-Badge |
+| `audit_own_domains` | Eigene Domains und einzelne eigene Adressen |
+| `audit_safe_delete_veto` | Warum eine Mail nicht «sicher löschbar» wird |
+| `folder_audit_service` | Scan und Einordnung einer Mail |
+
+Index und Spalten: `docs/audit/`.
+
 ---
 
 ## Datenfluss
