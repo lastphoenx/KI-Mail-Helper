@@ -9,7 +9,9 @@ from src.services.audit_quality_rules import (
     SENSITIVE_SUBJECT_TOKENS,
     curated_marks,
     folder_is_curated,
+    TRANSACTION_STATUS_TOKENS,
     is_success_status_subject,
+    is_transaction_status_subject,
     subject_has_operational_alarm,
     subject_is_sensitive,
 )
@@ -95,6 +97,20 @@ def test_account_word_lists_extend_and_disable_system_words():
     assert not is_success_status_subject(f"Vorgang erfolgreich {_token()}", lists)
     assert is_success_status_subject(f"Backup fertig {_token()}", lists)
     assert "." not in "".join(lists["alarm"]["added"])
+
+
+def test_shipping_words_extend_and_disable_like_the_other_lists():
+    extra = _token()
+    lists = {"shipping": {"added": [extra, "colis livre"], "disabled": ["zugestellt"]}}
+    assert "shipped" in TRANSACTION_STATUS_TOKENS
+    assert "zugestellt" in TRANSACTION_STATUS_TOKENS
+    assert not is_transaction_status_subject(f"Zugestellt {_token()}", lists)
+    assert is_transaction_status_subject(f"Paket shipped {_token()}", lists)
+    assert is_transaction_status_subject(f"Parcel on its way {_token()}")
+    assert is_transaction_status_subject(f"Hinweis {extra}", lists)
+    assert is_transaction_status_subject(f"Status colis livre {_token()}", lists)
+    assert not is_transaction_status_subject(f"Wochennotiz {_token()}", lists)
+    assert not is_transaction_status_subject(f"Delivered but failed {_token()}", lists)
 
 
 def test_sensitive_subject_includes_fr_it_tokens():

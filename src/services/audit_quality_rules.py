@@ -87,12 +87,18 @@ _ROUTINE_REVIEW_RE = re.compile(
     r"(?i)(package\s+updates?|no updates available|server\s+job|scan to e-?mail)"
 )
 
-_TRANSACTION_STATUS_RE = re.compile(
-    r"(?i)("
-    r"\bzugestellt\b|\bversandt\b|\bversendet\b|\bversandbereit\b|"
-    r"\bunterwegs\b|\bshipped\b|\bdelivered\b|\bdispatched\b|"
-    r"\bon its way\b|sendungsstatus|sendungsnummer"
-    r")"
+TRANSACTION_STATUS_TOKENS: tuple[str, ...] = (
+    "zugestellt",
+    "versandt",
+    "versendet",
+    "versandbereit",
+    "unterwegs",
+    "shipped",
+    "delivered",
+    "dispatched",
+    "on its way",
+    "sendungsstatus",
+    "sendungsnummer",
 )
 
 # Betreff-Schutz, mehrsprachig (DE/EN plus FR/IT für CH-Postfächer).
@@ -187,6 +193,7 @@ def parse_word_lists(raw) -> dict:
         "sensitive": {"added": [], "disabled": []},
         "alarm": {"added": [], "disabled": []},
         "success": {"added": [], "disabled": []},
+        "shipping": {"added": [], "disabled": []},
     }
     if not isinstance(raw, dict):
         return empty
@@ -268,7 +275,8 @@ def is_routine_status_subject(subject: str, word_lists=None) -> bool:
 def is_transaction_status_subject(subject: str, word_lists=None) -> bool:
     if subject_has_operational_alarm(subject, word_lists):
         return False
-    return bool(_TRANSACTION_STATUS_RE.search(subject or ""))
+    tokens = effective_tokens(TRANSACTION_STATUS_TOKENS, word_lists, "shipping")
+    return bool(_phrase_re(tokens).search(subject or ""))
 
 
 def subject_is_sensitive(subject: str, word_lists=None) -> bool:

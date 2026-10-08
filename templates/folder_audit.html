@@ -2337,13 +2337,16 @@
             sensitive: 'Sensible Betreffwörter',
             alarm: 'Alarmwörter',
             success: 'Status- und Erfolgswörter',
+            shipping: 'Versand-Wörter',
         };
+        const ageHint = ' Nach wie vielen Tagen so eine Mail sicher löschbar wird, stellst du unter «Aufbewahrung von Routine-Mails» ein.';
         const effects = {
             sensitive: 'Ein solches Wort im Betreff macht die Mail vorsichtiger, allein aber nicht zu Betrug. Beispiel: «Sicherheitswarnung».',
             alarm: 'Eine Störung bleibt wichtig und wird nicht als Werbung weggeräumt. Beispiel: «Backup failed».',
-            success: 'Eine erledigte Meldung kann nach den eingestellten Tagen sicher löschbar werden. Beispiel: «Backup successful».',
+            success: 'Eine erledigte Meldung kann nach den eingestellten Tagen sicher löschbar werden. Beispiel: «Backup successful».' + ageHint,
+            shipping: 'Eine Versand-Meldung kann nach den eingestellten Tagen sicher löschbar werden. Beispiel: «Zugestellt».' + ageHint,
         };
-        mount.innerHTML = ['sensitive', 'alarm', 'success'].map(function(key) {
+        mount.innerHTML = ['sensitive', 'alarm', 'success', 'shipping'].map(function(key) {
             const block = lists[key] || {};
             const system = (block.system || []).join('\n');
             const added = (block.added || []).join('\n');
@@ -2366,7 +2369,7 @@
 
     function collectAuditWordLists() {
         const out = {};
-        ['sensitive', 'alarm', 'success'].forEach(function(key) {
+        ['sensitive', 'alarm', 'success', 'shipping'].forEach(function(key) {
             const addedEl = document.getElementById('auditWordsAdded_' + key);
             const disabledEl = document.getElementById('auditWordsDisabled_' + key);
             const split = function(el) {

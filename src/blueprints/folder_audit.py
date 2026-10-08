@@ -75,6 +75,7 @@ def _word_lists_payload(account) -> dict:
         OPERATIONAL_ALARM_TOKENS,
         SENSITIVE_SUBJECT_TOKENS,
         SUCCESS_STATUS_TOKENS,
+        TRANSACTION_STATUS_TOKENS,
         parse_word_lists,
     )
 
@@ -90,6 +91,7 @@ def _word_lists_payload(account) -> dict:
         "sensitive": list(SENSITIVE_SUBJECT_TOKENS),
         "alarm": list(OPERATIONAL_ALARM_TOKENS),
         "success": list(SUCCESS_STATUS_TOKENS),
+        "shipping": list(TRANSACTION_STATUS_TOKENS),
     }
     return {
         key: {
