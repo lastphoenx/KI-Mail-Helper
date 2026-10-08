@@ -732,7 +732,7 @@
                 <div class="card text-center">
                     <div class="card-body py-2">
                         <h4 class="text-info mb-0" id="configAutoDeleteCount">-</h4>
-                        <small class="text-muted">Auto-Regeln</small>
+                        <small class="text-muted">Einstufungs-Regeln</small>
                     </div>
                 </div>
             </div>
@@ -836,7 +836,7 @@
                             Weiche Identitätsregeln und Marken-Abweichungen gelten hier nicht.
                             Verdacht bleibt, wenn SPF, DKIM und DMARC alle drei fehlschlagen oder die Domain auf der Spamhaus-Liste steht.
                             Eine einzelne fehlgeschlagene Prüfung reicht nicht.
-                            Die Mails werden <strong>nicht automatisch</strong> wichtig oder sicher löschbar — dafür brauchst du VIP, Patterns oder Auto-Regeln.
+                            Die Mails werden <strong>nicht automatisch</strong> wichtig oder sicher löschbar — dafür brauchst du VIP, Patterns oder Einstufungs-Regeln.
                             Beispiel: <code>meine-domain.ch</code>, <code>cloud.meine-domain.ch</code>
                         </p>
                         <div id="auditOwnDomainsAccountHint" class="alert alert-info py-2 small mb-2">
@@ -1495,14 +1495,16 @@
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#autoDeleteSection">
                         <i class="bi bi-trash3 me-2 text-info"></i>
-                        Auto-Regeln
+                        Einstufungs-Regeln
                         <span class="badge bg-info ms-2" id="autoDeleteBadge">0</span>
                     </button>
                 </h2>
                 <div id="autoDeleteSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
                         <p class="text-muted mb-3">
-                            Regeln für automatisches Löschen/Schützen. Wenn <strong>beide</strong> Patterns matchen (falls gesetzt), wird die Aktion ausgeführt.
+                            Diese Regeln bestimmen nur, wie das Ordner-Audit eine Mail einstuft. Sie verschieben oder löschen nichts.
+                            Aktionen auf Mails stellst du unter <a href="/rules">Aktions-Regeln</a> ein.
+                            Wenn <strong>beide</strong> Patterns gesetzt sind, müssen beide passen.
                         </p>
                         
                         <!-- Regeln Tabelle -->
@@ -1547,12 +1549,17 @@
                                             <option value="REVIEW">🔍 Manuell prüfen</option>
                                         </select>
                                     </div>
-                                    <div class="col-md-1">
-                                        <label class="form-label small mb-1">Tage</label>
-                                        <input type="number" class="form-control form-control-sm" 
-                                               id="newRuleMaxAge" placeholder="14" min="0">
+                                    <div class="col-md-2" id="newRuleMaxAgeWrap">
+                                        <label class="form-label small mb-1" for="newRuleMaxAge">
+                                            Tage <span class="text-danger" aria-hidden="true">*</span>
+                                        </label>
+                                        <input type="number" class="form-control form-control-sm"
+                                               id="newRuleMaxAge" placeholder="Tage eingeben, z. B. 14" min="1" required>
+                                        <div class="small text-danger d-none" id="newRuleMaxAgeError">
+                                            Bei «Sicher löschbar» muss eine Anzahl Tage angegeben werden.
+                                        </div>
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-2">
                                         <label class="form-label small mb-1">Beschreibung</label>
                                         <input type="text" class="form-control form-control-sm" 
                                                id="newRuleDescription" placeholder="Newsletter älter als 14 Tage">
@@ -6413,10 +6420,15 @@
             return;
         }
         
+        const ageError = document.getElementById('newRuleMaxAgeError');
+        const ageInput = document.getElementById('newRuleMaxAge');
         if (disposition === 'SAFE' && !maxAge) {
-            alert('Bei "Sicher löschbar" muss eine Anzahl Tage angegeben werden!');
+            ageInput.classList.add('is-invalid');
+            ageError.classList.remove('d-none');
             return;
         }
+        ageInput.classList.remove('is-invalid');
+        ageError.classList.add('d-none');
         
         try {
             const response = await fetch('/api/audit-config/auto-delete-rules', {
@@ -6479,6 +6491,25 @@
     }
     
     // Event Listener für Add-Button
+    function syncAuditAgeField() {
+        const disposition = document.getElementById('newRuleDisposition').value;
+        const wrap = document.getElementById('newRuleMaxAgeWrap');
+        const ageInput = document.getElementById('newRuleMaxAge');
+        const ageError = document.getElementById('newRuleMaxAgeError');
+        const show = disposition === 'SAFE';
+        wrap.classList.toggle('d-none', !show);
+        ageInput.required = show;
+        if (!show) {
+            ageInput.classList.remove('is-invalid');
+            ageError.classList.add('d-none');
+        }
+    }
+    document.getElementById('newRuleDisposition').addEventListener('change', syncAuditAgeField);
+    document.getElementById('newRuleMaxAge').addEventListener('input', function() {
+        this.classList.remove('is-invalid');
+        document.getElementById('newRuleMaxAgeError').classList.add('d-none');
+    });
+    syncAuditAgeField();
     document.getElementById('addAutoDeleteRuleBtn').addEventListener('click', addAutoDeleteRule);
     
     // Disposition-Änderung: Tage-Feld aktivieren/deaktivieren
