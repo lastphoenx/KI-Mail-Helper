@@ -860,7 +860,7 @@
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditQualitySection">
                         <i class="bi bi-folder-check me-2 text-primary"></i>
-                        Wichtige Ordner und Alter
+                        Wichtige Ordner
                     </button>
                 </h2>
                 <div id="auditQualitySection" class="accordion-collapse collapse">
@@ -876,45 +876,95 @@
                         <div id="auditCuratedFoldersList" class="border rounded p-2 bg-light" style="max-height: 320px; overflow-y: auto;">
                             <span class="text-muted">Im Tab «Ordner scannen» oben einen Account wählen, dann unter «Ordner vom Scan ausnehmen» auf «Ordnerliste laden».</span>
                         </div>
-                        <p class="text-muted small mt-3 mb-2">
-                            Backup- und Erfolgsmails gelten nach den eingetragenen Tagen als sicher löschbar.
-                            Davor bleiben sie in Prüfen. Dasselbe gilt für Versand-Meldungen im zweiten Feld.
-                            Fehler und Alarme bleiben immer in Prüfen.
+                        <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
+                            <span class="small text-muted" id="auditQualitySaveStatus"></span>
+                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditQualityBtn">
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditRetentionSection">
+                        <i class="bi bi-hourglass-split me-2 text-primary"></i>
+                        Aufbewahrung von Routine-Mails
+                    </button>
+                </h2>
+                <div id="auditRetentionSection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <p class="text-muted small mb-3">
+                            Hier geht es um das Alter der Mail, nicht um das Alter der Absender-Domain.
+                            Pro Account, ganze Tage von 1 bis 3650. «Nie» und «sofort» gibt es nicht.
+                            Vor Ablauf bleibt die Mail in Prüfen. Danach kann sie «Sicher löschbar» werden.
+                            Fehler und Alarme werden nie sicher löschbar, auch nicht nach vielen Tagen.
                         </p>
-                        <div class="row g-2">
+                        <div class="row g-3">
                             <div class="col-sm-6">
                                 <label class="form-label small mb-1" for="auditSuccessSafeDays">Backup- und Erfolgsmails, Tage</label>
+                                <p class="text-muted small mb-1">
+                                    Die Mail wird erkannt, wenn der Betreff ein Wort aus «Status- und Erfolgswörter» enthält.
+                                    Diese Liste steht unten bei den Wortlisten und lässt sich ergänzen oder abschalten.
+                                    Beispiel: «Backup successful» wird nach den eingetragenen Tagen sicher löschbar, davor bleibt sie in Prüfen.
+                                </p>
                                 <input type="number" class="form-control form-control-sm" id="auditSuccessSafeDays" min="1" max="3650" value="30">
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label small mb-1" for="auditTransactionSafeDays">Versand-Meldungen, Tage</label>
+                                <p class="text-muted small mb-1">
+                                    Die Mail wird erkannt, wenn der Betreff ein Wort aus «Versand-Wörter» enthält.
+                                    Diese Liste steht unten bei den Wortlisten und lässt sich ergänzen oder abschalten.
+                                    Beispiel: «Zugestellt» wird nach den eingetragenen Tagen sicher löschbar, davor bleibt sie in Prüfen.
+                                </p>
                                 <input type="number" class="form-control form-control-sm" id="auditTransactionSafeDays" min="1" max="3650" value="30">
                             </div>
                         </div>
-                        <hr>
+                        <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
+                            <span class="small text-muted" id="auditRetentionSaveStatus"></span>
+                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditRetentionBtn">
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditDomainCheckSection">
+                        <i class="bi bi-globe2 me-2 text-primary"></i>
+                        Prüfung von Absender-Domains
+                    </button>
+                </h2>
+                <div id="auditDomainCheckSection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" id="auditDomainIntelEnabled" checked>
                             <label class="form-check-label" for="auditDomainIntelEnabled">Absender-Adresse nur im Zweifelsfall nachschauen</label>
                         </div>
                         <p class="text-muted small mb-2">
-                            Nicht bei jeder Mail. Nur wenn eine Mail verdächtig wirkt oder einen Markennamen trägt, wird nachgeschaut, ob die Absender-Adresse existiert und wie alt sie ist.
+                            Das ist das Alter der Absender-Domain, nicht das Alter der Mail.
+                            Nicht bei jeder Mail. Nur wenn eine Mail verdächtig wirkt oder einen Markennamen trägt, wird nachgeschaut, ob die Absender-Adresse existiert und wie alt die Domain ist.
                             Eine 5 Tage alte Domain mit Markenname gilt als Scam.
                             Eine junge Domain ohne Markenname bekommt nur einen Hinweis an der Mail, kein Urteil.
                             Häkchen weg: es gibt keine Nachfragen mehr nach aussen.
+                            Gültig 1 bis 3650 Tage, pro Account.
                         </p>
                         <div class="row g-2">
                             <div class="col-sm-6">
-                                <label class="form-label small mb-1" for="auditDomainYoungDays">Jung unter Tagen (mit Markenname: Scam)</label>
+                                <label class="form-label small mb-1" for="auditDomainYoungDays">Absender-Domain jünger als N Tage (mit Markenname: Scam)</label>
                                 <input type="number" class="form-control form-control-sm" id="auditDomainYoungDays" min="1" max="3650" value="30">
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label small mb-1" for="auditDomainCautionDays">Hinweis unter Tagen (nur Hinweis, kein Urteil)</label>
+                                <label class="form-label small mb-1" for="auditDomainCautionDays">Absender-Domain jünger als N Tage (nur Hinweis, kein Urteil)</label>
                                 <input type="number" class="form-control form-control-sm" id="auditDomainCautionDays" min="1" max="3650" value="90">
                             </div>
                         </div>
                         <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
-                            <span class="small text-muted" id="auditQualitySaveStatus"></span>
-                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditQualityBtn">
+                            <span class="small text-muted" id="auditDomainCheckSaveStatus"></span>
+                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditDomainCheckBtn">
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
                         </div>
@@ -1817,16 +1867,20 @@
 
         document.getElementById('reloadAuditFoldersBtn').addEventListener('click', loadAuditScanFolderSettings);
         document.getElementById('saveAuditExcludeFoldersBtn').addEventListener('click', saveAuditScanFolderSettings);
-        const saveAuditQualityBtn = document.getElementById('saveAuditQualityBtn');
-        if (saveAuditQualityBtn) {
-            saveAuditQualityBtn.addEventListener('click', function() {
-                const st = document.getElementById('auditQualitySaveStatus');
+        function bindAuditSettingsSave(buttonId, statusId) {
+            const btn = document.getElementById(buttonId);
+            if (!btn) return;
+            btn.addEventListener('click', function() {
+                const st = document.getElementById(statusId);
                 if (st) st.textContent = 'Speichern…';
                 saveAuditScanFolderSettings().then(function(ok) {
                     if (st) st.textContent = ok ? 'Gespeichert.' : '';
                 });
             });
         }
+        bindAuditSettingsSave('saveAuditQualityBtn', 'auditQualitySaveStatus');
+        bindAuditSettingsSave('saveAuditRetentionBtn', 'auditRetentionSaveStatus');
+        bindAuditSettingsSave('saveAuditDomainCheckBtn', 'auditDomainCheckSaveStatus');
         const saveAuditWordListsBtn = document.getElementById('saveAuditWordListsBtn');
         if (saveAuditWordListsBtn) {
             saveAuditWordListsBtn.addEventListener('click', function() {
