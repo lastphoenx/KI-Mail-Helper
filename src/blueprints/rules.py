@@ -27,6 +27,22 @@ from src.helpers.task_ownership import track_celery_task, verify_celery_task_acc
 rules_bp = Blueprint("rules", __name__)
 logger = logging.getLogger(__name__)
 
+
+def _checked_rule_conditions(conditions):
+    """older_than_days nur als ganze Zahl 1..3650. Andere Bedingungen bleiben."""
+    if not isinstance(conditions, dict):
+        return conditions, None
+    if "older_than_days" not in conditions:
+        return conditions, None
+    from src.auto_rules_engine import parse_rule_age_days
+
+    n = parse_rule_age_days(conditions.get("older_than_days"))
+    if n is None:
+        return None, "«Mail älter als» muss eine ganze Zahl von 1 bis 3650 sein"
+    checked = dict(conditions)
+    checked["older_than_days"] = n
+    return checked, None
+
 # Lazy imports
 _models = None
 _encryption = None
@@ -151,6 +167,9 @@ def api_create_rule():
             
             conditions = data.get("conditions", {})
             actions = data.get("actions", {})
+            conditions, age_error = _checked_rule_conditions(conditions)
+            if age_error:
+                return jsonify({"error": age_error}), 400
             
             if not conditions:
                 return jsonify({"error": "Mindestens eine Bedingung erforderlich"}), 400
@@ -236,7 +255,10 @@ def api_update_rule(rule_id):
             if "priority" in data:
                 rule.priority = int(data["priority"])
             if "conditions" in data:
-                rule.conditions = data["conditions"]
+                checked, age_error = _checked_rule_conditions(data["conditions"])
+                if age_error:
+                    return jsonify({"error": age_error}), 400
+                rule.conditions = checked
             if "actions" in data:
                 rule.actions = data["actions"]
             if "enable_learning" in data:
@@ -338,7 +360,11 @@ def api_test_rule(rule_id):
                 return jsonify({"error": "Master-Key nicht verfügbar"}), 401
             
             try:
-                from src.auto_rules_engine import AutoRulesEngine
+                from src.auto_rules_engine import (
+                    AutoRulesEngine,
+                    mail_age_days,
+                    parse_rule_age_days,
+                )
                 engine = AutoRulesEngine(user.id, master_key, db)
                 
                 matches = []
@@ -387,9 +413,14 @@ def api_test_rule(rule_id):
                                     if email.received_at
                                     else None
                                 ),
+                                "age_days": mail_age_days(email.received_at),
                                 "actions_would_execute": results[0].actions_executed,
                             })
                     total_tested = len(classified_emails)
+
+                age_condition_days = None
+                if isinstance(rule.conditions, dict) and "older_than_days" in rule.conditions:
+                    age_condition_days = parse_rule_age_days(rule.conditions.get("older_than_days"))
                 
                 logger.info(f"🧪 Regel '{rule.name}' getestet: {len(matches)} Matches")
                 
@@ -398,7 +429,9 @@ def api_test_rule(rule_id):
                     "matches": matches,
                     "total_tested": total_tested,
                     "total_matches": len(matches),
-                    "rule_name": rule.name
+                    "rule_name": rule.name,
+                    "preview_only": True,
+                    "age_condition_days": age_condition_days,
                 }), 200
                 
             except ImportError as e:

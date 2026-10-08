@@ -49,6 +49,47 @@ EmailDataManager = encryption.EmailDataManager
 
 logger = logging.getLogger(__name__)
 
+MAX_RULE_AGE_DAYS = 3650
+_IGNORED_CONDITION_KEYS = frozenset({"match_mode"})
+
+
+def parse_rule_age_days(value) -> Optional[int]:
+    """Ganze Tage 1..3650. Kommazahlen, Wahrheitswerte und Text gelten nicht."""
+    if isinstance(value, bool) or isinstance(value, float):
+        return None
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw.isdigit():
+            return None
+        n = int(raw)
+    elif isinstance(value, int):
+        n = value
+    else:
+        return None
+    if n < 1 or n > MAX_RULE_AGE_DAYS:
+        return None
+    return n
+
+
+def mail_age_days(when: Optional[datetime], now: Optional[datetime] = None) -> Optional[int]:
+    """Ganze Tage seit dem Empfangsdatum. Ohne Datum kein Alter."""
+    if when is None:
+        return None
+    if now is None:
+        now = datetime.now(UTC) if when.tzinfo else datetime.now()
+    try:
+        return (now - when).days
+    except TypeError:
+        return None
+
+
+def mail_is_older_than(when: Optional[datetime], days, now: Optional[datetime] = None) -> bool:
+    n = parse_rule_age_days(days)
+    age = mail_age_days(when, now)
+    if n is None or age is None:
+        return False
+    return age >= n
+
 
 def _regex_search_with_timeout(pattern: str, text: str, timeout_seconds: int = 2) -> bool:
     """re.search() mit Timeout (ReDoS-Schutz).
@@ -482,7 +523,8 @@ class AutoRulesEngine:
                 'folder': raw_email.imap_folder or '',
                 'flags': raw_email.imap_flags or '',
                 'is_seen': raw_email.imap_is_seen or False,
-                'is_flagged': raw_email.imap_is_flagged or False
+                'is_flagged': raw_email.imap_is_flagged or False,
+                'received_at': raw_email.received_at,
             }
         except Exception as e:
             logger.error(f"Entschlüsselung für Regel-Matching fehlgeschlagen: {e}")
@@ -511,6 +553,7 @@ class AutoRulesEngine:
         - not_has_tag: Email hat dieses Tag NICHT
         - ai_suggested_tag: KI schl\u00e4gt dieses Tag vor (Phase F.2 Integration)
         - ai_confidence_threshold: Min. Confidence in % (50-100) f\u00fcr ai_suggested_tag
+        - older_than_days: Empfangsdatum liegt mindestens N ganze Tage zurueck (1..3650)
         """
         conditions = rule.conditions
         match_mode = conditions.get('match_mode', 'all')  # 'all' (AND) oder 'any' (OR)
@@ -622,9 +665,17 @@ class AutoRulesEngine:
             if suggested:
                 matched_conditions.append('ai_suggested_tag')
                 match_details['ai_suggested_tag'] = f"{target_tag} (Confidence: {suggested['confidence']}%)"
+
+        if 'older_than_days' in conditions:
+            when = email_data.get('received_at')
+            if mail_is_older_than(when, conditions.get('older_than_days')):
+                matched_conditions.append('older_than_days')
+                match_details['older_than_days'] = mail_age_days(when)
         
         # Match-Logik auswerten
-        total_conditions = len([k for k in conditions.keys() if k != 'match_mode'])
+        total_conditions = len([
+            k for k in conditions.keys() if k not in _IGNORED_CONDITION_KEYS
+        ])
         
         if total_conditions == 0:
             matched = False  # Keine Bedingungen = Kein Match
@@ -639,6 +690,26 @@ class AutoRulesEngine:
             matched_conditions=matched_conditions,
             match_details=match_details
         )
+
+    def preview_matching_mails(self, rule: AutoRule, mails: List[Dict]) -> List[Dict]:
+        """Trefferliste für den Test-Knopf. Führt keine Aktion aus."""
+        hits = []
+        actions = getattr(rule, "actions", None) or {}
+        for mail in mails or []:
+            if not self._match_rule(rule, mail).matched:
+                continue
+            when = mail.get("received_at")
+            shown = None
+            if isinstance(when, datetime):
+                shown = when.strftime("%Y-%m-%d %H:%M")
+            hits.append({
+                "email_id": mail.get("email_id"),
+                "subject": mail.get("subject") or "",
+                "received_at": shown,
+                "age_days": mail_age_days(when),
+                "actions_would_execute": list(actions.keys()),
+            })
+        return hits
     
     def _execute_rule(
         self, 

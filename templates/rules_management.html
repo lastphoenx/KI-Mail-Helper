@@ -325,6 +325,17 @@ select#rule-ai-tag-value option {
                             Nur E-Mails mit Anhang
                         </label>
                     </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="rule-older-than-days">Mail älter als (Tage)</label>
+                        <input type="number" class="form-control" id="rule-older-than-days"
+                               min="1" max="3650" step="1" placeholder="leer = nicht prüfen">
+                        <small class="text-muted">
+                            Ganze Zahl von 1 bis 3650, gerechnet am Empfangsdatum.
+                            Leer lassen, wenn das Alter keine Rolle spielt.
+                            Der Test-Knopf zeigt die betroffenen Mails, bevor etwas gelöscht oder verschoben wird.
+                        </small>
+                    </div>
                     
                     <!-- Neue Bedingung: Hat bereits Tag -->
                     <div class="mb-3">
@@ -727,6 +738,10 @@ const RulesManager = {
             }
             
             document.getElementById('rule-has-attachment').checked = conditions.has_attachment || false;
+            const ageInput = document.getElementById('rule-older-than-days');
+            if (ageInput) {
+                ageInput.value = conditions.older_than_days ? String(conditions.older_than_days) : '';
+            }
             
             // Tag-Bedingung (neu)
             if (conditions.has_tag) {
@@ -829,6 +844,16 @@ const RulesManager = {
         
         const hasAttachment = document.getElementById('rule-has-attachment').checked;
         if (hasAttachment) conditions.has_attachment = true;
+
+        const ageRaw = document.getElementById('rule-older-than-days').value.trim();
+        if (ageRaw) {
+            const age = Number(ageRaw);
+            if (!Number.isInteger(age) || age < 1 || age > 3650) {
+                alert('«Mail älter als» muss eine ganze Zahl von 1 bis 3650 sein.');
+                return;
+            }
+            conditions.older_than_days = age;
+        }
         
         // Tag-Bedingung (neu)
         const tagOp = document.getElementById('rule-tag-operator').value;
@@ -1063,7 +1088,11 @@ const RulesManager = {
             const modal = new bootstrap.Modal(document.getElementById('modal-test-results'));
             const content = document.getElementById('test-results-content');
             
+            const ageNote = data.age_condition_days
+                ? `<div class="alert alert-warning">Vorschau. Es wird noch nichts gelöscht oder verschoben. Getroffen werden Mails, die mindestens ${escapeHtml(data.age_condition_days)} Tage alt sind und die übrigen Bedingungen erfüllen. Erst «Regeln jetzt anwenden» führt die Aktionen aus.</div>`
+                : '';
             content.innerHTML = `
+                ${ageNote}
                 <div class="alert alert-info border border-primary">
                     <div class="mb-2"><span class="text-primary fw-bold">Regel:</span> <span class="text-primary fw-semibold">${escapeHtml(data.rule_name)}</span></div>
                     <div class="mb-2"><span class="text-primary fw-bold">Geprüft:</span> <span class="text-primary fw-semibold">${data.total_tested} klassifizierte E-Mail(s)</span></div>
@@ -1076,7 +1105,7 @@ const RulesManager = {
                         ${data.matches.map(m => `
                             <li class="border-bottom py-2">
                                 <div class="fw-semibold text-primary">${escapeHtml(m.subject || 'Ohne Betreff')}</div>
-                                <small class="text-muted">ID ${m.email_id}${m.received_at ? ' · ' + escapeHtml(m.received_at) : ''}</small>
+                                <small class="text-muted">ID ${m.email_id}${m.received_at ? ' · ' + escapeHtml(m.received_at) : ''}${m.age_days != null ? ' · ' + escapeHtml(m.age_days) + ' Tage alt' : ''}</small>
                             </li>
                         `).join('')}
                     </ul>
