@@ -347,6 +347,12 @@ Du kannst für jede Regel individuell festlegen, ob sie zum Hybrid Score-Learnin
 - 🏷️ Tag zuweisen
 - 🗑️ Löschen
 
+### Mail älter als N Tage
+
+Eine Bedingung lautet **Mail älter als N Tage** (ganze Zahl von 1 bis 3650, Empfangsdatum). Sie lässt sich mit den anderen Bedingungen per UND oder ODER verbinden.
+
+Besteht die Regel **nur** aus diesem Alter und verschiebt oder löscht sie Mails, gilt sie für alle entsprechend alten Mails. Beim Speichern kommt eine Rückfrage. Der Test-Knopf **T** listet die Treffer, bevor etwas verschoben oder gelöscht wird.
+
 ---
 
 ## 8. Antwort-Stile
@@ -621,188 +627,69 @@ Nutzt **Helsinki-NLP/opus-mt** Modelle von Hugging Face:
 
 ## 12. Ordner-Audit
 
-Das **Ordner-Audit** (Trash-Audit) analysiert Papierkorb-Ordner auf potenziell wichtige Emails, die versehentlich gelöscht wurden.
+Das Ordner-Audit bewertet Mails in **beliebigen Ordnern**, nicht nur im Papierkorb. Du wählst Konto und Ordner, startest den Scan und siehst die Mails in Kacheln.
 
-### Zugang
+- **URL:** `/folder-audit`
+- **Voraussetzung:** angemeldet, mindestens ein Mail-Konto
 
-- **URL:** `/folder-audit` oder in der Ordner-Ansicht über "🗂️ Ordner-Audit"
-- **Voraussetzung:** Angemeldeter Benutzer mit mindestens einem Mail-Account
+### Die Kacheln
 
-### Funktionsweise
+| Kachel | Bedeutung | Was du tun solltest |
+|--------|-----------|---------------------|
+| **Scam** | Die Mail sieht nach Betrug aus (Marke, Auth, sehr junge Domain mit Markenname). | Nicht öffnen, nicht auf Links klicken. Im Zweifel löschen. |
+| **Verdacht** | Etwas stimmt nicht, ein Betrug ist aber nicht sicher. | Betreff, Absender und Gründe lesen, dann selbst entscheiden. |
+| **Sicher löschbar** | Routine, Werbung oder ein alter Status, den die Regeln freigeben. | Kann weg. Steht ein Löschschutz-Grund dabei, bleibt die Mail in Prüfen. |
+| **Prüfen** | Keine klare Freigabe und kein klares Urteil. | Kurz lesen. |
+| **Möglicherweise wichtig** | Alarm, wichtiger Ordner, VIP oder ein geschützter Betreff. | Behalten. Wird nicht «sicher löschbar». |
+| **Cluster** | Viele ähnliche Mails eines Absenders als Gruppe. | Die Gruppe ansehen, nicht jede Mail einzeln, und dann eine Liste pflegen. |
 
-Das System scannt alle Emails im ausgewählten Ordner (z.B. Papierkorb) und bewertet jede Email anhand von:
+### Scam und Verdacht
 
-| Kriterium | Beschreibung |
-|-----------|--------------|
-| **🏛️ Vertrauenswürdige Domains** | Bekannte Behörden, Banken, Versicherungen (z.B. admin.ch, sparkasse.de) |
-| **📋 Wichtige Keywords** | Betreff-Schlüsselwörter wie "Rechnung", "Kündigung", "Mahnung", "Vertrag" |
-| **🔇 Sichere Patterns** | Bekannte unwichtige Emails (Newsletter, Marketing, Werbung) |
-| **⭐ VIP-Absender** | Manuell definierte wichtige Absender |
+Scam entsteht aus festen Signalen, nicht aus einer freien Texteinschätzung. Beispiele: der Anzeigename trägt eine Marke, die Absender-Domain steht nicht in der Marken-Tabelle; die Anmeldung der Mail ist fehlgeschlagen; die Absender-Domain ist sehr jung und der Name enthält eine Marke.
 
-### Scam-Erkennung (🚨)
+Verdacht ist die Stufe darunter. Die Mail ist auffällig, das Urteil «Betrug» reicht aber nicht. Ein **Domain-Badge** an der Mail nennt das Alter der Absender-Domain oder dass die Domain nicht existiert. Das Badge ist ein Hinweis. Es macht die Mail allein nicht zu Scam.
 
-Neben «wichtig vs. löschbar» prüft der Scan **Betrugs-Mails**:
+Eine optionale Identitätsprüfung (lokale oder Cloud-KI) läuft nur in der Grauzone und ist pro Scan begrenzt. Ist sie aus, bleiben die festen Regeln.
 
-| Stufe | Was passiert |
-|-------|----------------|
-| **Regeln (Layer 1)** | Verdächtige Header, Transport, **Marken-Imitation** (Name sagt «PayPal», Domain ist es nicht), optional Blocklisten |
-| **Identitäts-KI (Layer 2)** | Nur bei **Grauzone** — Ollama/Cloud prüft Anzeigename + Absender + Betreff (limitiert pro Scan) |
+### Konfiguration
 
-**Marken-Domains (Konfiguration → Accordion «Marken-Domains (Scam)»):**
+Alles gilt **pro Konto**. Die Texte in der Oberfläche sagen Zweck und Beispiel. Hier die Kurzform.
 
-- Tabelle: **Marke** + **offizielle Domains** (kommagetrennt), **Speichern**.
-- **Domains prüfen:** technischer Check (DNS, Spamhaus DBL); gelistete Domains werden abgelehnt.
-- Wirkung: Stimmt der Anzeigename mit einer Marke überein, muss die Absender-Domain zu eurer Liste passen — sonst **SCAM**.
+**Marken.** Tabelle Marke plus offizielle Domains, zum Beispiel Marke `Beispiel` und Domain `beispiel.example`. Passt der Anzeigename zur Marke, die Domain aber nicht, wird die Mail Scam. «Domains prüfen» schaut DNS und Blocklisten, bevor eine Domain gespeichert wird.
 
-**Meine Domains** (eigenes Feld in der Konfiguration): Ihre Firmen-Domains — keine Scam-Wertung als «fremde» Domain; **nicht** dasselbe wie die Marken-Tabelle.
+**Meine Domains.** Domains, die dir gehören, zum Beispiel `firma.example`. Mails von dort werden nicht als fremde Marken-Imitation gewertet. Ein Auth-Fehler bleibt sichtbar. Freemail-Domains werden nicht zur eigenen Domain.
 
-Nach dem Scan kann ein **Hinweis** erscheinen (z. B. KI-Budget erschöpft oder Spamhaus DBL vorübergehend nicht erreichbar). Details für Admins: `docs/audit/ordner-audit-scam.md` im App-Repo.
+**Meine Adressen.** Eine einzelne Adresse, zum Beispiel `arbeit@example.com`. Gilt nur für diese Adresse, nicht für die ganze Domain.
 
-Technische Doku Identitäts-KI / `.env`: Homelab `ki-mail-helper-konfiguration.md` (privates Doku-Repo).
+**VIP.** Absender, die wichtig bleiben. Exakte Adresse oder Domain. VIP schaltet die Scam-Regeln nicht aus, wenn ein hartes Signal vorliegt.
 
-### Scan-Ergebnis
+**Wichtige Ordner.** Häkchen in der Ordnerliste. Ein Haken gilt für diesen Ordner und die Ordner darin, nicht für einen ähnlich benannten Nachbarn (`Dringend/Bank` schützt nicht `Dringend/Bank-Archiv` und nicht `Archiv/Bank`). Der reine Posteingang lässt sich nicht wählen. Mails darin werden gescannt, aber nie «sicher löschbar».
 
-Nach dem Scan zeigt die Detailansicht:
+**Aufbewahrung von Routine-Mails.** Zwei Fristen, ganze Tage von 1 bis 3650, «nie» und «sofort» gibt es nicht.
 
-- **Confidence-Score:** Wie sicher ist die Bewertung (0-100%)
-- **Kategorie:** Grün (sicher löschen), Gelb (prüfen), Rot (wichtig!)
-- **Gründe:** Warum wurde diese Bewertung getroffen
+- Backup- und Erfolgsmails: Betreff enthält ein Wort aus «Status- und Erfolgswörter». Beispiel: «Backup successful» wird nach N Tagen sicher löschbar, davor Prüfen. Fehler und Alarme nie.
+- Versand-Meldungen: Betreff enthält ein Wort aus «Versand-Wörter». Beispiel: «Zugestellt» nach N Tagen. Dieselbe Spanne.
 
-### Konfiguration (Tab)
+**Wortlisten.** Vier Listen: sensible Betreffwörter, Alarmwörter, Status- und Erfolgswörter, Versand-Wörter. Die festen Wörter sind nur zum Lesen. Eigene Wörter ergänzen, einzelne feste Wörter deaktivieren. Die Tage stehen nicht in der Liste, sondern unter Aufbewahrung.
 
-Im Ordner-Audit-Dialog gibt es einen **"Konfiguration"**-Tab mit **Listen** (Trusted Domains, Keywords, Safe Patterns, VIP, Auto-Regeln) und dem Accordion **«Marken-Domains (Scam)»** — siehe Abschnitt Scam-Erkennung oben.
+**Domain-Abfrage.** Alter der Absender-Domain, nicht Alter der Mail. Nur im Zweifel (verdächtig oder Markenname). «Absender-Domain jünger als N Tage» mit Markenname kann Scam sein. Ein zweites, höheres N setzt nur den Hinweis, kein Urteil. Häkchen weg: keine Nachfragen nach aussen.
 
-| # | Liste | Beschreibung |
-|---|-------|--------------|
-| 1 | 🏛️ Vertrauenswürdige Domains | Behörden, Banken, Versicherungen |
-| 2 | 📋 Wichtige Keywords | Betreff-Schlüsselwörter |
-| 3 | 🔇 Sichere Patterns (Betreff) | Newsletter, Marketing |
-| 4 | 🔇 Sichere Patterns (Absender) | noreply@, @newsletter. |
-| 5 | ⭐ VIP-Absender | Wichtige Kontakte |
-| 6 | ⚡ Auto-Regeln | Automatische Disposition |
-| — | **Marken-Domains (Scam)** | Offizielle Domains pro Marke (Accordion) |
+Ältere Listen bleiben: vertrauenswürdige Domains, Keywords, sichere Patterns, Auto-Regeln mit Disposition. Beispiele dort nur mit `example.com` und erfundenen Wörtern eintragen, nicht mit echten Behörden oder Banken.
 
-#### 🏛️ Vertrauenswürdige Domains
+### Empfohlene Reihenfolge fürs erste Mal
 
-Domains von denen Emails als wichtig eingestuft werden:
+1. Konto wählen.
+2. Ordner vom Scan ausnehmen, die du nicht bewerten willst (Gesendet und Entwürfe sind schon draussen).
+3. Wichtige Ordner abhaken.
+4. Marken prüfen und speichern.
+5. Scannen.
+6. Zuerst die Kachel Scam sichten, dann Verdacht.
 
-```
-admin.ch, estv.admin.ch, seco.admin.ch
-sparkasse.de, commerzbank.de, ing.de
-suva.ch, svazurich.ch, swica.ch
-```
+### Auto-Rules und das Alter
 
-#### 📋 Wichtige Keywords
+Die Auto-Action-Rules (Menü Auto-Rules, nicht die Audit-Disposition) haben die Bedingung **Mail älter als N Tage**. Sie zählt das Empfangsdatum und lässt sich mit Absender, Betreff und den anderen Bedingungen verbinden.
 
-Betreff-Schlüsselwörter die auf wichtige Emails hinweisen:
-
-```
-rechnung, invoice, fattura, facture
-kündigung, risoluzione, résiliation
-mahnung, sollecito, rappel
-vertrag, contratto, contrat
-```
-
-> 💡 Mehrsprachige Keywords (DE/CH/IT/FR) sind in den Defaults enthalten.
-
-#### 🔇 Sichere Patterns (Betreff)
-
-Betreff-Muster die als unwichtig gelten:
-
-```
-newsletter, digest, marketing
-rabatt, gutschein, sonderangebot
-```
-
-#### 🔇 Sichere Patterns (Absender)
-
-Absender-Muster die als unwichtig gelten:
-
-```
-@newsletter., @marketing., @promo.
-noreply@, no-reply@, donotreply@
-```
-
-#### ⭐ VIP-Absender
-
-Wichtige Absender mit erweiterten Matching-Optionen:
-
-| Format | Beispiel | Beschreibung |
-|--------|----------|--------------|
-| **Exakt** | `chef@firma.ch` | Nur diese eine Adresse |
-| **Wildcard** | `*@firma.ch` | Alle Adressen von firma.ch |
-| **Regex** | `/.*@(firma|konzern)\.ch/` | Regex-Pattern (mit `/.../' umschließen) |
-
-### Defaults laden
-
-Klicke auf **"📥 Defaults laden"** um vordefinierte Listen für mehrere Länder/Sprachen zu importieren:
-
-- **CH:** Schweizer Behörden (admin.ch, ahv-iv.ch, etc.)
-- **DE:** Deutsche Behörden (bund.de, arbeitsagentur.de, etc.)
-- **IT:** Italienische Behörden (gov.it, inps.it, etc.)
-- **FR:** Französische Behörden (gouv.fr, impots.gouv.fr, etc.)
-
-Die Defaults enthalten auch mehrsprachige Keywords für:
-- 📄 Rechnungen/Finanzen
-- 📋 Verträge/Kündigungen
-- ⚠️ Mahnungen/Fristen
-- 🏛️ Behördliche Korrespondenz
-
-### ⚡ Auto-Regeln
-
-Automatisiere die Bewertung von Emails anhand von Sender/Betreff-Patterns:
-
-| Disposition | Beschreibung | Score-Auswirkung |
-|-------------|--------------|------------------|
-| **SAFE** | Nach X Tagen sicher löschbar | +1.5 (wenn älter als max_age_days) |
-| **IMPORTANT** | Niemals automatisch löschen | Kategorie = WICHTIG |
-| **SCAM** | Betrug/Spam | Kategorie = SCAM |
-| **REVIEW** | Manuell prüfen | Kategorie = REVIEW |
-
-#### Pattern-Format
-
-| Feld | Beispiel | Beschreibung |
-|------|----------|--------------|
-| **Sender-Pattern** | `newsletter@` | Matcht alle Absender die mit "newsletter@" beginnen |
-| **Betreff-Pattern** | `backup success` | Matcht Betreffs die "backup success" enthalten |
-| **Max-Age (Tage)** | `14` | Nur für SAFE: Erst nach 14 Tagen löschbar |
-
-> 💡 Mind. ein Pattern (Sender ODER Betreff) ist erforderlich. Beide können kombiniert werden (UND-Verknüpfung).
-
-#### Beispielregeln
-
-| Sender-Pattern | Betreff-Pattern | Disposition | Max-Age |
-|----------------|-----------------|-------------|---------|
-| `newsletter@` | — | SAFE | 7 |
-| `mailchimp@` | — | SAFE | 14 |
-| `cron@` | — | SAFE | — |
-| `root@` | `backup success` | SAFE | — |
-| `@estv.admin.ch` | — | IMPORTANT | — |
-
-### Cluster-Dropdown (Schnellzugriff)
-
-Bei jedem Cluster in der Scan-Ergebnis-Liste gibt es einen **Dropdown-Button** mit 6 Optionen:
-
-| Option | Beschreibung |
-|--------|--------------|
-| 🏛️ **Als Domain** | Domain zur Vertrauenswürdige-Liste hinzufügen |
-| 📋 **Als Keyword** | Wort aus Betreff zur Wichtige-Keywords-Liste |
-| 📧 **Als sicherer Betreff** | Betreff-Pattern zur Safe-Patterns-Liste |
-| 👤 **Als sicherer Absender** | Absender-Pattern zur Safe-Patterns-Liste |
-| ⭐ **Als VIP Absender** | Absender zur VIP-Liste hinzufügen |
-| ⚡ **Als Auto-Regel** | Neue Auto-Regel erstellen |
-
-Das Modal passt sich automatisch dem gewählten Listentyp an und befüllt die Felder mit Daten aus dem Cluster.
-
-### VIP-Absender manuell hinzufügen
-
-1. Öffne den **"Konfiguration"**-Tab im Ordner-Audit
-2. Klappe **"VIP Absender"** auf
-3. Gib Absender komma-getrennt ein:
-   - `chef@firma.de` – Exakte Adresse
-   - `@wichtiger-kunde.de` – Alle von dieser Domain
-   - `partner-firma.com` – Nur Domain-Teil
-4. Klicke auf **"Speichern"**
+Besteht eine Regel nur aus diesem Alter und verschiebt oder löscht sie, trifft sie alle alten Mails. Beim Speichern kommt die Rückfrage «Diese Regel gilt für alle Mails älter als N Tage. Erst mit 'T' testen.» Ohne Bestätigung speichert der Server nicht. **T** zeigt die betroffenen Mails, bevor die Regel scharf läuft.
 
 ---
 
