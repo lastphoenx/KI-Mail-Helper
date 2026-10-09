@@ -439,7 +439,7 @@ User Password + Secret Key (128 Bit, nur clientseitig/beim User)
 |-------------|--------------|------------|
 | **Passwort-Verlust** | Du wickelst den DEK nicht mehr aus | Neuer Account. Recovery-Codes ersetzen das Passwort nicht |
 | **RAM-/Session-Exposure** | DEK in RAM und `.flask_sessions` | Kurze Session-TTL, Server-Hardening, verschlüsselte Backups |
-| **ServiceToken DEK** | Celery-Token: DEK in DB mit **AES-GCM + Key aus `SECRET_KEY`** (`stenc1:` in `service_tokens.encrypted_dek`; Spaltenname historisch). Risiko bei DB-Dump **während** aktiver Tokens + bekanntem `SECRET_KEY` | Kurze TTL (1–7 Tage), Löschung bei Logout, kein DB-Dump während aktiver Tokens |
+| **ServiceToken DEK** | Celery-Token: DEK in DB mit **AES-GCM + Key aus `SECRET_KEY`** (`stenc1:` in `service_tokens.encrypted_dek`; Spaltenname historisch). Risiko bei DB-Dump **während** aktiver Tokens + bekanntem `SECRET_KEY` | Kurze TTL (1–7 Tage), Löschung bei Logout und beim Passwortwechsel, kein DB-Dump während aktiver Tokens |
 | **TOTP-Secret** | `totp_secret` in DB unverschlüsselt | DB-Zugriff = 2FA bypass möglich; Postgres nur localhost |
 | **Timing Attacks** | Login-Enumeration erschwert | Dummy-Hash bei unbekanntem User |
 | **Brute Force** | Passwort-Raten | Rate Limiting (Login/2FA), Account Lockout |

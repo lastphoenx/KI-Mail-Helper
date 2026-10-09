@@ -160,8 +160,12 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
+chmod 600 .env
+chown mailhelper:mailhelper .env
 nano .env
 ```
+
+Die Datei enthält Schlüssel und Passwörter. Nur der App-User `mailhelper` darf sie lesen. `chmod` gilt für diese Secrets-Datei, nicht für Skripte im Repo.
 
 ### Minimale Konfiguration
 
@@ -251,6 +255,8 @@ alembic current
 ```
 
 `alembic current` soll `(head)` zeigen. Die Revisions-ID nicht von Hand in diese Anleitung schreiben; sie ändert sich mit jeder Migration.
+
+Nach diesem Stand legt `e5f6a7b8c9d0` die Spalten `users.last_totp_step` und `users.session_epoch` an. Ohne den Upgrade-Schritt startet die Anmeldung nicht.
 
 Die Domain-Prüfung (Alter der Absender-Domain) braucht `dnspython`. Das Paket steht in `requirements.txt`.
 

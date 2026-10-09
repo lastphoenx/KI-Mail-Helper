@@ -224,6 +224,7 @@ def create_app(config_name="production"):
         def __init__(self, user_model):
             self.user_model = user_model
             self.id = user_model.id
+            self.session_epoch = int(getattr(user_model, "session_epoch", 0) or 0)
         
         def get_id(self):
             return str(self.user_model.id)
@@ -350,6 +351,14 @@ def create_app(config_name="production"):
             "login", "register", "logout", "verify_2fa", "setup_2fa",
         ]:
             return None
+
+        if current_user.is_authenticated:
+            expected = int(getattr(current_user, "session_epoch", 0) or 0)
+            if int(session.get("auth_epoch", 0)) != expected:
+                session.clear()
+                logout_user()
+                flash("Bitte erneut anmelden.", "warning")
+                return redirect(url_for("auth.login"))
 
         if current_user.is_authenticated and not session.get("master_key"):
             logger.warning(f"User {current_user.id} needs reauth")
@@ -494,12 +503,6 @@ def _register_endpoint_aliases(app):
 def start_server(host="0.0.0.0", port=5000, debug=False, use_https=False):
     """Start Flask server."""
     import threading
-    
-    try:
-        from flask_talisman import Talisman
-        TALISMAN_AVAILABLE = True
-    except ImportError:
-        TALISMAN_AVAILABLE = False
     
     _app = create_app()
     

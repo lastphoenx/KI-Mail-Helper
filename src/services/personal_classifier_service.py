@@ -136,25 +136,22 @@ def _load_pickle_safely(pkl_path: Path) -> Any:
     
     secret_key = os.getenv("CLASSIFIER_HMAC_KEY", "").encode()
 
-    # Optional: HMAC verification wenn Secret Key gesetzt
+    # Wenn der Schlüssel gesetzt ist, ist die Signatur Pflicht.
     if secret_key:
-        sig_path = pkl_path.with_suffix(pkl_path.suffix + ".sig")
-        if sig_path.exists():
-            with open(pkl_path, "rb") as f:
-                file_data = f.read()
-            with open(sig_path, "r") as f:
-                expected_hash = f.read().strip()
+        sig_path = Path(str(pkl_path) + ".sig")
+        if not sig_path.exists():
+            raise ValueError(f"Classifier signature missing: {pkl_path.name}")
+        with open(pkl_path, "rb") as f:
+            file_data = f.read()
+        with open(sig_path, "r") as f:
+            expected_hash = f.read().strip()
 
-            computed_hash = hmac.new(
-                secret_key, file_data, hashlib.sha256
-            ).hexdigest()
-            if not hmac.compare_digest(computed_hash, expected_hash):
-                raise ValueError(f"Classifier integrity check failed: {pkl_path}")
-            logger.debug(f"🔒 Integrity verified: {pkl_path.name}")
-        else:
-            logger.warning(
-                f"⚠️ No signature file for {pkl_path.name} (HMAC key set but no .sig)"
-            )
+        computed_hash = hmac.new(
+            secret_key, file_data, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(computed_hash, expected_hash):
+            raise ValueError(f"Classifier integrity check failed: {pkl_path}")
+        logger.debug(f"Integrity verified: {pkl_path.name}")
 
     return joblib.load(pkl_path)
 

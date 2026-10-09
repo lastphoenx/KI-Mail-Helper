@@ -9,6 +9,7 @@ from io import BytesIO
 import base64
 import logging
 import importlib
+from datetime import datetime, UTC
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +48,29 @@ class AuthManager:
     @staticmethod
     def verify_totp(totp_secret: str, token: str) -> bool:
         """Überprüft einen TOTP-Token"""
+        return AuthManager.matching_totp_step(totp_secret, token, None) is not None
+
+    @staticmethod
+    def matching_totp_step(totp_secret, token, last_step):
+        """Zeitschritt des Codes, oder None wenn ungültig oder schon benutzt.
+
+        valid_window=1 bleibt. Ein Schritt, der nicht neuer als last_step ist,
+        gilt nicht noch einmal.
+        """
         try:
             totp = pyotp.TOTP(totp_secret)
-            return totp.verify(token, valid_window=1)
+            if not totp.verify(token, valid_window=1):
+                return None
+            current = int(totp.timecode(datetime.now()))
+            for step in (current - 1, current, current + 1):
+                if last_step is not None and step <= int(last_step):
+                    continue
+                if totp.verify(token, for_time=step * totp.interval, valid_window=0):
+                    return step
+            return None
         except Exception as e:
             logger.error(f"TOTP-Verifikation Fehler: {e}")
-            return False
+            return None
 
     @staticmethod
     def get_backup_codes(count: int = 10) -> list:
@@ -216,11 +234,26 @@ class RecoveryCodeManager:
         )
 
         for rc in recovery_codes:
-            if rc.is_unused() and models.RecoveryCode.verify_code(code, rc.code_hash):
-                rc.mark_used()
-                session.commit()
+            if rc.used_at is not None:
+                continue
+            if not models.RecoveryCode.verify_code(code, rc.code_hash):
+                continue
+            claimed = (
+                session.query(models.RecoveryCode)
+                .filter(
+                    models.RecoveryCode.id == rc.id,
+                    models.RecoveryCode.used_at.is_(None),
+                )
+                .update(
+                    {models.RecoveryCode.used_at: datetime.now(UTC)},
+                    synchronize_session=False,
+                )
+            )
+            session.commit()
+            if claimed == 1:
                 logger.info("✅ Recovery-Code verwendet für User ***")
                 return True
+            return False
 
         return False
 
@@ -299,7 +332,7 @@ class MasterKeyManager:
         return MasterKeyManager.setup_dek_for_user(user_id, password, session)
 
     @staticmethod
-    def decrypt_dek_from_password(user, password: str) -> str:
+    def decrypt_dek_from_password(user, password, session=None):
         """Entschlüsselt DEK mit Passwort (KEK wird aus Passwort abgeleitet)
 
         Wird beim Login verwendet:
@@ -326,11 +359,19 @@ class MasterKeyManager:
                 logger.info("✅ DEK erfolgreich entschlüsselt")
                 return dek
             elif user.encrypted_master_key:
-                # DEPRECATED: Alte User ohne DEK
+                # Alter Blob. 100.000 Runden nur zum Lesen, danach 600.000 als DEK.
                 logger.warning("User *** nutzt altes encrypted_master_key Format")
-                master_key = encryption.EncryptionManager.decrypt_master_key(
+                master_key, rounds = encryption.EncryptionManager.open_legacy_master_key(
                     user.encrypted_master_key, password
                 )
+                if session is not None:
+                    MasterKeyManager._rewrap_legacy_master_key(
+                        user, password, master_key, session, encryption
+                    )
+                    if rounds != encryption.EncryptionManager.ITERATIONS:
+                        logger.warning(
+                            "Alter Schlüssel von 100000 auf 600000 Runden umgestellt"
+                        )
                 return master_key
             else:
                 logger.error(
@@ -341,6 +382,16 @@ class MasterKeyManager:
         except Exception as e:
             logger.error(f"❌ DEK Entschlüsselung fehlgeschlagen: {type(e).__name__}")
             return None
+
+    @staticmethod
+    def _rewrap_legacy_master_key(user, password, master_key, session, encryption):
+        """Denselben Schlüssel mit 600.000 Runden als DEK speichern. Der alte Blob fällt weg."""
+        salt = encryption.EncryptionManager.generate_salt()
+        kek = encryption.EncryptionManager.generate_master_key(password, salt)
+        user.salt = salt
+        user.encrypted_dek = encryption.EncryptionManager.encrypt_dek(master_key, kek)
+        user.encrypted_master_key = None
+        session.commit()
 
     @staticmethod
     def decrypt_master_key_from_password(

@@ -703,7 +703,9 @@ def change_password():
                 return render_template("change_password.html")
 
             try:
-                old_dek = auth.MasterKeyManager.decrypt_dek_from_password(user, old_password)
+                old_dek = auth.MasterKeyManager.decrypt_dek_from_password(
+                    user, old_password, db
+                )
                 if not old_dek:
                     flash("DEK-Entschlüsselung fehlgeschlagen", "danger")
                     return render_template("change_password.html")
@@ -715,6 +717,9 @@ def change_password():
                 user.salt = new_salt
                 user.encrypted_dek = new_encrypted_dek
                 user.set_password(new_password)
+                user.session_epoch = int(user.session_epoch or 0) + 1
+                models = importlib.import_module(".02_models", "src")
+                db.query(models.ServiceToken).filter_by(user_id=user.id).delete()
                 db.commit()
 
                 logger.info(f"✅ Passwort geändert für User {user.id}")

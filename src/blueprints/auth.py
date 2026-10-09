@@ -21,6 +21,7 @@ import secrets
 
 from src.helpers import get_db_session, get_current_user_model
 from src.helpers.security_log import sanitize_log_field
+from src.helpers.session_rotation import rotate_server_session
 
 auth_bp = Blueprint("auth", __name__)
 logger = logging.getLogger(__name__)
@@ -207,7 +208,7 @@ def login():
                     logger.error(f"login: reset_failed_logins fehlgeschlagen: {e}")
 
                 # Phase 8: DEK/KEK Pattern - DEK entschlüsseln
-                dek = auth.MasterKeyManager.decrypt_dek_from_password(user, password)
+                dek = auth.MasterKeyManager.decrypt_dek_from_password(user, password, db)
                 if not dek:
                     logger.error("❌ DEK-Entschlüsselung fehlgeschlagen")
                     return (
@@ -216,6 +217,9 @@ def login():
                         ),
                         401,
                     )
+
+                rotate_server_session()
+                session["auth_epoch"] = int(user.session_epoch or 0)
 
                 if user.totp_enabled:
                     # Security: DEK statt Passwort in Session (2FA-Zwischenschritt)
@@ -366,7 +370,9 @@ def register():
                     salt, encrypted_dek, dek = auth.MasterKeyManager.setup_dek_for_user(
                         user.id, password, db
                     )
+                    rotate_server_session()
                     session["master_key"] = dek  # Session-Key heißt "master_key" aus Kompatibilität
+                    session["auth_epoch"] = int(user.session_epoch or 0)
                 except Exception as e:
                     db.rollback()
                     logger.error(f"register: DEK-Setup fehlgeschlagen: {type(e).__name__}: {e}")
@@ -456,9 +462,13 @@ def verify_2fa():
 
                 verified = False
 
+                accepted_step = None
                 if token and len(token) == 6:
                     try:
-                        verified = auth.AuthManager.verify_totp(user.totp_secret, token)
+                        accepted_step = auth.AuthManager.matching_totp_step(
+                            user.totp_secret, token, user.last_totp_step
+                        )
+                        verified = accepted_step is not None
                     except Exception as e:
                         logger.error(f"verify_2fa: TOTP-Verifikation fehlgeschlagen: {e}")
                         verified = False
@@ -476,6 +486,8 @@ def verify_2fa():
                 if verified:
                     # Erfolgreicher 2FA-Verifikation - Failed Counter zuruecksetzen
                     try:
+                        if accepted_step is not None:
+                            user.last_totp_step = accepted_step
                         user.reset_failed_logins(db)
                         db.commit()
                     except Exception as e:
@@ -498,10 +510,12 @@ def verify_2fa():
                         return redirect(url_for("auth.login"))
 
                     session["master_key"] = dek
+                    session["auth_epoch"] = int(user.session_epoch or 0)
                     logger.info("✅ DEK nach 2FA in Session geladen")
 
                     try:
                         login_user(UserWrapper(user), remember=False)
+                        rotate_server_session()
                     except Exception as e:
                         logger.error(f"verify_2fa: login_user fehlgeschlagen: {e}")
                         flash("Login fehlgeschlagen. Bitte versuche es erneut.", "danger")
@@ -606,7 +620,10 @@ def setup_2fa():
                     return redirect(url_for("auth.setup_2fa"))
 
                 try:
-                    if not auth.AuthManager.verify_totp(totp_secret, token):
+                    accepted_step = auth.AuthManager.matching_totp_step(
+                        totp_secret, token, None
+                    )
+                    if accepted_step is None:
                         qr_code = auth.AuthManager.generate_qr_code(user.email, totp_secret)
                         return render_template(
                             "setup_2fa.html",
@@ -627,6 +644,7 @@ def setup_2fa():
                 try:
                     user.totp_secret = totp_secret
                     user.totp_enabled = True
+                    user.last_totp_step = accepted_step
                     db.commit()
 
                     recovery_codes = auth.RecoveryCodeManager.create_recovery_codes(

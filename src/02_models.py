@@ -12,6 +12,7 @@ from sqlalchemy import (
     create_engine,
     Column,
     Integer,
+    BigInteger,
     String,
     Text,
     Boolean,
@@ -367,6 +368,10 @@ class User(Base):
     # 2FA (TOTP)
     totp_secret = Column(String(32))
     totp_enabled = Column(Boolean, default=False)
+    # Letzter akzeptierter 30s-Schritt. Derselbe Code gilt nicht noch einmal.
+    last_totp_step = Column(BigInteger, nullable=True)
+    # Wächst beim Passwortwechsel. Ältere Sessions fallen damit raus.
+    session_epoch = Column(Integer, nullable=False, default=0, server_default="0")
 
     # KI-Präferenzen (3 Settings: EMBEDDING / BASE / OPTIMIZE)
     

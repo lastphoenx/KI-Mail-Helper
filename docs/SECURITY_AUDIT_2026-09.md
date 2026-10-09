@@ -147,6 +147,8 @@ Ein **eigener, lokaler** `Limiter(...)` wurde erzeugt, aber nie per `init_app(ap
 | B10 | Cloud-AI-SDKs veraltet (`anthropic==0.7.7`, `openai==1.3.7`, `mistralai==0.0.8`) | `requirements.txt` | Kein bekanntes CVE, aber sehr alte Versionen relativ zu aktuellen Releases | Dependency-Freshness-Pass einplanen (kein Blocker für Go-Live) |
 | B11 | `nginx`-Config nicht im Repo — `ProxyFix(x_for=1)` vertraut dem ersten Hop | *(extern)* | Kann ohne die tatsächliche nginx-Config nicht verifiziert werden | Vor Go-Live sicherstellen: `proxy_set_header X-Forwarded-For $remote_addr;` (nicht `$proxy_add_x_forwarded_for` mit Client-Header-Durchreichung) — sonst kann das Rate-Limiting per gefälschtem `X-Forwarded-For` umgangen werden |
 
+**Nachzug 2026-10-09:** B1 rotiert die Datei-Session beim Login. B2 speichert `users.last_totp_step` (Migration `e5f6a7b8c9d0`). B3 löscht beim Passwortwechsel die Service-Token und erhöht `session_epoch`, ältere Sitzungen fallen am nächsten Request raus. B4 markiert den Recovery-Code mit `UPDATE … WHERE used_at IS NULL`. B7: `flask-talisman` ist aus den Requirements und aus `start_server` entfernt; die Header setzt `app_factory` weiter von Hand. B8: `chmod 600` und `chown` für `.env` stehen in der Installation. B6: `scripts/sign_classifiers.py` signiert, die Prüfung ist Pflicht nur wenn `CLASSIFIER_HMAC_KEY` schon gesetzt ist. B9: 100.000 Runden nur noch zum Lesen eines alten `encrypted_master_key`. Der Login verpackt denselben Schlüssel mit 600.000 Runden neu und löscht den alten Blob.
+
 ---
 
 ### ✅ Was bereits solide war (verifiziert, nicht nur behauptet)

@@ -1086,7 +1086,7 @@ python3 -m src.00_main --serve --https
 ```bash
 BEHIND_REVERSE_PROXY=true      # ProxyFix aktivieren
 SESSION_COOKIE_SECURE=true     # Cookies nur über HTTPS
-FORCE_HTTPS=true               # Talisman Security Headers
+FORCE_HTTPS=true               # wird von der App nicht gelesen; Header setzt app_factory
 ```
 
 **3. Nginx Konfiguration:**
