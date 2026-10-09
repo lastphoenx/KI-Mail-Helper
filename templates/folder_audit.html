@@ -747,21 +747,6 @@
             <span class="text-muted ms-2">Lädt vordefinierte Listen für mehrsprachige Erkennung</span>
         </div>
 
-        <!-- Vornamen: eine DB für die ganze App (nicht pro Mail-Account) -->
-        <div class="alert alert-light border mb-4 py-3 px-3" role="status" id="auditFirstnamesGlobalPanel">
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-                <i class="bi bi-globe2 text-primary" aria-hidden="true"></i>
-                <strong class="mb-0">Vornamen-Referenzliste (Server)</strong>
-                <span class="badge bg-primary" id="auditFirstnamesCountBadge">—</span>
-                <span class="badge bg-secondary text-wrap">gilt für alle Mail-Accounts</span>
-            </div>
-            <p class="small text-muted mb-1" id="auditFirstnamesGlobalDetail">
-                Wird nicht pro Account gepflegt. Import auf dem App-Server:
-                <code class="user-select-all">python3 scripts/import_firstnames.py</code>
-            </p>
-            <p class="small text-muted mb-0" id="auditFirstnamesGlobalSource"></p>
-        </div>
-        
         <div class="card mb-4">
             <div class="card-body">
                 <h2 class="h6 mb-2">Regel testen</h2>
@@ -787,9 +772,9 @@
         </div>
 
         <!-- Config Sections -->
-        <div class="accordion" id="configAccordion">
+        <h3 class="h6 text-uppercase text-secondary fw-bold mt-3 mb-2">Für alle meine Konten</h3>
+        <div class="accordion mb-4" id="configAccordion">
             
-            <!-- Trusted Domains -->
             <div class="accordion-item">
                 <h2 class="accordion-header">
                     <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#trustedDomainsSection">
@@ -800,6 +785,7 @@
                 </h2>
                 <div id="trustedDomainsSection" class="accordion-collapse collapse show">
                     <div class="accordion-body">
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
                         <p class="text-muted mb-3">
                             Domains von Firmen und Personen, denen du vertraust (z.&nbsp;B. Bank, Arzt, Lieferant).
                             <strong>Verdachtsregeln</strong> (Identität, Marken-Mismatch) werden dort abgeschwächt —
@@ -820,93 +806,26 @@
                 </div>
             </div>
 
-            <!-- Meine Domains (never_scam) -->
             <div class="accordion-item">
                 <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#ownDomainsSection">
-                        <i class="bi bi-house-check me-2 text-info"></i>
-                        Meine Domains
-                        <span class="badge bg-info text-dark ms-2" id="ownDomainsBadge">0</span>
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#keywordsSection">
+                        <i class="bi bi-exclamation-triangle me-2 text-danger"></i>
+                        Wichtige Betreff-Keywords
+                        <span class="badge bg-danger ms-2" id="keywordsBadge">0</span>
                     </button>
                 </h2>
-                <div id="ownDomainsSection" class="accordion-collapse collapse">
+                <div id="keywordsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="text-muted mb-2">
-                            Domains, die <strong>dir gehören</strong> (eigene Server, Websites, Homelab).
-                            Weiche Identitätsregeln und Marken-Abweichungen gelten hier nicht.
-                            Verdacht bleibt, wenn SPF, DKIM und DMARC alle drei fehlschlagen oder die Domain auf der Spamhaus-Liste steht.
-                            Eine einzelne fehlgeschlagene Prüfung reicht nicht.
-                            Die Mails werden <strong>nicht automatisch</strong> wichtig oder sicher löschbar — dafür brauchst du VIP, Patterns oder Einstufungs-Regeln.
-                            Beispiel: <code>meine-domain.ch</code>, <code>cloud.meine-domain.ch</code>
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
+                        <p class="text-muted mb-3">
+                            Emails mit diesen Keywords im Betreff werden als <strong>wichtig</strong> markiert.
+                            Mehrsprachig: DE, EN, IT, FR
                         </p>
-                        <div id="auditOwnDomainsAccountHint" class="alert alert-info py-2 small mb-2">
-                            Pro <strong>Mail-Account</strong> (Dropdown im Tab «Ordner scannen»). Gespeichert mit «Speichern» unten.
-                        </div>
-                        <textarea class="form-control form-control-sm font-monospace" id="auditOwnDomainsInput" rows="4"
-                                  placeholder="shop.example.com&#10;mail.example.com, cloud.example.com" disabled></textarea>
-                        <div class="mt-2 d-flex justify-content-between align-items-center">
-                            <small class="text-muted">Eine Domain pro Zeile, ohne @</small>
-                            <button type="button" class="btn btn-sm btn-primary" id="saveOwnDomainsBtn" disabled>
-                                <i class="bi bi-save me-1"></i>Speichern
-                            </button>
-                        </div>
-                        <span class="small text-muted" id="ownDomainsSaveStatus"></span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="accordion-item">
-                <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#ownAddressesSection">
-                        <i class="bi bi-person-check me-2 text-info"></i>
-                        Meine Adressen
-                        <span class="badge bg-info text-dark ms-2" id="ownAddressesBadge">0</span>
-                    </button>
-                </h2>
-                <div id="ownAddressesSection" class="accordion-collapse collapse">
-                    <div class="accordion-body">
-                        <p class="text-muted mb-2">
-                            Gilt nur für diese eine Adresse, nicht für die ganze Domain.
-                            Zum Beispiel eine Arbeits- oder Zweitadresse. Eine Freemail-Domain wird dadurch nicht komplett freigegeben.
-                            Dieselbe Grenze wie bei Meine Domains: Verdacht nur, wenn SPF, DKIM und DMARC alle drei fehlschlagen oder Spamhaus trifft.
-                            Beispiel: <code>arbeit@example.com</code>
-                        </p>
-                        <textarea class="form-control form-control-sm font-monospace" id="auditOwnAddressesInput" rows="3"
-                                  placeholder="arbeit@example.com" disabled></textarea>
-                        <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
-                            <span class="small text-muted" id="ownAddressesSaveStatus"></span>
-                            <button type="button" class="btn btn-sm btn-primary" id="saveOwnAddressesBtn" disabled>
-                                <i class="bi bi-save me-1"></i>Speichern
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Wichtige Ordner + Alter (pro Account) -->
-            <div class="accordion-item">
-                <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditQualitySection">
-                        <i class="bi bi-folder-check me-2 text-primary"></i>
-                        Wichtige Ordner
-                    </button>
-                </h2>
-                <div id="auditQualitySection" class="accordion-collapse collapse">
-                    <div class="accordion-body">
-                        <p class="text-muted mb-2">
-                            Das ist nicht «Ordner vom Scan ausnehmen».
-                            Ein ausgenommener Ordner wird <strong>nicht gescannt</strong>.
-                            Ein wichtiger Ordner <strong>wird gescannt</strong>, die Mails darin werden aber <strong>nie «Sicher löschbar»</strong>.
-                            Häkchen setzen wie bei den ausgenommenen Ordnern, dieselbe Liste.
-                            Ein Häkchen gilt auch für die Ordner darin. Der normale Posteingang lässt sich nicht auswählen.
-                            Beispiel: <code>Dringend/Bank</code> anhaken, dann bleibt der Ordner und alles darin zur Prüfung.
-                        </p>
-                        <div id="auditCuratedFoldersList" class="border rounded p-2 bg-light" style="max-height: 320px; overflow-y: auto;">
-                            <span class="text-muted">Im Tab «Ordner scannen» oben einen Account wählen, dann unter «Ordner vom Scan ausnehmen» auf «Ordnerliste laden».</span>
-                        </div>
-                        <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
-                            <span class="small text-muted" id="auditQualitySaveStatus"></span>
-                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditQualityBtn">
+                        <textarea id="importantKeywordsInput" class="form-control font-monospace" rows="5" 
+                            placeholder="rechnung, fattura, bolletta, invoice, mahnung, kündigung, contratto..."></textarea>
+                        <div class="mt-2 d-flex justify-content-between">
+                            <small class="text-muted">Komma-getrennt oder ein Keyword pro Zeile</small>
+                            <button class="btn btn-sm btn-primary" id="saveImportantKeywordsBtn">
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
                         </div>
@@ -916,141 +835,186 @@
 
             <div class="accordion-item">
                 <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditRetentionSection">
-                        <i class="bi bi-hourglass-split me-2 text-primary"></i>
-                        Aufbewahrung von Routine-Mails
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#safeSubjectSection">
+                        <i class="bi bi-envelope-check me-2 text-success"></i>
+                        Newsletter/Marketing Betreff-Patterns
+                        <span class="badge bg-warning text-dark ms-2" id="safeSubjectBadge">0</span>
                     </button>
                 </h2>
-                <div id="auditRetentionSection" class="accordion-collapse collapse">
+                <div id="safeSubjectSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="text-muted small mb-3">
-                            Hier geht es um das Alter der Mail, nicht um das Alter der Absender-Domain.
-                            Pro Account, ganze Tage von 1 bis 3650. «Nie» und «sofort» gibt es nicht.
-                            Vor Ablauf bleibt die Mail in Prüfen. Danach kann sie «Sicher löschbar» werden.
-                            Fehler und Alarme werden nie sicher löschbar, auch nicht nach vielen Tagen.
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
+                        <p class="text-muted mb-3">
+                            Emails mit diesen Patterns im Betreff werden als <strong>sicher löschbar</strong> markiert.
                         </p>
-                        <div class="row g-3">
-                            <div class="col-sm-6">
-                                <label class="form-label small mb-1" for="auditSuccessSafeDays">Backup- und Erfolgsmails, Tage</label>
-                                <p class="text-muted small mb-1">
-                                    Die Mail wird erkannt, wenn der Betreff ein Wort aus «Status- und Erfolgswörter» enthält.
-                                    Diese Liste steht unten bei den Wortlisten und lässt sich ergänzen oder abschalten.
-                                    Beispiel: «Backup successful» wird nach den eingetragenen Tagen sicher löschbar, davor bleibt sie in Prüfen.
-                                </p>
-                                <input type="number" class="form-control form-control-sm" id="auditSuccessSafeDays" min="1" max="3650" value="30">
+                        <textarea id="safeSubjectInput" class="form-control font-monospace" rows="4" 
+                            placeholder="newsletter, weekly digest, rabatt, sale, gutschein, unsubscribe..."></textarea>
+                        <div class="mt-2 d-flex justify-content-between">
+                            <small class="text-muted">Komma-getrennt</small>
+                            <button class="btn btn-sm btn-primary" id="saveSafeSubjectBtn">
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#safeSenderSection">
+                        <i class="bi bi-person-check me-2 text-success"></i>
+                        Newsletter/Marketing Absender-Patterns
+                        <span class="badge bg-warning text-dark ms-2" id="safeSenderBadge">0</span>
+                    </button>
+                </h2>
+                <div id="safeSenderSection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
+                        <p class="text-muted mb-3">
+                            Absender-Muster (Teilstring oder Domain) für Newsletter/Marketing — tendenz <strong>sicher löschbar</strong>.
+                            Gilt <strong>nicht</strong>, wenn Identitäts- oder Scam-Regeln (Rechnung+Anhang, Marken-Mismatch) greifen.
+                            Beispiel: <code>@newsletter.firma.ch</code>, <code>noreply@</code>
+                        </p>
+                        <textarea id="safeSenderInput" class="form-control font-monospace" rows="4" 
+                            placeholder="newsletter@, noreply@, marketing@, @mailchimp., @sendgrid...."></textarea>
+                        <div class="mt-2 d-flex justify-content-between">
+                            <small class="text-muted">Komma-getrennt</small>
+                            <button class="btn btn-sm btn-primary" id="saveSafeSenderBtn">
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#vipSection">
+                        <i class="bi bi-star-fill me-2 text-warning"></i>
+                        VIP Absender
+                        <span class="badge bg-danger ms-2" id="vipBadge">0</span>
+                    </button>
+                </h2>
+                <div id="vipSection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
+                        <p class="text-muted mb-3">
+                            Absender, die du <strong>priorisieren</strong> willst (exakte Adresse vor Domain vor Teilstring).
+                            VIP übersteuert weiche Identitätsregeln, solange die Authentifizierung nicht fehlschlägt.
+                            Harte Markentreffer (Marke, Domain passt nicht) bleiben.
+                            Format: <code>chef@firma.ch</code>, <code>@firma.ch</code>, <code>firma.ch</code>
+                        </p>
+                        <textarea id="vipSendersInput" class="form-control font-monospace" rows="4" 
+                            placeholder="chef@firma.de, @wichtiger-kunde.de, partner-firma.com..."></textarea>
+                        <div class="mt-2 d-flex justify-content-between">
+                            <small class="text-muted">Komma-getrennt</small>
+                            <button class="btn btn-sm btn-primary" id="saveVipSendersBtn">
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#autoDeleteSection">
+                        <i class="bi bi-trash3 me-2 text-info"></i>
+                        Einstufungs-Regeln
+                        <span class="badge bg-info ms-2" id="autoDeleteBadge">0</span>
+                    </button>
+                </h2>
+                <div id="autoDeleteSection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
+                        <p class="text-muted mb-3">
+                            Diese Regeln bestimmen nur, wie das Ordner-Audit eine Mail einstuft. Sie verschieben oder löschen nichts.
+                            Aktionen auf Mails stellst du unter <a href="/rules">Aktions-Regeln</a> ein.
+                            Wenn <strong>beide</strong> Patterns gesetzt sind, müssen beide passen.
+                            Das Tage-Feld hier gehört zur Einstufungs-Regel und gilt für alle Konten.
+                            Es ist nicht die Aufbewahrung von Routine-Mails. Die steht beim gewählten Konto.
+                        </p>
+                        
+                        <!-- Regeln Tabelle -->
+                        <div class="table-responsive mb-3">
+                            <table class="table table-sm table-hover" id="autoDeleteTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 25%">Absender-Pattern</th>
+                                        <th style="width: 25%">Betreff-Pattern</th>
+                                        <th style="width: 15%">Aktion</th>
+                                        <th style="width: 10%">Tage</th>
+                                        <th style="width: 20%">Beschreibung</th>
+                                        <th style="width: 5%"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="autoDeleteRulesBody">
+                                    <!-- Dynamisch befüllt -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Neue Regel Form -->
+                        <div class="card bg-light">
+                            <div class="card-body py-2">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-1">Absender</label>
+                                        <input type="text" class="form-control form-control-sm font-monospace" 
+                                               id="newRuleSender" placeholder="@newsletter.">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-1">Betreff (Regex)</label>
+                                        <input type="text" class="form-control form-control-sm font-monospace" 
+                                               id="newRuleSubject" placeholder="backup.*success">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-1">Aktion</label>
+                                        <select class="form-select form-select-sm" id="newRuleDisposition">
+                                            <option value="SAFE">🗑️ Sicher löschbar</option>
+                                            <option value="IMPORTANT">🛡️ Wichtig/Geschützt</option>
+                                            <option value="SCAM">⚠️ Scam/Spam</option>
+                                            <option value="REVIEW">🔍 Manuell prüfen</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2" id="newRuleMaxAgeWrap">
+                                        <label class="form-label small mb-1" for="newRuleMaxAge">
+                                            Tage <span class="text-danger" aria-hidden="true">*</span>
+                                        </label>
+                                        <input type="number" class="form-control form-control-sm"
+                                               id="newRuleMaxAge" placeholder="Tage eingeben, z. B. 14" min="0" required>
+                                        <div class="form-text">0 = sofort</div>
+                                        <div class="small text-danger d-none" id="newRuleMaxAgeError">
+                                            Bei «Sicher löschbar» muss eine Anzahl Tage angegeben werden.
+                                        </div>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-1">Beschreibung</label>
+                                        <input type="text" class="form-control form-control-sm" 
+                                               id="newRuleDescription" placeholder="Newsletter älter als 14 Tage">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <button class="btn btn-sm btn-success w-100" id="addAutoDeleteRuleBtn">
+                                            <i class="bi bi-plus-lg me-1"></i>Hinzufügen
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-12">
+                                        <small class="text-muted">
+                                            <strong>SAFE:</strong> Nach X Tagen löschbar | 
+                                            <strong>IMPORTANT:</strong> Nie löschen | 
+                                            <strong>SCAM:</strong> Betrug/Spam |
+                                            <strong>REVIEW:</strong> Manuell prüfen
+                                        </small>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="col-sm-6">
-                                <label class="form-label small mb-1" for="auditTransactionSafeDays">Versand-Meldungen, Tage</label>
-                                <p class="text-muted small mb-1">
-                                    Die Mail wird erkannt, wenn der Betreff ein Wort aus «Versand-Wörter» enthält.
-                                    Diese Liste steht unten bei den Wortlisten und lässt sich ergänzen oder abschalten.
-                                    Beispiel: «Zugestellt» wird nach den eingetragenen Tagen sicher löschbar, davor bleibt sie in Prüfen.
-                                </p>
-                                <input type="number" class="form-control form-control-sm" id="auditTransactionSafeDays" min="1" max="3650" value="30">
-                            </div>
-                        </div>
-                        <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
-                            <span class="small text-muted" id="auditRetentionSaveStatus"></span>
-                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditRetentionBtn">
-                                <i class="bi bi-save me-1"></i>Speichern
-                            </button>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="accordion-item">
-                <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditDomainCheckSection">
-                        <i class="bi bi-globe2 me-2 text-primary"></i>
-                        Prüfung von Absender-Domains
-                    </button>
-                </h2>
-                <div id="auditDomainCheckSection" class="accordion-collapse collapse">
-                    <div class="accordion-body">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="auditDomainIntelEnabled" checked>
-                            <label class="form-check-label" for="auditDomainIntelEnabled">Absender-Adresse nur im Zweifelsfall nachschauen</label>
-                        </div>
-                        <p class="text-muted small mb-2">
-                            Das ist das Alter der Absender-Domain, nicht das Alter der Mail.
-                            Nicht bei jeder Mail. Nur wenn eine Mail verdächtig wirkt oder einen Markennamen trägt, wird nachgeschaut, ob die Absender-Adresse existiert und wie alt die Domain ist.
-                            Eine 5 Tage alte Domain mit Markenname gilt als Scam.
-                            Eine junge Domain ohne Markenname bekommt nur einen Hinweis an der Mail, kein Urteil.
-                            Häkchen weg: es gibt keine Nachfragen mehr nach aussen.
-                            Gültig 1 bis 3650 Tage, pro Account.
-                        </p>
-                        <div class="row g-2">
-                            <div class="col-sm-6">
-                                <label class="form-label small mb-1" for="auditDomainYoungDays">Absender-Domain jünger als N Tage (mit Markenname: Scam)</label>
-                                <input type="number" class="form-control form-control-sm" id="auditDomainYoungDays" min="1" max="3650" value="30">
-                            </div>
-                            <div class="col-sm-6">
-                                <label class="form-label small mb-1" for="auditDomainCautionDays">Absender-Domain jünger als N Tage (nur Hinweis, kein Urteil)</label>
-                                <input type="number" class="form-control form-control-sm" id="auditDomainCautionDays" min="1" max="3650" value="90">
-                            </div>
-                        </div>
-                        <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
-                            <span class="small text-muted" id="auditDomainCheckSaveStatus"></span>
-                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditDomainCheckBtn">
-                                <i class="bi bi-save me-1"></i>Speichern
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="accordion-item">
-                <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditWordListsSection">
-                        <i class="bi bi-list-check me-2 text-primary"></i>
-                        Wortlisten
-                    </button>
-                </h2>
-                <div id="auditWordListsSection" class="accordion-collapse collapse">
-                    <div class="accordion-body">
-                        <p class="text-muted small mb-2">
-                            Die festen Wörter gelten für alle und sind nur zum Lesen.
-                            <strong>Eigene</strong>: ein Wort, das in deinem Postfach vorkommt und in der festen Liste fehlt.
-                            <strong>Deaktivieren</strong>: ein festes Wort, das bei dir falsch trifft. Eintragen, dann gilt es nicht mehr.
-                            Ein Wort pro Zeile. Das gilt ab dem nächsten Scan.
-                        </p>
-                        <div id="auditWordListsMount"></div>
-                        <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
-                            <span class="small text-muted" id="auditWordListsSaveStatus"></span>
-                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditWordListsBtn">
-                                <i class="bi bi-save me-1"></i>Speichern
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="accordion-item">
-                <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditNotableDomainsSection">
-                        <i class="bi bi-signpost me-2 text-primary"></i>
-                        Auffällige Absender-Domains
-                    </button>
-                </h2>
-                <div id="auditNotableDomainsSection" class="accordion-collapse collapse">
-                    <div class="accordion-body">
-                        <p class="text-muted small mb-2">Domains, die nicht existieren oder sehr jung sind, gefunden bei Mails mit Verdacht. Nur zur Info.</p>
-                        <div class="d-flex gap-2 mb-2">
-                            <select class="form-select form-select-sm" id="auditNotableDomainFilter" style="max-width: 16rem;">
-                                <option value="all">Alle Auffälligen</option>
-                                <option value="missing">Existiert nicht</option>
-                                <option value="young">Jung</option>
-                                <option value="caution">Neu</option>
-                            </select>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" id="reloadNotableDomainsBtn">Aktualisieren</button>
-                        </div>
-                        <div id="auditNotableDomainsList" class="small text-muted">Noch nicht geladen.</div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Marken-Domains (Scam / LLM-Kalibrierung) -->
             <div class="accordion-item">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#brandDomainsSection">
@@ -1061,6 +1025,7 @@
                 </h2>
                 <div id="brandDomainsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
                         <p class="text-muted mb-2">
                             Wenn der <strong>Anzeigename</strong> eine Marke nennt (z.&nbsp;B. PayPal), muss die Absender-Domain zu den <strong>offiziellen Domains</strong> passen.
                             Die <strong>System-Liste</strong> gilt immer im Ordner-Scan; hier pflegen Sie <strong>Ihre Ergänzungen</strong> (DB).
@@ -1224,8 +1189,7 @@
                     </div>
                 </div>
             </div>
-            
-            <!-- Clustering (Delta / Sammel-Cluster) -->
+
             <div class="accordion-item">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#clusterSettingsSection">
@@ -1236,6 +1200,7 @@
                 </h2>
                 <div id="clusterSettingsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
                         <p class="text-muted mb-3">
                             Steuert, wie ähnliche Mails in der Delta-Ansicht zu Sammel-Karten zusammengefasst werden.
                             Ohne Anpassung gelten die <strong>System-Defaults</strong>.
@@ -1327,117 +1292,267 @@
                 </div>
             </div>
             
-            <!-- Important Keywords -->
+        </div>
+        <div class="alert alert-light border mb-4 py-3 px-3" role="status" id="auditFirstnamesGlobalPanel">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                <i class="bi bi-globe2 text-primary" aria-hidden="true"></i>
+                <strong class="mb-0">Vornamen-Referenzliste (Server)</strong>
+                <span class="badge bg-primary" id="auditFirstnamesCountBadge">—</span>
+                <span class="badge bg-secondary text-wrap">gilt für alle Mail-Accounts</span>
+            </div>
+            <p class="audit-scope-hint small fw-semibold mb-1" data-audit-scope="all">Gilt für alle Konten auf diesem Server.</p>
+            <p class="small text-muted mb-1" id="auditFirstnamesGlobalDetail">
+                Eine Liste für die ganze Anwendung, nicht pro Benutzer und nicht pro Konto. Import auf dem App-Server:
+                <code class="user-select-all">python3 scripts/import_firstnames.py</code>
+            </p>
+            <p class="small text-muted mb-0" id="auditFirstnamesGlobalSource"></p>
+        </div>
+
+        <h3 class="h6 text-uppercase text-secondary fw-bold mt-2 mb-2">Für das gewählte Konto</h3>
+        <div class="accordion" id="configAccordionAccount">
+            
             <div class="accordion-item">
                 <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#keywordsSection">
-                        <i class="bi bi-exclamation-triangle me-2 text-danger"></i>
-                        Wichtige Betreff-Keywords
-                        <span class="badge bg-danger ms-2" id="keywordsBadge">0</span>
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditWordListsSection">
+                        <i class="bi bi-list-check me-2 text-primary"></i>
+                        Wortlisten
                     </button>
                 </h2>
-                <div id="keywordsSection" class="accordion-collapse collapse">
+                <div id="auditWordListsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="text-muted mb-3">
-                            Emails mit diesen Keywords im Betreff werden als <strong>wichtig</strong> markiert.
-                            Mehrsprachig: DE, EN, IT, FR
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="account">Konto oben wählen.</p>
+                        <p class="text-muted small mb-2">
+                            Die festen Wörter gelten für alle und sind nur zum Lesen.
+                            <strong>Eigene</strong>: ein Wort, das in deinem Postfach vorkommt und in der festen Liste fehlt.
+                            <strong>Deaktivieren</strong>: ein festes Wort, das bei dir falsch trifft. Eintragen, dann gilt es nicht mehr.
+                            Ein Wort pro Zeile. Das gilt ab dem nächsten Scan.
                         </p>
-                        <textarea id="importantKeywordsInput" class="form-control font-monospace" rows="5" 
-                            placeholder="rechnung, fattura, bolletta, invoice, mahnung, kündigung, contratto..."></textarea>
-                        <div class="mt-2 d-flex justify-content-between">
-                            <small class="text-muted">Komma-getrennt oder ein Keyword pro Zeile</small>
-                            <button class="btn btn-sm btn-primary" id="saveImportantKeywordsBtn">
+                        <div id="auditWordListsMount"></div>
+                        <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
+                            <span class="small text-muted" id="auditWordListsSaveStatus"></span>
+                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditWordListsBtn">
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
-            
-            <!-- Safe Patterns (Subject) -->
             <div class="accordion-item">
                 <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#safeSubjectSection">
-                        <i class="bi bi-envelope-check me-2 text-success"></i>
-                        Newsletter/Marketing Betreff-Patterns
-                        <span class="badge bg-warning text-dark ms-2" id="safeSubjectBadge">0</span>
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditRetentionSection">
+                        <i class="bi bi-hourglass-split me-2 text-primary"></i>
+                        Aufbewahrung von Routine-Mails
                     </button>
                 </h2>
-                <div id="safeSubjectSection" class="accordion-collapse collapse">
+                <div id="auditRetentionSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="text-muted mb-3">
-                            Emails mit diesen Patterns im Betreff werden als <strong>sicher löschbar</strong> markiert.
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="account">Konto oben wählen.</p>
+                        <p class="text-muted small mb-3">
+                            Aufbewahrung pro Konto: das Alter der Mail, nicht das Alter der Absender-Domain
+                            und nicht das Tage-Feld in den Einstufungs-Regeln. Die gelten für alle Konten.
+                            Ganze Tage von 1 bis 3650. «Nie» und «sofort» gibt es nicht.
+                            Vor Ablauf bleibt die Mail in Prüfen. Danach kann sie «Sicher löschbar» werden.
+                            Fehler und Alarme werden nie sicher löschbar, auch nicht nach vielen Tagen.
                         </p>
-                        <textarea id="safeSubjectInput" class="form-control font-monospace" rows="4" 
-                            placeholder="newsletter, weekly digest, rabatt, sale, gutschein, unsubscribe..."></textarea>
-                        <div class="mt-2 d-flex justify-content-between">
-                            <small class="text-muted">Komma-getrennt</small>
-                            <button class="btn btn-sm btn-primary" id="saveSafeSubjectBtn">
+                        <div class="row g-3">
+                            <div class="col-sm-6">
+                                <label class="form-label small mb-1" for="auditSuccessSafeDays">Backup- und Erfolgsmails, Tage</label>
+                                <p class="text-muted small mb-1">
+                                    Die Mail wird erkannt, wenn der Betreff ein Wort aus «Status- und Erfolgswörter» enthält.
+                                    Diese Liste steht unten bei den Wortlisten und lässt sich ergänzen oder abschalten.
+                                    Beispiel: «Backup successful» wird nach den eingetragenen Tagen sicher löschbar, davor bleibt sie in Prüfen.
+                                </p>
+                                <input type="number" class="form-control form-control-sm" id="auditSuccessSafeDays" min="1" max="3650" value="30">
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label small mb-1" for="auditTransactionSafeDays">Versand-Meldungen, Tage</label>
+                                <p class="text-muted small mb-1">
+                                    Die Mail wird erkannt, wenn der Betreff ein Wort aus «Versand-Wörter» enthält.
+                                    Diese Liste steht unten bei den Wortlisten und lässt sich ergänzen oder abschalten.
+                                    Beispiel: «Zugestellt» wird nach den eingetragenen Tagen sicher löschbar, davor bleibt sie in Prüfen.
+                                </p>
+                                <input type="number" class="form-control form-control-sm" id="auditTransactionSafeDays" min="1" max="3650" value="30">
+                            </div>
+                        </div>
+                        <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
+                            <span class="small text-muted" id="auditRetentionSaveStatus"></span>
+                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditRetentionBtn">
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
-            
-            <!-- Safe Patterns (Sender) -->
             <div class="accordion-item">
                 <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#safeSenderSection">
-                        <i class="bi bi-person-check me-2 text-success"></i>
-                        Newsletter/Marketing Absender-Patterns
-                        <span class="badge bg-warning text-dark ms-2" id="safeSenderBadge">0</span>
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#ownDomainsSection">
+                        <i class="bi bi-house-check me-2 text-info"></i>
+                        Meine Domains
+                        <span class="badge bg-info text-dark ms-2" id="ownDomainsBadge">0</span>
                     </button>
                 </h2>
-                <div id="safeSenderSection" class="accordion-collapse collapse">
+                <div id="ownDomainsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="text-muted mb-3">
-                            Absender-Muster (Teilstring oder Domain) für Newsletter/Marketing — tendenz <strong>sicher löschbar</strong>.
-                            Gilt <strong>nicht</strong>, wenn Identitäts- oder Scam-Regeln (Rechnung+Anhang, Marken-Mismatch) greifen.
-                            Beispiel: <code>@newsletter.firma.ch</code>, <code>noreply@</code>
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="account">Konto oben wählen.</p>
+                        <p class="text-muted mb-2">
+                            Domains, die <strong>dir gehören</strong> (eigene Server, Websites, Homelab).
+                            Weiche Identitätsregeln und Marken-Abweichungen gelten hier nicht.
+                            Verdacht bleibt, wenn SPF, DKIM und DMARC alle drei fehlschlagen oder die Domain auf der Spamhaus-Liste steht.
+                            Eine einzelne fehlgeschlagene Prüfung reicht nicht.
+                            Die Mails werden <strong>nicht automatisch</strong> wichtig oder sicher löschbar — dafür brauchst du VIP, Patterns oder Einstufungs-Regeln.
+                            Beispiel: <code>meine-domain.ch</code>, <code>cloud.meine-domain.ch</code>
                         </p>
-                        <textarea id="safeSenderInput" class="form-control font-monospace" rows="4" 
-                            placeholder="newsletter@, noreply@, marketing@, @mailchimp., @sendgrid...."></textarea>
-                        <div class="mt-2 d-flex justify-content-between">
-                            <small class="text-muted">Komma-getrennt</small>
-                            <button class="btn btn-sm btn-primary" id="saveSafeSenderBtn">
+                        <div id="auditOwnDomainsAccountHint" class="alert alert-info py-2 small mb-2">
+                            Pro <strong>Mail-Account</strong> (Dropdown im Tab «Ordner scannen»). Gespeichert mit «Speichern» unten.
+                        </div>
+                        <textarea class="form-control form-control-sm font-monospace" id="auditOwnDomainsInput" rows="4"
+                                  placeholder="shop.example.com&#10;mail.example.com, cloud.example.com" disabled></textarea>
+                        <div class="mt-2 d-flex justify-content-between align-items-center">
+                            <small class="text-muted">Eine Domain pro Zeile, ohne @</small>
+                            <button type="button" class="btn btn-sm btn-primary" id="saveOwnDomainsBtn" disabled>
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                        <span class="small text-muted" id="ownDomainsSaveStatus"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#ownAddressesSection">
+                        <i class="bi bi-person-check me-2 text-info"></i>
+                        Meine Adressen
+                        <span class="badge bg-info text-dark ms-2" id="ownAddressesBadge">0</span>
+                    </button>
+                </h2>
+                <div id="ownAddressesSection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="account">Konto oben wählen.</p>
+                        <p class="text-muted mb-2">
+                            Gilt nur für diese eine Adresse, nicht für die ganze Domain.
+                            Zum Beispiel eine Arbeits- oder Zweitadresse. Eine Freemail-Domain wird dadurch nicht komplett freigegeben.
+                            Dieselbe Grenze wie bei Meine Domains: Verdacht nur, wenn SPF, DKIM und DMARC alle drei fehlschlagen oder Spamhaus trifft.
+                            Beispiel: <code>arbeit@example.com</code>
+                        </p>
+                        <textarea class="form-control form-control-sm font-monospace" id="auditOwnAddressesInput" rows="3"
+                                  placeholder="arbeit@example.com" disabled></textarea>
+                        <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
+                            <span class="small text-muted" id="ownAddressesSaveStatus"></span>
+                            <button type="button" class="btn btn-sm btn-primary" id="saveOwnAddressesBtn" disabled>
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
-            
-            <!-- VIP Senders -->
             <div class="accordion-item">
                 <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#vipSection">
-                        <i class="bi bi-star-fill me-2 text-warning"></i>
-                        VIP Absender
-                        <span class="badge bg-danger ms-2" id="vipBadge">0</span>
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditQualitySection">
+                        <i class="bi bi-folder-check me-2 text-primary"></i>
+                        Wichtige Ordner
                     </button>
                 </h2>
-                <div id="vipSection" class="accordion-collapse collapse">
+                <div id="auditQualitySection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="text-muted mb-3">
-                            Absender, die du <strong>priorisieren</strong> willst (exakte Adresse vor Domain vor Teilstring).
-                            VIP übersteuert weiche Identitätsregeln, solange die Authentifizierung nicht fehlschlägt.
-                            Harte Markentreffer (Marke, Domain passt nicht) bleiben.
-                            Format: <code>chef@firma.ch</code>, <code>@firma.ch</code>, <code>firma.ch</code>
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="account">Konto oben wählen.</p>
+                        <p class="text-muted mb-2">
+                            Das ist nicht «Ordner vom Scan ausnehmen».
+                            Ein ausgenommener Ordner wird <strong>nicht gescannt</strong>.
+                            Ein wichtiger Ordner <strong>wird gescannt</strong>, die Mails darin werden aber <strong>nie «Sicher löschbar»</strong>.
+                            Häkchen setzen wie bei den ausgenommenen Ordnern, dieselbe Liste.
+                            Ein Häkchen gilt auch für die Ordner darin. Der normale Posteingang lässt sich nicht auswählen.
+                            Beispiel: <code>Dringend/Bank</code> anhaken, dann bleibt der Ordner und alles darin zur Prüfung.
                         </p>
-                        <textarea id="vipSendersInput" class="form-control font-monospace" rows="4" 
-                            placeholder="chef@firma.de, @wichtiger-kunde.de, partner-firma.com..."></textarea>
-                        <div class="mt-2 d-flex justify-content-between">
-                            <small class="text-muted">Komma-getrennt</small>
-                            <button class="btn btn-sm btn-primary" id="saveVipSendersBtn">
+                        <div id="auditCuratedFoldersList" class="border rounded p-2 bg-light" style="max-height: 320px; overflow-y: auto;">
+                            <span class="text-muted">Im Tab «Ordner scannen» oben einen Account wählen, dann unter «Ordner vom Scan ausnehmen» auf «Ordnerliste laden».</span>
+                        </div>
+                        <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
+                            <span class="small text-muted" id="auditQualitySaveStatus"></span>
+                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditQualityBtn">
                                 <i class="bi bi-save me-1"></i>Speichern
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
-            
-            <!-- Bekannte Kontakte (Gesendet) -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditDomainCheckSection">
+                        <i class="bi bi-globe2 me-2 text-primary"></i>
+                        Prüfung von Absender-Domains
+                    </button>
+                </h2>
+                <div id="auditDomainCheckSection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="account">Konto oben wählen.</p>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="auditDomainIntelEnabled" checked>
+                            <label class="form-check-label" for="auditDomainIntelEnabled">Absender-Adresse nur im Zweifelsfall nachschauen</label>
+                        </div>
+                        <p class="text-muted small mb-2">
+                            Das ist das Alter der Absender-Domain, nicht das Alter der Mail.
+                            Nicht bei jeder Mail. Nur wenn eine Mail verdächtig wirkt oder einen Markennamen trägt, wird nachgeschaut, ob die Absender-Adresse existiert und wie alt die Domain ist.
+                            Eine 5 Tage alte Domain mit Markenname gilt als Scam.
+                            Eine junge Domain ohne Markenname bekommt nur einen Hinweis an der Mail, kein Urteil.
+                            Häkchen weg: es gibt keine Nachfragen mehr nach aussen.
+                            Gültig 1 bis 3650 Tage, pro Account.
+                        </p>
+                        <div class="row g-2">
+                            <div class="col-sm-6">
+                                <label class="form-label small mb-1" for="auditDomainYoungDays">Absender-Domain jünger als N Tage (mit Markenname: Scam)</label>
+                                <input type="number" class="form-control form-control-sm" id="auditDomainYoungDays" min="1" max="3650" value="30">
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label small mb-1" for="auditDomainCautionDays">Absender-Domain jünger als N Tage (nur Hinweis, kein Urteil)</label>
+                                <input type="number" class="form-control form-control-sm" id="auditDomainCautionDays" min="1" max="3650" value="90">
+                            </div>
+                        </div>
+                        <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
+                            <span class="small text-muted" id="auditDomainCheckSaveStatus"></span>
+                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditDomainCheckBtn">
+                                <i class="bi bi-save me-1"></i>Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditScanFoldersSection">
+                        <i class="bi bi-folder-x me-2 text-secondary"></i>
+                        Ordner vom Scan ausnehmen
+                        <span class="badge bg-secondary ms-2" id="auditExcludeBadge">0</span>
+                    </button>
+                </h2>
+                <div id="auditScanFoldersSection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="account">Konto oben wählen.</p>
+                        <p class="text-muted mb-2">
+                            Gilt für <strong>«Alle Ordner scannen»</strong> beim gewählten Account (Dropdown oben im Tab «Ordner scannen»).
+                            <strong>Ausgenommen</strong> heisst: der Ordner wird nicht gescannt.
+                            Das ist nicht dasselbe wie «Wichtige Ordner»: die werden gescannt, ihre Mails werden nur nie «Sicher löschbar».
+                            Archiv-/Ablage-Ordner können so aus dem Audit und Clustering herausgehalten werden.
+                            <strong>Gesendet</strong> und <strong>Entwürfe</strong> sind immer ausgeschlossen (Häkchen gesperrt) — Bereinigung nur über die Ordnerliste im Postfach, nicht über das Audit.
+                            Unabhängig von den Fetch-Filtern unter Account-Einstellungen.
+                        </p>
+                        <div id="auditExcludeAccountHint" class="alert alert-info py-2 small mb-2">
+                            <i class="bi bi-info-circle me-1"></i>Bitte im Tab <strong>Ordner scannen</strong> oben einen <strong>Account</strong> wählen — Ausschlüsse werden pro Account gespeichert.
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 mb-3">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="reloadAuditFoldersBtn" disabled>
+                                <i class="bi bi-arrow-clockwise me-1"></i>Ordnerliste laden
+                            </button>
+                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditExcludeFoldersBtn" disabled>
+                                <i class="bi bi-save me-1"></i>Ausschlüsse speichern
+                            </button>
+                            <span class="text-muted small align-self-center" id="auditExcludeSaveStatus"></span>
+                        </div>
+                        <div id="auditExcludeFoldersList" class="border rounded p-2 bg-light" style="max-height: 320px; overflow-y: auto;">
+                            <span class="text-muted" id="auditExcludeFoldersPlaceholder">Im Tab «Ordner scannen» oben einen Account wählen, dann «Ordnerliste laden».</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="accordion-item">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#knownContactsSection">
@@ -1448,6 +1563,7 @@
                 </h2>
                 <div id="knownContactsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="account">Konto oben wählen.</p>
                         <p class="text-muted mb-2">
                             Namen und Adressen aus <strong>Gesendet</strong> (und VIP/Trusted) reduzieren Fehlalarme bei Namens-Imitation (N1).
                             Gilt pro Account — oben im Tab «Ordner scannen» Account wählen.
@@ -1489,138 +1605,27 @@
                     </div>
                 </div>
             </div>
-            
-            <!-- Auto-Delete Rules -->
             <div class="accordion-item">
                 <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#autoDeleteSection">
-                        <i class="bi bi-trash3 me-2 text-info"></i>
-                        Einstufungs-Regeln
-                        <span class="badge bg-info ms-2" id="autoDeleteBadge">0</span>
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditNotableDomainsSection">
+                        <i class="bi bi-signpost me-2 text-primary"></i>
+                        Auffällige Absender-Domains
                     </button>
                 </h2>
-                <div id="autoDeleteSection" class="accordion-collapse collapse">
+                <div id="auditNotableDomainsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="text-muted mb-3">
-                            Diese Regeln bestimmen nur, wie das Ordner-Audit eine Mail einstuft. Sie verschieben oder löschen nichts.
-                            Aktionen auf Mails stellst du unter <a href="/rules">Aktions-Regeln</a> ein.
-                            Wenn <strong>beide</strong> Patterns gesetzt sind, müssen beide passen.
-                        </p>
-                        
-                        <!-- Regeln Tabelle -->
-                        <div class="table-responsive mb-3">
-                            <table class="table table-sm table-hover" id="autoDeleteTable">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th style="width: 25%">Absender-Pattern</th>
-                                        <th style="width: 25%">Betreff-Pattern</th>
-                                        <th style="width: 15%">Aktion</th>
-                                        <th style="width: 10%">Tage</th>
-                                        <th style="width: 20%">Beschreibung</th>
-                                        <th style="width: 5%"></th>
-                                    </tr>
-                                </thead>
-                                <tbody id="autoDeleteRulesBody">
-                                    <!-- Dynamisch befüllt -->
-                                </tbody>
-                            </table>
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="account">Konto oben wählen.</p>
+                        <p class="text-muted small mb-2">Domains, die nicht existieren oder sehr jung sind, gefunden bei Mails mit Verdacht. Nur zur Info.</p>
+                        <div class="d-flex gap-2 mb-2">
+                            <select class="form-select form-select-sm" id="auditNotableDomainFilter" style="max-width: 16rem;">
+                                <option value="all">Alle Auffälligen</option>
+                                <option value="missing">Existiert nicht</option>
+                                <option value="young">Jung</option>
+                                <option value="caution">Neu</option>
+                            </select>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="reloadNotableDomainsBtn">Aktualisieren</button>
                         </div>
-                        
-                        <!-- Neue Regel Form -->
-                        <div class="card bg-light">
-                            <div class="card-body py-2">
-                                <div class="row g-2 align-items-end">
-                                    <div class="col-md-2">
-                                        <label class="form-label small mb-1">Absender</label>
-                                        <input type="text" class="form-control form-control-sm font-monospace" 
-                                               id="newRuleSender" placeholder="@newsletter.">
-                                    </div>
-                                    <div class="col-md-2">
-                                        <label class="form-label small mb-1">Betreff (Regex)</label>
-                                        <input type="text" class="form-control form-control-sm font-monospace" 
-                                               id="newRuleSubject" placeholder="backup.*success">
-                                    </div>
-                                    <div class="col-md-2">
-                                        <label class="form-label small mb-1">Aktion</label>
-                                        <select class="form-select form-select-sm" id="newRuleDisposition">
-                                            <option value="SAFE">🗑️ Sicher löschbar</option>
-                                            <option value="IMPORTANT">🛡️ Wichtig/Geschützt</option>
-                                            <option value="SCAM">⚠️ Scam/Spam</option>
-                                            <option value="REVIEW">🔍 Manuell prüfen</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-2" id="newRuleMaxAgeWrap">
-                                        <label class="form-label small mb-1" for="newRuleMaxAge">
-                                            Tage <span class="text-danger" aria-hidden="true">*</span>
-                                        </label>
-                                        <input type="number" class="form-control form-control-sm"
-                                               id="newRuleMaxAge" placeholder="Tage eingeben, z. B. 14" min="0" required>
-                                        <div class="form-text">0 = sofort</div>
-                                        <div class="small text-danger d-none" id="newRuleMaxAgeError">
-                                            Bei «Sicher löschbar» muss eine Anzahl Tage angegeben werden.
-                                        </div>
-                                    </div>
-                                    <div class="col-md-2">
-                                        <label class="form-label small mb-1">Beschreibung</label>
-                                        <input type="text" class="form-control form-control-sm" 
-                                               id="newRuleDescription" placeholder="Newsletter älter als 14 Tage">
-                                    </div>
-                                    <div class="col-md-2">
-                                        <button class="btn btn-sm btn-success w-100" id="addAutoDeleteRuleBtn">
-                                            <i class="bi bi-plus-lg me-1"></i>Hinzufügen
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="row mt-2">
-                                    <div class="col-12">
-                                        <small class="text-muted">
-                                            <strong>SAFE:</strong> Nach X Tagen löschbar | 
-                                            <strong>IMPORTANT:</strong> Nie löschen | 
-                                            <strong>SCAM:</strong> Betrug/Spam |
-                                            <strong>REVIEW:</strong> Manuell prüfen
-                                        </small>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Scan-Ordner (Archiv etc. ausnehmen) -->
-            <div class="accordion-item">
-                <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditScanFoldersSection">
-                        <i class="bi bi-folder-x me-2 text-secondary"></i>
-                        Ordner vom Scan ausnehmen
-                        <span class="badge bg-secondary ms-2" id="auditExcludeBadge">0</span>
-                    </button>
-                </h2>
-                <div id="auditScanFoldersSection" class="accordion-collapse collapse">
-                    <div class="accordion-body">
-                        <p class="text-muted mb-2">
-                            Gilt für <strong>«Alle Ordner scannen»</strong> beim gewählten Account (Dropdown oben im Tab «Ordner scannen»).
-                            <strong>Ausgenommen</strong> heisst: der Ordner wird nicht gescannt.
-                            Das ist nicht dasselbe wie «Wichtige Ordner»: die werden gescannt, ihre Mails werden nur nie «Sicher löschbar».
-                            Archiv-/Ablage-Ordner können so aus dem Audit und Clustering herausgehalten werden.
-                            <strong>Gesendet</strong> und <strong>Entwürfe</strong> sind immer ausgeschlossen (Häkchen gesperrt) — Bereinigung nur über die Ordnerliste im Postfach, nicht über das Audit.
-                            Unabhängig von den Fetch-Filtern unter Account-Einstellungen.
-                        </p>
-                        <div id="auditExcludeAccountHint" class="alert alert-info py-2 small mb-2">
-                            <i class="bi bi-info-circle me-1"></i>Bitte im Tab <strong>Ordner scannen</strong> oben einen <strong>Account</strong> wählen — Ausschlüsse werden pro Account gespeichert.
-                        </div>
-                        <div class="d-flex flex-wrap gap-2 mb-3">
-                            <button type="button" class="btn btn-sm btn-outline-secondary" id="reloadAuditFoldersBtn" disabled>
-                                <i class="bi bi-arrow-clockwise me-1"></i>Ordnerliste laden
-                            </button>
-                            <button type="button" class="btn btn-sm btn-primary" id="saveAuditExcludeFoldersBtn" disabled>
-                                <i class="bi bi-save me-1"></i>Ausschlüsse speichern
-                            </button>
-                            <span class="text-muted small align-self-center" id="auditExcludeSaveStatus"></span>
-                        </div>
-                        <div id="auditExcludeFoldersList" class="border rounded p-2 bg-light" style="max-height: 320px; overflow-y: auto;">
-                            <span class="text-muted" id="auditExcludeFoldersPlaceholder">Im Tab «Ordner scannen» oben einen Account wählen, dann «Ordnerliste laden».</span>
-                        </div>
+                        <div id="auditNotableDomainsList" class="small text-muted">Noch nicht geladen.</div>
                     </div>
                 </div>
             </div>
@@ -1738,6 +1743,11 @@
         document.getElementById('accountSelect').addEventListener('change', function() {
             loadFolders();
             updateAuditExcludeAccountContext();
+            const configPane = document.getElementById('configPane');
+            if (configPane && configPane.classList.contains('active')) {
+                loadConfigStats();
+                loadAllConfigs();
+            }
         });
         const folderSelectEl = document.getElementById('folderSelect');
         if (folderSelectEl) {
@@ -2181,6 +2191,15 @@
         if (reloadBtn) reloadBtn.disabled = !accountId;
         if (saveBtn) saveBtn.disabled = !accountId;
         updateKnownContactsAccountContext();
+        updateAuditScopeHints();
+    }
+
+    function updateAuditScopeHints() {
+        const accountId = getSelectedAuditAccountId();
+        const text = accountId ? 'Gilt nur für das gewählte Konto.' : 'Konto oben wählen.';
+        document.querySelectorAll('.audit-scope-hint[data-audit-scope="account"]').forEach(function(el) {
+            el.textContent = text;
+        });
     }
 
     function auditExcludeNoAccountHtml() {
@@ -4286,9 +4305,43 @@
         loadAllConfigs();
     });
     
+    const auditAccountOnly = { trusted: [], keywords: [], subject: [], sender: [], vip: [] };
+
+    function auditConfigAccountQuery() {
+        const id = getSelectedAuditAccountId();
+        return id ? ('account_id=' + encodeURIComponent(id)) : '';
+    }
+
+    function withAuditAccount(url) {
+        const q = auditConfigAccountQuery();
+        if (!q) return url;
+        return url + (url.indexOf('?') >= 0 ? '&' : '?') + q;
+    }
+
+    function rememberAccountOnly(rows, key) {
+        const out = [];
+        (rows || []).forEach(function(row) {
+            if (row && row.account_id != null && row[key]) {
+                out.push(String(row[key]).trim().toLowerCase());
+            }
+        });
+        return out;
+    }
+
+    function withoutAccountOnly(text, scoped) {
+        if (!scoped || !scoped.length) return text;
+        const blocked = {};
+        scoped.forEach(function(value) { blocked[value] = true; });
+        return String(text || '').replace(/\r/g, '').split(/[\n,]/).map(function(part) {
+            return part.trim();
+        }).filter(function(part) {
+            return part && !blocked[part.toLowerCase()];
+        }).join(', ');
+    }
+
     async function loadConfigStats() {
         try {
-            const response = await fetch('/api/audit-config/stats');
+            const response = await fetch(withAuditAccount('/api/audit-config/stats'));
             if (!response.ok) throw new Error('Failed to load stats');
             const data = await response.json();
             
@@ -4310,23 +4363,30 @@
     async function loadAllConfigs() {
         // Load Trusted Domains
         try {
-            const resp = await fetch('/api/audit-config/trusted-domains');
+            const resp = await fetch(withAuditAccount('/api/audit-config/trusted-domains'));
             const data = await resp.json();
+            auditAccountOnly.trusted = rememberAccountOnly(data.domains, 'domain');
             document.getElementById('trustedDomainsInput').value = data.comma_separated || '';
+            document.getElementById('trustedBadge').textContent = String((data.domains || []).length);
+            document.getElementById('configTrustedCount').textContent = String((data.domains || []).length);
             if (brandHealthData) renderBrandHealthDashboard(brandHealthData);
         } catch (e) { console.error(e); }
         
         // Load Important Keywords
         try {
-            const resp = await fetch('/api/audit-config/important-keywords');
+            const resp = await fetch(withAuditAccount('/api/audit-config/important-keywords'));
             const data = await resp.json();
+            auditAccountOnly.keywords = rememberAccountOnly(data.keywords, 'keyword');
             document.getElementById('importantKeywordsInput').value = data.comma_separated || '';
+            document.getElementById('keywordsBadge').textContent = String((data.keywords || []).length);
+            document.getElementById('configKeywordsCount').textContent = String((data.keywords || []).length);
         } catch (e) { console.error(e); }
         
         // Load Safe Patterns (Subject)
         try {
-            const resp = await fetch('/api/audit-config/safe-patterns?pattern_type=subject');
+            const resp = await fetch(withAuditAccount('/api/audit-config/safe-patterns?pattern_type=subject'));
             const data = await resp.json();
+            auditAccountOnly.subject = rememberAccountOnly(data.patterns, 'pattern');
             const subjectPatterns = data.patterns.filter(p => p.pattern_type === 'subject').map(p => p.pattern);
             document.getElementById('safeSubjectInput').value = subjectPatterns.join(', ');
             document.getElementById('safeSubjectBadge').textContent = subjectPatterns.length;
@@ -4334,18 +4394,28 @@
         
         // Load Safe Patterns (Sender)
         try {
-            const resp = await fetch('/api/audit-config/safe-patterns?pattern_type=sender');
+            const resp = await fetch(withAuditAccount('/api/audit-config/safe-patterns?pattern_type=sender'));
             const data = await resp.json();
+            auditAccountOnly.sender = rememberAccountOnly(data.patterns, 'pattern');
             const senderPatterns = data.patterns.filter(p => p.pattern_type === 'sender').map(p => p.pattern);
             document.getElementById('safeSenderInput').value = senderPatterns.join(', ');
             document.getElementById('safeSenderBadge').textContent = senderPatterns.length;
+            const safeCount = document.getElementById('configSafeCount');
+            if (safeCount) {
+                const subjectCount = (document.getElementById('safeSubjectInput').value || '')
+                    .split(/[\n,]/).map(function(part) { return part.trim(); }).filter(Boolean).length;
+                safeCount.textContent = String(subjectCount + senderPatterns.length);
+            }
         } catch (e) { console.error(e); }
         
         // Load VIP Senders
         try {
-            const resp = await fetch('/api/audit-config/vip-senders');
+            const resp = await fetch(withAuditAccount('/api/audit-config/vip-senders'));
             const data = await resp.json();
+            auditAccountOnly.vip = rememberAccountOnly(data.vip_senders, 'sender_pattern');
             document.getElementById('vipSendersInput').value = data.comma_separated || '';
+            document.getElementById('vipBadge').textContent = String((data.vip_senders || []).length);
+            document.getElementById('configVipCount').textContent = String((data.vip_senders || []).length);
         } catch (e) { console.error(e); }
         
         loadKnownContactsForAccount();
@@ -5926,7 +5996,7 @@
                     'Content-Type': 'application/json',
                     'X-CSRFToken': getCsrfToken()
                 },
-                body: JSON.stringify({ domains: domains })
+                body: JSON.stringify({ domains: withoutAccountOnly(domains, auditAccountOnly.trusted) })
             });
             const data = await response.json();
             if (data.success) {
@@ -5949,7 +6019,7 @@
                     'Content-Type': 'application/json',
                     'X-CSRFToken': getCsrfToken()
                 },
-                body: JSON.stringify({ keywords: keywords })
+                body: JSON.stringify({ keywords: withoutAccountOnly(keywords, auditAccountOnly.keywords) })
             });
             const data = await response.json();
             if (data.success) {
@@ -5973,7 +6043,10 @@
                     'Content-Type': 'application/json',
                     'X-CSRFToken': getCsrfToken()
                 },
-                body: JSON.stringify({ patterns: patterns, pattern_type: patternType })
+                body: JSON.stringify({
+                    patterns: withoutAccountOnly(patterns, auditAccountOnly[patternType] || []),
+                    pattern_type: patternType
+                })
             });
             const data = await response.json();
             if (data.success) {
@@ -5997,7 +6070,7 @@
                     'Content-Type': 'application/json',
                     'X-CSRFToken': getCsrfToken()
                 },
-                body: JSON.stringify({ senders: senders })
+                body: JSON.stringify({ senders: withoutAccountOnly(senders, auditAccountOnly.vip) })
             });
             const data = await response.json();
             if (data.success) {
@@ -6353,7 +6426,7 @@
     
     async function loadAutoDeleteRules() {
         try {
-            const response = await fetch('/api/audit-config/auto-delete-rules');
+            const response = await fetch(withAuditAccount('/api/audit-config/auto-delete-rules'));
             const data = await response.json();
             
             const tbody = document.getElementById('autoDeleteRulesBody');

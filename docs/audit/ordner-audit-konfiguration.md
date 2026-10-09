@@ -1,6 +1,12 @@
 # Ordner-Audit — Konfiguration
 
-Pro Mail-Konto. Die Oberfläche beschreibt Zweck und Beispiel. Hier steht, wo der Wert liegt.
+Zwei Bereiche. Die Oberfläche beschreibt Zweck und Beispiel. Hier steht, wo der Wert liegt.
+
+**Für alle Konten des Benutzers** (`account_id` leer; die Seite zeigt und zählt ohne Konto nur diese Zeilen, mit Konto zusätzlich die Zeilen dieses Kontos): vertrauenswürdige Domains, Keywords, Newsletter-Patterns, VIP, Einstufungs-Regeln, Marken. Vornamen sind eine Server-Tabelle ohne Benutzer und ohne Konto.
+
+**Nur für das gewählte Konto:** Wortlisten, Aufbewahrung, Meine Domains, Meine Adressen, wichtige Ordner, Domain-Abfrage, Ordner ausnehmen, bekannte Kontakte.
+
+Das Tage-Feld einer Einstufungs-Regel ist nicht die Aufbewahrung. Aufbewahrung sind die zwei Tagesfelder am Konto.
 
 Beispiele sind synthetisch (`example.com`, `Beispiel`). Keine echten Konten.
 
@@ -38,7 +44,7 @@ Beispiele sind synthetisch (`example.com`, `Beispiel`). Keine echten Konten.
 | Zweck | Absender, die wichtig bleiben. |
 | Wirkung | Richtung «möglicherweise wichtig». Schaltet harte Scam-Signale nicht aus. |
 | Beispiel | `person@firma.example` oder die Domain `firma.example` |
-| Gespeichert | Tabelle `audit_vip_senders` |
+| Gespeichert | Tabelle `audit_vip_senders`. Ohne Konto nur Zeilen mit leerem `account_id`, mit Konto diese plus die leeren. |
 
 ## Wichtige Ordner
 

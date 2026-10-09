@@ -27,10 +27,11 @@ Tab **Konfiguration** im Ordner-Audit (`/api/audit-config/*`).
 
 | UI / Liste | Speicher | Wirkung im Scan |
 |------------|----------|-----------------|
-| **Vertrauenswürdige Domains** | DB, pro User/Account | Erhöht «wichtig», mindert Scam-Verdacht bei bekannter Domain |
-| **Meine Domains** (`own_domains`) | DB | Eigene Web-/Marken-Domains — **gelten nicht** als fremde Scam-Absender-Domain |
-| **Wichtige Keywords / Safe Patterns / VIP** | DB | Klassifikation (wichtig vs. löschbar); Safe-Pattern-Grundtext: «Marketing-Absender (Pattern)» — nicht identisch mit Scam-Layer |
-| **Einstufungs-Regeln** | DB | Disposition SAFE/IMPORTANT/SCAM/REVIEW nach Pattern |
+| **Vertrauenswürdige Domains** | DB, für alle Konten des Benutzers (`account_id` leer; mit gewähltem Konto zusätzlich dessen Zeilen) | Erhöht «wichtig», mindert Scam-Verdacht bei bekannter Domain |
+| **Meine Domains** (`own_domains`) | DB, nur das gewählte Konto | Eigene Web-/Marken-Domains — **gelten nicht** als fremde Scam-Absender-Domain |
+| **Wichtige Keywords / Newsletter-Patterns / VIP** | DB, für alle Konten des Benutzers, gleiche Zählung wie die Domains | Klassifikation (wichtig vs. löschbar); Safe-Pattern-Grundtext: «Marketing-Absender (Pattern)» — nicht identisch mit Scam-Layer |
+| **Einstufungs-Regeln** | DB, für alle Konten. Das Tage-Feld ist nicht die Aufbewahrung | Disposition SAFE/IMPORTANT/SCAM/REVIEW nach Pattern |
+| **Aufbewahrung** | zwei Tagesfelder am Konto | Ab wann eine Routine-Mail sicher löschbar werden darf |
 | **Marken-Domains (Scam)** | DB + **eingebaute** System-Map | Layer 1: **B1** (Marke/Domain-Mismatch) plus **E3/E6** → Kategorie **Verdacht** ohne Provider-Flag; **Scam** = Identität + Transport/Auth-Schwäche oder (nur bei Verdacht-Kandidaten) DBL/junge Domain. Auth-**pass** senkt nicht. |
 | **Ordner vom Scan ausnehmen** | `audit_exclude_folders` | Kein Audit für diese IMAP-Ordner |
 
@@ -89,7 +90,7 @@ Marken-Health-RDAP (Button «Domains prüfen»): **pro Nutzer** Checkbox «Domai
 |---------|-----|
 | Code | Repo **KI-Mail-Helper-Dev**, Branch **`main`** |
 | Vor Push (Agent/Dev) | `python -m compileall -q src` und `pytest tests/test_src_compile_smoke.py` (+ betroffene Tests) |
-| Produktion | `git pull`, `alembic upgrade head`, optional pytest im venv, Services neu starten — **privates Betriebsdokument** |
+| Produktion | `git pull`, `alembic upgrade head`, optional pytest im venv, Services neu starten — **privates Betriebsdokument**. Falls `CLASSIFIER_HMAC_KEY` gesetzt ist, nach dem Pull `python scripts/sign_classifiers.py` ausführen, sonst werden bestehende Klassifikatoren abgelehnt. |
 
 Copy-Paste-Befehle und systemd: **privates Betriebsdokument** (nicht in diesem Repo).
 

@@ -26,6 +26,7 @@ from flask import Blueprint, request, jsonify
 from flask_login import login_required
 import importlib
 
+from src.audit_list_scope import apply_account_scope
 from src.helpers import get_db_session, get_current_user_model
 from src.services.folder_audit_service import (
     AuditConfigCache,
@@ -282,15 +283,7 @@ def get_trusted_domains():
             models.AuditTrustedDomain.is_active == True,
         )
         
-        if account_id:
-            # Account-spezifisch + global (NULL)
-            query = query.filter(
-                (models.AuditTrustedDomain.account_id == account_id) |
-                (models.AuditTrustedDomain.account_id == None)
-            )
-        else:
-            # Nur globale
-            query = query.filter(models.AuditTrustedDomain.account_id == None)
+        query = apply_account_scope(query, models.AuditTrustedDomain.account_id, account_id)
         
         domains = query.order_by(models.AuditTrustedDomain.category, models.AuditTrustedDomain.domain).all()
         
@@ -392,12 +385,8 @@ def get_important_keywords():
             models.AuditImportantKeyword.is_active == True,
         )
         
-        if account_id:
-            query = query.filter(
-                (models.AuditImportantKeyword.account_id == account_id) |
-                (models.AuditImportantKeyword.account_id == None)
-            )
-        
+        query = apply_account_scope(query, models.AuditImportantKeyword.account_id, account_id)
+
         if language:
             query = query.filter(
                 (models.AuditImportantKeyword.language == language) |
@@ -421,6 +410,7 @@ def get_important_keywords():
                 "keyword": kw.keyword,
                 "category": kw.category,
                 "source": kw.source,
+                "account_id": kw.account_id,
             })
         
         return jsonify({
@@ -431,6 +421,7 @@ def get_important_keywords():
                     "language": kw.language,
                     "category": kw.category,
                     "source": kw.source,
+                    "account_id": kw.account_id,
                 }
                 for kw in keywords
             ],
@@ -520,12 +511,8 @@ def get_safe_patterns():
             models.AuditSafePattern.is_active == True,
         )
         
-        if account_id:
-            query = query.filter(
-                (models.AuditSafePattern.account_id == account_id) |
-                (models.AuditSafePattern.account_id == None)
-            )
-        
+        query = apply_account_scope(query, models.AuditSafePattern.account_id, account_id)
+
         if pattern_type:
             query = query.filter(models.AuditSafePattern.pattern_type == pattern_type)
         
@@ -542,6 +529,7 @@ def get_safe_patterns():
                     "id": p.id,
                     "pattern": p.pattern,
                     "source": p.source,
+                    "account_id": p.account_id,
                 })
         
         return jsonify({
@@ -551,6 +539,7 @@ def get_safe_patterns():
                     "pattern": p.pattern,
                     "pattern_type": p.pattern_type,
                     "source": p.source,
+                    "account_id": p.account_id,
                 }
                 for p in patterns
             ],
@@ -640,12 +629,8 @@ def get_vip_senders():
             models.AuditVIPSender.is_active == True,
         )
         
-        if account_id:
-            query = query.filter(
-                (models.AuditVIPSender.account_id == account_id) |
-                (models.AuditVIPSender.account_id == None)
-            )
-        
+        query = apply_account_scope(query, models.AuditVIPSender.account_id, account_id)
+
         vips = query.order_by(models.AuditVIPSender.label, models.AuditVIPSender.sender_pattern).all()
         
         return jsonify({
@@ -656,6 +641,7 @@ def get_vip_senders():
                     "pattern_type": v.pattern_type,
                     "label": v.label,
                     "source": v.source,
+                    "account_id": v.account_id,
                 }
                 for v in vips
             ],
@@ -748,12 +734,8 @@ def get_auto_delete_rules():
             models.AuditAutoDeleteRule.is_active == True,
         )
         
-        if account_id:
-            query = query.filter(
-                (models.AuditAutoDeleteRule.account_id == account_id) |
-                (models.AuditAutoDeleteRule.account_id == None)
-            )
-        
+        query = apply_account_scope(query, models.AuditAutoDeleteRule.account_id, account_id)
+
         if disposition:
             query = query.filter(models.AuditAutoDeleteRule.disposition == disposition)
         
@@ -1640,10 +1622,8 @@ def get_stats():
                 model.user_id == user.id,
                 model.is_active == True,
             )
-            if account_id and hasattr(model, 'account_id'):
-                query = query.filter(
-                    (model.account_id == account_id) | (model.account_id == None)
-                )
+            if hasattr(model, "account_id"):
+                query = apply_account_scope(query, model.account_id, account_id)
             return query.count()
         
         cluster_custom = False

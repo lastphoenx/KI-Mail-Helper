@@ -7,9 +7,9 @@
 
 ## Übersicht
 
-KI-Mail-Helper implementiert **Zero-Knowledge at rest**: Mail-Inhalte und Credentials liegen in PostgreSQL verschlüsselt (DEK/AES-GCM). Der Server kann Klartext nur entschlüsseln, solange der Nutzer eingeloggt ist (DEK in Session-RAM bzw. Session-Dateien).
+KI-Mail-Helper verschlüsselt im Ruhezustand: Mail-Inhalte und Zugangsdaten liegen in PostgreSQL (AES-256-GCM, DEK/KEK). Der Server entschlüsselt, solange die Sitzung oder ein Dienst-Token den DEK hält. Das ist keine Zero-Knowledge-Architektur. Ohne das Passwort sind die Daten nicht wiederherstellbar.
 
-Siehe [Abschnitt 14 – Threat Model](#14-threat-model) für ehrliche Grenzen (Session-DEK, ServiceTokens, Cloud-PII).
+Siehe [Abschnitt 16 – Threat Model](#16-threat-model) für die Grenzen (Session-DEK, ServiceTokens, Cloud-PII).
 
 ---
 
@@ -402,7 +402,7 @@ Die Schwachstelle steckt in den Passwort-Manager-Erweiterungen selbst, nicht in 
 | Voraussetzung für den Angriff auf eigener Seite: injizierbares HTML/JS (XSS) | `Content-Security-Policy` mit `script-src 'self' 'nonce-{random}'`, Jinja2 Auto-Escaping, `frame-ancestors 'none'` ([`app_factory.py`](../src/app_factory.py)) | ✅ deutlich erschwert |
 | Clickjacking/Framing der eigenen Login-/Formularseiten durch fremde Seiten | `X-Frame-Options: DENY` + `frame-ancestors 'none'` | ✅ verhindert |
 | `autocomplete`-Attribute auf Passwortfeldern | In allen relevanten Templates gesetzt (Login/Register: `username`/`current-password`/`new-password`; IMAP/SMTP: `off`) | ✅ umgesetzt |
-| Eigene Speicherung der IMAP/SMTP-Zugangsdaten | Serverseitig AES-256-GCM verschlüsselt (Zero-Knowledge, siehe Abschnitt 1) – unabhängig vom Autofill des Browsers | ✅ nicht betroffen |
+| Eigene Speicherung der IMAP/SMTP-Zugangsdaten | Serverseitig AES-256-GCM, Verschlüsselung im Ruhezustand (Abschnitt 1) – unabhängig vom Autofill des Browsers | ✅ nicht betroffen |
 
 **Fazit:** Die direkte Angriffsfläche in unserer Anwendung ist gering – wir haben keine versteckten Formularfelder, eine harte CSP und Framing ist blockiert, was die Grundvoraussetzung des Angriffs (Code-Injection oder Framing der eigenen Seite) bereits verhindert. Ein Restrisiko besteht, falls Nutzer:innen einen ungepatchten Passwort-Manager verwenden und über eine *andere*, kompromittierte Webseite (nicht KI-Mail-Helper) angegriffen werden – das liegt außerhalb unserer Kontrolle.
 
@@ -412,7 +412,7 @@ Die Schwachstelle steckt in den Passwort-Manager-Erweiterungen selbst, nicht in 
 2. **Bestehend beibehalten:** CSP mit Nonce, `X-Frame-Options: DENY`/`frame-ancestors 'none'` und Jinja2 Auto-Escaping.
 3. **Review-Regel:** Bei neuen Templates keine `type="password"`-Felder mit `display:none`/`opacity:0`/`visibility:hidden` oder außerhalb des sichtbaren Viewports platzieren.
 4. **Nutzerkommunikation:** Passwort-Manager-Erweiterungen zeitnah aktualisieren.
-5. **Kein Handlungsbedarf** bei der Zero-Knowledge-Verschlüsselung der IMAP/SMTP-Credentials.
+5. **Kein Handlungsbedarf** an der Verschlüsselung der IMAP/SMTP-Zugangsdaten im Ruhezustand.
 
 ---
 
@@ -452,7 +452,7 @@ User Password + Secret Key (128 Bit, nur clientseitig/beim User)
 - **Registrierung:** Secret Key einmalig generieren/anzeigen, nirgends in DB speichern.
 - **KDF:** `generate_master_key(password + secret_key, salt)`.
 - **Login-UX:** Secret Key mit Passwort abfragen; auf vertrauenswürdigen Geräten optional lokal speichern.
-- **Recovery:** Verlust = Datenverlust (Zero-Knowledge-Tradeoff).
+- **Recovery:** Verlust des Passworts, und in diesem Entwurf auch des Secret Key, bedeutet Datenverlust.
 - **Migration:** Analog zum `encrypted_master_key`-Deprecation-Pattern beim nächsten Login.
 
 **Einordnung:** Größte architektonische Änderung in dieser Liste – als eigenes Vorhaben planen.

@@ -655,7 +655,13 @@ Eine optionale Identitätsprüfung (lokale oder Cloud-KI) läuft nur in der Grau
 
 ### Konfiguration
 
-Alles gilt **pro Konto**. Die Texte in der Oberfläche sagen Zweck und Beispiel. Hier die Kurzform.
+Zwei Bereiche. Die Texte in der Oberfläche sagen, welcher gilt.
+
+**Für alle deine Konten:** vertrauenswürdige Domains, wichtige Keywords, Newsletter-Muster, VIP, Einstufungs-Regeln, Marken. Die Zahl am Abschnitt zählt ohne gewähltes Konto nur diese gemeinsamen Zeilen, mit Konto zusätzlich die Zeilen dieses Kontos. Vornamen sind eine Liste für den ganzen Server.
+
+**Nur für das gewählte Konto:** Wortlisten, Aufbewahrung, Meine Domains, Meine Adressen, wichtige Ordner, Domain-Abfrage, Ordner ausnehmen, bekannte Kontakte.
+
+**Aufbewahrung** ist das Paar Tagesfelder am Konto (Erfolg und Versand, 1 bis 3650). **Einstufungs-Regeln** gelten für alle Konten. Ihr Tage-Feld ist nicht diese Aufbewahrung.
 
 **Marken.** Tabelle Marke plus offizielle Domains, zum Beispiel Marke `Beispiel` und Domain `beispiel.example`. Passt der Anzeigename zur Marke, die Domain aber nicht, wird die Mail Scam. «Domains prüfen» schaut DNS und Blocklisten, bevor eine Domain gespeichert wird.
 
