@@ -657,7 +657,7 @@ Eine optionale Identitätsprüfung (lokale oder Cloud-KI) läuft nur in der Grau
 
 Zwei Bereiche. Die Texte in der Oberfläche sagen, welcher gilt.
 
-**Für alle deine Konten:** vertrauenswürdige Domains, wichtige Keywords, Newsletter-Muster, VIP, Einstufungs-Regeln, Marken. Die Zahl am Abschnitt zählt ohne gewähltes Konto nur diese gemeinsamen Zeilen, mit Konto zusätzlich die Zeilen dieses Kontos. Vornamen sind eine Liste für den ganzen Server.
+**Für alle deine Konten:** vertrauenswürdige Domains, wichtige Keywords, Newsletter-Muster, VIP, Einstufungs-Regeln, Marken, Clustering. Die Zahl am Abschnitt zählt ohne gewähltes Konto nur diese gemeinsamen Zeilen, mit Konto zusätzlich die Zeilen dieses Kontos. Vornamen sind eine Liste für den ganzen Server. Auffällige Absender-Domains kommen aus dem gemeinsamen Prüf-Cache, nicht aus einem Konto. Jung und neu richten sich nach dem gewählten Konto, sonst nach 30 und 90 Tagen.
 
 **Nur für das gewählte Konto:** Wortlisten, Aufbewahrung, Meine Domains, Meine Adressen, wichtige Ordner, Domain-Abfrage, Ordner ausnehmen, bekannte Kontakte.
 

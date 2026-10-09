@@ -2,7 +2,7 @@
 
 Zwei Bereiche. Die Oberfläche beschreibt Zweck und Beispiel. Hier steht, wo der Wert liegt.
 
-**Für alle Konten des Benutzers** (`account_id` leer; die Seite zeigt und zählt ohne Konto nur diese Zeilen, mit Konto zusätzlich die Zeilen dieses Kontos): vertrauenswürdige Domains, Keywords, Newsletter-Patterns, VIP, Einstufungs-Regeln, Marken. Vornamen sind eine Server-Tabelle ohne Benutzer und ohne Konto.
+**Für alle Konten des Benutzers** (`account_id` leer; die Seite zeigt und zählt ohne Konto nur diese Zeilen, mit Konto zusätzlich die Zeilen dieses Kontos): vertrauenswürdige Domains, Keywords, Newsletter-Patterns, VIP, Einstufungs-Regeln, Marken, Clustering (die gemeinsame Zeile). Vornamen sind eine Server-Tabelle ohne Benutzer und ohne Konto. Auffällige Absender-Domains lesen den gemeinsamen Cache `audit_domain_intel_cache`. Jung und neu folgen den Tagesgrenzen des gewählten Kontos, sonst 30 und 90.
 
 **Nur für das gewählte Konto:** Wortlisten, Aufbewahrung, Meine Domains, Meine Adressen, wichtige Ordner, Domain-Abfrage, Ordner ausnehmen, bekannte Kontakte.
 

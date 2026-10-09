@@ -32,6 +32,7 @@ Tab **Konfiguration** im Ordner-Audit (`/api/audit-config/*`).
 | **Wichtige Keywords / Newsletter-Patterns / VIP** | DB, für alle Konten des Benutzers, gleiche Zählung wie die Domains | Klassifikation (wichtig vs. löschbar); Safe-Pattern-Grundtext: «Marketing-Absender (Pattern)» — nicht identisch mit Scam-Layer |
 | **Einstufungs-Regeln** | DB, für alle Konten. Das Tage-Feld ist nicht die Aufbewahrung | Disposition SAFE/IMPORTANT/SCAM/REVIEW nach Pattern |
 | **Aufbewahrung** | zwei Tagesfelder am Konto | Ab wann eine Routine-Mail sicher löschbar werden darf |
+| **Auffällige Absender-Domains** | `audit_domain_intel_cache`, eine Tabelle für die Anwendung | Nur Anzeige. Jung/neu nach den Tagesgrenzen des gewählten Kontos, sonst 30 und 90 |
 | **Marken-Domains (Scam)** | DB + **eingebaute** System-Map | Layer 1: **B1** (Marke/Domain-Mismatch) plus **E3/E6** → Kategorie **Verdacht** ohne Provider-Flag; **Scam** = Identität + Transport/Auth-Schwäche oder (nur bei Verdacht-Kandidaten) DBL/junge Domain. Auth-**pass** senkt nicht. |
 | **Ordner vom Scan ausnehmen** | `audit_exclude_folders` | Kein Audit für diese IMAP-Ordner |
 
