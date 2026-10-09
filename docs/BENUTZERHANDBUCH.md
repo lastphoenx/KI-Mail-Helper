@@ -1,7 +1,7 @@
 ﻿# 📧 KI-Mail-Helper – Benutzerhandbuch
 
-**Version:** 2.2.2 (Multi-User Edition)  
-**Stand:** Januar 2026
+**Version:** 2.3.0  
+**Stand:** Oktober 2026
 
 ---
 
@@ -42,7 +42,7 @@ KI-Mail-Helper ist ein selbst-gehosteter Email-Organizer mit Multi-User-Support,
 | **⚡ Aktions-Regeln** | Aktionen auf Mails (verschieben, markieren), Menü `/rules` |
 | **🏷️ Intelligente Tags** | KI schlägt Tags vor, lernt aus deinem Verhalten |
 | **📁 IMAP-Aktionen** | Löschen, Verschieben, Flaggen direkt aus der App |
-| **🔐 Zero-Knowledge** | Server sieht niemals Klartext-Daten |
+| **🔐 Verschlüsselung** | Mails liegen verschlüsselt in der Datenbank. Angemeldet liest der Server sie |
 | **👥 Multi-User** | Mehrere Benutzer mit isolierten Daten |
 
 ### Was diese App NICHT ist
@@ -64,7 +64,7 @@ KI-Mail-Helper ist ein selbst-gehosteter Email-Organizer mit Multi-User-Support,
    - **E-Mail:** Deine Email-Adresse
    - **Passwort:** Mindestens 24 Zeichen
 
-> ⚠️ **Wichtig:** Das Passwort ist dein **Master-Passwort**. Es verschlüsselt alle deine Daten. Bei Verlust sind deine Daten **unwiederbringlich verloren**!
+> ⚠️ **Wichtig:** Das Passwort wickelt den Schlüssel für deine Mails. Ohne das Passwort kommst du nicht mehr an sie heran.
 
 > **ℹ️ Hinweis:** Der **erste User kann sich frei registrieren**. Alle weiteren User benötigen einen Whitelist-Eintrag durch den Admin.
 
@@ -715,19 +715,20 @@ Besteht eine Regel nur aus diesem Alter und verschiebt oder löscht sie, trifft 
 
 | Einstellung | Zweck |
 |-------------|-------|
-| **Embedding Model** | Semantische Suche & Tag-Vorschläge |
-| **Base Model** | Schnelle Email-Analyse |
-| **Optimize Model** | Tiefe Analyse bei "Optimieren" |
+| **Embedding Model** | Semantische Suche und Tag-Vorschläge |
+| **Base Model** | Erster Durchlauf der Posteingang-Bewertung |
+| **Optimize Model** | Optionaler zweiter Durchlauf bei hohen Scores |
+| **Identitäts-KI** | Nur die Grauzone im Ordner-Audit, eigener Aufruf |
 
 ---
 
 ## 14. Sicherheit & Datenschutz
 
-### Zero-Knowledge-Architektur
+### Verschlüsselung
 
-- **Alle Daten verschlüsselt** mit AES-256-GCM
-- **Server sieht niemals Klartext** – Entschlüsselung nur im Browser
-- **Passwort = Schlüssel** – Bei Verlust sind Daten unwiederbringlich
+- Mails und Zugangsdaten liegen mit AES-256-GCM in der Datenbank
+- Nach der Anmeldung entschlüsselt der Server sie. Das passiert nicht im Browser
+- Ohne dein Passwort kommst du nicht mehr an die Mails. Solange eine Sitzung oder ein Dienst-Token läuft, kann der Betreiber des Servers den Klartext lesen. Die Grenzen stehen in `docs/SECURITY.md`
 
 ### Verwendete Kryptographie
 
@@ -745,7 +746,7 @@ Besteht eine Regel nur aus diesem Alter und verschiebt oder löscht sie, trifft 
 
 1. Prüfe IMAP-Zugangsdaten in den Einstellungen
 2. Teste die Verbindung mit **"🔌 Verbindung testen"**
-3. Prüfe Celery-Worker: `systemctl status mail-helper-worker`
+3. Prüfe Celery-Worker: `systemctl status mail-helper-celery-worker`
 
 ### "KI-Analyse schlägt fehl"
 
@@ -760,7 +761,7 @@ Besteht eine Regel nur aus diesem Alter und verschiebt oder löscht sie, trifft 
 
 ### "Passwort vergessen"
 
-> ⚠️ **Nicht wiederherstellbar.** Zero-Knowledge bedeutet: Ohne Passwort kann niemand deine Daten entschlüsseln. Du musst einen neuen Account erstellen.
+> ⚠️ **Für dich nicht wiederherstellbar.** Ohne das Passwort wickelt die App den Schlüssel nicht aus. Einen neuen Account anlegen ist dann der Weg. Ein noch gültiger Dienst-Token auf dem Server ist etwas anderes: den kann der Betreiber mit dem Anwendungs-Geheimnis lesen.
 
 ---
 
@@ -786,8 +787,8 @@ Besteht eine Regel nur aus diesem Alter und verschiebt oder löscht sie, trifft 
 | **IMAP** | Protokoll zum Abrufen von Emails |
 | **SMTP** | Protokoll zum Versenden von Emails |
 | **Celery** | Hintergrund-Task-Queue für asynchrone Jobs |
-| **Zero-Knowledge** | Server-Architektur ohne Klartext-Zugriff |
+| **Verschlüsselung im Ruhezustand** | Klartext in der Datenbank nur als AES-256-GCM. Der Server liest ihn während der Sitzung |
 
 ---
 
-*Dieses Handbuch wurde für KI-Mail-Helper v2.0 (Multi-User Edition) erstellt.*
+*Stand 2.3.0, Oktober 2026.*

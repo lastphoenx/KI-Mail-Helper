@@ -1,7 +1,7 @@
 ﻿# 🔐 KI-Mail-Helper – Security
 
-**Version:** 2.0.0 (Multi-User Edition)  
-**Stand:** August 2026
+**Version:** 2.3.0  
+**Stand:** Oktober 2026
 
 ---
 
@@ -13,7 +13,7 @@ Siehe [Abschnitt 14 – Threat Model](#14-threat-model) für ehrliche Grenzen (S
 
 ---
 
-## 1. Zero-Knowledge Encryption
+## 1. Verschlüsselung im Ruhezustand
 
 ### Schlüssel-Hierarchie
 
@@ -25,14 +25,14 @@ Siehe [Abschnitt 14 – Threat Model](#14-threat-model) für ehrliche Grenzen (S
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │  KEK (Key Encryption Key)                                   │ │
 │  │  • Abgeleitet aus Passwort                                  │ │
-│  │  • Existiert nur in RAM (Session)                           │ │
+│  │  • Abgeleitet aus Passwort, nicht in der DB                 │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │       │                                                          │
 │       ▼ AES-256-GCM Entschlüsselung                             │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │  DEK (Data Encryption Key)                                  │ │
 │  │  • Verschlüsselt in DB gespeichert (encrypted_dek)          │ │
-│  │  • Entschlüsselt nur in RAM                                 │ │
+│  │  • In der Sitzung (RAM und .flask_sessions)                 │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │       │                                                          │
 │       ▼ AES-256-GCM Entschlüsselung                             │
@@ -348,7 +348,8 @@ logger.error(f"Error: {type(exception).__name__}")
 pg_dump -U mail_helper mail_helper | gzip > backup_$(date +%Y%m%d).sql.gz
 
 # Nur verschlüsselte Daten werden gesichert
-# Ohne User-Passwort sind Backups nutzlos (Zero-Knowledge)
+# Dump ohne Sitzung und ohne gültigen Dienst-Token: kein Mail-Klartext
+# Dump plus SECRET_KEY plus aktiver Token: Klartext möglich
 ```
 
 ### Recovery Codes
@@ -436,7 +437,7 @@ User Password + Secret Key (128 Bit, nur clientseitig/beim User)
 
 | Limitierung | Beschreibung | Mitigation |
 |-------------|--------------|------------|
-| **Passwort-Verlust** | Daten unwiederbringlich | Recovery Codes, Dokumentation |
+| **Passwort-Verlust** | Du wickelst den DEK nicht mehr aus | Neuer Account. Recovery-Codes ersetzen das Passwort nicht |
 | **RAM-/Session-Exposure** | DEK in RAM und `.flask_sessions` | Kurze Session-TTL, Server-Hardening, verschlüsselte Backups |
 | **ServiceToken DEK** | Celery-Token: DEK in DB mit **AES-GCM + Key aus `SECRET_KEY`** (`stenc1:` in `service_tokens.encrypted_dek`; Spaltenname historisch). Risiko bei DB-Dump **während** aktiver Tokens + bekanntem `SECRET_KEY` | Kurze TTL (1–7 Tage), Löschung bei Logout, kein DB-Dump während aktiver Tokens |
 | **TOTP-Secret** | `totp_secret` in DB unverschlüsselt | DB-Zugriff = 2FA bypass möglich; Postgres nur localhost |
@@ -456,7 +457,7 @@ User Password + Secret Key (128 Bit, nur clientseitig/beim User)
 - [ ] PostgreSQL: Nur localhost, kein Remote-Zugriff
 - [ ] Redis: Nur localhost, kein Remote-Zugriff
 - [ ] **Kein** Flower/Celery-UI öffentlich
-- [ ] Regelmäßige Backups (verschlüsselte DB — ohne Passwort nutzlos)
+- [ ] Regelmäßige Backups. Ein Dump ohne Sitzung und ohne Token zeigt keinen Mail-Klartext. Mit `SECRET_KEY` und aktivem Token schon
 - [ ] Log-Rotation konfiguriert
 - [ ] Automatische Security-Updates (unattended-upgrades)
 - [ ] Secrets nicht in Git (.env in .gitignore)

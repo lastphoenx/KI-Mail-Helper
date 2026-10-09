@@ -1,8 +1,8 @@
-﻿# 🖥️ KI-Mail-Helper v2.0 – CLI-Befehlsreferenz
+﻿# 🖥️ KI-Mail-Helper – CLI-Befehlsreferenz
 
-**Alle wichtigen Kommandozeilen-Befehle für Entwicklung, Wartung und Betrieb**
+**Kommandozeilen-Befehle für Entwicklung, Wartung und Betrieb**
 
-> **v2.0 Multi-User Edition** – PostgreSQL + Celery + Flask Blueprints
+> **Stand 2.3.0, Oktober 2026.** Dienste: `mail-helper`, `mail-helper-celery-worker`, `mail-helper-celery-beat`. Modellnamen in den Beispielen sind keine Pflicht.
 
 ---
 

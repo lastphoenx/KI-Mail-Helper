@@ -1,8 +1,8 @@
 # KI-Modell-Empfehlungen für KI-Mail-Helper
 
 > **Zielgruppe:** Anwender und Administratoren  
-> **Stand:** Januar 2026  
-> **Version:** 2.0 (Multi-User Edition)  
+> **Stand:** Januar 2026, Modellnamen sind Beispiele  
+> **Betrieb:** Oktober 2026 wählst du das Modell in den Einstellungen, auch denkende lokale Modelle  
 > **Getestet mit:** Ollama, OpenAI, Anthropic, Mistral
 
 ---

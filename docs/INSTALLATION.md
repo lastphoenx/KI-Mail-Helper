@@ -1,7 +1,7 @@
 ﻿# 📦 KI-Mail-Helper – Installationsanleitung
 
-**Version:** 2.0.0 (Multi-User Edition)  
-**Stand:** Januar 2026
+**Version:** 2.3.0  
+**Stand:** Oktober 2026
 
 ---
 
@@ -28,7 +28,7 @@
 | Komponente | Minimum | Empfohlen |
 |------------|---------|-----------|
 | **OS** | Debian 11 / Ubuntu 22.04 | Debian 12 / Ubuntu 24.04 |
-| **Python** | 3.11 | 3.12+ |
+| **Python** | 3.13 | 3.13 |
 | **RAM** | 4 GB | 8-16 GB (für Ollama) |
 | **Disk** | 10 GB | 50 GB (für Ollama-Modelle) |
 | **PostgreSQL** | 14 | 17 |
@@ -115,17 +115,16 @@ sudo systemctl start ollama
 
 ### Modelle herunterladen
 
+Das Modell wählst du danach in den Einstellungen. Die Namen unten sind Beispiele, keine Pflicht.
+
 ```bash
-# PFLICHT: Embedding-Modell
-ollama pull all-minilm:22m      # 46 MB
+ollama pull <embedding-modell>
+ollama pull <analyse-modell>
 
-# EMPFOHLEN: Analyse-Modelle
-ollama pull llama3.2:1b         # 1.3 GB (schnell)
-ollama pull llama3.2:3b         # 2.0 GB (besser)
-
-# Prüfen
 ollama list
 ```
+
+Denkende Modelle brauchen für JSON-Antworten das Denken aus. Sonst kommt leeres JSON zurück.
 
 ---
 
@@ -259,7 +258,7 @@ Die Domain-Prüfung (Alter der Absender-Domain) braucht `dnspython`. Das Paket s
 
 ```bash
 psql -U mail_helper -h localhost -d mail_helper -c "\dt"
-# Sollte ~23 Tabellen zeigen (users, emails, email_tags, ...)
+# users, raw_emails, processed_emails, auto_rules, audit_* müssen da sein
 ```
 
 ---
@@ -347,8 +346,8 @@ Description=KI-Mail-Helper Web Application
 After=network.target postgresql.service redis-server.service
 
 [Service]
-User=www-data
-Group=www-data
+User=mailhelper
+Group=mailhelper
 WorkingDirectory=/opt/KI-Mail-Helper
 Environment="PATH=/opt/KI-Mail-Helper/venv/bin"
 ExecStart=/opt/KI-Mail-Helper/venv/bin/gunicorn \
@@ -361,7 +360,7 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-**Celery Worker (`/etc/systemd/system/mail-helper-worker.service`):**
+**Celery Worker (`config/mail-helper-celery-worker.service`):**
 
 ```ini
 [Unit]
@@ -369,8 +368,8 @@ Description=KI-Mail-Helper Celery Worker
 After=network.target postgresql.service redis-server.service
 
 [Service]
-User=www-data
-Group=www-data
+User=mailhelper
+Group=mailhelper
 WorkingDirectory=/opt/KI-Mail-Helper
 Environment="PATH=/opt/KI-Mail-Helper/venv/bin"
 ExecStart=/opt/KI-Mail-Helper/venv/bin/celery \
@@ -388,8 +387,8 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable mail-helper mail-helper-worker
-sudo systemctl start mail-helper mail-helper-worker
+sudo systemctl enable mail-helper mail-helper-celery-worker mail-helper-celery-beat
+sudo systemctl start mail-helper mail-helper-celery-worker mail-helper-celery-beat
 ```
 
 ### Nginx Reverse Proxy
@@ -486,10 +485,10 @@ which python  # Sollte venv/bin/python zeigen
 
 ```bash
 # Worker läuft?
-sudo systemctl status mail-helper-worker
+sudo systemctl status mail-helper-celery-worker
 
 # Logs prüfen
-journalctl -u mail-helper-worker -f
+journalctl -u mail-helper-celery-worker -f
 ```
 
 ### Migrationen fehlgeschlagen
@@ -512,13 +511,13 @@ alembic upgrade head
 ```bash
 # Services
 sudo systemctl status mail-helper
-sudo systemctl status mail-helper-worker
+sudo systemctl status mail-helper-celery-worker
 sudo systemctl status postgresql
 sudo systemctl status redis-server
 
 # Logs
 journalctl -u mail-helper -f
-journalctl -u mail-helper-worker -f
+journalctl -u mail-helper-celery-worker -f
 
 # Datenbank
 psql -U mail_helper -h localhost -d mail_helper

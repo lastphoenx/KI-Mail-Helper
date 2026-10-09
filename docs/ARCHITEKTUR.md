@@ -1,7 +1,7 @@
 ﻿# 🏗️ KI-Mail-Helper – Architektur
 
-**Version:** 2.0.0 (Multi-User Edition)  
-**Stand:** Januar 2026
+**Version:** 2.3.0  
+**Stand:** Oktober 2026
 
 ---
 
@@ -11,10 +11,9 @@
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              BROWSER (Client)                                │
 │  ┌─────────────────────────────────────────────────────────────────────────┐ │
-│  │  • Passwort → KEK (Key Encryption Key) ableiten                        │ │
-│  │  • KEK entschlüsselt → DEK (Data Encryption Key)                       │ │
-│  │  • DEK entschlüsselt → Emails, Credentials (Klartext)                  │ │
-│  │  • JavaScript Crypto API (AES-256-GCM)                                 │ │
+│  │  • Oberfläche: Dashboard, Ordner-Audit, Aktions-Regeln, Einstellungen  │ │
+│  │  • Passwort geht über HTTPS an den Server                              │ │
+│  │  • Keine Entschlüsselung im Browser                                    │ │
 │  └─────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
@@ -39,9 +38,9 @@
                     ▼                 ▼                 ▼
 ┌─────────────────────────┐  ┌──────────────┐  ┌──────────────────────────┐
 │      PostgreSQL 17      │  │   Redis 8    │  │      Celery Workers      │
-│  • mail_helper DB       │  │  • Sessions  │  │  • Email Fetch Tasks     │
-│  • 23 Tabellen          │  │  • Broker    │  │  • AI Processing Tasks   │
-│  • User-Isolation       │  │  • Results   │  │  • Reply Generation      │
+│  • mail_helper DB       │  │  • Sessions  │  │  • Mail-Sync, Regeln     │
+│  • Modelle in           │  │  • Broker    │  │  • Bewertung, Audit      │
+│    src/02_models.py     │  │  • Results   │  │  • Antworten             │
 └─────────────────────────┘  └──────────────┘  └──────────────────────────┘
 ```
 
@@ -51,51 +50,53 @@
 
 ### 1. Flask Application (Web Layer)
 
-**10 Blueprints** für modulare Struktur:
+Registriert in `src/app_factory.py`:
 
-| Blueprint | Präfix | Verantwortung |
-|-----------|--------|---------------|
-| `auth_bp` | `/auth` | Login, Logout, Register, 2FA |
-| `accounts_bp` | `/accounts` | Mail-Account CRUD, IMAP/SMTP Config |
-| `emails_bp` | `/emails` | Email-Liste, Detail, IMAP-Aktionen |
-| `api_bp` | `/api` | REST API Endpoints |
-| `dashboard_bp` | `/dashboard` | Prioritäts-Matrix, Statistiken |
-| `tags_bp` | `/tags` | Tag-Verwaltung, Suggestions |
-| `rules_bp` | `/rules` | Aktions-Regeln |
-| `settings_bp` | `/settings` | User-Einstellungen, AI-Config |
-| `threads_bp` | `/threads` | Conversation View |
-| `main_bp` | `/` | Index, Static Routes |
+| Blueprint | Wo | Verantwortung |
+|-----------|-----|---------------|
+| `auth_bp` | `blueprints/auth.py` | Login, Logout, Register, 2FA |
+| `accounts_bp` | `blueprints/accounts.py` | `/settings`, Mail-Konten, KI-Auswahl |
+| `emails_bp` | `blueprints/emails.py` | `/dashboard`, Liste, Detail |
+| `email_actions_bp` | `blueprints/email_actions.py` | Antworten, Optimize-Aufruf |
+| `api_bp` | `blueprints/api.py` | `/api` |
+| `tags_bp` | `blueprints/tags.py` | Tags |
+| `rules_bp` | `blueprints/rules.py` | `/rules`, Aktions-Regeln |
+| `folder_audit_bp` | `blueprints/folder_audit.py` | `/folder-audit` |
+| `audit_config_bp` | `blueprints/audit_config.py` | `/api/audit-config`, Einstufungs-Regeln |
+| `translator_bp` | `blueprints/translator.py` | Übersetzung |
+| `training_bp` | `blueprints/training.py` | Classifier-Training |
+| `admin_bp` | `blueprints/admin.py` | Admin |
+| `thread_api` | `src/thread_api.py` | `/api/threads` |
 
 ### 2. Datenbank (PostgreSQL)
 
-**23 Tabellen** mit User-Isolation:
+Die Tabellen stehen in `src/02_models.py`. Auszug:
 
 ```
-users                    # Benutzer mit verschlüsseltem DEK
-├── mail_accounts       # IMAP/SMTP Accounts (verschlüsselt)
-│   ├── raw_emails      # Rohe Emails (verschlüsselt)
-│   ├── processed_emails # KI-Analyse-Ergebnisse
-│   ├── mail_server_states # UIDVALIDITY, Last-Sync
-│   └── trusted_senders # Whitelist pro Account
-├── email_tags          # User-Tags mit Embeddings
-├── email_tag_assignments # Tag-Email-Zuordnungen
-├── auto_rules          # Automatische Regeln
-├── reply_style_settings # Antwort-Stil-Konfiguration
-├── tag_suggestion_queue # Pending Tag-Vorschläge
-├── spacy_*             # KI-Priorisierung Config
-└── alembic_version     # Migration Tracking
+users                    # Benutzer, gewickelter DEK
+├── mail_accounts        # IMAP/SMTP, Zugangsdaten verschlüsselt
+│   ├── raw_emails       # Mails verschlüsselt
+│   ├── processed_emails # Bewertung, Base und Optimize getrennt
+│   └── mail_server_state
+├── service_tokens       # kurzlebiger DEK für Celery, mit SECRET_KEY gewickelt
+├── auto_rules           # Aktions-Regeln (/rules)
+├── audit_*              # Einstufung, Wortlisten, Kontakte, Domain-Cache
+├── email_tags
+└── alembic_version
 ```
 
 ### 3. Task Queue (Celery + Redis)
 
 **Asynchrone Verarbeitung** für lang laufende Jobs:
 
-```python
-# Tasks in src/celery_tasks/
-email_fetch_tasks.py      # fetch_emails_for_account()
-email_processing_tasks.py # process_single_email(), reprocess_email_base()
-reply_generation_tasks.py # generate_reply_draft()
-maintenance_tasks.py      # cleanup_old_sessions()
+```text
+src/celery_app.py
+src/tasks/mail_sync_tasks.py
+src/tasks/email_processing_tasks.py
+src/tasks/reply_generation_tasks.py
+src/tasks/rule_execution_tasks.py
+src/tasks/folder_audit_tasks.py
+src/tasks/maintenance_tasks.py
 ```
 
 **Konfiguration:**
@@ -108,18 +109,24 @@ CELERY_RESULT_BACKEND = redis://localhost:6379/2
 
 **Multi-Provider Support:**
 
-| Provider | Embedding | Base | Optimize |
-|----------|-----------|------|----------|
-| **Ollama** | all-minilm:22m | llama3.2:1b | llama3.2:3b |
-| **OpenAI** | text-embedding-3-small | gpt-4o-mini | gpt-4o |
-| **Anthropic** | - | claude-3-haiku | claude-3-5-sonnet |
-| **Mistral** | mistral-embed | mistral-small | mistral-large |
+Modelle stehen in den Einstellungen, nicht fest im Code. Provider: Ollama, OpenAI, Anthropic, Mistral.
 
-**Hybrid Pipeline (Phase Y):**
+| Rolle | Wofür |
+|-------|--------|
+| **Embedding** | Semantische Suche und Tag-Vorschläge |
+| **Base** | Erster Durchlauf der Posteingang-Bewertung |
+| **Optimize** | Optionaler zweiter Durchlauf, nur hohe Scores |
+| **Identität** | Ordner-Audit, nur die Grauzone. Nicht der Optimize-Durchlauf |
+
+Denkende lokale Modelle (zum Beispiel Qwen) brauchen für JSON-Antworten das Denken aus.
+
+**Lokaler Score, dann optional der zweite Durchlauf:**
 ```
-Email → spaCy NLP (80%) → Detektoren → Ensemble Combiner → Score
+Email → spaCy NLP (80%) → Detektoren → Ensemble → Score
               ↓                              ↑
          Keywords (20%) ──────────────────────
+                                ↓
+                    optional: Optimize-Modell
 ```
 
 ### 5. Ordner-Audit
@@ -199,13 +206,15 @@ Index und Spalten: `docs/audit/`.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Zero-Knowledge Verschlüsselung
+### Verschlüsselung im Ruhezustand
+
+Das ist nicht Zero-Knowledge. Der Server entschlüsselt, solange die Sitzung oder ein Dienst-Token den DEK hält. Grenzen: `docs/SECURITY.md`.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     USER LOGIN                                   │
 │                                                                  │
-│  Passwort ──PBKDF2──▶ KEK (Key Encryption Key)                  │
+│  Passwort ──PBKDF2 (600.000)──▶ KEK                             │
 │                          │                                       │
 │                          ▼                                       │
 │             encrypted_dek (aus DB) ──AES-GCM──▶ DEK             │
@@ -213,8 +222,9 @@ Index und Spalten: `docs/audit/`.
 │                                                    ▼             │
 │             encrypted_* Felder ──AES-GCM──▶ Klartext            │
 │                                                                  │
-│  KEK + DEK nur in Server-RAM (Session)                          │
-│  DB enthält NUR verschlüsselte Daten                            │
+│  DEK in der Server-Sitzung (RAM und .flask_sessions)            │
+│  Celery: kurzlebiger Token, DEK mit SECRET_KEY gewickelt        │
+│  PostgreSQL selbst enthält den Mail-Klartext nicht              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -225,23 +235,14 @@ Index und Spalten: `docs/audit/`.
 ```
 KI-Mail-Helper/
 ├── src/
-│   ├── __init__.py           # App Factory
-│   ├── blueprints/           # 10 Flask Blueprints
-│   │   ├── auth.py
-│   │   ├── accounts.py
-│   │   ├── emails.py
-│   │   ├── api.py
-│   │   └── ...
-│   ├── celery_tasks/         # Asynchrone Tasks
-│   │   ├── celery_app.py
-│   │   ├── email_fetch_tasks.py
-│   │   └── ...
-│   ├── services/             # Business Logic
-│   │   ├── encryption_service.py
-│   │   ├── ai_client.py
-│   │   ├── mail_fetcher.py
-│   │   └── ...
-│   └── models.py             # SQLAlchemy Models
+│   ├── app_factory.py        # Flask Application Factory
+│   ├── celery_app.py         # Celery
+│   ├── 02_models.py          # SQLAlchemy-Modelle
+│   ├── 03_ai_client.py       # KI-Provider
+│   ├── 08_encryption.py      # AES-256-GCM, DEK/KEK
+│   ├── blueprints/           # siehe Tabelle oben
+│   ├── tasks/                # Celery-Tasks
+│   └── services/             # Audit, Sanitizer, Tags
 ├── templates/                # Jinja2 Templates
 ├── migrations/               # Alembic Migrations
 │   └── versions/
@@ -261,9 +262,9 @@ KI-Mail-Helper/
 ### Systemd Services
 
 ```
-mail-helper.service          # Gunicorn (Flask App)
-mail-helper-worker.service   # Celery Worker
-mail-helper-beat.service     # Celery Beat (Scheduler)
+mail-helper.service                 # Gunicorn
+mail-helper-celery-worker.service   # Celery Worker
+mail-helper-celery-beat.service     # Celery Beat
 postgresql.service           # Datenbank
 redis-server.service         # Cache & Message Broker
 ```
@@ -329,7 +330,7 @@ celery -A src.celery_app worker --concurrency=8
 journalctl -u mail-helper -f
 
 # Celery Worker
-journalctl -u mail-helper-worker -f
+journalctl -u mail-helper-celery-worker -f
 
 # PostgreSQL
 tail -f /var/log/postgresql/postgresql-17-main.log
@@ -353,4 +354,4 @@ redis-cli ping
 
 ---
 
-*Dieses Dokument beschreibt die Architektur von KI-Mail-Helper v2.0 (Multi-User Edition).*
+*Stand 2.3.0, Oktober 2026. Die Unit-Dateien liegen in `config/`.*
