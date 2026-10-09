@@ -31,7 +31,7 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - Login: neue Session-Kennung nach der Anmeldung. Ein TOTP-Code gilt nur für einen Zeitschritt (`users.last_totp_step`). Ein Recovery-Code wird mit einem atomaren Update verbraucht. Passwortwechsel löscht die Service-Token und erhöht `users.session_epoch`, damit ältere Sitzungen enden. Migration `e5f6a7b8c9d0`.
 - Der 100.000-Runden-Pfad ist entfernt. Login liest nur noch `encrypted_dek` mit 600.000 Runden. Die Spalte `encrypted_master_key` bleibt ungenutzt liegen.
 - Session-Datei: `regenerate` löscht die alte Datei beim Login. Neu trainierte Klassifikatoren werden sofort signiert, wenn `CLASSIFIER_HMAC_KEY` gesetzt ist.
-- 2FA-Freigabe für Recovery-Codes, Mail-Konto anlegen, bearbeiten, löschen, leeren und den Google-Start. Fünf Minuten nach Login oder richtiger Eingabe entfällt die erneute Abfrage. Ein falscher Code zählt wie ein Fehlversuch am Login. Der Google-Rückruf verlangt keinen Code.
+- 2FA-Freigabe für Recovery-Codes, Mail-Konto anlegen, bearbeiten, löschen, leeren und den Google-Start. Fünf Minuten nach Login oder richtiger Eingabe entfällt die erneute Abfrage. Ein falscher Code zählt wie ein Fehlversuch am Login (5 Versuche, 15 Minuten, derselbe Zähler). Der Google-Rückruf verlangt keinen Code. `SECURITY[STEPUP_FAILED]` enthält keine IP, fail2ban erkennt die Zeile nicht.
 
 ### Migrationen
 

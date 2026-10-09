@@ -171,10 +171,10 @@ Ein lokaler Mail-Assistent, der E-Mails:
   - Während der Anmeldung liegt der DEK in der Server-Sitzung. Hintergrundjobs bekommen einen kurzlebigen Dienst-Token
   - Ein Datenbank-Dump ohne Sitzung und ohne diesen Token zeigt keinen Mail-Klartext. Wer den Server oder die Sitzungsdateien liest, kann den Klartext sehen
 - **🔒 Härtung** – siehe [docs/SECURITY.md](docs/SECURITY.md). Host, systemd und `.env` stehen im privaten Betriebsdokument des Betreibers
-  - **Flask-Limiter**: Rate Limiting (5 requests/min Login/2FA)
-  - **Account Lockout**: 5 Failed → 15min Ban
-  - **Session Timeout**: 30min Inaktivität → Auto-Logout
-  - **Fail2Ban Integration**: Network-Level IP Banning
+  - **Flask-Limiter**: Rate Limiting (5 requests/min Login, 2FA und die Freigabe-POSTs)
+  - **Account Lockout**: 5 Fehlversuche → 15 Minuten, gemeinsamer Zähler für Passwort, 2FA und Freigabe
+  - **Session Timeout**: Standard 60 Minuten (`SESSION_LIFETIME_MINUTES`)
+  - **Fail2Ban**: IP-Bann für `LOGIN_FAILED`, `2FA_FAILED` und `LOCKOUT`. Die Freigabe-Zeile `STEPUP_FAILED` hat keine IP und zählt dort nicht.
   - **Audit Logging**: Strukturierte Security-Events für Monitoring
 - **📥 Fetch-System** – Intelligente Mail-Synchronisation
   - **IMAP** – GMX, Yahoo, Hotmail, custom servers

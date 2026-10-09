@@ -80,11 +80,13 @@ Nach der Registrierung wirst du zur 2FA-Einrichtung weitergeleitet. **2FA ist Pf
 **Recovery-Codes:**
 Nach der 2FA-Aktivierung erhältst du 10 Einmal-Codes. **Speichere diese sicher ab!**
 
+Neue Codes erzeugst du in den Einstellungen. Dafür brauchst du das Passwort und, wenn die letzte Anmeldung länger als etwa fünf Minuten her ist, einen aktuellen Code aus der Authenticator-App. Die alten Codes gelten danach nicht mehr. Ein falscher Authenticator-Code zählt wie ein Fehlversuch am Login: nach fünf Versuchen ist das Konto 15 Minuten gesperrt, auch für dich. Ein falsches Passwort in diesem Formular zählt nicht mit.
+
 ### 2.3 Mail-Account hinzufügen
 
 1. Gehe zu **⚙️ Einstellungen**
 2. Klicke auf **"Neuen Account hinzufügen"**
-3. Fülle das Formular aus:
+3. Fülle das Formular aus. Speichern, Ändern, Löschen und «Mails löschen» fragen nach einem aktuellen 2FA-Code, wenn die letzte Anmeldung länger als etwa fünf Minuten her ist. Bei einem falschen Code bleibt das übrige Formular stehen, das IMAP-Passwort musst du neu eingeben. Fünf falsche Codes sperren das Konto für 15 Minuten.
 
 #### IMAP-Setup (Alle Provider)
 

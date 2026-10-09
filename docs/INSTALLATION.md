@@ -256,7 +256,9 @@ alembic current
 
 `alembic current` soll `(head)` zeigen. Die Revisions-ID nicht von Hand in diese Anleitung schreiben; sie ändert sich mit jeder Migration.
 
-Nach diesem Stand legt `e5f6a7b8c9d0` die Spalten `users.last_totp_step` und `users.session_epoch` an. Ohne den Upgrade-Schritt startet die Anmeldung nicht.
+Nach diesem Stand legt `e5f6a7b8c9d0` die Spalten `users.last_totp_step` und `users.session_epoch` an. Ohne den Upgrade-Schritt startet die Anmeldung nicht. Die späteren Änderungen (Login nur noch über `encrypted_dek`, Session-Datei beim Login löschen, 2FA-Freigabe) brauchen keine weitere Migration.
+
+Wenn `CLASSIFIER_HMAC_KEY` gesetzt ist, verlangt das Laden eine `.sig` neben jeder Modelldatei. Einmal `python scripts/sign_classifiers.py` für schon vorhandene Dateien. Das Training schreibt die Signatur danach selbst. Ohne den Schlüssel bleibt das Laden wie bisher.
 
 Die Domain-Prüfung (Alter der Absender-Domain) braucht `dnspython`. Das Paket steht in `requirements.txt`.
 

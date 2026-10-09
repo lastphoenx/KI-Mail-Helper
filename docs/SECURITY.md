@@ -108,18 +108,33 @@ hash = hashlib.pbkdf2_hmac('sha256', password, salt, iterations)
 - **TOTP** (Time-based One-Time Password)
 - **Algorithmus:** SHA-1, 30s Intervall, 6 Ziffern
 - **10 Recovery Codes** bei Aktivierung
+- Ein Code gilt nur für einen Zeitschritt. `users.last_totp_step` merkt sich den Schritt (`matching_totp_step`, Fenster ±1). Derselbe Code gilt nicht noch einmal.
+- Login liest nur `encrypted_dek` (PBKDF2, 600.000 Runden). Die alte Spalte `encrypted_master_key` bleibt in der Tabelle, der Login benutzt sie nicht.
+
+### Freigabe für einzelne Aktionen
+
+Nach dem Login gilt eine gestohlene Sitzung wie der angemeldete Nutzer. Deshalb verlangen diese POSTs einen aktuellen TOTP-Code, wenn die letzte Prüfung länger als fünf Minuten her ist (`src/helpers/stepup_totp.py`):
+
+- Recovery-Codes neu erzeugen
+- Mail-Konto anlegen, bearbeiten, löschen
+- lokale Mails eines Kontos leeren
+- Google-Anmeldung starten
+
+Der Rückruf von Google verlangt keinen Code. Nach einer richtigen Eingabe und direkt nach dem Login steht `totp_stepup_until` in der Session (300 Sekunden). Logout und Passwortwechsel löschen die Session, damit auch dieses Fenster. Ein falscher Code schließt es sofort.
+
+Ein leeres Code-Feld zählt nicht. Ein falscher Code erhöht denselben Zähler wie ein falsches Passwort. Die Formulare zeichnen die übrigen Felder neu, schreiben IMAP-Passwort, SMTP-Passwort und das Google-Client-Secret aber nicht wieder ins HTML.
+
+Recovery-Codes verlangen zusätzlich das Passwort. Ein falsches Passwort erhöht den Zähler nicht. Dort bleibt das Limit von 5 POSTs pro Minute und IP. Das Passwort hat mindestens 24 Zeichen.
 
 ### Account Lockout
 
-```python
-MAX_FAILED_ATTEMPTS = 5
-LOCKOUT_DURATION = 900  # 15 Minuten
+Ein Zähler, `users.failed_login_attempts`, für falsches Passwort, falschen Code bei der Anmeldung und falschen Code auf den Freigabe-POSTs. Das Update ist ein atomares `UPDATE … RETURNING` in `User.record_failed_login`. Ab 5 Versuchen setzt `locked_until` auf 15 Minuten.
 
-# Atomarer Counter (Race-Condition-sicher)
-UPDATE users SET failed_login_count = failed_login_count + 1
-WHERE id = :user_id
-RETURNING failed_login_count
-```
+In diesen 15 Minuten lehnt der Login schon vor der Passwortprüfung ab. Richtiges Passwort und richtiger Code helfen nicht. Danach lässt `is_locked()` wieder durch, weil `locked_until` in der Vergangenheit liegt. Der Zähler in der Datenbank bleibt stehen, bis eine erfolgreiche Anmeldung, eine erfolgreiche 2FA oder eine erfolgreiche Freigabe `reset_failed_logins` aufruft. Der nächste Fehlversuch sperrt sofort wieder für 15 Minuten.
+
+Eine gestohlene Sitzung reicht für die Mail-Konto-POSTs. Fünf falsche Codes sperren das Konto, ohne das Passwort. Dieselbe Sitzung kann das alle 15 Minuten wiederholen, bis sie abläuft (Standard 60 Minuten) oder ein Passwortwechsel sie beendet. Das ist derselbe Zähler wie bei falschen Passwörtern. Die Sperre hängt am Konto, nicht an der IP.
+
+Am Login lautet die Meldung «Ungültige Anmeldedaten», ohne Restzeit. Auf den Freigabe-Seiten steht «Konto vorübergehend gesperrt.», ebenfalls ohne Minuten.
 
 ---
 
@@ -138,6 +153,8 @@ SESSION_COOKIE_SAMESITE = "Lax"   # CSRF-Schutz
 ```
 
 **Wichtig:** Nach Login wird `session["master_key"]` (DEK) in der Filesystem-Session gespeichert. Wer Lesezugriff auf `.flask_sessions` oder Backups davon hat, kann den DEK extrahieren. Das ist kein DB-Zero-Knowledge-Szenario, sondern Host-/Backup-Kompromittierung.
+
+Beim Login, nach der 2FA und bei der Registrierung ruft `rotate_server_session()` `session_interface.regenerate` auf (Flask-Session 0.8). Die alte Datei wird gelöscht, die Kennung im Cookie wechselt, die Daten bleiben. Ein Passwortwechsel erhöht `users.session_epoch`, löscht die Service-Token und leert die Session. Ältere Sitzungen fallen am nächsten Request weg. Fehlt `auth_epoch` in einer alten Session, zählt sie als Epoche 0 und bleibt gültig, bis sich das Passwort ändert.
 
 ### Session-Timeout
 
@@ -158,9 +175,17 @@ default_limits = []
 limiter.limit("5 per minute")(login)
 limiter.limit("3 per minute")(register)
 limiter.limit("5 per minute")(verify_2fa)
+# nur POST, je 5 pro Minute: Recovery-Codes, Konto anlegen/bearbeiten/löschen,
+# Mails leeren, Google-Start
 ```
 
-Zusätzlich empfohlen: nginx `limit_req` auf dem Reverse Proxy (CT 108).
+Das Limit hängt an der IP. Die Kontosperre hängt am Nutzer. Fünf falsche Codes auf einem Freigabe-POST erreichen die Sperre in einer Minute. Das Limit verhindert das nicht.
+
+`config/fail2ban-filter.conf` erkennt `SECURITY[LOGIN_FAILED]`, `SECURITY[2FA_FAILED]` und `SECURITY[LOCKOUT]`, jeweils mit `ip=`. Fünf Treffer in zehn Minuten, Bann eine Stunde (`config/fail2ban-jail.conf`). `SECURITY[STEPUP_FAILED]` schreibt Nutzer-ID und Zähler, keine IP, und passt auf keinen dieser Ausdrücke. Wer über eine gestohlene Sitzung Codes probiert, bekommt den Stunden-Bann nicht. Ihn bremst nur die Kontosperre von 15 Minuten.
+
+Ist `CLASSIFIER_HMAC_KEY` gesetzt, lädt der Klassifikator eine `.pkl` oder `.joblib` nur mit passender `.sig`. Training und `scripts/sign_classifiers.py` schreiben die Signatur über denselben Helfer. Ohne den Schlüssel bleibt das Laden unverändert.
+
+Zusätzlich empfohlen: nginx `limit_req` auf dem Reverse Proxy.
 
 ---
 
@@ -355,8 +380,9 @@ pg_dump -U mail_helper mail_helper | gzip > backup_$(date +%Y%m%d).sql.gz
 ### Recovery Codes
 
 - 10 Einmal-Codes bei 2FA-Aktivierung
-- Jeder Code nur einmal verwendbar
+- Jeder Code nur einmal verwendbar (`UPDATE … WHERE used_at IS NULL`)
 - Sicher aufbewahren (z.B. Passwort-Manager)
+- Neu erzeugen: Passwort plus, außerhalb des Fünf-Minuten-Fensters, aktueller TOTP-Code. Die alten Codes werden dabei ungültig.
 
 ---
 
@@ -483,7 +509,7 @@ Falls du eine Sicherheitslücke findest:
 |------------------|------------|-------------|
 | DB-Dump ohne Login | **Ja** (Mail-Inhalte) | AES-GCM, DEK mit PBKDF2 aus Passwort |
 | Anderer User sieht meine Mails | **Ja** | `user_id`-Filter auf allen Queries |
-| Brute-Force Login | **Teilweise** | 2FA, Lockout, IP Rate-Limits |
+| Brute-Force Login | **Teilweise** | 2FA, Lockout (5 Versuche, 15 Minuten), IP-Limit 5/Minute |
 | Cloud-Provider sieht Roh-PII | **Ja** (wenn konfiguriert) | Anonymisierung fail-closed für Cloud |
 | Fremde Celery-Task-ID abfragen | **Ja** | Task-Ownership in Redis + Metadaten |
 
@@ -493,7 +519,7 @@ Falls du eine Sicherheitslücke findest:
 |----------|--------|---------|
 | Host root auf App-Server | Hoch | `.flask_sessions` enthält DEK |
 | DB-Dump + aktiver ServiceToken + `SECRET_KEY` | Hoch | `encrypted_dek` = DEK mit app-Key verschlüsselt (`service_token_storage.py`), nicht Klartext |
-| Kompromittierte Session-Cookie | Hoch | Wie eingeloggter User |
+| Kompromittierte Session-Cookie | Hoch | Wie eingeloggter User. Mail-Konto ändern, löschen oder leeren und der Google-Start verlangen außerhalb von fünf Minuten einen TOTP-Code. Fünf falsche Codes sperren das Konto für 15 Minuten, auch für den Besitzer. Der Stunden-Bann von fail2ban sieht diese Versuche nicht (`STEPUP_FAILED` ohne IP). |
 | Mail-HTML Tracking/Phishing | Mittel | CSP/Sandbox, kein HTML-Sanitizer |
 
 ### ServiceToken (Celery)
