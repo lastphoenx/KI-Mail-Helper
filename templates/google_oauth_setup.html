@@ -44,6 +44,7 @@
                 </div>
                 {% endif %}
                 
+                {% set posted = posted|default(none) %}
                 <form method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                     <div class="mb-3">
@@ -56,6 +57,7 @@
                             id="client_id" 
                             name="client_id" 
                             placeholder="xxx.apps.googleusercontent.com"
+                            value="{{ posted.client_id if posted else '' }}"
                             required
                         >
                         <small class="form-text text-muted">
@@ -80,6 +82,13 @@
                         </small>
                     </div>
                     
+                    {% if not stepup_fresh|default(false) %}
+                    <div class="mb-3">
+                        <label for="totp_code" class="form-label">Aktueller 2FA-Code</label>
+                        <input type="text" class="form-control" id="totp_code" name="totp_code" inputmode="numeric" autocomplete="one-time-code" required>
+                    </div>
+                    {% endif %}
+
                     <button type="submit" class="btn btn-primary w-100 btn-lg">
                         Weiter zu Google Anmeldung →
                     </button>

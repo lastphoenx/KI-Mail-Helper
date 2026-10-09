@@ -38,6 +38,12 @@ import importlib
 import logging
 
 from src.helpers import get_db_session, get_current_user_model
+from src.helpers.stepup_totp import (
+    posted_public_fields,
+    require_stepup,
+    stepup_error_text,
+    stepup_is_fresh,
+)
 from src.helpers.task_ownership import track_celery_task, verify_celery_task_access
 from src.helpers.http import external_request_scheme
 from src.helpers.network_safety import assert_safe_mail_host
@@ -197,6 +203,7 @@ def settings():
             user=user,
             mail_accounts=mail_accounts,
             totp_enabled=user.totp_enabled,
+            stepup_fresh=stepup_is_fresh(),
             ai_selected_provider_embedding=selected_provider_embedding,
             ai_selected_model_embedding=selected_model_embedding,
             ai_selected_provider_base=selected_provider_base,
@@ -724,7 +731,7 @@ def change_password():
 
                 logger.info(f"✅ Passwort geändert für User {user.id}")
 
-                session.clear()
+                session.clear()  # entfernt auch die 2FA-Freigabe in der Session
                 logout_user()
 
                 flash("Passwort erfolgreich geändert! Bitte neu anmelden.", "success")
@@ -772,7 +779,23 @@ def google_oauth_setup():
                     "google_oauth_setup.html",
                     step=1,
                     error="Client-ID und Client-Secret sind erforderlich",
+                    posted={"client_id": client_id},
+                    stepup_fresh=stepup_is_fresh(),
                 ), 400
+
+            reason = require_stepup(user, db)
+            if reason:
+                return render_template(
+                    "google_oauth_setup.html",
+                    step=1,
+                    error=stepup_error_text(
+                        reason,
+                        True,
+                        "Client-Secret bitte erneut eingeben.",
+                    ),
+                    posted={"client_id": client_id},
+                    stepup_fresh=False,
+                ), 401
 
             session["google_oauth_client_id"] = client_id
             session["google_oauth_client_secret"] = client_secret
@@ -792,7 +815,9 @@ def google_oauth_setup():
 
             return render_template("google_oauth_setup.html", step=2, google_auth_url=auth_url)
 
-        return render_template("google_oauth_setup.html", step=1)
+        return render_template(
+            "google_oauth_setup.html", step=1, stepup_fresh=stepup_is_fresh()
+        )
 
 
 # =============================================================================
@@ -801,7 +826,10 @@ def google_oauth_setup():
 @accounts_bp.route("/settings/mail-account/google/callback", methods=["GET"])
 @login_required
 def google_oauth_callback():
-    """Google OAuth Callback: Tauscht Auth Code gegen Token"""
+    """Google OAuth Callback: Tauscht Auth Code gegen Token.
+
+    Kein totp_code. Die Freigabe liegt auf dem Start-POST.
+    """
     from sqlalchemy.exc import IntegrityError
     
     models = _get_models()
@@ -977,6 +1005,17 @@ def add_mail_account():
                 return redirect(url_for("auth.login"))
             
             if request.method == "POST":
+                reason = require_stepup(user, db)
+                if reason:
+                    return render_template(
+                        "add_mail_account.html",
+                        error=stepup_error_text(
+                            reason, bool(request.form.get("imap_password") or request.form.get("smtp_password"))
+                        ),
+                        posted=posted_public_fields(),
+                        stepup_fresh=False,
+                    ), 401
+
                 # Input Validation
                 name = request.form.get("name", "").strip()
                 imap_server = request.form.get("imap_server", "").strip()
@@ -1123,7 +1162,9 @@ def add_mail_account():
                     ), 500
             
             # GET: Zeige Formular
-            return render_template("add_mail_account.html")
+            return render_template(
+                "add_mail_account.html", stepup_fresh=stepup_is_fresh()
+            )
             
     except Exception as e:
         logger.error(f"add_mail_account: Fehler: {type(e).__name__}: {e}")
@@ -1159,6 +1200,18 @@ def edit_mail_account(account_id):
                 return redirect(url_for("accounts.settings"))
             
             if request.method == "POST":
+                reason = require_stepup(user, db)
+                if reason:
+                    return render_template(
+                        "edit_mail_account.html",
+                        account=account,
+                        error=stepup_error_text(
+                            reason, bool(request.form.get("imap_password") or request.form.get("smtp_password"))
+                        ),
+                        posted=posted_public_fields(),
+                        stepup_fresh=False,
+                    ), 401
+
                 # Name Update
                 new_name = request.form.get("name", "").strip()
                 if new_name:
@@ -1327,7 +1380,11 @@ def edit_mail_account(account_id):
                     account.imap_server = "***verschlüsselt***"
                     account.imap_username = "***verschlüsselt***"
             
-            return render_template("edit_mail_account.html", account=account)
+            return render_template(
+                "edit_mail_account.html",
+                account=account,
+                stepup_fresh=stepup_is_fresh(),
+            )
             
     except Exception as e:
         logger.error(f"edit_mail_account: Fehler: {type(e).__name__}: {e}")
@@ -1354,6 +1411,11 @@ def delete_mail_account(account_id):
                 return redirect(url_for("accounts.settings"))
             
             account_name = account.name
+
+            reason = require_stepup(user, db)
+            if reason:
+                flash(stepup_error_text(reason), "danger")
+                return redirect(url_for("accounts.settings"))
             
             # Zuerst alle zugehörigen Emails löschen (FK-Constraint)
             try:
@@ -1562,6 +1624,13 @@ def purge_mail_account(account_id):
             if not account:
                 logger.warning(f"purge_mail_account: User {user.id} versuchte Purge auf Account {account_id}")
                 return jsonify({"error": "Account nicht gefunden"}), 404
+
+            reason = require_stepup(user, db)
+            if reason:
+                body = {"error": stepup_error_text(reason)}
+                if reason != "locked":
+                    body["needs_totp"] = True
+                return jsonify(body), 401
             
             account_name = account.name
             

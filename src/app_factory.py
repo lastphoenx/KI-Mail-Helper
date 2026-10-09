@@ -287,10 +287,26 @@ def create_app(config_name="production"):
     app.limiter = limiter
     logger.info("🛡️  Rate Limiting aktiviert")
 
-    from .blueprints.auth import login, register, verify_2fa
+    from .blueprints.auth import login, register, verify_2fa, regenerate_recovery_codes
+    from .blueprints.accounts import (
+        add_mail_account,
+        edit_mail_account,
+        delete_mail_account,
+        google_oauth_setup,
+        purge_mail_account,
+    )
     limiter.limit("5 per minute")(login)
     limiter.limit("3 per minute")(register)
     limiter.limit("5 per minute")(verify_2fa)
+    for stepup_post in (
+        regenerate_recovery_codes,
+        add_mail_account,
+        edit_mail_account,
+        delete_mail_account,
+        google_oauth_setup,
+        purge_mail_account,
+    ):
+        limiter.limit("5 per minute", methods=["POST"])(stepup_post)
     
     @app.before_request
     def generate_csp_nonce():

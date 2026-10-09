@@ -12,6 +12,7 @@
             <div class="alert alert-danger">{{ error }}</div>
             {% endif %}
             
+            {% set posted = posted|default(none) %}
             <form method="POST" class="mt-4">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <!-- IMAP (Eingang) -->
@@ -19,30 +20,31 @@
                 
                 <div class="mb-3">
                     <label for="name" class="form-label">Account-Name (z.B. "Privat GMX")</label>
-                    <input type="text" class="form-control" id="name" name="name" required>
+                    <input type="text" class="form-control" id="name" name="name" value="{{ posted.name if posted else '' }}" required>
                     <small class="text-muted">Nur für deine Übersicht</small>
                 </div>
                 
                 <div class="mb-3">
                     <label for="imap_server" class="form-label">IMAP-Server</label>
-                    <input type="text" class="form-control" id="imap_server" name="imap_server" placeholder="z.B. imap.gmx.net" required>
+                    <input type="text" class="form-control" id="imap_server" name="imap_server" placeholder="z.B. imap.gmx.net" value="{{ posted.imap_server if posted else '' }}" required>
                 </div>
                 
                 <div class="row">
                     <div class="col-md-6">
                         <div class="mb-3">
                             <label for="imap_port" class="form-label">IMAP-Port</label>
-                            <input type="number" class="form-control" id="imap_port" name="imap_port" value="993" required>
+                            <input type="number" class="form-control" id="imap_port" name="imap_port" value="{{ posted.imap_port if posted else '993' }}" required>
                             <small class="text-muted">993 (SSL) oder 143 (STARTTLS)</small>
                         </div>
                     </div>
                     <div class="col-md-6">
                         <div class="mb-3">
                             <label for="imap_encryption" class="form-label">Verschlüsselung</label>
+                            {% set imap_enc = posted.imap_encryption if posted else 'SSL' %}
                             <select class="form-select" id="imap_encryption" name="imap_encryption">
-                                <option value="SSL" selected>SSL/TLS (Port 993)</option>
-                                <option value="STARTTLS">STARTTLS (Port 143)</option>
-                                <option value="NONE">Keine</option>
+                                <option value="SSL" {% if imap_enc == 'SSL' %}selected{% endif %}>SSL/TLS (Port 993)</option>
+                                <option value="STARTTLS" {% if imap_enc == 'STARTTLS' %}selected{% endif %}>STARTTLS (Port 143)</option>
+                                <option value="NONE" {% if imap_enc == 'NONE' %}selected{% endif %}>Keine</option>
                             </select>
                         </div>
                     </div>
@@ -50,7 +52,7 @@
                 
                 <div class="mb-3">
                     <label for="imap_username" class="form-label">E-Mail-Adresse / Benutzername</label>
-                    <input type="email" class="form-control" id="imap_username" name="imap_username" placeholder="z.B. test-account@example.com" autocomplete="off" required>
+                    <input type="email" class="form-control" id="imap_username" name="imap_username" placeholder="z.B. test-account@example.com" value="{{ posted.imap_username if posted else '' }}" autocomplete="off" required>
                 </div>
                 
                 <div class="mb-3">
@@ -67,24 +69,25 @@
                 
                 <div class="mb-3">
                     <label for="smtp_server" class="form-label">SMTP-Server</label>
-                    <input type="text" class="form-control" id="smtp_server" name="smtp_server" placeholder="z.B. smtp.gmx.net">
+                    <input type="text" class="form-control" id="smtp_server" name="smtp_server" placeholder="z.B. smtp.gmx.net" value="{{ posted.smtp_server if posted else '' }}">
                 </div>
                 
                 <div class="row">
                     <div class="col-md-6">
                         <div class="mb-3">
                             <label for="smtp_port" class="form-label">SMTP-Port</label>
-                            <input type="number" class="form-control" id="smtp_port" name="smtp_port" value="587">
+                            <input type="number" class="form-control" id="smtp_port" name="smtp_port" value="{{ posted.smtp_port if posted else '587' }}">
                             <small class="text-muted">587 (STARTTLS) oder 465 (SSL)</small>
                         </div>
                     </div>
                     <div class="col-md-6">
                         <div class="mb-3">
                             <label for="smtp_encryption" class="form-label">Verschlüsselung</label>
+                            {% set smtp_enc = posted.smtp_encryption if posted else 'STARTTLS' %}
                             <select class="form-select" id="smtp_encryption" name="smtp_encryption">
-                                <option value="STARTTLS" selected>STARTTLS (Port 587)</option>
-                                <option value="SSL">SSL (Port 465)</option>
-                                <option value="NONE">Keine</option>
+                                <option value="STARTTLS" {% if smtp_enc == 'STARTTLS' %}selected{% endif %}>STARTTLS (Port 587)</option>
+                                <option value="SSL" {% if smtp_enc == 'SSL' %}selected{% endif %}>SSL (Port 465)</option>
+                                <option value="NONE" {% if smtp_enc == 'NONE' %}selected{% endif %}>Keine</option>
                             </select>
                         </div>
                     </div>
@@ -92,7 +95,7 @@
                 
                 <div class="mb-3">
                     <label for="smtp_username" class="form-label">SMTP-Benutzername</label>
-                    <input type="email" class="form-control" id="smtp_username" name="smtp_username" placeholder="Usually same as IMAP" autocomplete="off">
+                    <input type="email" class="form-control" id="smtp_username" name="smtp_username" placeholder="Usually same as IMAP" value="{{ posted.smtp_username if posted else '' }}" autocomplete="off">
                     <small class="text-muted">Meist wie IMAP-Benutzername</small>
                 </div>
                 
@@ -103,6 +106,13 @@
                 </div>
                 
                 <hr class="my-4">
+
+                {% if not stepup_fresh|default(false) %}
+                <div class="mb-3">
+                    <label for="totp_code" class="form-label">Aktueller 2FA-Code</label>
+                    <input type="text" class="form-control" id="totp_code" name="totp_code" inputmode="numeric" autocomplete="one-time-code" required>
+                </div>
+                {% endif %}
                 
                 <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                     <a href="/settings" class="btn btn-secondary">Abbrechen</a>

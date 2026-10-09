@@ -28,7 +28,7 @@
         color: #f1f5f9;
     }
 </style>
-<div class="container-xxl mt-4">
+<div class="container-xxl mt-4" id="settings-page" data-stepup-fresh="{{ '1' if stepup_fresh else '0' }}">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2 class="mb-0">⚙️ Einstellungen</h2>
         <a href="/dashboard" class="btn btn-outline-secondary">← Dashboard</a>
@@ -654,6 +654,9 @@
                                     </button>
                                     <form method="POST" action="/settings/mail-account/{{ account.id }}/delete" style="display: inline;" class="delete-account-form">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                                        {% if not stepup_fresh %}
+                                        <input type="text" name="totp_code" inputmode="numeric" autocomplete="one-time-code" placeholder="2FA-Code" required class="form-control form-control-sm d-inline-block" style="width: 7rem;">
+                                        {% endif %}
                                         <button type="submit" class="btn btn-danger" 
                                                 title="Löscht den gesamten Mail-Account inkl. aller zugehörigen E-Mails unwiderruflich.">
                                             ❌ Account löschen
@@ -696,6 +699,12 @@
                     <label for="recoveryRegenPassword" class="form-label">Passwort bestätigen</label>
                     <input type="password" class="form-control" id="recoveryRegenPassword" name="password" required autocomplete="current-password" />
                 </div>
+                {% if not stepup_fresh %}
+                <div class="mb-2">
+                    <label for="recoveryTotp" class="form-label">Aktueller 2FA-Code</label>
+                    <input type="text" class="form-control" id="recoveryTotp" name="totp_code" inputmode="numeric" autocomplete="one-time-code" required />
+                </div>
+                {% endif %}
                 <button type="submit" class="btn btn-outline-warning">
                     <i class="fas fa-sync"></i> Recovery-Codes regenerieren
                 </button>
@@ -1299,6 +1308,16 @@ function purgeMails(evt, accountId, accountName) {
     if (!confirm(`Alle lokal gespeicherten Mails für ${accountName} löschen?`)) {
         return;
     }
+    const page = document.getElementById('settings-page');
+    const fresh = page && page.dataset.stepupFresh === '1';
+    const code = fresh ? '' : window.prompt('Aktueller 2FA-Code');
+    if (!fresh && !code) {
+        return;
+    }
+    sendPurge(evt, accountId, accountName, code, false);
+}
+
+function sendPurge(evt, accountId, accountName, code, retried) {
     const btn = evt ? evt.target : null;
     const originalLabel = btn ? btn.textContent : '';
     if (btn) {
@@ -1306,24 +1325,39 @@ function purgeMails(evt, accountId, accountName) {
         btn.textContent = 'Lösche...';
     }
 
+    let handedOff = false;
     fetch(`/mail-account/${accountId}/purge`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
-        }
+        },
+        body: JSON.stringify(code ? { totp_code: code } : {})
     })
     .then(r => r.json())
     .then(data => {
-        if (data.status === 'ok') {
-            alert(`🧹 ${accountName}: ${data.raw_deleted} Raw / ${data.processed_deleted} Processed gelöscht.`);
+        if (data.needs_totp && !retried) {
+            const retry = window.prompt(data.error || 'Aktueller 2FA-Code');
+            if (!retry) {
+                return;
+            }
+            handedOff = true;
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalLabel || '🗑️ Mails löschen';
+            }
+            sendPurge(evt, accountId, accountName, retry, true);
+            return;
+        }
+        if (data.success) {
+            alert(`🧹 ${accountName}: ${data.deleted} Mails gelöscht.`);
         } else {
             alert(`❌ Fehler: ${data.error || 'Unbekannter Fehler'}`);
         }
     })
     .catch(e => alert(`❌ Fehler: ${e}`))
     .finally(() => {
-        if (btn) {
+        if (btn && !handedOff) {
             btn.disabled = false;
             btn.textContent = originalLabel || '🗑️ Mails löschen';
         }

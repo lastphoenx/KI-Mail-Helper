@@ -22,6 +22,7 @@ import secrets
 from src.helpers import get_db_session, get_current_user_model
 from src.helpers.security_log import sanitize_log_field
 from src.helpers.session_rotation import rotate_server_session
+from src.helpers.stepup_totp import mark_stepup_fresh, require_stepup, stepup_error_text
 
 auth_bp = Blueprint("auth", __name__)
 logger = logging.getLogger(__name__)
@@ -236,6 +237,7 @@ def login():
                 # Zero-Knowledge: Disable remember-me (verhindert DEK-Loss nach Session-Expire)
                 login_user(UserWrapper(user), remember=False)
                 rotate_server_session()
+                mark_stepup_fresh()
                 # Audit Log für erfolgreichen Login
                 logger.info(
                     f"SECURITY[LOGIN_SUCCESS]: user={sanitize_log_field(user.username)} ip={request.remote_addr} "
@@ -385,6 +387,7 @@ def register():
                 session["mandatory_2fa_setup"] = True
                 session["new_user_id"] = user.id
                 rotate_server_session()
+                mark_stepup_fresh()
                 flash(
                     "Registrierung erfolgreich! Bitte richte jetzt 2FA ein (Pflichtfeld).",
                     "success",
@@ -517,6 +520,7 @@ def verify_2fa():
                     try:
                         login_user(UserWrapper(user), remember=False)
                         rotate_server_session()
+                        mark_stepup_fresh()
                     except Exception as e:
                         logger.error(f"verify_2fa: login_user fehlgeschlagen: {e}")
                         flash("Login fehlgeschlagen. Bitte versuche es erneut.", "danger")
@@ -702,6 +706,11 @@ def regenerate_recovery_codes():
             password = request.form.get("password") or ""
             if not user.check_password(password):
                 flash("Passwort falsch — Recovery-Codes wurden nicht geändert.", "danger")
+                return redirect(url_for("accounts.settings"))
+
+            reason = require_stepup(user, db)
+            if reason:
+                flash(stepup_error_text(reason), "danger")
                 return redirect(url_for("accounts.settings"))
 
             try:
