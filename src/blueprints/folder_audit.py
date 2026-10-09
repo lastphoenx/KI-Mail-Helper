@@ -345,10 +345,15 @@ def get_folders(account_id):
                 fetcher.disconnect()
 
 
+@folder_audit_bp.route("/folder-audit/notable-domains", methods=["GET"])
 @folder_audit_bp.route("/folder-audit/notable-domains/<int:account_id>", methods=["GET"])
 @login_required
-def notable_sender_domains(account_id):
-    """Cache-Liste: Domain fehlt, ist jung oder neu. Keine Live-Abfrage."""
+def notable_sender_domains(account_id=None):
+    """Cache-Liste: Domain fehlt, ist jung oder neu. Keine Live-Abfrage.
+
+    Der Cache ist eine Tabelle für die Anwendung. Die Tagesgrenzen kommen
+    vom Konto, sonst 30 und 90.
+    """
     from src.services.audit_domain_intel import notable_kind
     from src.services.audit_quality_rules import clamp_age_days
 
@@ -358,18 +363,21 @@ def notable_sender_domains(account_id):
         if not user:
             return jsonify({"error": "Nicht authentifiziert"}), 401
         models = _get_models()
-        account = (
-            db.query(models.MailAccount)
-            .filter(
-                models.MailAccount.id == account_id,
-                models.MailAccount.user_id == user.id,
+        young = 30
+        caution = 90
+        if account_id is not None:
+            account = (
+                db.query(models.MailAccount)
+                .filter(
+                    models.MailAccount.id == account_id,
+                    models.MailAccount.user_id == user.id,
+                )
+                .first()
             )
-            .first()
-        )
-        if not account:
-            return jsonify({"error": "Account nicht gefunden"}), 404
-        young = clamp_age_days(account.audit_domain_young_days, 30)
-        caution = clamp_age_days(account.audit_domain_caution_days, 90)
+            if not account:
+                return jsonify({"error": "Account nicht gefunden"}), 404
+            young = clamp_age_days(account.audit_domain_young_days, 30)
+            caution = clamp_age_days(account.audit_domain_caution_days, 90)
         rows = db.query(models.AuditDomainIntelCache).all()
         items = []
         for row in rows:

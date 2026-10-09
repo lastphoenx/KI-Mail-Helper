@@ -777,13 +777,13 @@
             
             <div class="accordion-item">
                 <h2 class="accordion-header">
-                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#trustedDomainsSection">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#trustedDomainsSection">
                         <i class="bi bi-shield-check me-2 text-success"></i>
                         Vertrauenswürdige Domains
                         <span class="badge bg-success ms-2" id="trustedBadge">0</span>
                     </button>
                 </h2>
-                <div id="trustedDomainsSection" class="accordion-collapse collapse show">
+                <div id="trustedDomainsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
                         <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
                         <p class="text-muted mb-3">
@@ -1291,6 +1291,35 @@
                     </div>
                 </div>
             </div>
+
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditNotableDomainsSection">
+                        <i class="bi bi-signpost me-2 text-primary"></i>
+                        Auffällige Absender-Domains
+                    </button>
+                </h2>
+                <div id="auditNotableDomainsSection" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle Konten.</p>
+                        <p class="text-muted small mb-2">
+                            Gemeinsamer Cache der Domain-Prüfung, eine Tabelle für die ganze Anwendung, nicht pro Konto.
+                            «Jung» und «neu» richten sich nach den Tagesgrenzen des gewählten Kontos.
+                            Ohne Konto gelten 30 und 90 Tage.
+                        </p>
+                        <div class="d-flex gap-2 mb-2">
+                            <select class="form-select form-select-sm" id="auditNotableDomainFilter" style="max-width: 16rem;">
+                                <option value="all">Alle Auffälligen</option>
+                                <option value="missing">Existiert nicht</option>
+                                <option value="young">Jung</option>
+                                <option value="caution">Neu</option>
+                            </select>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="reloadNotableDomainsBtn">Aktualisieren</button>
+                        </div>
+                        <div id="auditNotableDomainsList" class="small text-muted">Noch nicht geladen.</div>
+                    </div>
+                </div>
+            </div>
             
         </div>
         <div class="alert alert-light border mb-4 py-3 px-3" role="status" id="auditFirstnamesGlobalPanel">
@@ -1605,31 +1634,6 @@
                     </div>
                 </div>
             </div>
-            <div class="accordion-item">
-                <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditNotableDomainsSection">
-                        <i class="bi bi-signpost me-2 text-primary"></i>
-                        Auffällige Absender-Domains
-                    </button>
-                </h2>
-                <div id="auditNotableDomainsSection" class="accordion-collapse collapse">
-                    <div class="accordion-body">
-                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="account">Konto oben wählen.</p>
-                        <p class="text-muted small mb-2">Domains, die nicht existieren oder sehr jung sind, gefunden bei Mails mit Verdacht. Nur zur Info.</p>
-                        <div class="d-flex gap-2 mb-2">
-                            <select class="form-select form-select-sm" id="auditNotableDomainFilter" style="max-width: 16rem;">
-                                <option value="all">Alle Auffälligen</option>
-                                <option value="missing">Existiert nicht</option>
-                                <option value="young">Jung</option>
-                                <option value="caution">Neu</option>
-                            </select>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" id="reloadNotableDomainsBtn">Aktualisieren</button>
-                        </div>
-                        <div id="auditNotableDomainsList" class="small text-muted">Noch nicht geladen.</div>
-                    </div>
-                </div>
-            </div>
-            
         </div><!-- End Accordion -->
         
     </div><!-- End configPane -->
@@ -2442,13 +2446,12 @@
         const kindEl = document.getElementById('auditNotableDomainFilter');
         const kind = kindEl ? kindEl.value : 'all';
         if (!box) return;
-        if (!accountId) {
-            box.textContent = 'Zuerst einen Account wählen.';
-            return;
-        }
         box.textContent = 'Laden…';
+        const notableUrl = accountId
+            ? '/folder-audit/notable-domains/' + accountId + '?kind=' + encodeURIComponent(kind)
+            : '/folder-audit/notable-domains?kind=' + encodeURIComponent(kind);
         try {
-            const resp = await fetch('/folder-audit/notable-domains/' + accountId + '?kind=' + encodeURIComponent(kind));
+            const resp = await fetch(notableUrl);
             const data = await parseJsonResponse(resp);
             const rows = data.domains || [];
             if (!rows.length) {
