@@ -321,18 +321,7 @@ class MasterKeyManager:
         return salt, encrypted_dek, dek
 
     @staticmethod
-    def setup_master_key_for_user(user_id: int, password: str, session) -> tuple:
-        """DEPRECATED: Verwende setup_dek_for_user() stattdessen
-
-        Nur für Migrations-Kompatibilität behalten.
-        """
-        logger.warning(
-            "setup_master_key_for_user() ist deprecated, verwende setup_dek_for_user()"
-        )
-        return MasterKeyManager.setup_dek_for_user(user_id, password, session)
-
-    @staticmethod
-    def decrypt_dek_from_password(user, password, session=None):
+    def decrypt_dek_from_password(user, password):
         """Entschlüsselt DEK mit Passwort (KEK wird aus Passwort abgeleitet)
 
         Wird beim Login verwendet:
@@ -350,67 +339,16 @@ class MasterKeyManager:
         encryption = importlib.import_module(".08_encryption", "src")
 
         try:
-            # Fallback für alte User mit encrypted_master_key (vor DEK/KEK Migration)
-            if user.encrypted_dek:
-                kek = encryption.EncryptionManager.generate_master_key(
-                    password, user.salt
-                )
-                dek = encryption.EncryptionManager.decrypt_dek(user.encrypted_dek, kek)
-                logger.info("✅ DEK erfolgreich entschlüsselt")
-                return dek
-            elif user.encrypted_master_key:
-                # Alter Blob. 100.000 Runden nur zum Lesen, danach 600.000 als DEK.
-                logger.warning("User *** nutzt altes encrypted_master_key Format")
-                master_key, rounds = encryption.EncryptionManager.open_legacy_master_key(
-                    user.encrypted_master_key, password
-                )
-                if session is not None:
-                    MasterKeyManager._rewrap_legacy_master_key(
-                        user, password, master_key, session, encryption
-                    )
-                    if rounds != encryption.EncryptionManager.ITERATIONS:
-                        logger.warning(
-                            "Alter Schlüssel von 100000 auf 600000 Runden umgestellt"
-                        )
-                return master_key
-            else:
-                logger.error(
-                    "User *** hat weder encrypted_dek noch encrypted_master_key"
-                )
+            if not user.encrypted_dek:
+                logger.error("User *** hat kein encrypted_dek")
                 return None
+            kek = encryption.EncryptionManager.generate_master_key(
+                password, user.salt
+            )
+            dek = encryption.EncryptionManager.decrypt_dek(user.encrypted_dek, kek)
+            logger.info("✅ DEK erfolgreich entschlüsselt")
+            return dek
 
         except Exception as e:
             logger.error(f"❌ DEK Entschlüsselung fehlgeschlagen: {type(e).__name__}")
-            return None
-
-    @staticmethod
-    def _rewrap_legacy_master_key(user, password, master_key, session, encryption):
-        """Denselben Schlüssel mit 600.000 Runden als DEK speichern. Der alte Blob fällt weg."""
-        salt = encryption.EncryptionManager.generate_salt()
-        kek = encryption.EncryptionManager.generate_master_key(password, salt)
-        user.salt = salt
-        user.encrypted_dek = encryption.EncryptionManager.encrypt_dek(master_key, kek)
-        user.encrypted_master_key = None
-        session.commit()
-
-    @staticmethod
-    def decrypt_master_key_from_password(
-        password: str, encrypted_master_key: str
-    ) -> str:
-        """DEPRECATED: Verwende decrypt_dek_from_password() stattdessen
-
-        Nur für Migrations-Kompatibilität behalten.
-        """
-        encryption = importlib.import_module(".08_encryption", "src")
-
-        try:
-            master_key = encryption.EncryptionManager.decrypt_master_key(
-                encrypted_master_key, password
-            )
-            logger.info("✅ Master-Key erfolgreich entschlüsselt")
-            return master_key
-        except Exception as e:
-            logger.error(
-                f"❌ Master-Key Entschlüsselung fehlgeschlagen: {type(e).__name__}"
-            )
             return None

@@ -29,7 +29,8 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - Abhängigkeiten: anyio 4.15.1, black 26.5.1, MarkupSafe 3.0.4, orjson 3.12.0, platformdirs 4.12.3, pyflakes 4.0.2, pylint 4.1.2, pytest 9.1.1, tldextract 5.4.0. Domain-Zerlegung unverändert (`domain` + `suffix`, private Suffixe an).
 - Doku: README, Architektur, Handbuch, Installation und Security beschreiben Verschlüsselung im Ruhezustand, Celery-Units und die getrennten KI-Rollen (Posteingang Base/Optimize, Ordner-Audit Identität). Stand Oktober 2026.
 - Login: neue Session-Kennung nach der Anmeldung. Ein TOTP-Code gilt nur für einen Zeitschritt (`users.last_totp_step`). Ein Recovery-Code wird mit einem atomaren Update verbraucht. Passwortwechsel löscht die Service-Token und erhöht `users.session_epoch`, damit ältere Sitzungen enden. Migration `e5f6a7b8c9d0`.
-- Alter Schlüssel-Blob: 100.000 PBKDF2-Runden nur noch zum einmaligen Lesen. Beim Login wird derselbe Schlüssel mit 600.000 Runden als DEK neu verpackt, der alte Blob entfällt.
+- Der 100.000-Runden-Pfad ist entfernt. Login liest nur noch `encrypted_dek` mit 600.000 Runden. Die Spalte `encrypted_master_key` bleibt ungenutzt liegen.
+- Session-Datei: `regenerate` löscht die alte Datei beim Login. Neu trainierte Klassifikatoren werden sofort signiert, wenn `CLASSIFIER_HMAC_KEY` gesetzt ist.
 
 ### Migrationen
 

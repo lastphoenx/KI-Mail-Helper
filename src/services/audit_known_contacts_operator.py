@@ -62,14 +62,14 @@ def _group_key_hmac(
     return row.account_id, contact_email_lookup_hmac(em, master_key)
 
 
-def dek_from_master_unlock(user, unlock: str, session=None) -> str:
+def dek_from_master_unlock(user, unlock: str) -> str:
     """DEK wie beim Login — Eingabe nie persistieren."""
     import importlib
 
     if not (unlock or "").strip():
         raise OperatorDekError("empty_unlock")
     auth = importlib.import_module(".07_auth", "src")
-    dek = auth.MasterKeyManager.decrypt_dek_from_password(user, unlock, session)
+    dek = auth.MasterKeyManager.decrypt_dek_from_password(user, unlock)
     if not dek:
         raise OperatorDekError("decrypt_failed")
     return dek

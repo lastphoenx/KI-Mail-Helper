@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from src.helpers.classifier_signature import sign_classifier_file
+
 try:
     import joblib
     HAS_JOBLIB = True
@@ -462,7 +464,8 @@ def _atomic_save_model(clf: SGDClassifier, path: Path) -> None:
         
         # 2. Atomares rename (POSIX)
         os.rename(temp_path, path)
-        
+        sign_classifier_file(path)
+
         logger.debug(f"💾 Atomic save: {path}")
         
     except Exception as e:

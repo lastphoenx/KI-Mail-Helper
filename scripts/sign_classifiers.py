@@ -6,11 +6,15 @@ und endet mit Fehler, damit ein leerer Lauf nicht wie Erfolg aussieht.
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
 import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.helpers.classifier_signature import sign_classifier_file  # noqa: E402
 
 
 def main() -> int:
@@ -26,10 +30,8 @@ def main() -> int:
     for path in sorted(root.rglob("*")):
         if path.suffix not in {".pkl", ".joblib"}:
             continue
-        digest = hmac.new(key, path.read_bytes(), hashlib.sha256).hexdigest()
-        sig = Path(str(path) + ".sig")
-        sig.write_text(digest + "\n", encoding="ascii")
-        signed += 1
+        if sign_classifier_file(path):
+            signed += 1
     print(f"signed {signed} files")
     return 0
 

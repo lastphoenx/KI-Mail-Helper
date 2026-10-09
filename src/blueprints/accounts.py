@@ -704,7 +704,7 @@ def change_password():
 
             try:
                 old_dek = auth.MasterKeyManager.decrypt_dek_from_password(
-                    user, old_password, db
+                    user, old_password
                 )
                 if not old_dek:
                     flash("DEK-Entschlüsselung fehlgeschlagen", "danger")

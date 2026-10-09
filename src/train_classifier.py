@@ -27,6 +27,11 @@ except ImportError:
 from sqlalchemy.orm import Session
 import importlib.util
 
+try:
+    from src.helpers.classifier_signature import sign_classifier_file
+except ImportError:
+    from helpers.classifier_signature import sign_classifier_file
+
 src_dir = Path(__file__).parent
 
 spec_models = importlib.util.spec_from_file_location("models", src_dir / "02_models.py")
@@ -188,8 +193,12 @@ class OnlineLearner:
             
             # Speichern
             if joblib:
-                joblib.dump(clf, self.classifier_dir / f"{correction_type}_sgd.pkl")
-                joblib.dump(scaler, self.classifier_dir / f"{correction_type}_scaler.pkl")
+                clf_path = self.classifier_dir / f"{correction_type}_sgd.pkl"
+                scaler_path = self.classifier_dir / f"{correction_type}_scaler.pkl"
+                joblib.dump(clf, clf_path)
+                joblib.dump(scaler, scaler_path)
+                sign_classifier_file(clf_path)
+                sign_classifier_file(scaler_path)
             
             logger.info(f"📚 Online-Learning: {correction_type}={correction_value} gelernt")
             return True
@@ -402,7 +411,9 @@ class MLTrainer:
 
         clf_dr = self.train_classifier(embeddings_dr, labels_dr, "Dringlichkeit")
         if clf_dr and joblib:
-            joblib.dump(clf_dr, self.classifier_dir / "dringlichkeit_clf.pkl")
+            dr_path = self.classifier_dir / "dringlichkeit_clf.pkl"
+            joblib.dump(clf_dr, dr_path)
+            sign_classifier_file(dr_path)
             self._log("💾 dringlichkeit_clf.pkl gespeichert")
             trained_count += 1
         elif clf_dr:
@@ -410,7 +421,9 @@ class MLTrainer:
 
         clf_w = self.train_classifier(embeddings_w, labels_w, "Wichtigkeit")
         if clf_w and joblib:
-            joblib.dump(clf_w, self.classifier_dir / "wichtigkeit_clf.pkl")
+            w_path = self.classifier_dir / "wichtigkeit_clf.pkl"
+            joblib.dump(clf_w, w_path)
+            sign_classifier_file(w_path)
             self._log("💾 wichtigkeit_clf.pkl gespeichert")
             trained_count += 1
         elif clf_w:
@@ -418,7 +431,9 @@ class MLTrainer:
 
         clf_spam = self.train_classifier(embeddings_spam, labels_spam, "Spam")
         if clf_spam and joblib:
-            joblib.dump(clf_spam, self.classifier_dir / "spam_clf.pkl")
+            spam_path = self.classifier_dir / "spam_clf.pkl"
+            joblib.dump(clf_spam, spam_path)
+            sign_classifier_file(spam_path)
             self._log("💾 spam_clf.pkl gespeichert")
             trained_count += 1
         elif clf_spam:

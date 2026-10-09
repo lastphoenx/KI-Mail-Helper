@@ -208,7 +208,7 @@ def login():
                     logger.error(f"login: reset_failed_logins fehlgeschlagen: {e}")
 
                 # Phase 8: DEK/KEK Pattern - DEK entschlüsseln
-                dek = auth.MasterKeyManager.decrypt_dek_from_password(user, password, db)
+                dek = auth.MasterKeyManager.decrypt_dek_from_password(user, password)
                 if not dek:
                     logger.error("❌ DEK-Entschlüsselung fehlgeschlagen")
                     return (
@@ -218,7 +218,6 @@ def login():
                         401,
                     )
 
-                rotate_server_session()
                 session["auth_epoch"] = int(user.session_epoch or 0)
 
                 if user.totp_enabled:
@@ -227,6 +226,7 @@ def login():
                     session["pending_dek"] = dek
                     session["pending_remember"] = bool(request.form.get("remember"))
                     session["pending_auth_time"] = str(datetime.utcnow())
+                    rotate_server_session()
                     return redirect(url_for("auth.verify_2fa"))
 
                 # DEK in Session speichern
@@ -235,6 +235,7 @@ def login():
 
                 # Zero-Knowledge: Disable remember-me (verhindert DEK-Loss nach Session-Expire)
                 login_user(UserWrapper(user), remember=False)
+                rotate_server_session()
                 # Audit Log für erfolgreichen Login
                 logger.info(
                     f"SECURITY[LOGIN_SUCCESS]: user={sanitize_log_field(user.username)} ip={request.remote_addr} "
@@ -370,7 +371,6 @@ def register():
                     salt, encrypted_dek, dek = auth.MasterKeyManager.setup_dek_for_user(
                         user.id, password, db
                     )
-                    rotate_server_session()
                     session["master_key"] = dek  # Session-Key heißt "master_key" aus Kompatibilität
                     session["auth_epoch"] = int(user.session_epoch or 0)
                 except Exception as e:
@@ -384,6 +384,7 @@ def register():
                 login_user(UserWrapper(user), remember=False)
                 session["mandatory_2fa_setup"] = True
                 session["new_user_id"] = user.id
+                rotate_server_session()
                 flash(
                     "Registrierung erfolgreich! Bitte richte jetzt 2FA ein (Pflichtfeld).",
                     "success",

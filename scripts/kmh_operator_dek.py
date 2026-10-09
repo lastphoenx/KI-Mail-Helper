@@ -19,4 +19,4 @@ def resolve_dek_for_user_id(session, user_id: int) -> str:
     import getpass
 
     unlock = getpass.getpass("Masterpasswort (Eingabe verborgen): ")
-    return dek_from_master_unlock(user, unlock, session)
+    return dek_from_master_unlock(user, unlock)

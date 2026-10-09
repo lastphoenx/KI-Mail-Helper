@@ -1,11 +1,7 @@
 """Login-Härtung: TOTP nur einmal, Recovery-Code nur einmal, neue Session."""
-import base64
 import hashlib
 import importlib
-import os
 import threading
-
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 import pyotp
 from flask import Flask, jsonify, session
@@ -48,9 +44,15 @@ def test_rotate_server_session_changes_the_cookie(tmp_path):
     @app.route("/rotate")
     def _rotate():
         old = session.sid
+        session["pending_dek"] = "still-here"
         rotate_server_session()
-        session["marker"] = "after"
-        return jsonify(changed=session.sid != old, marker=session.get("marker"))
+        return jsonify(
+            changed=session.sid != old,
+            marker=session.get("marker"),
+            kept=session.get("pending_dek"),
+            old=old,
+            new=session.sid,
+        )
 
     client = app.test_client()
     client.get("/set")
@@ -59,8 +61,16 @@ def test_rotate_server_session_changes_the_cookie(tmp_path):
     after = client.get_cookie("session")
     body = response.get_json()
     assert body["changed"] is True
-    assert body["marker"] == "after"
+    assert body["marker"] == "before"
+    assert body["kept"] == "still-here"
     assert before is not None and before != after
+
+    def _stored(sid):
+        name = hashlib.md5(f"session:{sid}".encode("utf-8")).hexdigest()
+        return tmp_path / name
+
+    assert not _stored(body["old"]).exists()
+    assert _stored(body["new"]).exists()
 
 
 def test_recovery_code_can_be_claimed_only_once():
@@ -102,39 +112,3 @@ def test_recovery_code_can_be_claimed_only_once():
         thread.join()
     assert results.count(True) == 1
     assert results.count(False) == 1
-
-
-def _blob_at_rounds(password, master_key, rounds):
-    salt = os.urandom(16)
-    iv = os.urandom(12)
-    key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, rounds)[:32]
-    encryptor = Cipher(algorithms.AES(key), modes.GCM(iv)).encryptor()
-    ciphertext = encryptor.update(master_key.encode()) + encryptor.finalize()
-    return ":".join(
-        base64.b64encode(part).decode()
-        for part in (salt, iv, ciphertext, encryptor.tag)
-    )
-
-
-def test_legacy_100k_key_is_rewrapped_at_600k():
-    encryption = importlib.import_module("src.08_encryption")
-    phrase = "correct-horse-example"
-    master_key = base64.b64encode(b"k" * 32).decode()
-    blob = _blob_at_rounds(phrase, master_key, 100000)
-
-    engine = create_engine("sqlite://")
-    models.User.__table__.create(engine)
-    db = sessionmaker(bind=engine)()
-    user = models.User(username="ada", email="ada@example.com")
-    user.set_password(phrase)
-    user.encrypted_master_key = blob
-    user.encrypted_dek = None
-    db.add(user)
-    db.commit()
-
-    opened = auth.MasterKeyManager.decrypt_dek_from_password(user, phrase, db)
-    assert opened == master_key
-    assert user.encrypted_master_key is None
-    kek = encryption.EncryptionManager.generate_master_key(phrase, user.salt)
-    assert encryption.EncryptionManager.decrypt_dek(user.encrypted_dek, kek) == master_key
-    db.close()

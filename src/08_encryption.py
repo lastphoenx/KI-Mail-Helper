@@ -19,8 +19,6 @@ class EncryptionManager:
     ALGORITHM = algorithms.AES
     KEY_SIZE = 32
     ITERATIONS = 600000  # OWASP empfiehlt min. 600.000 für PBKDF2-HMAC-SHA256 (2024)
-    # Nur zum Lesen alter encrypted_master_key-Blobs. Nach dem Lesen wird neu verpackt.
-    LEGACY_KDF_ITERATIONS = 100000
     TAG_LENGTH = 16
 
     @staticmethod
@@ -186,126 +184,6 @@ class EncryptionManager:
         except Exception as e:
             logger.error(f"DEK decryption error: {e}")
             raise
-
-    @staticmethod
-    def encrypt_master_key(master_key: str, password: str) -> str:
-        """Verschlüsselt den Master-Key mit dem User-Passwort
-
-        DEPRECATED: Wird durch encrypt_dek() ersetzt.
-        Nur für Migrations-Kompatibilität behalten.
-
-        Wird verwendet um den Master-Key in der DB zu speichern.
-        Beim Login wird dieser mit dem eingegebenen Passwort entschlüsselt.
-
-        Args:
-            master_key: Base64-kodierter Master-Key
-            password: User-Passwort
-
-        Returns:
-            Base64-kodiertes Encrypted Master-Key (Format: salt:iv:ciphertext:tag)
-        """
-        try:
-            # Separate Salt und IV generieren (kryptographisch korrekt)
-            salt = os.urandom(16)  # Salt für PBKDF2
-            iv = os.urandom(12)  # IV für AES-GCM
-
-            # Key aus Passwort ableiten (mit Salt, NICHT mit IV!)
-            key = hashlib.pbkdf2_hmac(
-                "sha256", password.encode(), salt, EncryptionManager.ITERATIONS
-            )[:32]
-
-            cipher = Cipher(
-                algorithms.AES(key), modes.GCM(iv), backend=default_backend()
-            )
-            encryptor = cipher.encryptor()
-
-            ciphertext = encryptor.update(master_key.encode()) + encryptor.finalize()
-
-            # Format: salt:iv:ciphertext:tag (alle Base64)
-            encrypted_blob = (
-                base64.b64encode(salt).decode()
-                + ":"
-                + base64.b64encode(iv).decode()
-                + ":"
-                + base64.b64encode(ciphertext).decode()
-                + ":"
-                + base64.b64encode(encryptor.tag).decode()
-            )
-            return encrypted_blob
-
-        except Exception as e:
-            logger.error(f"Master-Key encryption error: {e}")
-            raise
-
-    @staticmethod
-    def decrypt_master_key(encrypted_master_key: str, password: str) -> str:
-        """Entschlüsselt den Master-Key mit dem User-Passwort
-
-        Args:
-            encrypted_master_key: Verschlüsselter Master-Key (Format: salt:iv:ciphertext:tag)
-            password: User-Passwort
-
-        Returns:
-            Base64-kodierter Master-Key
-        """
-        plaintext, _rounds = EncryptionManager.open_legacy_master_key(
-            encrypted_master_key, password
-        )
-        return plaintext
-
-    @staticmethod
-    def open_legacy_master_key(encrypted_master_key, password):
-        """Wie decrypt_master_key, plus die benutzte Rundenzahl.
-
-        Returns:
-            (plaintext, rounds)
-        """
-        try:
-            parts = encrypted_master_key.split(":")
-            if len(parts) == 4:
-                salt = base64.b64decode(parts[0])
-                iv = base64.b64decode(parts[1])
-                ciphertext = base64.b64decode(parts[2])
-                tag = base64.b64decode(parts[3])
-            else:
-                encrypted_bytes = base64.b64decode(encrypted_master_key)
-                iv = encrypted_bytes[:12]
-                ciphertext = encrypted_bytes[12 : -EncryptionManager.TAG_LENGTH]
-                tag = encrypted_bytes[-EncryptionManager.TAG_LENGTH :]
-                salt = iv[:8]
-
-            return EncryptionManager._open_with_rounds(
-                password, salt, iv, ciphertext, tag
-            )
-        except Exception as e:
-            logger.error(f"Master-Key decryption error: {type(e).__name__}")
-            raise
-
-    @staticmethod
-    def _open_with_rounds(password, salt, iv, ciphertext, tag):
-        """600.000 Runden zuerst. 100.000 nur, wenn der Blob noch alt ist.
-
-        Returns:
-            (plaintext, rounds)
-        """
-        last_error = None
-        for rounds in (
-            EncryptionManager.ITERATIONS,
-            EncryptionManager.LEGACY_KDF_ITERATIONS,
-        ):
-            try:
-                key = hashlib.pbkdf2_hmac(
-                    "sha256", password.encode(), salt, rounds
-                )[:32]
-                cipher = Cipher(
-                    algorithms.AES(key), modes.GCM(iv, tag), backend=default_backend()
-                )
-                decryptor = cipher.decryptor()
-                plaintext = decryptor.update(ciphertext) + decryptor.finalize()
-                return plaintext.decode(), rounds
-            except Exception as exc:
-                last_error = exc
-        raise last_error
 
 
 class CredentialManager:
