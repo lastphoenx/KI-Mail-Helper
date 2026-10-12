@@ -7,7 +7,12 @@
     {% block meta_extra %}{% endblock %}
     <!-- CSP Header wird via Python gesetzt (siehe src/app_factory.py @app.after_request) -->
     <title>{% block title %}Mail Helper{% endblock %}</title>
-    
+
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='icons/favicon.ico') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32x32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/favicon-16x16.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+
     <!-- Bootstrap CSS - LOKAL gehostet (keine CDN-Abhängigkeit!) -->
     <link 
         href="{{ url_for('static', filename='css/bootstrap.min.css') }}" 

@@ -10,7 +10,18 @@ project_root = Path(__file__).parent.parent
 load_dotenv(project_root / ".env.local", override=True)
 load_dotenv(project_root / ".env", override=False)
 
-from flask import Flask, render_template, request, g, session, flash, redirect, url_for, jsonify
+from flask import (
+    Flask,
+    render_template,
+    request,
+    g,
+    session,
+    flash,
+    redirect,
+    url_for,
+    jsonify,
+    send_from_directory,
+)
 from flask_login import LoginManager, current_user, logout_user
 from flask_session import Session
 from flask_limiter import Limiter
@@ -399,7 +410,11 @@ def create_app(config_name="production"):
     
     @app.route('/favicon.ico')
     def favicon():
-        return '', 204
+        return send_from_directory(
+            os.path.join(app.static_folder, "icons"),
+            "favicon.ico",
+            mimetype="image/vnd.microsoft.icon",
+        )
     
     @app.errorhandler(404)
     def not_found(e):
