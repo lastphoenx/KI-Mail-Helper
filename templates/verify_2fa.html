@@ -16,11 +16,16 @@
             <div class="alert alert-danger">{{ error }}</div>
             {% endif %}
             
-            <form method="POST">                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />                <div class="mb-4">
-                    <p>Gib den 6-stelligen Code aus deiner Authenticator-App ein:</p>
-                    <input type="text" class="form-control form-control-lg text-center" id="token" name="token" 
+            <form method="POST" id="verify2faForm" autocomplete="on">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <div class="mb-4">
+                    <label for="totp_code" class="form-label">Authenticator-Code (2FA)</label>
+                    <input type="text" class="form-control form-control-lg text-center" id="totp_code" name="totp_code"
+                           inputmode="numeric" autocomplete="one-time-code"
                            placeholder="000000" maxlength="6" pattern="[0-9]{6}" required autofocus
+                           aria-label="Verifizierungscode"
                            style="font-size: 2em; letter-spacing: 0.5em;">
+                    <div class="form-text">6-stelliger Code aus deiner Authenticator-App oder Passwort-Manager.</div>
                 </div>
                 
                 <div class="d-grid mb-3">

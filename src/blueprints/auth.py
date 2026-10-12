@@ -461,7 +461,10 @@ def verify_2fa():
                         401,
                     )
 
-                token = request.form.get("token", "").strip()
+                token = (
+                    request.form.get("totp_code", "").strip()
+                    or request.form.get("token", "").strip()
+                )
                 recovery_code = request.form.get("recovery_code", "").strip()
 
                 verified = False
