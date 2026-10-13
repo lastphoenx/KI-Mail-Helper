@@ -215,12 +215,20 @@
         /* Performance: GPU-Layer für smooth scrolling */
         will-change: transform;
         transform: translateZ(0);
-        z-index: 1000;
+        z-index: 900;
     }
     #actionBar.show {
         display: flex;
         align-items: center;
         justify-content: space-between;
+    }
+    /* Dropdown „Hinzufügen“ über der sticky Action Bar (sonst verdeckt) */
+    #scanPane .dropdown-menu {
+        z-index: 1100;
+    }
+    #scanPane #emailList,
+    #scanPane #clusterView {
+        padding-bottom: 6rem;
     }
     
     /* Cluster View Styles */
@@ -1782,6 +1790,7 @@
         document.getElementById('deleteSelectedBtn').addEventListener('click', deleteSelected);
         document.getElementById('selectAllVisibleBtn').addEventListener('click', selectAllVisible);
         document.getElementById('deselectAllBtn').addEventListener('click', deselectAll);
+        updateActionBarButtons();
         
         // Config Save Buttons (CSP-konform)
         document.getElementById('saveTrustedDomainsBtn').addEventListener('click', saveTrustedDomains);
@@ -2943,6 +2952,7 @@
         document.getElementById('statsSection').style.display = 'flex';
         document.getElementById('filterSection').style.display = 'block';
         document.getElementById('actionBar').classList.add('show');
+        updateActionBarButtons();
         
         // Render based on current filter
         if (currentFilter === 'clusters') {
@@ -3523,6 +3533,13 @@
     function updateSelectedCount() {
         document.getElementById('selectedCount').textContent = selectedKeys.size.toLocaleString();
     }
+
+    function updateActionBarButtons() {
+        const safeBtn = document.getElementById('selectAllSafeBtn');
+        if (!safeBtn) return;
+        const showSafeSelect = currentFilter === 'safe';
+        safeBtn.classList.toggle('d-none', !showSafeSelect);
+    }
     
     function filterEmails(filter, element) {
         currentFilter = filter;
@@ -3543,6 +3560,7 @@
             document.getElementById('clusterView').style.display = 'none';
             renderEmails();
         }
+        updateActionBarButtons();
     }
     
     function rebuildClusters() {

@@ -143,11 +143,19 @@
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         display: none;
         color: white;
+        z-index: 900;
     }
     #actionBar.show {
         display: flex;
         align-items: center;
         justify-content: space-between;
+    }
+    #scanPane .dropdown-menu {
+        z-index: 1100;
+    }
+    #scanPane #emailList,
+    #scanPane #clusterView {
+        padding-bottom: 6rem;
     }
     
     /* Cluster View Styles */
@@ -818,6 +826,7 @@
         document.getElementById('deleteSelectedBtn').addEventListener('click', deleteSelected);
         document.getElementById('selectAllVisibleBtn').addEventListener('click', selectAllVisible);
         document.getElementById('deselectAllBtn').addEventListener('click', deselectAll);
+        updateActionBarButtons();
         
         // Config Save Buttons (CSP-konform)
         document.getElementById('saveTrustedDomainsBtn').addEventListener('click', saveTrustedDomains);
@@ -975,6 +984,7 @@
         document.getElementById('statsSection').style.display = 'flex';
         document.getElementById('filterSection').style.display = 'block';
         document.getElementById('actionBar').classList.add('show');
+        updateActionBarButtons();
         
         // Render based on current filter
         if (currentFilter === 'clusters') {
@@ -1114,6 +1124,12 @@
     function updateSelectedCount() {
         document.getElementById('selectedCount').textContent = selectedUids.size.toLocaleString();
     }
+
+    function updateActionBarButtons() {
+        const safeBtn = document.getElementById('selectAllSafeBtn');
+        if (!safeBtn) return;
+        safeBtn.classList.toggle('d-none', currentFilter !== 'safe');
+    }
     
     function filterEmails(filter, element) {
         currentFilter = filter;
@@ -1134,6 +1150,7 @@
             document.getElementById('clusterView').style.display = 'none';
             renderEmails();
         }
+        updateActionBarButtons();
     }
     
     // Rebuild clusters from remaining emails (after delete)
