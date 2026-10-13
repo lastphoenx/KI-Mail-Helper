@@ -1508,12 +1508,14 @@
     
     // Modal: Bestätigen
     function auditListAddPostFields() {
-        const fields = { mode: 'add' };
-        const sel = document.getElementById('accountSelect');
-        if (sel && sel.value) {
-            fields.account_id = parseInt(sel.value, 10);
-        }
-        return fields;
+        return { mode: 'add' };
+    }
+
+    function formatAuditListSaveStats(data) {
+        const added = data.added ?? 0;
+        const reactivated = data.reactivated ?? 0;
+        const removed = data.removed ?? 0;
+        return `(${added} neu, ${reactivated} wieder aktiviert, ${removed} deaktiviert)`;
     }
 
     document.getElementById('addToListConfirmBtn')?.addEventListener('click', async function() {
@@ -1809,7 +1811,7 @@
             });
             const data = await response.json();
             if (data.success) {
-                alert(`✅ Trusted Domains gespeichert!\n\n${data.total || 'Unbekannt'} Domains aktiv\n(${data.added} neu, ${data.removed} deaktiviert)`);
+                alert(`✅ Trusted Domains gespeichert!\n\n${data.total || 'Unbekannt'} Domains aktiv\n${formatAuditListSaveStats(data)}`);
                 loadConfigStats();
             } else {
                 throw new Error(data.error);
@@ -1832,7 +1834,7 @@
             });
             const data = await response.json();
             if (data.success) {
-                alert(`✅ Wichtige Keywords gespeichert!\n\n${data.total || 'Unbekannt'} Keywords aktiv\n(${data.added} neu, ${data.removed} deaktiviert)`);
+                alert(`✅ Wichtige Keywords gespeichert!\n\n${data.total || 'Unbekannt'} Keywords aktiv\n${formatAuditListSaveStats(data)}`);
                 loadConfigStats();
             } else {
                 throw new Error(data.error);
@@ -1857,7 +1859,7 @@
             const data = await response.json();
             if (data.success) {
                 const typeName = patternType === 'subject' ? 'Betreff-Patterns' : 'Absender-Patterns';
-                alert(`✅ ${typeName} gespeichert!\n\n${data.total} Patterns aktiv\n(${data.added} neu hinzugefügt, ${data.removed} deaktiviert)`);
+                alert(`✅ ${typeName} gespeichert!\n\n${data.total} Patterns aktiv\n${formatAuditListSaveStats(data)}`);
                 loadConfigStats();
             } else {
                 throw new Error(data.error);
@@ -1880,7 +1882,7 @@
             });
             const data = await response.json();
             if (data.success) {
-                alert(`✅ VIP Absender gespeichert!\n\n${data.total || 'Unbekannt'} VIPs aktiv\n(${data.added} neu, ${data.removed} deaktiviert)`);
+                alert(`✅ VIP Absender gespeichert!\n\n${data.total || 'Unbekannt'} VIPs aktiv\n${formatAuditListSaveStats(data)}`);
                 loadConfigStats();
             } else {
                 throw new Error(data.error);
