@@ -356,11 +356,24 @@
         border-color: #9a3412;
     }
     .audit-brand-add-caution {
-        font-size: 0.72rem;
-        color: #842029;
-        margin-top: 0.3rem;
-        max-width: 32rem;
-        line-height: 1.35;
+        display: block;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: #2b0f12;
+        margin-top: 0.5rem;
+        max-width: 36rem;
+        line-height: 1.45;
+        padding: 0.5rem 0.65rem;
+        background: #fff;
+        border: 1px solid #9a1c28;
+        border-left: 4px solid #b02a37;
+        border-radius: 6px;
+        box-shadow: 0 1px 4px rgba(88, 21, 28, 0.12);
+    }
+    .audit-brand-add-caution .bi {
+        color: #b02a37;
+        font-size: 0.95rem;
+        vertical-align: -0.1em;
     }
     
     /* Cluster View Styles */
@@ -3868,8 +3881,8 @@
                 || (email.sender && email.sender.includes('@') ? email.sender.split('@').pop() : '');
             const suspicionHint = (email.category === 'suspicion' || email.category === 'scam')
                 ? (brandKey
-                    ? `<div class="audit-suspicion-hint"><button type="button" class="btn btn-sm py-1 px-2 audit-brand-add-btn" data-brand-key="${escapeHtml(brandKey)}" data-domain="${escapeHtml(brandHost)}" data-sender="${escapeHtml(email.sender || '')}">Domain zur Marke ergänzen</button><p class="audit-brand-add-caution mb-0">Nur wenn du sicher bist, dass diese Absender-Domain wirklich zur Marke gehört — sonst wird künftiger Marken-Betrug nicht mehr erkannt.</p></div>`
-                    : '<div class="audit-suspicion-hint"><span class="text-warning-emphasis">Domain echt?</span> <a href="#config-marken-domains" class="audit-goto-brand-config">Bei der Marke ergänzen</a> (Konfiguration → Marken-Domains). <span class="d-block audit-brand-add-caution mt-1">Ohne erkannte Marke im Scan: nur manuell und mit Bedacht.</span></div>')
+                    ? `<div class="audit-suspicion-hint"><button type="button" class="btn btn-sm py-1 px-2 audit-brand-add-btn" data-brand-key="${escapeHtml(brandKey)}" data-domain="${escapeHtml(brandHost)}" data-sender="${escapeHtml(email.sender || '')}">Domain zur Marke ergänzen</button><p class="audit-brand-add-caution mb-0"><i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i><strong>Nur bei echter Marken-Domain.</strong> Falsche Einträge schwächen den Scam-Schutz für alle Konten.</p></div>`
+                    : '<div class="audit-suspicion-hint"><span class="text-warning-emphasis">Domain echt?</span> <a href="#config-marken-domains" class="audit-goto-brand-config">Bei der Marke ergänzen</a> (Konfiguration → Marken-Domains). <span class="d-block audit-brand-add-caution mt-1"><i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i><strong>Marke im Scan nicht erkannt</strong> — nur manuell ergänzen und mit Bedacht.</span></div>')
                 : '';
             
             html += `
