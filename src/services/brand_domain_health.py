@@ -401,6 +401,7 @@ def brand_settings_api_payload(row, user_id: int) -> dict:
         "scope": scope,
         "custom_text": custom_raw.strip() or brand_map_to_lines(custom_map),
         "custom_map": custom_map,
+        "effective_brand_keys": sorted(effective.keys()),
         "effective_preview": brand_map_to_lines(dict(list(effective.items())[:20])),
         "pending_import": pending,
         "system_lines": brand_map_to_lines(BUILTIN_BRAND_OFFICIAL_DOMAINS),

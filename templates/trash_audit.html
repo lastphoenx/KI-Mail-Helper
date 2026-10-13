@@ -748,6 +748,12 @@
             <div class="modal-body">
                 <!-- Info über gewählte Liste -->
                 <div class="alert alert-secondary py-2 mb-3" id="addToListInfo"></div>
+
+                <div class="mb-3" id="addToListBrandGroup" style="display: none;">
+                    <label class="form-label" for="addToListBrandSelect">Marke</label>
+                    <select id="addToListBrandSelect" class="form-select font-monospace"></select>
+                    <small class="text-muted">Gilt für diese Marke auf allen deinen Konten.</small>
+                </div>
                 
                 <!-- Wert der hinzugefügt wird -->
                 <div class="mb-3">
@@ -802,64 +808,139 @@
     let currentAddAction = null;  // Aktuell gewählte Aktion (trusted-domain, vip-sender, etc.)
     let currentClusterData = null; // Cluster-Daten für das Modal
 
-    const AUDIT_ADD_MENU = [
+    const AUDIT_ADD_MENU_GROUPS = [
         {
-            action: 'trusted-domain',
-            label: 'Trusted Domain',
-            subtitle: 'Mails dieser Domain werden nicht auf Fälschung geprüft (Spamhaus bleibt).',
-            icon: 'bi-shield-check text-success',
-            confirm: 'Vertrauenswürdige Domain: Die Fälschungsprüfung für die ganze Domain wird abgeschaltet. Spamhaus DBL bleibt aktiv. Trotzdem hinzufügen?',
+            title: 'Prüfung anpassen',
+            items: [
+                {
+                    action: 'brand-domain',
+                    label: 'Marken-Domain ergänzen',
+                    subtitle: 'Offizielle Domain zur Marke — behebt Marken-Verdacht/Scam.',
+                    icon: 'bi-building text-warning',
+                },
+                {
+                    action: 'trusted-domain',
+                    label: 'Trusted Domain',
+                    subtitle: 'Mails dieser Domain werden nicht auf Fälschung geprüft (Spamhaus bleibt).',
+                    icon: 'bi-shield-check text-success',
+                    confirm: 'Vertrauenswürdige Domain: Die Fälschungsprüfung für die ganze Domain wird abgeschaltet. Spamhaus DBL bleibt aktiv. Trotzdem hinzufügen?',
+                },
+            ],
         },
         {
-            action: 'important-keyword',
-            label: 'Wichtiges Keyword',
-            subtitle: 'Betreff mit diesem Wort → «möglicherweise wichtig».',
-            icon: 'bi-exclamation-triangle text-danger',
+            title: 'Als wichtig markieren',
+            items: [
+                {
+                    action: 'vip-sender',
+                    label: 'VIP Absender',
+                    subtitle: 'Absender priorisieren; hebt weiche Verdachtsgründe auf.',
+                    icon: 'bi-star-fill text-warning',
+                },
+                {
+                    action: 'important-keyword',
+                    label: 'Wichtiges Keyword',
+                    subtitle: 'Betreff mit diesem Wort → «möglicherweise wichtig».',
+                    icon: 'bi-exclamation-triangle text-danger',
+                },
+            ],
         },
         {
-            action: 'safe-subject',
-            label: 'Safe Betreff-Pattern',
-            subtitle: 'Nur dieser Betreff → Tendenz «sicher löschbar».',
-            icon: 'bi-envelope-check text-warning',
+            title: 'Löschbar machen',
+            items: [
+                {
+                    action: 'safe-subject',
+                    label: 'Safe Betreff-Pattern',
+                    subtitle: 'Nur dieser Betreff → Tendenz «sicher löschbar».',
+                    icon: 'bi-envelope-check text-warning',
+                },
+                {
+                    action: 'safe-sender',
+                    label: 'Safe Absender-Pattern',
+                    subtitle: 'Alle Mails dieses Absenders/Domain → Tendenz «sicher löschbar».',
+                    icon: 'bi-person-check text-warning',
+                    confirm: 'Safe Absender-Pattern gilt für ALLE Mails dieser Adresse/Domain — auch Rechnungen und Sicherheitswarnungen. Für Werbung besser ein Betreff-Muster. Trotzdem hinzufügen?',
+                },
+            ],
         },
         {
-            action: 'safe-sender',
-            label: 'Safe Absender-Pattern',
-            subtitle: 'Alle Mails dieses Absenders/Domain → Tendenz «sicher löschbar».',
-            icon: 'bi-person-check text-warning',
-            confirm: 'Safe Absender-Pattern gilt für ALLE Mails dieser Adresse/Domain — auch Rechnungen und Sicherheitswarnungen. Für Werbung besser ein Betreff-Muster. Trotzdem hinzufügen?',
-        },
-        {
-            action: 'vip-sender',
-            label: 'VIP Absender',
-            subtitle: 'Absender priorisieren; hebt weiche Verdachtsgründe auf.',
-            icon: 'bi-star-fill text-warning',
-        },
-        {
-            action: 'auto-rule',
-            label: 'Auto-Regel',
-            subtitle: 'Einstufungs-Regel (SAFE/IMPORTANT/…) für den Scan.',
-            icon: 'bi-lightning text-info',
-            dividerBefore: true,
+            title: 'Automatik',
+            items: [
+                {
+                    action: 'auto-rule',
+                    label: 'Auto-Regel',
+                    subtitle: 'Einstufungs-Regel (SAFE/IMPORTANT/…) für den Scan.',
+                    icon: 'bi-lightning text-info',
+                },
+            ],
         },
     ];
 
+    let auditEffectiveBrandKeys = [];
+
+    function auditAddMenuFlat() {
+        return AUDIT_ADD_MENU_GROUPS.flatMap((g) => g.items);
+    }
+
     function auditAddDropdownMenuHtml(itemClass) {
         let html = '<li><h6 class="dropdown-header">Zur Liste hinzufügen</h6></li>';
-        for (const item of AUDIT_ADD_MENU) {
-            if (item.dividerBefore) {
-                html += '<li><hr class="dropdown-divider"></li>';
+        for (const group of AUDIT_ADD_MENU_GROUPS) {
+            html += `<li><h6 class="dropdown-header small text-muted mb-0 pt-1">${escapeHtml(group.title)}</h6></li>`;
+            for (const item of group.items) {
+                html += `<li><a class="dropdown-item ${itemClass}" href="#" data-action="${item.action}" title="${escapeHtml(item.subtitle)}">`;
+                html += `<i class="bi ${item.icon}"></i> ${escapeHtml(item.label)}`;
+                html += `<span class="audit-add-subtitle">${escapeHtml(item.subtitle)}</span></a></li>`;
             }
-            html += `<li><a class="dropdown-item ${itemClass}" href="#" data-action="${item.action}" title="${escapeHtml(item.subtitle)}">`;
-            html += `<i class="bi ${item.icon}"></i> ${escapeHtml(item.label)}`;
-            html += `<span class="audit-add-subtitle">${escapeHtml(item.subtitle)}</span></a></li>`;
         }
         return html;
     }
 
     function auditAddConfirmForAction(action) {
-        const row = AUDIT_ADD_MENU.find((i) => i.action === action);
+        const row = auditAddMenuFlat().find((i) => i.action === action);
         return row && row.confirm ? row.confirm : null;
+    }
+
+    function senderHostFromAddData(data) {
+        const host = (data && (data.brand_mismatch_host || data.domain)) || '';
+        if (host) return host.replace(/^@/, '').toLowerCase();
+        const sender = (data && (data.sender || data.sample_sender)) || '';
+        if (sender.includes('@')) {
+            return sender.split('@').pop().toLowerCase().replace(/[>\s]+$/, '');
+        }
+        return '';
+    }
+
+    async function ensureAuditBrandKeys() {
+        if (auditEffectiveBrandKeys.length) {
+            return auditEffectiveBrandKeys;
+        }
+        const resp = await fetch('/api/audit-config/brand-official-domains');
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Marken laden fehlgeschlagen');
+        auditEffectiveBrandKeys = data.effective_brand_keys || Object.keys(data.custom_map || {});
+        return auditEffectiveBrandKeys;
+    }
+
+    async function populateAddToListBrandSelect(preferredKey) {
+        const select = document.getElementById('addToListBrandSelect');
+        if (!select) return;
+        const keys = await ensureAuditBrandKeys();
+        select.innerHTML = '';
+        const pref = (preferredKey || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        for (const k of keys) {
+            const opt = document.createElement('option');
+            opt.value = k;
+            opt.textContent = k.toUpperCase();
+            select.appendChild(opt);
+        }
+        if (pref && keys.includes(pref)) {
+            select.value = pref;
+        } else if (pref) {
+            const opt = document.createElement('option');
+            opt.value = pref;
+            opt.textContent = pref.toUpperCase() + ' (neu in deiner Liste)';
+            select.appendChild(opt);
+            select.value = pref;
+        }
     }
     
     // Event Listeners (CSP-konform)
@@ -1446,16 +1527,15 @@
                 currentAddAction = this.dataset.action;
                 
                 // Modal vorbereiten basierend auf Aktion
-                prepareAddToListModal(currentAddAction, currentClusterData);
-                
-                // Modal öffnen
-                new bootstrap.Modal(document.getElementById('addToListModal')).show();
+                prepareAddToListModal(currentAddAction, currentClusterData).then(function() {
+                    new bootstrap.Modal(document.getElementById('addToListModal')).show();
+                });
             });
         });
     }
     
     // Modal vorbereiten basierend auf gewählter Aktion
-    function prepareAddToListModal(action, data) {
+    async function prepareAddToListModal(action, data) {
         const modal = document.getElementById('addToListModal');
         const title = document.getElementById('addToListModalTitle');
         const info = document.getElementById('addToListInfo');
@@ -1469,6 +1549,7 @@
         const dispositionGroup = document.getElementById('addToListDispositionGroup');
         const maxAgeGroup = document.getElementById('addToListMaxAgeGroup');
         const descGroup = document.getElementById('addToListDescGroup');
+        const brandGroup = document.getElementById('addToListBrandGroup');
         const confirmBtn = document.getElementById('addToListConfirmBtn');
         
         // Alles zurücksetzen
@@ -1476,9 +1557,21 @@
         dispositionGroup.style.display = 'none';
         maxAgeGroup.style.display = 'none';
         descGroup.style.display = 'none';
+        if (brandGroup) brandGroup.style.display = 'none';
         valueInput.readOnly = false;
         
         switch (action) {
+            case 'brand-domain':
+                title.textContent = '🏢 Marken-Domain ergänzen';
+                info.innerHTML = '<div class="alert alert-warning py-2 mb-0 small">Offizielle Absender-Domain zur Marke — gilt auf <strong>allen deinen Konten</strong>.</div>';
+                if (brandGroup) brandGroup.style.display = 'block';
+                valueLabel.textContent = 'Domain (vom Absender)';
+                valueInput.value = senderHostFromAddData(data);
+                valueHint.textContent = 'z.B. miles-and-more-cards.ch';
+                confirmBtn.className = 'btn btn-warning';
+                await populateAddToListBrandSelect(data.brand_key || '');
+                break;
+
             case 'trusted-domain':
                 title.textContent = '🛡️ Trusted Domain hinzufügen';
                 info.innerHTML = '<i class="bi bi-shield-check text-success"></i> Emails von dieser Domain werden <strong>nicht als Scam</strong> markiert.';
@@ -1629,6 +1722,14 @@
                 endpoint = '/api/audit-config/vip-senders';
                 body = { senders: value, ...auditListAddPostFields() };
                 break;
+
+            case 'brand-domain':
+                endpoint = '/api/audit-config/brand-official-domains/add';
+                body = {
+                    brand_key: document.getElementById('addToListBrandSelect').value,
+                    domain: value,
+                };
+                break;
                 
             case 'auto-rule':
                 endpoint = '/api/audit-config/auto-delete-rules';
@@ -1662,6 +1763,7 @@
                 
                 // Erfolgsmeldung
                 const actionNames = {
+                    'brand-domain': 'Marken-Domain',
                     'trusted-domain': 'Trusted Domain',
                     'important-keyword': 'Wichtiges Keyword',
                     'safe-subject': 'Safe Betreff-Pattern',

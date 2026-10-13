@@ -343,6 +343,47 @@ def _is_valid_official_domain(domain: str) -> bool:
     return True
 
 
+def add_domain_to_custom_brand_map(
+    custom_map: Optional[Mapping[str, List[str]]],
+    brand_key: str,
+    domain: str,
+) -> Tuple[Dict[str, List[str]], bool]:
+    """Ergänzt eine Domain bei einer Marke in der User-Map (andere Marken bleiben).
+
+    Returns (cleaned_map, domain_was_new). Raises ValueError bei ungültigen Eingaben.
+    """
+    brand = _normalize_brand_key(str(brand_key or ""))
+    if len(brand) < 3:
+        raise ValueError(f"Ungültiger Markenname: {brand_key!r}")
+    raw_host = (domain or "").strip().lower()
+    if "@" in raw_host:
+        raw_host = raw_host.split("@")[-1]
+    host = raw_host.strip(">").strip().strip(".")
+    if not _is_valid_official_domain(host):
+        raise ValueError(f"Ungültige Domain: {domain!r}")
+
+    normalized: Dict[str, List[str]] = {}
+    for key, domains in (custom_map or {}).items():
+        nk = _normalize_brand_key(str(key))
+        if not nk:
+            continue
+        bucket = normalized.setdefault(nk, [])
+        for dom in domains:
+            d = str(dom).lower().strip().strip(".")
+            if d and d not in bucket:
+                bucket.append(d)
+
+    bucket = normalized.setdefault(brand, [])
+    if host in bucket:
+        cleaned, _ = validate_brand_map(normalized)
+        return cleaned, False
+    if len(bucket) >= MAX_DOMAINS_PER_BRAND:
+        raise ValueError(f"Maximal {MAX_DOMAINS_PER_BRAND} Domains pro Marke ({brand})")
+    bucket.append(host)
+    cleaned, _ = validate_brand_map(normalized)
+    return cleaned, True
+
+
 def validate_brand_map(raw: Mapping) -> Tuple[Dict[str, List[str]], List[str]]:
     """Parst und validiert User-Map. Raises ValueError bei harten Fehlern."""
     errors: List[str] = []

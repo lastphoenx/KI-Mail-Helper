@@ -1787,6 +1787,8 @@ def _layer1_decision(
             label="Absender",
         )
         if brand_hit:
+            setattr(meta, "brand_mismatch_brand_key", brand_hit.brand_key)
+            setattr(meta, "brand_mismatch_host", brand_hit.host)
             id_rules.append("B1")
             id_msgs.append(brand_hit.message)
             id_score += 55

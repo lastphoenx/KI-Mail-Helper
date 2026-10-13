@@ -597,6 +597,8 @@ class TrashEmailInfo:
     llm_skip_reason: Optional[str] = None  # budget | quota | error wenn offen
     domain_badge: Optional[str] = None
     decision_reason: str = ""
+    brand_mismatch_brand_key: Optional[str] = None
+    brand_mismatch_host: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -631,6 +633,8 @@ class TrashEmailInfo:
             "llm_skip_reason": self.llm_skip_reason,
             "domain_badge": self.domain_badge,
             "decision_reason": self.decision_reason,
+            "brand_mismatch_brand_key": self.brand_mismatch_brand_key,
+            "brand_mismatch_host": self.brand_mismatch_host,
         }
 
 

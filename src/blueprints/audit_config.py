@@ -15,6 +15,7 @@ Endpoints:
     POST /api/audit-config/cluster-settings    - Clustering speichern
     GET  /api/audit-config/brand-official-domains  - Marken → offizielle Domains
     POST /api/audit-config/brand-official-domains  - Speichern (JSON/Zeilen)
+    POST /api/audit-config/brand-official-domains/add - Eine Domain zu einer Marke ergänzen
     POST /api/audit-config/brand-official-domains/fetch-preview - HTTPS-Import Preview
 """
 
@@ -51,6 +52,7 @@ from src.services.brand_domain_health import (
 from src.services.brand_domain_policy import (
     BUILTIN_BRAND_OFFICIAL_DOMAINS,
     MAX_CUSTOM_JSON_BYTES,
+    add_domain_to_custom_brand_map,
     fetch_https_text_for_brand_import,
     brand_map_to_lines,
     diff_brand_maps,
@@ -1197,6 +1199,88 @@ def _custom_map_from_request(data: dict) -> dict:
     return parse_brand_domains_text(text)
 
 
+def _save_brand_official_map(
+    db,
+    user,
+    row,
+    proposed_map: dict,
+    data: dict,
+) -> tuple:
+    """Validiert und speichert die User-Marken-Map. Returns (jsonify_payload, status_code)."""
+    skip_live_checks = bool(data.get("skip_live_checks"))
+    payload_size = len(json.dumps(proposed_map).encode("utf-8"))
+    if payload_size > MAX_CUSTOM_JSON_BYTES:
+        return {"error": "Liste zu gross (max. 64 KB)"}, 400
+
+    dbl_blocked = parse_dbl_blocked_json(
+        getattr(row, "brand_dbl_blocked_domains_json", None)
+    )
+    try:
+        prior_health = json.loads(row.brand_domains_health_json or "{}")
+    except json.JSONDecodeError:
+        prior_health = {}
+    old_map: dict = {}
+    if row.brand_official_domains_json:
+        try:
+            old_map = parse_brand_domains_text(row.brand_official_domains_json)
+        except ValueError:
+            old_map = {}
+    include_rdap = resolve_brand_health_rdap(brand_health_rdap_user_pref(row))
+    set_brand_health_rdap_context(include_rdap)
+    try:
+        cleaned, errors, warnings, health, new_dbl = prepare_save_brand_map(
+            proposed_map,
+            dbl_blocked,
+            run_live_checks=not skip_live_checks,
+            db_session=db,
+            existing_health=prior_health,
+            previous_map=old_map,
+            include_rdap=include_rdap,
+        )
+    finally:
+        clear_brand_health_rdap_context()
+    if errors:
+        return (
+            {
+                "error": "; ".join(errors[:10]),
+                "errors": errors,
+                "warnings": warnings,
+            },
+            400,
+        )
+
+    confirm_strip = bool(data.get("confirm_dbl_strip"))
+    removed: list = []
+    if confirm_strip and new_dbl:
+        from src.services.brand_domain_health import strip_dbl_domains_from_map
+
+        cleaned, removed = strip_dbl_domains_from_map(
+            cleaned, merge_dbl_blocked(dbl_blocked, new_dbl)
+        )
+        dbl_blocked = merge_dbl_blocked(dbl_blocked, new_dbl)
+        if removed:
+            warnings = list(warnings) + [
+                f"Aus Liste entfernt (Spamhaus DBL): {', '.join(sorted(set(removed))[:10])}"
+            ]
+    elif new_dbl:
+        warnings = list(warnings) + [
+            "DBL-Harttreffer in der Liste — nicht entfernt. "
+            "Erneut speichern mit Bestätigung oder Domains manuell prüfen."
+        ]
+
+    _commit_brand_save(row, cleaned, health, dbl_blocked)
+    db.commit()
+    AuditConfigCache.clear_cache(user.id)
+    return (
+        {
+            "success": True,
+            "warnings": warnings,
+            "settings": _brand_settings_response(row, user.id),
+        },
+        200,
+    )
+
+
 def _commit_brand_save(row, cleaned: dict, health: dict, dbl_blocked: list) -> None:
     from datetime import datetime, timezone
 
@@ -1265,69 +1349,52 @@ def save_brand_official_domains():
         except (ValueError, json.JSONDecodeError) as exc:
             return jsonify({"error": str(exc)}), 400
 
-        payload_size = len(json.dumps(proposed_map).encode("utf-8"))
-        if payload_size > MAX_CUSTOM_JSON_BYTES:
-            return jsonify({"error": "Liste zu gross (max. 64 KB)"}), 400
+        payload, status = _save_brand_official_map(db, user, row, proposed_map, data)
+        return jsonify(payload), status
 
-        dbl_blocked = parse_dbl_blocked_json(
-            getattr(row, "brand_dbl_blocked_domains_json", None)
-        )
-        try:
-            prior_health = json.loads(row.brand_domains_health_json or "{}")
-        except json.JSONDecodeError:
-            prior_health = {}
+
+@audit_config_bp.route(
+    "/api/audit-config/brand-official-domains/add", methods=["POST"]
+)
+@login_required
+def add_brand_official_domain():
+    """Eine Domain zu einer Marke ergänzen, ohne andere User-Marken zu überschreiben."""
+    data = request.get_json(silent=True) or {}
+    brand_key = (data.get("brand_key") or data.get("brand") or "").strip()
+    domain = (data.get("domain") or "").strip()
+    if not brand_key or not domain:
+        return jsonify({"error": "Marke und Domain sind erforderlich"}), 400
+
+    with get_db_session() as db:
+        user = get_current_user_model(db)
+        if not user:
+            return jsonify({"error": "Nicht authentifiziert"}), 401
+        models = _get_models()
+        if not hasattr(models, "AuditClusterSettings"):
+            return jsonify({"error": "Migration fehlt"}), 503
+
+        row = _user_brand_settings_row(db, user.id)
+        if not row:
+            row = models.AuditClusterSettings(user_id=user.id, account_id=None)
+            db.add(row)
+
         old_map: dict = {}
         if row.brand_official_domains_json:
             try:
                 old_map = parse_brand_domains_text(row.brand_official_domains_json)
             except ValueError:
                 old_map = {}
-        include_rdap = resolve_brand_health_rdap(brand_health_rdap_user_pref(row))
-        set_brand_health_rdap_context(include_rdap)
         try:
-            cleaned, errors, warnings, health, new_dbl = prepare_save_brand_map(
-                proposed_map,
-                dbl_blocked,
-                run_live_checks=not skip_live_checks,
-                db_session=db,
-                existing_health=prior_health,
-                previous_map=old_map,
-                include_rdap=include_rdap,
+            proposed_map, domain_new = add_domain_to_custom_brand_map(
+                old_map, brand_key, domain
             )
-        finally:
-            clear_brand_health_rdap_context()
-        if errors:
-            return jsonify(
-                {"error": "; ".join(errors[:10]), "errors": errors, "warnings": warnings}
-            ), 400
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
-        confirm_strip = bool(data.get("confirm_dbl_strip"))
-        removed: list = []
-        if confirm_strip and new_dbl:
-            from src.services.brand_domain_health import strip_dbl_domains_from_map
-
-            cleaned, removed = strip_dbl_domains_from_map(cleaned, merge_dbl_blocked(dbl_blocked, new_dbl))
-            dbl_blocked = merge_dbl_blocked(dbl_blocked, new_dbl)
-            if removed:
-                warnings = list(warnings) + [
-                    f"Aus Liste entfernt (Spamhaus DBL): {', '.join(sorted(set(removed))[:10])}"
-                ]
-        elif new_dbl:
-            warnings = list(warnings) + [
-                "DBL-Harttreffer in der Liste — nicht entfernt. "
-                "Erneut speichern mit Bestätigung oder Domains manuell prüfen."
-            ]
-
-        _commit_brand_save(row, cleaned, health, dbl_blocked)
-        db.commit()
-        AuditConfigCache.clear_cache(user.id)
-        return jsonify(
-            {
-                "success": True,
-                "warnings": warnings,
-                "settings": _brand_settings_response(row, user.id),
-            }
-        )
+        payload, status = _save_brand_official_map(db, user, row, proposed_map, data)
+        if status == 200 and isinstance(payload, dict):
+            payload["domain_added"] = domain_new
+        return jsonify(payload), status
 
 
 @audit_config_bp.route(
