@@ -23,12 +23,16 @@ def test_add_mode_keeps_existing_and_appends_new():
     rows = [_row("a@example.com"), _row("b@example.com")]
     inserted = []
 
+    def _insert(value: str) -> None:
+        inserted.append(value)
+        rows.append(_row(value))
+
     stats = sync_user_list_values(
         rows,
         ["c@example.com"],
         value_attr="sender_pattern",
         add_only=True,
-        on_insert=lambda v: inserted.append(v),
+        on_insert=_insert,
     )
 
     assert stats == {"added": 1, "reactivated": 0, "removed": 0, "total": 1}
@@ -83,7 +87,7 @@ def test_add_mode_does_not_deactivate_others():
         ["c@example.com"],
         value_attr="sender_pattern",
         add_only=True,
-        on_insert=lambda _v: None,
+        on_insert=lambda value: rows.append(_row(value)),
     )
 
     assert _active_values(rows) == [
