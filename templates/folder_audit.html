@@ -971,7 +971,7 @@
         <h3 class="h6 text-uppercase text-secondary fw-bold mt-3 mb-2">Für alle meine Konten</h3>
         <div class="accordion mb-4" id="configAccordion">
             
-            <div class="accordion-item">
+            <div class="accordion-item" id="config-trusted-domains">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#trustedDomainsSection">
                         <i class="bi bi-shield-check me-2 text-success"></i>
@@ -1004,7 +1004,7 @@
                 </div>
             </div>
 
-            <div class="accordion-item">
+            <div class="accordion-item" id="config-keywords">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#keywordsSection">
                         <i class="bi bi-exclamation-triangle me-2 text-danger"></i>
@@ -1036,7 +1036,7 @@
                 </div>
             </div>
 
-            <div class="accordion-item">
+            <div class="accordion-item" id="config-safe-subject">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#safeSubjectSection">
                         <i class="bi bi-envelope-check me-2 text-success"></i>
@@ -1066,7 +1066,7 @@
                 </div>
             </div>
 
-            <div class="accordion-item">
+            <div class="accordion-item" id="config-safe-sender">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#safeSenderSection">
                         <i class="bi bi-person-check me-2 text-success"></i>
@@ -1099,7 +1099,7 @@
                 </div>
             </div>
 
-            <div class="accordion-item">
+            <div class="accordion-item" id="config-vip">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#vipSection">
                         <i class="bi bi-star-fill me-2 text-warning"></i>
@@ -1232,7 +1232,7 @@
                 </div>
             </div>
 
-            <div class="accordion-item">
+            <div class="accordion-item" id="config-marken-domains">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#brandDomainsSection">
                         <i class="bi bi-building me-2 text-warning"></i>
@@ -1700,7 +1700,7 @@
                     </div>
                 </div>
             </div>
-            <div class="accordion-item">
+            <div class="accordion-item" id="config-wichtige-ordner">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#auditQualitySection">
                         <i class="bi bi-folder-check me-2 text-primary"></i>
@@ -2116,29 +2116,53 @@
         AUDIT_SECTION_TO_HASH[AUDIT_CONFIG_HASH_TO_SECTION[hashKey]] = hashKey;
     });
 
+    function auditLocationWithHash(hashKey) {
+        const fragment = hashKey ? ('#' + String(hashKey).replace(/^#/, '')) : '';
+        return window.location.pathname + window.location.search + fragment;
+    }
+
+    function setAuditLocationHash(hashKey) {
+        const next = auditLocationWithHash(hashKey);
+        const current = window.location.pathname + window.location.search + window.location.hash;
+        if (current !== next) {
+            history.replaceState(null, '', next);
+        }
+    }
+
+    function openAuditConfigCollapse(sectionId) {
+        const section = document.getElementById(sectionId);
+        if (!section) return;
+        if (typeof bootstrap !== 'undefined') {
+            bootstrap.Collapse.getOrCreateInstance(section, { toggle: false }).show();
+        }
+        const hashKey = AUDIT_SECTION_TO_HASH[sectionId];
+        const scrollTarget = (hashKey && document.getElementById(hashKey)) || section;
+        scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
     function jumpToAuditConfigSection(sectionId, updateHash) {
-        if (updateHash !== false && sectionId && AUDIT_SECTION_TO_HASH[sectionId]) {
-            const target = '#' + AUDIT_SECTION_TO_HASH[sectionId];
-            if (window.location.hash !== target) {
-                history.replaceState(null, '', target);
-            }
-        } else if (updateHash !== false && sectionId) {
-            if (window.location.hash !== '#config') {
-                history.replaceState(null, '', '#config');
-            }
+        if (updateHash !== false && sectionId) {
+            const hashKey = AUDIT_SECTION_TO_HASH[sectionId] || 'config';
+            setAuditLocationHash(hashKey);
+        } else if (updateHash !== false) {
+            setAuditLocationHash('config');
         }
         const configTab = document.getElementById('config-tab');
-        if (configTab && typeof bootstrap !== 'undefined') {
+        if (!configTab || typeof bootstrap === 'undefined') {
+            openAuditConfigCollapse(sectionId);
+            return;
+        }
+        const reveal = function() {
+            window.requestAnimationFrame(function() {
+                openAuditConfigCollapse(sectionId);
+            });
+        };
+        if (configTab.classList.contains('active')) {
+            reveal();
+        } else {
+            configTab.addEventListener('shown.bs.tab', reveal, { once: true });
             bootstrap.Tab.getOrCreateInstance(configTab).show();
         }
-        window.setTimeout(function() {
-            const section = document.getElementById(sectionId);
-            if (!section) return;
-            if (typeof bootstrap !== 'undefined') {
-                bootstrap.Collapse.getOrCreateInstance(section, { toggle: false }).show();
-            }
-            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 200);
     }
 
     function applyFolderAuditHashFromLocation() {
@@ -2167,6 +2191,26 @@
     document.addEventListener('DOMContentLoaded', function() {
         applyFolderAuditHashFromLocation();
         window.addEventListener('hashchange', applyFolderAuditHashFromLocation);
+        window.addEventListener('load', function() {
+            if (window.location.hash) {
+                applyFolderAuditHashFromLocation();
+            }
+        });
+        const scanTabBtn = document.getElementById('scan-tab');
+        if (scanTabBtn) {
+            scanTabBtn.addEventListener('shown.bs.tab', function() {
+                setAuditLocationHash('scan');
+            });
+        }
+        const configTabHashBtn = document.getElementById('config-tab');
+        if (configTabHashBtn) {
+            configTabHashBtn.addEventListener('shown.bs.tab', function() {
+                const raw = (window.location.hash || '').replace(/^#/, '').trim();
+                if (!raw || raw === 'scan' || !AUDIT_CONFIG_HASH_TO_SECTION[raw]) {
+                    setAuditLocationHash('config');
+                }
+            });
+        }
         document.querySelectorAll('.audit-jump-config').forEach(function(link) {
             link.addEventListener('click', function(e) {
                 e.preventDefault();
