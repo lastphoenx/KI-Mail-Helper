@@ -26,6 +26,7 @@ from flask import Blueprint, request, jsonify
 from flask_login import login_required
 import importlib
 
+from src.audit_bulk_list import bulk_mode_is_add_only, sync_user_list_values
 from src.audit_list_scope import apply_account_scope
 from src.helpers import get_db_session, get_current_user_model
 from src.services.folder_audit_service import (
@@ -331,39 +332,36 @@ def save_trusted_domains():
             models.AuditTrustedDomain.source == "user",
         ).all()
         
-        existing_domains = {d.domain for d in existing}
-        
-        # Neue hinzufügen
-        added = 0
-        for domain in new_domains:
-            if domain not in existing_domains:
-                db.add(models.AuditTrustedDomain(
+        try:
+            add_only = bulk_mode_is_add_only(data)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        def _insert_domain(domain: str) -> None:
+            db.add(
+                models.AuditTrustedDomain(
                     user_id=user.id,
                     account_id=account_id,
                     domain=domain,
                     category=category,
                     source="user",
-                ))
-                added += 1
-        
-        # Entfernte deaktivieren (soft delete)
-        removed = 0
-        for entry in existing:
-            if entry.domain not in new_domains:
-                entry.is_active = False
-                removed += 1
-        
+                )
+            )
+
+        stats = sync_user_list_values(
+            existing,
+            new_domains,
+            value_attr="domain",
+            add_only=add_only,
+            on_insert=_insert_domain,
+        )
+
         db.commit()
-        
+
         # Cache invalidieren
         AuditConfigCache.clear_cache(user.id)
-        
-        return jsonify({
-            "success": True,
-            "added": added,
-            "removed": removed,
-            "total": len(new_domains),
-        })
+
+        return jsonify({"success": True, **stats})
 
 
 @audit_config_bp.route("/api/audit-config/important-keywords", methods=["GET"])
@@ -458,38 +456,37 @@ def save_important_keywords():
             models.AuditImportantKeyword.source == "user",
         ).all()
         
-        existing_keywords = {kw.keyword for kw in existing}
-        
-        added = 0
-        for keyword in new_keywords:
-            if keyword not in existing_keywords:
-                db.add(models.AuditImportantKeyword(
+        try:
+            add_only = bulk_mode_is_add_only(data)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        def _insert_keyword(keyword: str) -> None:
+            db.add(
+                models.AuditImportantKeyword(
                     user_id=user.id,
                     account_id=account_id,
                     keyword=keyword,
                     language=language,
                     category=category,
                     source="user",
-                ))
-                added += 1
-        
-        removed = 0
-        for entry in existing:
-            if entry.keyword not in new_keywords:
-                entry.is_active = False
-                removed += 1
-        
+                )
+            )
+
+        stats = sync_user_list_values(
+            existing,
+            new_keywords,
+            value_attr="keyword",
+            add_only=add_only,
+            on_insert=_insert_keyword,
+        )
+
         db.commit()
-        
+
         # Cache invalidieren
         AuditConfigCache.clear_cache(user.id)
-        
-        return jsonify({
-            "success": True,
-            "added": added,
-            "removed": removed,
-            "total": len(new_keywords),
-        })
+
+        return jsonify({"success": True, **stats})
 
 
 @audit_config_bp.route("/api/audit-config/safe-patterns", methods=["GET"])
@@ -578,37 +575,36 @@ def save_safe_patterns():
             models.AuditSafePattern.source == "user",
         ).all()
         
-        existing_patterns = {p.pattern for p in existing}
-        
-        added = 0
-        for pattern in new_patterns:
-            if pattern not in existing_patterns:
-                db.add(models.AuditSafePattern(
+        try:
+            add_only = bulk_mode_is_add_only(data)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        def _insert_pattern(pattern: str) -> None:
+            db.add(
+                models.AuditSafePattern(
                     user_id=user.id,
                     account_id=account_id,
                     pattern=pattern,
                     pattern_type=pattern_type,
                     source="user",
-                ))
-                added += 1
-        
-        removed = 0
-        for entry in existing:
-            if entry.pattern not in new_patterns:
-                entry.is_active = False
-                removed += 1
-        
+                )
+            )
+
+        stats = sync_user_list_values(
+            existing,
+            new_patterns,
+            value_attr="pattern",
+            add_only=add_only,
+            on_insert=_insert_pattern,
+        )
+
         db.commit()
-        
+
         # Cache invalidieren
         AuditConfigCache.clear_cache(user.id)
-        
-        return jsonify({
-            "success": True,
-            "added": added,
-            "removed": removed,
-            "total": len(new_patterns),
-        })
+
+        return jsonify({"success": True, **stats})
 
 
 @audit_config_bp.route("/api/audit-config/vip-senders", methods=["GET"])
@@ -676,39 +672,38 @@ def save_vip_senders():
             models.AuditVIPSender.source == "user",
         ).all()
         
-        existing_patterns = {v.sender_pattern for v in existing}
-        
-        added = 0
-        for sender in new_senders:
-            if sender not in existing_patterns:
-                pattern_type = detect_pattern_type(sender)
-                db.add(models.AuditVIPSender(
+        try:
+            add_only = bulk_mode_is_add_only(data)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        def _insert_sender(sender: str) -> None:
+            pattern_type = detect_pattern_type(sender)
+            db.add(
+                models.AuditVIPSender(
                     user_id=user.id,
                     account_id=account_id,
                     sender_pattern=sender,
                     pattern_type=pattern_type,
                     label=label,
                     source="user",
-                ))
-                added += 1
-        
-        removed = 0
-        for entry in existing:
-            if entry.sender_pattern not in new_senders:
-                entry.is_active = False
-                removed += 1
-        
+                )
+            )
+
+        stats = sync_user_list_values(
+            existing,
+            new_senders,
+            value_attr="sender_pattern",
+            add_only=add_only,
+            on_insert=_insert_sender,
+        )
+
         db.commit()
-        
+
         # Cache invalidieren
         AuditConfigCache.clear_cache(user.id)
-        
-        return jsonify({
-            "success": True,
-            "added": added,
-            "removed": removed,
-            "total": len(new_senders),
-        })
+
+        return jsonify({"success": True, **stats})
 
 
 # =============================================================================

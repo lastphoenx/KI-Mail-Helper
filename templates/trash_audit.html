@@ -1507,6 +1507,15 @@
     });
     
     // Modal: Bestätigen
+    function auditListAddPostFields() {
+        const fields = { mode: 'add' };
+        const sel = document.getElementById('accountSelect');
+        if (sel && sel.value) {
+            fields.account_id = parseInt(sel.value, 10);
+        }
+        return fields;
+    }
+
     document.getElementById('addToListConfirmBtn')?.addEventListener('click', async function() {
         const value = document.getElementById('addToListValue').value.trim();
         const value2 = document.getElementById('addToListValue2').value.trim();
@@ -1525,27 +1534,27 @@
         switch (currentAddAction) {
             case 'trusted-domain':
                 endpoint = '/api/audit-config/trusted-domains';
-                body = { domains: value };
+                body = { domains: value, ...auditListAddPostFields() };
                 break;
                 
             case 'important-keyword':
                 endpoint = '/api/audit-config/important-keywords';
-                body = { keywords: value };
+                body = { keywords: value, ...auditListAddPostFields() };
                 break;
                 
             case 'safe-subject':
                 endpoint = '/api/audit-config/safe-patterns';
-                body = { patterns: value, pattern_type: 'subject' };
+                body = { patterns: value, pattern_type: 'subject', ...auditListAddPostFields() };
                 break;
                 
             case 'safe-sender':
                 endpoint = '/api/audit-config/safe-patterns';
-                body = { patterns: value, pattern_type: 'sender' };
+                body = { patterns: value, pattern_type: 'sender', ...auditListAddPostFields() };
                 break;
                 
             case 'vip-sender':
                 endpoint = '/api/audit-config/vip-senders';
-                body = { senders: value };
+                body = { senders: value, ...auditListAddPostFields() };
                 break;
                 
             case 'auto-rule':

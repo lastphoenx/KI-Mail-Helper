@@ -4040,6 +4040,15 @@
             this.value === 'SAFE' ? 'block' : 'none';
     });
     
+    function auditListAddPostFields() {
+        const fields = { mode: 'add' };
+        const accountId = getSelectedAuditAccountId();
+        if (accountId) {
+            fields.account_id = parseInt(accountId, 10);
+        }
+        return fields;
+    }
+
     // Modal: Bestätigen
     document.getElementById('addToListConfirmBtn')?.addEventListener('click', async function() {
         const value = document.getElementById('addToListValue').value.trim();
@@ -4059,27 +4068,27 @@
         switch (currentAddAction) {
             case 'trusted-domain':
                 endpoint = '/api/audit-config/trusted-domains';
-                body = { domains: value };
+                body = { domains: value, ...auditListAddPostFields() };
                 break;
                 
             case 'important-keyword':
                 endpoint = '/api/audit-config/important-keywords';
-                body = { keywords: value };
+                body = { keywords: value, ...auditListAddPostFields() };
                 break;
                 
             case 'safe-subject':
                 endpoint = '/api/audit-config/safe-patterns';
-                body = { patterns: value, pattern_type: 'subject' };
+                body = { patterns: value, pattern_type: 'subject', ...auditListAddPostFields() };
                 break;
                 
             case 'safe-sender':
                 endpoint = '/api/audit-config/safe-patterns';
-                body = { patterns: value, pattern_type: 'sender' };
+                body = { patterns: value, pattern_type: 'sender', ...auditListAddPostFields() };
                 break;
                 
             case 'vip-sender':
                 endpoint = '/api/audit-config/vip-senders';
-                body = { senders: value };
+                body = { senders: value, ...auditListAddPostFields() };
                 break;
                 
             case 'auto-rule':
