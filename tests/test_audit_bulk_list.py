@@ -103,3 +103,39 @@ def test_bulk_mode_parsing():
     assert bulk_mode_is_add_only({"mode": "replace"}) is False
     with pytest.raises(ValueError):
         bulk_mode_is_add_only({"mode": "merge"})
+
+
+def test_cluster_menu_add_payload_is_global_not_account_scoped():
+    """Wie auditListAddPostFields(): mode=add, kein account_id -> NULL in der DB."""
+    cluster_body = {"senders": "notify@example.com", "mode": "add"}
+    assert bulk_mode_is_add_only(cluster_body)
+    account_id = cluster_body.get("account_id")
+    assert account_id is None
+
+    created: list[dict] = []
+
+    def _insert(sender: str) -> None:
+        created.append(
+            {
+                "sender_pattern": sender,
+                "account_id": account_id,
+                "source": "user",
+            }
+        )
+
+    stats = sync_user_list_values(
+        [],
+        ["notify@example.com"],
+        value_attr="sender_pattern",
+        add_only=True,
+        on_insert=_insert,
+    )
+
+    assert stats["added"] == 1
+    assert created == [
+        {
+            "sender_pattern": "notify@example.com",
+            "account_id": None,
+            "source": "user",
+        }
+    ]
