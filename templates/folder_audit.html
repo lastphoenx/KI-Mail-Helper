@@ -355,6 +355,13 @@
         background-color: #c2410c;
         border-color: #9a3412;
     }
+    .audit-brand-add-caution {
+        font-size: 0.72rem;
+        color: #842029;
+        margin-top: 0.3rem;
+        max-width: 32rem;
+        line-height: 1.35;
+    }
     
     /* Cluster View Styles */
     .cluster-card {
@@ -883,27 +890,27 @@
                         <tbody>
                             <tr>
                                 <td>eine echte Domain, die als Verdacht gemeldet wird (Marke im Absendernamen)</td>
-                                <td><a href="#" class="audit-jump-config" data-audit-jump="brandDomainsSection">Marken-Domains</a> — Domain zur Marke ergänzen</td>
+                                <td><a href="#config-marken-domains" class="audit-jump-config" data-audit-jump="brandDomainsSection">Marken-Domains</a> — Domain zur Marke ergänzen</td>
                                 <td>Genaueste Lösung; ohne Eintrag bleibt die Prüfung aktiv</td>
                             </tr>
                             <tr>
                                 <td>einen Absender nie auf Fälschung prüfen</td>
-                                <td><a href="#" class="audit-jump-config" data-audit-jump="trustedDomainsSection">Vertrauenswürdige Domain</a></td>
+                                <td><a href="#config-trusted-domains" class="audit-jump-config" data-audit-jump="trustedDomainsSection">Vertrauenswürdige Domain</a></td>
                                 <td>Schaltet Identitäts- und Marken-Prüfung für die Domain ab — nicht automatisch wichtig oder löschbar. Spamhaus bleibt aktiv.</td>
                             </tr>
                             <tr>
                                 <td>einen Absender als wichtig</td>
-                                <td><a href="#" class="audit-jump-config" data-audit-jump="vipSection">VIP Absender</a></td>
+                                <td><a href="#config-vip" class="audit-jump-config" data-audit-jump="vipSection">VIP Absender</a></td>
                                 <td>Hebt weiche Verdachtsgründe auf, <strong>nicht</strong> harten Marken-Widerspruch</td>
                             </tr>
                             <tr>
                                 <td>Werbung löschbar machen</td>
-                                <td><a href="#" class="audit-jump-config" data-audit-jump="safeSubjectSection">Betreff-Muster</a> (besser) oder <a href="#" class="audit-jump-config" data-audit-jump="safeSenderSection">Absender-Muster</a></td>
+                                <td><a href="#config-safe-subject" class="audit-jump-config" data-audit-jump="safeSubjectSection">Betreff-Muster</a> (besser) oder <a href="#config-safe-sender" class="audit-jump-config" data-audit-jump="safeSenderSection">Absender-Muster</a></td>
                                 <td>Absender-Muster gilt für <strong>alle</strong> Mails dieser Adresse/Domain</td>
                             </tr>
                             <tr>
                                 <td>Mails nie als sicher löschbar</td>
-                                <td><a href="#" class="audit-jump-config" data-audit-jump="auditQualitySection">Wichtige Ordner</a> oder <a href="#" class="audit-jump-config" data-audit-jump="keywordsSection">wichtige Keywords</a></td>
+                                <td><a href="#config-wichtige-ordner" class="audit-jump-config" data-audit-jump="auditQualitySection">Wichtige Ordner</a> oder <a href="#config-keywords" class="audit-jump-config" data-audit-jump="keywordsSection">wichtige Keywords</a></td>
                                 <td>Ordner: nie «sicher löschbar»; Keywords: Betreff wichtig</td>
                             </tr>
                             <tr>
@@ -1955,6 +1962,7 @@
                     label: 'Marken-Domain ergänzen',
                     subtitle: 'Offizielle Domain zur Marke — behebt Marken-Verdacht/Scam.',
                     icon: 'bi-building text-warning',
+                    confirm: 'Nur wenn diese Domain wirklich zur Marke gehört. Falsche Einträge schwächen den Scam-Schutz für alle Konten. Trotzdem hinzufügen?',
                 },
                 {
                     action: 'trusted-domain',
@@ -2094,7 +2102,31 @@
         bootstrap.Modal.getOrCreateInstance(document.getElementById('addToListModal')).show();
     }
 
-    function jumpToAuditConfigSection(sectionId) {
+    const AUDIT_CONFIG_HASH_TO_SECTION = {
+        'config-marken-domains': 'brandDomainsSection',
+        'config-trusted-domains': 'trustedDomainsSection',
+        'config-vip': 'vipSection',
+        'config-safe-subject': 'safeSubjectSection',
+        'config-safe-sender': 'safeSenderSection',
+        'config-wichtige-ordner': 'auditQualitySection',
+        'config-keywords': 'keywordsSection',
+    };
+    const AUDIT_SECTION_TO_HASH = {};
+    Object.keys(AUDIT_CONFIG_HASH_TO_SECTION).forEach(function(hashKey) {
+        AUDIT_SECTION_TO_HASH[AUDIT_CONFIG_HASH_TO_SECTION[hashKey]] = hashKey;
+    });
+
+    function jumpToAuditConfigSection(sectionId, updateHash) {
+        if (updateHash !== false && sectionId && AUDIT_SECTION_TO_HASH[sectionId]) {
+            const target = '#' + AUDIT_SECTION_TO_HASH[sectionId];
+            if (window.location.hash !== target) {
+                history.replaceState(null, '', target);
+            }
+        } else if (updateHash !== false && sectionId) {
+            if (window.location.hash !== '#config') {
+                history.replaceState(null, '', '#config');
+            }
+        }
         const configTab = document.getElementById('config-tab');
         if (configTab && typeof bootstrap !== 'undefined') {
             bootstrap.Tab.getOrCreateInstance(configTab).show();
@@ -2108,9 +2140,33 @@
             section.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 200);
     }
+
+    function applyFolderAuditHashFromLocation() {
+        const raw = (window.location.hash || '').replace(/^#/, '').trim();
+        if (!raw || raw === 'scan') {
+            const scanTab = document.getElementById('scan-tab');
+            if (scanTab && typeof bootstrap !== 'undefined') {
+                bootstrap.Tab.getOrCreateInstance(scanTab).show();
+            }
+            return;
+        }
+        if (raw === 'config') {
+            const configTab = document.getElementById('config-tab');
+            if (configTab && typeof bootstrap !== 'undefined') {
+                bootstrap.Tab.getOrCreateInstance(configTab).show();
+            }
+            return;
+        }
+        const sectionId = AUDIT_CONFIG_HASH_TO_SECTION[raw];
+        if (sectionId) {
+            jumpToAuditConfigSection(sectionId, false);
+        }
+    }
     
     // Event Listeners (CSP-konform)
     document.addEventListener('DOMContentLoaded', function() {
+        applyFolderAuditHashFromLocation();
+        window.addEventListener('hashchange', applyFolderAuditHashFromLocation);
         document.querySelectorAll('.audit-jump-config').forEach(function(link) {
             link.addEventListener('click', function(e) {
                 e.preventDefault();
@@ -3768,8 +3824,8 @@
                 || (email.sender && email.sender.includes('@') ? email.sender.split('@').pop() : '');
             const suspicionHint = (email.category === 'suspicion' || email.category === 'scam')
                 ? (brandKey
-                    ? `<div class="audit-suspicion-hint"><button type="button" class="btn btn-sm py-1 px-2 audit-brand-add-btn" data-brand-key="${escapeHtml(brandKey)}" data-domain="${escapeHtml(brandHost)}" data-sender="${escapeHtml(email.sender || '')}">Domain zur Marke ergänzen</button></div>`
-                    : '<div class="audit-suspicion-hint"><span class="text-warning-emphasis">Domain echt?</span> <a href="#" class="audit-goto-brand-config">Bei der Marke ergänzen</a> (Konfiguration → Marken-Domains)</div>')
+                    ? `<div class="audit-suspicion-hint"><button type="button" class="btn btn-sm py-1 px-2 audit-brand-add-btn" data-brand-key="${escapeHtml(brandKey)}" data-domain="${escapeHtml(brandHost)}" data-sender="${escapeHtml(email.sender || '')}">Domain zur Marke ergänzen</button><p class="audit-brand-add-caution mb-0">Nur wenn du sicher bist, dass diese Absender-Domain wirklich zur Marke gehört — sonst wird künftiger Marken-Betrug nicht mehr erkannt.</p></div>`
+                    : '<div class="audit-suspicion-hint"><span class="text-warning-emphasis">Domain echt?</span> <a href="#config-marken-domains" class="audit-goto-brand-config">Bei der Marke ergänzen</a> (Konfiguration → Marken-Domains). <span class="d-block audit-brand-add-caution mt-1">Ohne erkannte Marke im Scan: nur manuell und mit Bedacht.</span></div>')
                 : '';
             
             html += `
@@ -4358,7 +4414,7 @@
         switch (action) {
             case 'brand-domain':
                 title.textContent = '🏢 Marken-Domain ergänzen';
-                info.innerHTML = '<div class="alert alert-warning py-2 mb-0 small"><i class="bi bi-building"></i> Offizielle Absender-Domain zur Marke — gilt auf <strong>allen deinen Konten</strong>. Dieselben Prüfungen (DNS/Spamhaus) wie in der Konfiguration.</div>';
+                info.innerHTML = '<div class="alert alert-danger py-2 mb-0 small"><strong>Risiko:</strong> Falsche Domain an einer Marke schwächt den Scam-Schutz für <strong>alle Konten</strong>. Nur speichern, wenn die Domain wirklich offiziell zur gewählten Marke gehört. Prüfungen (DNS/Spamhaus) wie in der Konfiguration.</div>';
                 if (brandGroup) brandGroup.style.display = 'block';
                 valueLabel.textContent = 'Domain (vom Absender)';
                 valueInput.value = senderHostFromAddData(data);
