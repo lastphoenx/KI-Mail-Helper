@@ -153,6 +153,14 @@
     #scanPane .dropdown-menu {
         z-index: 1100;
     }
+    .dropdown-item .audit-add-subtitle {
+        display: block;
+        font-size: 0.75rem;
+        color: #6c757d;
+        white-space: normal;
+        margin-top: 0.15rem;
+        padding-left: 1.35rem;
+    }
     #scanPane #emailList,
     #scanPane #clusterView {
         padding-bottom: 6rem;
@@ -793,6 +801,66 @@
     let currentFilter = 'all';
     let currentAddAction = null;  // Aktuell gewählte Aktion (trusted-domain, vip-sender, etc.)
     let currentClusterData = null; // Cluster-Daten für das Modal
+
+    const AUDIT_ADD_MENU = [
+        {
+            action: 'trusted-domain',
+            label: 'Trusted Domain',
+            subtitle: 'Mails dieser Domain werden nicht auf Fälschung geprüft (Spamhaus bleibt).',
+            icon: 'bi-shield-check text-success',
+            confirm: 'Vertrauenswürdige Domain: Die Fälschungsprüfung für die ganze Domain wird abgeschaltet. Spamhaus DBL bleibt aktiv. Trotzdem hinzufügen?',
+        },
+        {
+            action: 'important-keyword',
+            label: 'Wichtiges Keyword',
+            subtitle: 'Betreff mit diesem Wort → «möglicherweise wichtig».',
+            icon: 'bi-exclamation-triangle text-danger',
+        },
+        {
+            action: 'safe-subject',
+            label: 'Safe Betreff-Pattern',
+            subtitle: 'Nur dieser Betreff → Tendenz «sicher löschbar».',
+            icon: 'bi-envelope-check text-warning',
+        },
+        {
+            action: 'safe-sender',
+            label: 'Safe Absender-Pattern',
+            subtitle: 'Alle Mails dieses Absenders/Domain → Tendenz «sicher löschbar».',
+            icon: 'bi-person-check text-warning',
+            confirm: 'Safe Absender-Pattern gilt für ALLE Mails dieser Adresse/Domain — auch Rechnungen und Sicherheitswarnungen. Für Werbung besser ein Betreff-Muster. Trotzdem hinzufügen?',
+        },
+        {
+            action: 'vip-sender',
+            label: 'VIP Absender',
+            subtitle: 'Absender priorisieren; hebt weiche Verdachtsgründe auf.',
+            icon: 'bi-star-fill text-warning',
+        },
+        {
+            action: 'auto-rule',
+            label: 'Auto-Regel',
+            subtitle: 'Einstufungs-Regel (SAFE/IMPORTANT/…) für den Scan.',
+            icon: 'bi-lightning text-info',
+            dividerBefore: true,
+        },
+    ];
+
+    function auditAddDropdownMenuHtml(itemClass) {
+        let html = '<li><h6 class="dropdown-header">Zur Liste hinzufügen</h6></li>';
+        for (const item of AUDIT_ADD_MENU) {
+            if (item.dividerBefore) {
+                html += '<li><hr class="dropdown-divider"></li>';
+            }
+            html += `<li><a class="dropdown-item ${itemClass}" href="#" data-action="${item.action}" title="${escapeHtml(item.subtitle)}">`;
+            html += `<i class="bi ${item.icon}"></i> ${escapeHtml(item.label)}`;
+            html += `<span class="audit-add-subtitle">${escapeHtml(item.subtitle)}</span></a></li>`;
+        }
+        return html;
+    }
+
+    function auditAddConfirmForAction(action) {
+        const row = AUDIT_ADD_MENU.find((i) => i.action === action);
+        return row && row.confirm ? row.confirm : null;
+    }
     
     // Event Listeners (CSP-konform)
     document.addEventListener('DOMContentLoaded', function() {
@@ -1298,26 +1366,7 @@
                                     <i class="bi bi-plus-circle"></i> Hinzufügen
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end">
-                                    <li><h6 class="dropdown-header">Zur Liste hinzufügen</h6></li>
-                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="trusted-domain">
-                                        <i class="bi bi-shield-check text-success"></i> Trusted Domain
-                                    </a></li>
-                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="important-keyword">
-                                        <i class="bi bi-exclamation-triangle text-danger"></i> Wichtiges Keyword
-                                    </a></li>
-                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="safe-subject">
-                                        <i class="bi bi-envelope-check text-warning"></i> Safe Betreff-Pattern
-                                    </a></li>
-                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="safe-sender">
-                                        <i class="bi bi-person-check text-warning"></i> Safe Absender-Pattern
-                                    </a></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="vip-sender">
-                                        <i class="bi bi-star-fill text-warning"></i> VIP Absender
-                                    </a></li>
-                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="auto-rule">
-                                        <i class="bi bi-lightning text-info"></i> Auto-Löschregel
-                                    </a></li>
+                                    ${auditAddDropdownMenuHtml('cluster-add-action')}
                                 </ul>
                             </div>
                         </div>
@@ -1544,6 +1593,11 @@
         
         if (!value) {
             alert('Bitte einen Wert eingeben!');
+            return;
+        }
+
+        const addConfirm = auditAddConfirmForAction(currentAddAction);
+        if (addConfirm && !confirm(addConfirm)) {
             return;
         }
         

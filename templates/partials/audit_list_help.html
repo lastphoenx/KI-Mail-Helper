@@ -1,0 +1,31 @@
+{% macro audit_list_help(scope_label, wirkung, wann, nicht_fuer, beispiel, help_id='', warn=false, warn_text='', detail='') %}
+<div class="audit-list-help card border-0 bg-light mb-3"{% if help_id %} id="{{ help_id }}"{% endif %}>
+    <div class="card-body py-3 small">
+        <p class="mb-2 fw-semibold text-secondary">Gilt für: {{ scope_label }}</p>
+        <dl class="row mb-0 audit-help-dl">
+            <dt class="col-md-3">Wirkung</dt>
+            <dd class="col-md-9">{{ wirkung }}</dd>
+            <dt class="col-md-3">Wann nutzen</dt>
+            <dd class="col-md-9">{{ wann }}</dd>
+            <dt class="col-md-3">Nicht gedacht für</dt>
+            <dd class="col-md-9">{{ nicht_fuer }}</dd>
+            <dt class="col-md-3">Beispiel</dt>
+            <dd class="col-md-9">{{ beispiel }}</dd>
+        </dl>
+        {% if detail %}
+        <p class="mb-0 mt-2">
+            <button type="button" class="btn btn-link btn-sm p-0 audit-help-toggle" data-bs-toggle="collapse"
+                    data-bs-target="#audit-help-detail-{{ help_id or 'x' }}" aria-expanded="false">
+                <i class="bi bi-question-circle" aria-hidden="true"></i> Mehr erklären
+            </button>
+        </p>
+        <div class="collapse mt-2" id="audit-help-detail-{{ help_id or 'x' }}">
+            <div class="border-start border-3 border-secondary ps-2 text-muted">{{ detail }}</div>
+        </div>
+        {% endif %}
+        {% if warn and warn_text %}
+        <div class="alert alert-warning py-2 px-3 mb-0 mt-3 small" role="alert">{{ warn_text }}</div>
+        {% endif %}
+    </div>
+</div>
+{% endmacro %}

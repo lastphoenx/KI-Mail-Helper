@@ -3,6 +3,7 @@
 {% block title %}Ordner-Audit - Mail Helper{% endblock %}
 
 {% block content %}
+{% include 'partials/audit_list_help.html' %}
 <style nonce="{{ csp_nonce() }}">
     /* Category Colors */
     .category-safe { 
@@ -229,6 +230,21 @@
     #scanPane #emailList,
     #scanPane #clusterView {
         padding-bottom: 6rem;
+    }
+
+    .audit-help-dl dt { font-weight: 600; }
+    .audit-decision-table th { font-weight: 600; }
+    .dropdown-item .audit-add-subtitle {
+        display: block;
+        font-size: 0.75rem;
+        color: #6c757d;
+        white-space: normal;
+        line-height: 1.25;
+        margin-top: 0.15rem;
+    }
+    .audit-suspicion-hint {
+        font-size: 0.8rem;
+        margin-top: 0.35rem;
     }
     
     /* Cluster View Styles */
@@ -745,6 +761,62 @@
                 </div>
             </div>
         </div>
+
+        <div class="card mb-4 border-primary" id="auditDecisionHelper">
+            <div class="card-body">
+                <h2 class="h6 mb-2"><i class="bi bi-signpost-split me-1"></i> Was will ich? → Welche Liste?</h2>
+                <p class="text-muted small mb-2">Kurzentscheidung — Details in jedem Abschnitt darunter. Ausführlich: Benutzerhandbuch §12.1.</p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered audit-decision-table mb-0 small">
+                        <thead class="table-light">
+                            <tr><th>Ich will …</th><th>Dann …</th><th>Wichtig</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>eine echte Domain, die als Verdacht gemeldet wird (Marke im Absendernamen)</td>
+                                <td><a href="#" class="audit-jump-config" data-audit-jump="brandDomainsSection">Marken-Domains</a> — Domain zur Marke ergänzen</td>
+                                <td>Genaueste Lösung; ohne Eintrag bleibt die Prüfung aktiv</td>
+                            </tr>
+                            <tr>
+                                <td>einen Absender nie auf Fälschung prüfen</td>
+                                <td><a href="#" class="audit-jump-config" data-audit-jump="trustedDomainsSection">Vertrauenswürdige Domain</a></td>
+                                <td>Schaltet Identitäts- und Marken-Prüfung für die Domain ab — nicht automatisch wichtig oder löschbar. Spamhaus bleibt aktiv.</td>
+                            </tr>
+                            <tr>
+                                <td>einen Absender als wichtig</td>
+                                <td><a href="#" class="audit-jump-config" data-audit-jump="vipSection">VIP Absender</a></td>
+                                <td>Hebt weiche Verdachtsgründe auf, <strong>nicht</strong> harten Marken-Widerspruch</td>
+                            </tr>
+                            <tr>
+                                <td>Werbung löschbar machen</td>
+                                <td><a href="#" class="audit-jump-config" data-audit-jump="safeSubjectSection">Betreff-Muster</a> (besser) oder <a href="#" class="audit-jump-config" data-audit-jump="safeSenderSection">Absender-Muster</a></td>
+                                <td>Absender-Muster gilt für <strong>alle</strong> Mails dieser Adresse/Domain</td>
+                            </tr>
+                            <tr>
+                                <td>Mails nie als sicher löschbar</td>
+                                <td><a href="#" class="audit-jump-config" data-audit-jump="auditQualitySection">Wichtige Ordner</a> oder <a href="#" class="audit-jump-config" data-audit-jump="keywordsSection">wichtige Keywords</a></td>
+                                <td>Ordner: nie «sicher löschbar»; Keywords: Betreff wichtig</td>
+                            </tr>
+                            <tr>
+                                <td>Newsletter eines echten Anbieters loswerden</td>
+                                <td>beim Anbieter abbestellen</td>
+                                <td>Nie bei Fake-Mails — dort Scam/Verdacht prüfen</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="alert alert-secondary small mb-4" role="note" id="auditCommonMyths">
+            <strong>Häufige Irrtümer</strong>
+            <ul class="mb-0 mt-2">
+                <li>Ein <strong>Safe-Absender-Pattern</strong> entfernt keinen Marken-Verdacht und keinen Scam.</li>
+                <li><strong>VIP</strong> entfernt keinen harten Marken-Widerspruch (Anzeigename passt nicht zur Domain).</li>
+                <li><strong>Vertrauenswürdige Domain</strong> macht Mails nicht automatisch wichtig oder sicher löschbar.</li>
+                <li><strong>Safe-Absender-Pattern</strong> kann auch Rechnungen und Sicherheitsmails dieser Adresse betreffen — für Werbung lieber Betreff-Muster.</li>
+            </ul>
+        </div>
         
         <!-- Load Defaults Button -->
         <div class="mb-4">
@@ -793,15 +865,17 @@
                 </h2>
                 <div id="trustedDomainsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
-                        <p class="text-muted mb-3">
-                            Domains von Firmen und Personen, denen du vertraust (z.&nbsp;B. Bank, Arzt, Lieferant).
-                            <strong>Verdachtsregeln</strong> (Identität, Marken-Mismatch) werden dort abgeschwächt —
-                            die Mail wird <strong>nicht automatisch wichtig</strong> oder sicher löschbar.
-                            Eine fehlgeschlagene Absenderprüfung allein wird hier kein Verdacht.
-                            Ein Spamhaus-Treffer bleibt Verdacht.
-                            Beispiel: <code>bank-beispiel.ch</code>, <code>arztpraxis.example</code>
-                        </p>
+                        {{ audit_list_help(
+                            'alle deine Konten (global)',
+                            'Mails von dieser Domain werden bei Identitäts- und Marken-Abweichungen nicht als Verdacht/Scam eingestuft — die Mail wird nicht automatisch wichtig oder sicher löschbar.',
+                            'Du kennst die Domain und willst keine Fälschungsprüfung mehr für diese Absender-Domain.',
+                            'Echte Betrüger-Domains freizuschalten; Ersatz für Marken-Tabelle bei Marken-Mismatch; Spamhaus umgehen (geht nicht).',
+                            '<code>bank-beispiel.ch</code>, <code>arztpraxis.example</code>',
+                            'help-trusted-domains',
+                            true,
+                            'Schaltet die Fälschungsprüfung für die ganze Domain ab. Spamhaus DBL bleibt ein Verdachtssignal. Die Mail wird weder VIP noch automatisch löschbar.',
+                            'Technisch: user-Trusted-Domain in der Audit-Konfiguration; unterdrückt weiche Identitätsregeln, nicht DBL.'
+                        ) }}
                         <textarea id="trustedDomainsInput" class="form-control font-monospace" rows="5" 
                             placeholder="ubs.com, credit-suisse.com, admin.ch, iliad.it, estraprometeo.it..."></textarea>
                         <div class="mt-2 d-flex justify-content-between">
@@ -824,11 +898,16 @@
                 </h2>
                 <div id="keywordsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
-                        <p class="text-muted mb-3">
-                            Emails mit diesen Keywords im Betreff werden als <strong>wichtig</strong> markiert.
-                            Mehrsprachig: DE, EN, IT, FR
-                        </p>
+                        {{ audit_list_help(
+                            'alle deine Konten (global)',
+                            'Treffer im Betreff → Kategorie «möglicherweise wichtig» (Schutz vor sicher löschbar).',
+                            'Betreff-Wörter, die bei dir immer Aufmerksamkeit bedeuten (Rechnung, Vertrag, Mahnung …).',
+                            'Werbung gezielt löschbar machen — dafür Safe-Patterns; kein Ersatz für VIP.',
+                            '<code>rechnung</code>, <code>mahnung</code>, <code>invoice</code>',
+                            'help-keywords',
+                            false, '',
+                            'Mehrsprachige System-Defaults können zusätzlich geladen werden (DE, EN, IT, FR).'
+                        ) }}
                         <textarea id="importantKeywordsInput" class="form-control font-monospace" rows="5" 
                             placeholder="rechnung, fattura, bolletta, invoice, mahnung, kündigung, contratto..."></textarea>
                         <div class="mt-2 d-flex justify-content-between">
@@ -851,10 +930,14 @@
                 </h2>
                 <div id="safeSubjectSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
-                        <p class="text-muted mb-3">
-                            Emails mit diesen Patterns im Betreff werden als <strong>sicher löschbar</strong> markiert.
-                        </p>
+                        {{ audit_list_help(
+                            'alle deine Konten (global)',
+                            'Treffer im Betreff → Tendenz «sicher löschbar» (Newsletter/Routine), sofern kein Lösch-Veto greift.',
+                            'Wiederkehrende Werbe- oder Newsletter-Betreffzeilen eines Anbieters.',
+                            'Absender-weit alle Mailtypen erfassen — dafür ist Absender-Muster riskanter.',
+                            '<code>newsletter</code>, <code>weekly digest</code>, <code>unsubscribe</code>',
+                            'help-safe-subject'
+                        ) }}
                         <textarea id="safeSubjectInput" class="form-control font-monospace" rows="4" 
                             placeholder="newsletter, weekly digest, rabatt, sale, gutschein, unsubscribe..."></textarea>
                         <div class="mt-2 d-flex justify-content-between">
@@ -877,12 +960,17 @@
                 </h2>
                 <div id="safeSenderSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
-                        <p class="text-muted mb-3">
-                            Absender-Muster (Teilstring oder Domain) für Newsletter/Marketing — tendenz <strong>sicher löschbar</strong>.
-                            Gilt <strong>nicht</strong>, wenn Identitäts- oder Scam-Regeln (Rechnung+Anhang, Marken-Mismatch) greifen.
-                            Beispiel: <code>@newsletter.firma.ch</code>, <code>noreply@</code>
-                        </p>
+                        {{ audit_list_help(
+                            'alle deine Konten (global)',
+                            'Treffer am Absender (Teilstring/Domain) → Tendenz «sicher löschbar» für alle Mails dieses Absenders, sofern kein Scam/Marken-Hard-Signal und kein Lösch-Veto.',
+                            'Stabiler Newsletter-/Marketing-Absender (z.&nbsp;B. Miles&nbsp;&amp;&nbsp;More, Shop-Newsletter).',
+                            'Rechnungen, Konto- oder Sicherheitsmails desselben Absenders — dafür Betreff-Muster oder Einzelregeln.',
+                            '<code>@newsletter.firma.ch</code>, <code>noreply@</code>',
+                            'help-safe-sender',
+                            true,
+                            'Gilt für alle Mails dieser Adresse oder Domain — auch Rechnungen und Sicherheitswarnungen. Für Werbung besser ein Betreff-Muster.',
+                            'Entfernt keinen Marken-Scam. Harte Scam-Signale bleiben.'
+                        ) }}
                         <textarea id="safeSenderInput" class="form-control font-monospace" rows="4" 
                             placeholder="newsletter@, noreply@, marketing@, @mailchimp., @sendgrid...."></textarea>
                         <div class="mt-2 d-flex justify-content-between">
@@ -905,13 +993,16 @@
                 </h2>
                 <div id="vipSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
-                        <p class="text-muted mb-3">
-                            Absender, die du <strong>priorisieren</strong> willst (exakte Adresse vor Domain vor Teilstring).
-                            VIP übersteuert weiche Identitätsregeln, solange die Authentifizierung nicht fehlschlägt.
-                            Harte Markentreffer (Marke, Domain passt nicht) bleiben.
-                            Format: <code>chef@firma.ch</code>, <code>@firma.ch</code>, <code>firma.ch</code>
-                        </p>
+                        {{ audit_list_help(
+                            'alle deine Konten (global)',
+                            'Absender wird priorisiert («wichtig»), weiche Identitätsverdachtsgründe werden abgeschwächt, wenn die Mail-Authentifizierung nicht komplett fehlschlägt.',
+                            'Chef, Kunde, Partner — du willst diese Absender nicht als Routine/Verdacht verlieren.',
+                            'Marken-Betrug abschalten; alle Mails eines Newsletters löschbar machen.',
+                            '<code>chef@firma.ch</code>, <code>@firma.ch</code>, <code>firma.ch</code>',
+                            'help-vip',
+                            false, '',
+                            'Harter Marken-Widerspruch (Anzeigename ↔ Domain) bleibt Scam.'
+                        ) }}
                         <textarea id="vipSendersInput" class="form-control font-monospace" rows="4" 
                             placeholder="chef@firma.de, @wichtiger-kunde.de, partner-firma.com..."></textarea>
                         <div class="mt-2 d-flex justify-content-between">
@@ -934,14 +1025,16 @@
                 </h2>
                 <div id="autoDeleteSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
-                        <p class="text-muted mb-3">
-                            Diese Regeln bestimmen nur, wie das Ordner-Audit eine Mail einstuft. Sie verschieben oder löschen nichts.
-                            Aktionen auf Mails stellst du unter <a href="/rules">Aktions-Regeln</a> ein.
-                            Wenn <strong>beide</strong> Patterns gesetzt sind, müssen beide passen.
-                            Das Tage-Feld hier gehört zur Einstufungs-Regel und gilt für alle Konten.
-                            Es ist nicht die Aufbewahrung von Routine-Mails. Die steht beim gewählten Konto.
-                        </p>
+                        {{ audit_list_help(
+                            'alle deine Konten (global)',
+                            'Treffer auf Absender und/oder Betreff → feste Einstufung (sicher löschbar, wichtig, Scam, Prüfen). Verschiebt oder löscht nichts im Postfach.',
+                            'Wiederkehrende Muster mit klarer Scan-Kategorie (z.&nbsp;B. Newsletter älter als 14 Tage → sicher löschbar).',
+                            'Mail-Alter für Aktions-Regeln unter <a href="/rules">Aktions-Regeln</a>; Aufbewahrung von Routine-Mails (Erfolg/Versand) — die steht beim gewählten Konto.',
+                            'Absender <code>@newsletter.</code> + Betreff-Regex <code>digest</code> → SAFE nach 14 Tagen',
+                            'help-auto-rules',
+                            false, '',
+                            'Sind Absender- und Betreff-Pattern gesetzt, müssen beide passen. Das Tage-Feld gehört nur zur Einstufungs-Regel, nicht zur Konto-Aufbewahrung.'
+                        ) }}
                         
                         <!-- Regeln Tabelle -->
                         <div class="table-responsive mb-3">
@@ -1033,12 +1126,16 @@
                 </h2>
                 <div id="brandDomainsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
-                        <p class="text-muted mb-2">
-                            Wenn der <strong>Anzeigename</strong> eine Marke nennt (z.&nbsp;B. PayPal), muss die Absender-Domain zu den <strong>offiziellen Domains</strong> passen.
-                            Die <strong>System-Liste</strong> gilt immer im Ordner-Scan; hier pflegen Sie <strong>Ihre Ergänzungen</strong> (DB).
-                            «Domains prüfen» läuft nur über <strong>Ihre Domains</strong> (DNS/DBL/RDAP), nicht über reine System-Domains.
-                        </p>
+                        {{ audit_list_help(
+                            'alle deine Konten (global) — ergänzt die System-Markenliste',
+                            'Anzeigename nennt eine Marke → Absender-Domain muss in der Tabelle «offizielle Domains» stehen, sonst Scam (harte Regel).',
+                            'Echte Anbieter-Domain wird als Verdacht gemeldet, weil die Marke im Namen steht, die Domain aber noch fehlt.',
+                            'Absender dauerhaft ohne Fälschungsprüfung — dafür «Vertrauenswürdige Domain»; Werbung löschbar — Safe-Patterns.',
+                            'Marke <code>Beispiel</code> + Domain <code>beispiel.example</code>',
+                            'help-brand-domains',
+                            false, '',
+                            'Die System-Liste gilt immer im Scan. «Domains prüfen» läuft nur über Ihre Ergänzungen (DNS/DBL/RDAP), nicht über reine System-Domains.'
+                        ) }}
                         <div id="brandScopeSummary" class="alert alert-secondary py-2 px-3 small mb-2 d-none" role="status"></div>
                         <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
                             <span class="badge bg-secondary" id="brandRdapHealthBadge" title="RDAP beim «Domains prüfen»">Marken-RDAP: …</span>
@@ -1208,12 +1305,16 @@
                 </h2>
                 <div id="clusterSettingsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="all">Gilt für alle deine Konten.</p>
-                        <p class="text-muted mb-3">
-                            Steuert, wie ähnliche Mails in der Delta-Ansicht zu Sammel-Karten zusammengefasst werden.
-                            Ohne Anpassung gelten die <strong>System-Defaults</strong>.
-                            <span class="d-block mt-1"><strong>Hinweis:</strong> Gespeicherte Einstellungen wirken ab dem <strong>nächsten Scan</strong> — die Gruppierung entsteht beim Scannen, nicht beim Speichern.</span>
-                        </p>
+                        {{ audit_list_help(
+                            'alle deine Konten (global)',
+                            'Steuert, wie ähnliche Mails in der Cluster-Ansicht zu Sammel-Karten zusammengefasst werden (nächster Scan).',
+                            'Viele gleichartige Newsletter oder Shop-Mails schneller sichten und Listen pflegen.',
+                            'Scam- oder Verdachts-Urteile ändern — dafür Marken, VIP, Safe-Patterns; Ordner vom Scan ausnehmen.',
+                            'Betreff-Normalisierung: «Re: Angebot» und «Angebot» in einer Gruppe',
+                            'help-clustering',
+                            false, '',
+                            'Ohne Anpassung gelten System-Defaults. Aufräumen/Pflege wählst du beim Scan in der Cluster-Ansicht.'
+                        ) }}
                         <div class="mb-3">
                             <label class="form-label fw-semibold">Diese Domains nie zusammenfassen</label>
                             <p class="text-muted small mb-2">
@@ -1357,13 +1458,14 @@
                 </h2>
                 <div id="auditWordListsSection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="account">Konto oben wählen.</p>
-                        <p class="text-muted small mb-2">
-                            Die festen Wörter gelten für alle und sind nur zum Lesen.
-                            <strong>Eigene</strong>: ein Wort, das in deinem Postfach vorkommt und in der festen Liste fehlt.
-                            <strong>Deaktivieren</strong>: ein festes Wort, das bei dir falsch trifft. Eintragen, dann gilt es nicht mehr.
-                            Ein Wort pro Zeile. Das gilt ab dem nächsten Scan.
-                        </p>
+                        {{ audit_list_help(
+                            'gewähltes Konto (Dropdown im Tab «Ordner scannen»)',
+                            'Erweitert oder schränkt Alarm-, Schutz-, Erfolgs- und Versand-Wörter für Betreff-Erkennung ein — wirkt ab dem nächsten Scan.',
+                            'Fehlalarm bei Alarmwörtern deaktivieren oder eigene Begriffe ergänzen (mehrsprachig).',
+                            'Marken-Scam oder VIP ersetzen; Aufbewahrungs-Tage — die stehen unter «Aufbewahrung».',
+                            'Alarm: festes Wort <code>alert</code> deaktivieren; Versand: <code>colis livre</code> ergänzen',
+                            'help-wordlists'
+                        ) }}
                         <div id="auditWordListsMount"></div>
                         <div class="mt-2 d-flex justify-content-end align-items-center gap-2">
                             <span class="small text-muted" id="auditWordListsSaveStatus"></span>
@@ -1491,15 +1593,16 @@
                 </h2>
                 <div id="auditQualitySection" class="accordion-collapse collapse">
                     <div class="accordion-body">
-                        <p class="audit-scope-hint small fw-semibold mb-2" data-audit-scope="account">Konto oben wählen.</p>
-                        <p class="text-muted mb-2">
-                            Das ist nicht «Ordner vom Scan ausnehmen».
-                            Ein ausgenommener Ordner wird <strong>nicht gescannt</strong>.
-                            Ein wichtiger Ordner <strong>wird gescannt</strong>, die Mails darin werden aber <strong>nie «Sicher löschbar»</strong>.
-                            Häkchen setzen wie bei den ausgenommenen Ordnern, dieselbe Liste.
-                            Ein Häkchen gilt auch für die Ordner darin. Der normale Posteingang lässt sich nicht auswählen.
-                            Beispiel: <code>Dringend/Bank</code> anhaken, dann bleibt der Ordner und alles darin zur Prüfung.
-                        </p>
+                        {{ audit_list_help(
+                            'gewähltes Konto',
+                            'Ordner wird gescannt, Mails darin (inkl. Unterordner) werden nie «sicher löschbar».',
+                            'Bank, Verträge, Dringend — alles, was nie automatisch als löschbar gelten soll.',
+                            'Ordner komplett vom Audit ausblenden — «Ordner vom Scan ausnehmen»; Betreff-Schutz — wichtige Keywords.',
+                            '<code>Dringend/Bank</code> anhaken — nicht der Nachbar <code>Dringend/Bank-Archiv</code>',
+                            'help-important-folders',
+                            false, '',
+                            'Nicht dasselbe wie «ausgenommen»: ausgenommen = nicht gescannt. Posteingang lässt sich nicht wählen.'
+                        ) }}
                         <div id="auditCuratedFoldersList" class="border rounded p-2 bg-light" style="max-height: 320px; overflow-y: auto;">
                             <span class="text-muted">Im Tab «Ordner scannen» oben einen Account wählen, dann unter «Ordner vom Scan ausnehmen» auf «Ordnerliste laden».</span>
                         </div>
@@ -1726,9 +1829,97 @@
     let currentFilter = 'all';
     let currentAddAction = null;  // Aktuell gewählte Aktion (trusted-domain, vip-sender, etc.)
     let currentClusterData = null; // Cluster-Daten für das Modal
+
+    const AUDIT_ADD_MENU = [
+        {
+            action: 'trusted-domain',
+            label: 'Trusted Domain',
+            subtitle: 'Mails dieser Domain werden nicht auf Fälschung geprüft (Spamhaus bleibt).',
+            icon: 'bi-shield-check text-success',
+            confirm: 'Vertrauenswürdige Domain: Die Fälschungsprüfung für die ganze Domain wird abgeschaltet. Spamhaus DBL bleibt aktiv. Trotzdem hinzufügen?',
+        },
+        {
+            action: 'important-keyword',
+            label: 'Wichtiges Keyword',
+            subtitle: 'Betreff mit diesem Wort → «möglicherweise wichtig».',
+            icon: 'bi-exclamation-triangle text-danger',
+        },
+        {
+            action: 'safe-subject',
+            label: 'Safe Betreff-Pattern',
+            subtitle: 'Nur dieser Betreff → Tendenz «sicher löschbar».',
+            icon: 'bi-envelope-check text-warning',
+        },
+        {
+            action: 'safe-sender',
+            label: 'Safe Absender-Pattern',
+            subtitle: 'Alle Mails dieses Absenders/Domain → Tendenz «sicher löschbar».',
+            icon: 'bi-person-check text-warning',
+            confirm: 'Safe Absender-Pattern gilt für ALLE Mails dieser Adresse/Domain — auch Rechnungen und Sicherheitswarnungen. Für Werbung besser ein Betreff-Muster. Trotzdem hinzufügen?',
+        },
+        {
+            action: 'vip-sender',
+            label: 'VIP Absender',
+            subtitle: 'Absender priorisieren; hebt weiche Verdachtsgründe auf.',
+            icon: 'bi-star-fill text-warning',
+        },
+        {
+            action: 'auto-rule',
+            label: 'Auto-Regel',
+            subtitle: 'Einstufungs-Regel (SAFE/IMPORTANT/…) für den Scan.',
+            icon: 'bi-lightning text-info',
+            dividerBefore: true,
+        },
+    ];
+
+    function auditAddDropdownMenuHtml(itemClass) {
+        let html = '<li><h6 class="dropdown-header">Zur Liste hinzufügen</h6></li>';
+        for (const item of AUDIT_ADD_MENU) {
+            if (item.dividerBefore) {
+                html += '<li><hr class="dropdown-divider"></li>';
+            }
+            html += `<li><a class="dropdown-item ${itemClass}" href="#" data-action="${item.action}" title="${escapeHtml(item.subtitle)}">`;
+            html += `<i class="bi ${item.icon}"></i> ${escapeHtml(item.label)}`;
+            html += `<span class="audit-add-subtitle">${escapeHtml(item.subtitle)}</span></a></li>`;
+        }
+        return html;
+    }
+
+    function auditAddConfirmForAction(action) {
+        const row = AUDIT_ADD_MENU.find((i) => i.action === action);
+        return row && row.confirm ? row.confirm : null;
+    }
+
+    function jumpToAuditConfigSection(sectionId) {
+        const configTab = document.getElementById('config-tab');
+        if (configTab && typeof bootstrap !== 'undefined') {
+            bootstrap.Tab.getOrCreateInstance(configTab).show();
+        }
+        window.setTimeout(function() {
+            const section = document.getElementById(sectionId);
+            if (!section) return;
+            if (typeof bootstrap !== 'undefined') {
+                bootstrap.Collapse.getOrCreateInstance(section, { toggle: false }).show();
+            }
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 200);
+    }
     
     // Event Listeners (CSP-konform)
     document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.audit-jump-config').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                jumpToAuditConfigSection(this.dataset.auditJump);
+            });
+        });
+        document.getElementById('emailList')?.addEventListener('click', function(e) {
+            const brandLink = e.target.closest('.audit-goto-brand-config');
+            if (brandLink) {
+                e.preventDefault();
+                jumpToAuditConfigSection('brandDomainsSection');
+            }
+        });
         // Scan Button
         document.getElementById('scanBtn').addEventListener('click', startScan);
         const llmContinueBtn = document.getElementById('llmContinueBtn');
@@ -3364,6 +3555,7 @@
                                 ${email.folder ? `<span class="badge bg-secondary ms-2" style="font-size: 0.7em; vertical-align: middle;">📁 ${escapeHtml(email.folder)}</span>` : ''}
                             </div>
                             <div class="email-reasons">${escapeHtml(reasons)}</div>
+                            ${(email.category === 'suspicion' || email.category === 'scam') ? '<div class="audit-suspicion-hint"><span class="text-warning-emphasis">Domain echt?</span> <a href="#" class="audit-goto-brand-config">Bei der Marke ergänzen</a> (Konfiguration → Marken-Domains)</div>' : ''}
                             <button type="button" class="btn btn-outline-secondary email-details-toggle"
                                     data-row-key="${escapeHtml(rowKey)}">
                                 ${detailsOpen ? '▲ Details' : '▼ Details'}
@@ -3394,26 +3586,7 @@
                                     <i class="bi bi-plus-circle"></i> Hinzufügen
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end">
-                                    <li><h6 class="dropdown-header">Zur Liste hinzufügen</h6></li>
-                                    <li><a class="dropdown-item email-add-action" href="#" data-action="trusted-domain">
-                                        <i class="bi bi-shield-check text-success"></i> Trusted Domain
-                                    </a></li>
-                                    <li><a class="dropdown-item email-add-action" href="#" data-action="important-keyword">
-                                        <i class="bi bi-exclamation-triangle text-danger"></i> Wichtiges Keyword
-                                    </a></li>
-                                    <li><a class="dropdown-item email-add-action" href="#" data-action="safe-subject">
-                                        <i class="bi bi-envelope-check text-warning"></i> Safe Betreff-Pattern
-                                    </a></li>
-                                    <li><a class="dropdown-item email-add-action" href="#" data-action="safe-sender">
-                                        <i class="bi bi-person-check text-warning"></i> Safe Absender-Pattern
-                                    </a></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item email-add-action" href="#" data-action="vip-sender">
-                                        <i class="bi bi-star-fill text-warning"></i> VIP Absender
-                                    </a></li>
-                                    <li><a class="dropdown-item email-add-action" href="#" data-action="auto-rule">
-                                        <i class="bi bi-lightning text-info"></i> Auto-Regel
-                                    </a></li>
+                                    ${auditAddDropdownMenuHtml('email-add-action')}
                                 </ul>
                             </div>
                         </div>
@@ -3785,26 +3958,7 @@
                                     <i class="bi bi-plus-circle"></i> Hinzufügen
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end">
-                                    <li><h6 class="dropdown-header">Zur Liste hinzufügen</h6></li>
-                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="trusted-domain">
-                                        <i class="bi bi-shield-check text-success"></i> Trusted Domain
-                                    </a></li>
-                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="important-keyword">
-                                        <i class="bi bi-exclamation-triangle text-danger"></i> Wichtiges Keyword
-                                    </a></li>
-                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="safe-subject">
-                                        <i class="bi bi-envelope-check text-warning"></i> Safe Betreff-Pattern
-                                    </a></li>
-                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="safe-sender">
-                                        <i class="bi bi-person-check text-warning"></i> Safe Absender-Pattern
-                                    </a></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="vip-sender">
-                                        <i class="bi bi-star-fill text-warning"></i> VIP Absender
-                                    </a></li>
-                                    <li><a class="dropdown-item cluster-add-action" href="#" data-action="auto-rule">
-                                        <i class="bi bi-lightning text-info"></i> Auto-Regel
-                                    </a></li>
+                                    ${auditAddDropdownMenuHtml('cluster-add-action')}
                                 </ul>
                             </div>
                         </div>
@@ -4079,6 +4233,11 @@
         
         if (!value) {
             alert('Bitte einen Wert eingeben!');
+            return;
+        }
+
+        const addConfirm = auditAddConfirmForAction(currentAddAction);
+        if (addConfirm && !confirm(addConfirm)) {
             return;
         }
         

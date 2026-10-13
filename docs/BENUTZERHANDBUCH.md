@@ -19,6 +19,7 @@
 10. [Mail-Verarbeitung & Status](#10-mail-verarbeitung--status)
 11. [KI-Übersetzer](#11-ki-übersetzer)
 12. [Ordner-Audit](#12-ordner-audit)
+    - [12.1 Welche Liste wofür?](#121-welche-liste-wofür)
 13. [Einstellungen](#13-einstellungen)
 14. [Sicherheit & Datenschutz](#14-sicherheit--datenschutz)
 15. [Fehlerbehebung](#15-fehlerbehebung)
@@ -698,6 +699,28 @@ Zwei Bereiche. Die Texte in der Oberfläche sagen, welcher gilt.
 Die Aktions-Regeln (Menü `/rules`, nicht die Einstufungs-Regeln im Ordner-Audit) haben die Bedingung **Mail älter als N Tage**. Sie zählt das Empfangsdatum und lässt sich mit Absender, Betreff und den anderen Bedingungen verbinden.
 
 Besteht eine Regel nur aus diesem Alter und verschiebt oder löscht sie, trifft sie alle alten Mails. Beim Speichern kommt die Rückfrage «Diese Regel gilt für alle Mails älter als N Tage. Erst mit 'T' testen.» Ohne Bestätigung speichert der Server nicht. **T** zeigt die betroffenen Mails, bevor die Regel scharf läuft.
+
+### 12.1 Welche Liste wofür?
+
+In der Ordner-Audit-Konfiguration (`/folder-audit`, Tab **Konfiguration**) findest du oben die Tabelle **«Was will ich? → Welche Liste?»** mit Sprunglinks zu den Abschnitten. Kurzfassung:
+
+| Ich will … | Dann … | Wichtig |
+|------------|--------|---------|
+| eine echte Domain, die als Verdacht gemeldet wird (Marke im Absendernamen) | bei **Marken-Domains** die Domain zur Marke ergänzen | genaueste Lösung; ohne Eintrag bleibt die Prüfung aktiv |
+| einen Absender nie auf Fälschung prüfen | **Vertrauenswürdige Domain** | schaltet Identitäts- und Marken-Prüfung für die ganze Domain ab — nicht automatisch wichtig oder löschbar; Spamhaus bleibt aktiv |
+| einen Absender als wichtig | **VIP Absender** | hebt weiche Verdachtsgründe auf, **nicht** harten Marken-Widerspruch |
+| Werbung löschbar machen | **Betreff-Muster** (besser) oder **Absender-Muster** | Absender-Muster gilt für **alle** Mails dieser Adresse/Domain |
+| Mails nie als sicher löschbar | **Wichtige Ordner** oder **wichtige Keywords** | Ordner: nie «sicher löschbar»; Keywords: Betreff wichtig |
+| Newsletter eines echten Anbieters loswerden | beim Anbieter abbestellen | nie bei Fake-Mails — dort Scam/Verdacht prüfen |
+
+**Häufige Irrtümer**
+
+- Ein **Safe-Absender-Pattern** entfernt keinen Marken-Verdacht und keinen Scam.
+- **VIP** entfernt keinen harten Marken-Widerspruch (Anzeigename passt nicht zur Domain).
+- **Vertrauenswürdige Domain** macht Mails nicht automatisch wichtig oder sicher löschbar.
+- **Safe-Absender-Pattern** kann auch Rechnungen und Sicherheitsmails derselben Adresse betreffen, wenn Newsletter-Merkmale greifen — für reine Werbung lieber ein Betreff-Muster.
+
+Jeder Abschnitt in der Konfiguration hat einen festen Hilfeblock (Wirkung / Wann nutzen / Nicht gedacht für / Beispiel). Riskante Listen (vertrauenswürdige Domain, Safe-Absender-Pattern) zeigen einen gelben Hinweis; beim Hinzufügen aus dem Cluster-Menü **Zur Liste hinzufügen** erscheint bei den riskanten Optionen eine Rückfrage.
 
 ---
 
