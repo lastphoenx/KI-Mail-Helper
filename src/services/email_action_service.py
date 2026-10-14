@@ -25,6 +25,8 @@ from datetime import datetime, UTC
 from typing import List, Optional, Dict, Any, Tuple
 import importlib
 
+from src.helpers.mail_account_imap import account_uses_imap_protocol
+
 logger = logging.getLogger(__name__)
 
 
@@ -129,35 +131,10 @@ def _get_mail_sync():
 # =============================================================================
 
 def _get_imap_fetcher(account, master_key):
-    """Helper: Erstellt IMAP-Fetcher mit entschlüsselten Credentials.
-    
-    Args:
-        account: MailAccount model instance
-        master_key: Decrypted master key from session
-        
-    Returns:
-        MailFetcher instance
-    """
-    encryption = _get_encryption()
-    mail_fetcher_mod = _get_mail_fetcher_mod()
-    
-    imap_server = encryption.CredentialManager.decrypt_server(
-        account.encrypted_imap_server, master_key
-    )
-    imap_username = encryption.CredentialManager.decrypt_email_address(
-        account.encrypted_imap_username, master_key
-    )
-    imap_password = encryption.CredentialManager.decrypt_imap_password(
-        account.encrypted_imap_password, master_key
-    )
-    
-    fetcher = mail_fetcher_mod.MailFetcher(
-        server=imap_server,
-        username=imap_username,
-        password=imap_password,
-        port=account.imap_port,
-    )
-    return fetcher
+    """Helper: Erstellt IMAP-Fetcher mit entschlüsselten Credentials."""
+    from src.helpers.imap_fetcher_factory import build_imap_fetcher_for_account
+
+    return build_imap_fetcher_for_account(account, master_key)
 
 
 def _validate_email_ownership(db, user_id: int, raw_email_ids: List[int]) -> Tuple[List, List[int]]:
@@ -268,7 +245,7 @@ def _execute_single_imap_action(
             .first()
         )
         
-        if not account or account.auth_type != "imap":
+        if not account or not account_uses_imap_protocol(account):
             return ActionResult(raw_email_id, False, error="IMAP-Account nicht verfügbar")
         
         fetcher = _get_imap_fetcher(account, master_key)
@@ -354,7 +331,7 @@ def _execute_bulk_imap_action(
                 .first()
             )
             
-            if not account or account.auth_type != "imap":
+            if not account or not account_uses_imap_protocol(account):
                 for processed, raw in account_emails:
                     result.add_failure(raw.id, "IMAP-Account nicht verfügbar")
                 continue
@@ -556,7 +533,7 @@ class EmailActionService:
                     .first()
                 )
                 
-                if not account or account.auth_type != "imap":
+                if not account or not account_uses_imap_protocol(account):
                     for processed, raw in account_emails:
                         result.add_failure(raw.id, "IMAP-Account nicht verfügbar")
                     continue
@@ -691,7 +668,7 @@ class EmailActionService:
                     .first()
                 )
                 
-                if not account or account.auth_type != "imap":
+                if not account or not account_uses_imap_protocol(account):
                     for processed, raw in account_emails:
                         result.add_failure(raw.id, "IMAP-Account nicht verfügbar")
                     continue

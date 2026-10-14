@@ -13,6 +13,7 @@ Integration: Phase H - Ausgehender Mail-Versand
 Status: PRODUCTION READY
 """
 
+import base64
 import smtplib
 import ssl
 import logging
@@ -237,12 +238,27 @@ class SMTPSender:
                 self.mail_account.encrypted_imap_password,
                 self.master_key
             )
+
+        oauth_smtp_bearer = None
+        if (
+            self.mail_account.auth_type == "oauth"
+            and self.mail_account.oauth_provider == "microsoft"
+        ):
+            import importlib
+
+            microsoft_oauth = importlib.import_module(".11_microsoft_oauth", "src")
+            oauth_smtp_bearer = microsoft_oauth.MicrosoftOAuthTokenManager.ensure_fresh_bearer(
+                self.mail_account, self.master_key
+            )
+            if not smtp_username and imap_username:
+                smtp_username = imap_username
         
         return {
             "smtp_server": smtp_server,
             "smtp_port": self.mail_account.smtp_port or 587,
             "smtp_username": smtp_username,
             "smtp_password": smtp_password,
+            "oauth_smtp_bearer": oauth_smtp_bearer,
             "smtp_encryption": self.mail_account.smtp_encryption or "STARTTLS",
             "imap_server": imap_server,
             "imap_port": self.mail_account.imap_port or 993,
@@ -267,8 +283,8 @@ class SMTPSender:
         if not creds.get("smtp_username"):
             return False, "SMTP-Benutzername nicht konfiguriert"
         
-        if not creds.get("smtp_password"):
-            return False, "SMTP-Passwort nicht konfiguriert"
+        if not creds.get("smtp_password") and not creds.get("oauth_smtp_bearer"):
+            return False, "SMTP-Passwort oder OAuth-Token nicht konfiguriert"
         
         if not creds.get("from_email"):
             return False, "Absender-Adresse nicht konfiguriert"
@@ -331,9 +347,22 @@ class SMTPSender:
                 smtp.ehlo()
         
         # Authentifizierung
-        smtp.login(creds["smtp_username"], creds["smtp_password"])
+        if creds.get("oauth_smtp_bearer"):
+            self._smtp_oauth2_login(
+                smtp, creds["smtp_username"], creds["oauth_smtp_bearer"]
+            )
+        else:
+            smtp.login(creds["smtp_username"], creds["smtp_password"])
         
         return smtp
+
+    @staticmethod
+    def _smtp_oauth2_login(smtp: smtplib.SMTP, username: str, bearer: str) -> None:
+        auth_string = f"user={username}\x01auth=Bearer {bearer}\x01\x01"
+        auth_b64 = base64.b64encode(auth_string.encode("utf-8")).decode("ascii")
+        code, resp = smtp.docmd("AUTH", "XOAUTH2 " + auth_b64)
+        if code != 235:
+            raise smtplib.SMTPAuthenticationError(code, resp)
     
     def _generate_message_id(self) -> str:
         """

@@ -2858,7 +2858,10 @@ def api_imap_diagnostics(account_id):
         if not account:
             return jsonify({"success": False, "error": "Account nicht gefunden"}), 404
         
-        if account.auth_type != "imap":
+        from src.helpers.mail_account_imap import account_uses_imap_protocol
+        from src.helpers.imap_fetcher_factory import build_imap_fetcher_for_account
+
+        if not account_uses_imap_protocol(account):
             return jsonify({"success": False, "error": "Nur IMAP-Accounts unterstützt"}), 400
         
         # Entschlüssele Credentials

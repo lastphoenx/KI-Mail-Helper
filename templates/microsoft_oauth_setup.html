@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Microsoft 365 OAuth - Mail Helper{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-4">
+    <div class="col-md-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">Microsoft 365 / Exchange Online (OAuth)</h4>
+            </div>
+            <div class="card-body p-4">
+                {% if step == 1 %}
+                <div class="alert alert-info">
+                    <strong>Schritt 1:</strong> Entra-App (Azure) mit Client-ID und Secret — wie bei Google OAuth im Mail Helper.
+                </div>
+                <p class="mb-3 text-muted small">
+                    Nach der Anmeldung bei Microsoft speichert der Mail Helper <strong>Access- und Refresh-Token</strong>
+                    verschlüsselt. IMAP (<code>outlook.office365.com:993</code>) und SMTP
+                    (<code>smtp.office365.com:587</code>) nutzen dann <strong>XOAUTH2</strong> — kein Passwort im Konto.
+                </p>
+                <p class="mb-4">
+                    <a href="#" data-bs-toggle="collapse" data-bs-target="#msHelp">Anleitung: Entra-App registrieren</a>
+                </p>
+                <div class="collapse mb-4" id="msHelp">
+                    <div class="alert alert-light border small">
+                        <ol class="mb-0">
+                            <li><a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener">Microsoft Entra → App-Registrierungen</a> → Neue Registrierung</li>
+                            <li>Kontotyp: «Konten in einem beliebigen Organisationsverzeichnis und persönliche Microsoft-Konten» (für Uni + privat)</li>
+                            <li>Redirect-URI (Web): <code>{{ url_for('accounts.microsoft_oauth_callback', _external=True) }}</code></li>
+                            <li>API-Berechtigungen (delegiert): <code>IMAP.AccessAsUser.All</code>, <code>SMTP.Send</code>, <code>User.Read</code>, <code>offline_access</code> (Office 365 Exchange Online + Microsoft Graph)</li>
+                            <li>Geheheimnis erstellen → Client-ID und Secret kopieren</li>
+                            <li>Bei Uni-Tenants oft <strong>Administratorzustimmung</strong> nötig — IT oder Self-Service im Entra-Portal</li>
+                        </ol>
+                        <p class="mt-2 mb-0">Ausführlich: <code>docs/MICROSOFT_365_OAUTH.md</code> im Repo.</p>
+                    </div>
+                </div>
+
+                {% if error %}
+                <div class="alert alert-danger">{{ error }}</div>
+                {% endif %}
+
+                {% set posted = posted|default(none) %}
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <div class="mb-3">
+                        <label for="client_id" class="form-label"><strong>Application (client) ID</strong></label>
+                        <input type="text" class="form-control" id="client_id" name="client_id"
+                            value="{{ posted.client_id if posted else '' }}" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="client_secret" class="form-label"><strong>Client secret</strong></label>
+                        <input type="password" class="form-control" id="client_secret" name="client_secret" required>
+                    </div>
+                    {% if not stepup_fresh|default(false) %}
+                    <div class="mb-3">
+                        <label for="totp_code" class="form-label">Aktueller 2FA-Code</label>
+                        <input type="text" class="form-control" id="totp_code" name="totp_code" inputmode="numeric" autocomplete="one-time-code" required>
+                    </div>
+                    {% endif %}
+                    <button type="submit" class="btn btn-primary w-100 btn-lg">Weiter zu Microsoft-Anmeldung →</button>
+                </form>
+                {% else %}
+                <div class="text-center py-5">
+                    <p class="lead">Microsoft-Anmeldung starten</p>
+                    <a href="{{ microsoft_auth_url }}" class="btn btn-primary btn-lg">Mit Microsoft anmelden</a>
+                </div>
+                {% endif %}
+                <hr>
+                <a href="/settings/mail-account/select-type" class="btn btn-outline-secondary w-100">← Zurück</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

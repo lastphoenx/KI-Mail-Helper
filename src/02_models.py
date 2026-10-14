@@ -885,6 +885,18 @@ class MailAccount(Base):
         elif self.auth_type == AuthType.OAUTH.value:
             if not all([self.oauth_provider, self.encrypted_oauth_token]):
                 return False, "OAuth requires: provider, token"
+            if self.oauth_provider == "microsoft":
+                if not all(
+                    [
+                        self.encrypted_imap_server,
+                        self.encrypted_imap_username,
+                        self.encrypted_oauth_refresh_token,
+                    ]
+                ):
+                    return (
+                        False,
+                        "Microsoft OAuth requires: IMAP server, mailbox address, refresh token",
+                    )
 
         return True, ""
 

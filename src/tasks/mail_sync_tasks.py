@@ -129,24 +129,9 @@ def _fetch_raw_emails(
         # Google OAuth: Nur INBOX (Gmail nutzt Labels, nicht Folders)
         return fetcher.fetch_new_emails(limit=limit)
 
-    if not account.encrypted_imap_password:
-        raise ValueError("Kein IMAP-Passwort gespeichert")
+    from src.helpers.imap_fetcher_factory import build_imap_fetcher_for_account
 
-    imap_server = encryption.CredentialManager.decrypt_server(
-        account.encrypted_imap_server, master_key
-    )
-    imap_username = encryption.CredentialManager.decrypt_email_address(
-        account.encrypted_imap_username, master_key
-    )
-    imap_password = encryption.CredentialManager.decrypt_imap_password(
-        account.encrypted_imap_password, master_key
-    )
-    fetcher = mail_fetcher_mod.MailFetcher(
-        server=imap_server,
-        username=imap_username,
-        password=imap_password,
-        port=account.imap_port,
-    )
+    fetcher = build_imap_fetcher_for_account(account, master_key, db_session=session)
     fetcher.connect()
     
     try:

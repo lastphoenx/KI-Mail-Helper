@@ -304,9 +304,9 @@ def create_app(config_name="production"):
         edit_mail_account,
         delete_mail_account,
         google_oauth_setup,
+        microsoft_oauth_setup,
         purge_mail_account,
     )
-    limiter.limit("5 per minute")(login)
     limiter.limit("3 per minute")(register)
     limiter.limit("5 per minute")(verify_2fa)
     for stepup_post in (
@@ -315,6 +315,7 @@ def create_app(config_name="production"):
         edit_mail_account,
         delete_mail_account,
         google_oauth_setup,
+        microsoft_oauth_setup,
         purge_mail_account,
     ):
         limiter.limit("5 per minute", methods=["POST"])(stepup_post)

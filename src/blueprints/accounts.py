@@ -57,6 +57,7 @@ _models = None
 _encryption = None
 _auth = None
 _google_oauth = None
+_microsoft_oauth = None
 _password_validator = None
 _mail_fetcher_mod = None
 _job_queue = None
@@ -93,6 +94,13 @@ def _get_google_oauth():
     if _google_oauth is None:
         _google_oauth = importlib.import_module(".10_google_oauth", "src")
     return _google_oauth
+
+
+def _get_microsoft_oauth():
+    global _microsoft_oauth
+    if _microsoft_oauth is None:
+        _microsoft_oauth = importlib.import_module(".11_microsoft_oauth", "src")
+    return _microsoft_oauth
 
 
 def _get_password_validator():
@@ -952,6 +960,186 @@ def google_oauth_callback():
     except Exception as e:
         logger.error(f"google_oauth_callback: Unerwarteter Fehler: {type(e).__name__}: {e}")
         flash("❌ Unerwarteter Fehler beim OAuth-Callback", "danger")
+        return redirect(url_for("accounts.settings"))
+
+
+# =============================================================================
+# Microsoft 365 / Exchange Online OAuth (IMAP + SMTP XOAUTH2)
+# =============================================================================
+@accounts_bp.route("/settings/mail-account/microsoft-setup", methods=["GET", "POST"])
+@login_required
+def microsoft_oauth_setup():
+    """Entra-App (Client-ID/Secret) und Start des Microsoft-OAuth-Flows."""
+    auth = _get_auth()
+    microsoft_oauth = _get_microsoft_oauth()
+
+    with get_db_session() as db:
+        user = get_current_user_model(db)
+        if not user:
+            return redirect(url_for("auth.login"))
+
+        if request.method == "POST":
+            app_id = request.form.get("client_id", "").strip()
+            ms_app_key = request.form.get("client_secret", "").strip()
+
+            if not app_id or not ms_app_key:
+                return render_template(
+                    "microsoft_oauth_setup.html",
+                    step=1,
+                    error="Client-ID und Client-Secret sind erforderlich",
+                    posted={"client_id": app_id},
+                    stepup_fresh=stepup_is_fresh(),
+                ), 400
+
+            reason = require_stepup(user, db)
+            if reason:
+                return render_template(
+                    "microsoft_oauth_setup.html",
+                    step=1,
+                    error=stepup_error_text(
+                        reason,
+                        True,
+                        "Client-Secret bitte erneut eingeben.",
+                    ),
+                    posted={"client_id": app_id},
+                    stepup_fresh=False,
+                ), 401
+
+            session["microsoft_oauth_client_id"] = app_id
+            session["microsoft_oauth_client_secret"] = ms_app_key
+            session["microsoft_oauth_state"] = auth.AuthManager.generate_totp_secret()[:16]
+
+            redirect_uri = url_for(
+                "accounts.microsoft_oauth_callback",
+                _external=True,
+                _scheme=external_request_scheme(),
+            )
+            auth_url = microsoft_oauth.MicrosoftOAuthManager.get_auth_url(
+                client_id=app_id,
+                redirect_uri=redirect_uri,
+                state=session["microsoft_oauth_state"],
+            )
+            return render_template(
+                "microsoft_oauth_setup.html", step=2, microsoft_auth_url=auth_url
+            )
+
+        return render_template(
+            "microsoft_oauth_setup.html", step=1, stepup_fresh=stepup_is_fresh()
+        )
+
+
+@accounts_bp.route("/settings/mail-account/microsoft/callback", methods=["GET"])
+@login_required
+def microsoft_oauth_callback():
+    from sqlalchemy.exc import IntegrityError
+    from src.helpers.oauth_app_credentials import store_oauth_app_credentials
+
+    models = _get_models()
+    encryption = _get_encryption()
+    microsoft_oauth = _get_microsoft_oauth()
+
+    try:
+        with get_db_session() as db:
+            user = get_current_user_model(db)
+            if not user:
+                return redirect(url_for("auth.login"))
+
+            code = request.args.get("code")
+            state = request.args.get("state")
+            error = request.args.get("error")
+
+            if error:
+                flash(f"Microsoft OAuth Fehler: {error}", "danger")
+                return redirect(url_for("accounts.settings"))
+
+            if not code or not state:
+                flash("Ungültige OAuth-Antwort", "danger")
+                return redirect(url_for("accounts.settings"))
+
+            if state != session.get("microsoft_oauth_state"):
+                flash("OAuth State mismatch - möglicher CSRF-Angriff", "danger")
+                return redirect(url_for("accounts.settings"))
+
+            app_id = session.get("microsoft_oauth_client_id")
+            ms_app_key = session.get("microsoft_oauth_client_secret")
+            if not app_id or not ms_app_key:
+                flash("Session-Daten fehlen. Bitte erneut versuchen.", "danger")
+                return redirect(url_for("accounts.microsoft_oauth_setup"))
+
+            redirect_uri = url_for(
+                "accounts.microsoft_oauth_callback",
+                _external=True,
+                _scheme=external_request_scheme(),
+            )
+
+            tokens = microsoft_oauth.MicrosoftOAuthManager.exchange_code_for_token(
+                auth_code=code,
+                app_id=app_id,
+                ms_app_key=ms_app_key,
+                redirect_uri=redirect_uri,
+            )
+            if not tokens or not tokens.get("access_token"):
+                flash("Kein Access-Token von Microsoft erhalten", "danger")
+                return redirect(url_for("accounts.settings"))
+
+            bearer = tokens["access_token"]
+            refresh_value = tokens.get("refresh_token") or ""
+            expires_in = int(tokens.get("expires_in", 3600))
+
+            email = microsoft_oauth.MicrosoftOAuthManager.get_user_email(bearer)
+            if not email:
+                flash("Microsoft-Konto: E-Mail konnte nicht ermittelt werden", "danger")
+                return redirect(url_for("accounts.settings"))
+
+            master_key = session.get("master_key")
+            if not master_key:
+                flash("Session abgelaufen", "danger")
+                return redirect(url_for("auth.login"))
+
+            account = models.MailAccount(
+                user_id=user.id,
+                name=email,
+                auth_type="oauth",
+                oauth_provider="microsoft",
+                encrypted_imap_server=encryption.CredentialManager.encrypt_server(
+                    microsoft_oauth.OUTLOOK_IMAP_HOST, master_key
+                ),
+                imap_port=microsoft_oauth.OUTLOOK_IMAP_PORT,
+                encrypted_smtp_server=encryption.CredentialManager.encrypt_server(
+                    microsoft_oauth.OUTLOOK_SMTP_HOST, master_key
+                ),
+                smtp_port=microsoft_oauth.OUTLOOK_SMTP_PORT,
+                smtp_encryption="STARTTLS",
+                encrypted_imap_username=encryption.CredentialManager.encrypt_email_address(
+                    email, master_key
+                ),
+                oauth_expires_at=datetime.now(UTC)
+                + __import__("datetime").timedelta(seconds=expires_in),
+            )
+            enc_bearer = encryption.CredentialManager.encrypt_imap_password(bearer, master_key)
+            enc_refresh = encryption.CredentialManager.encrypt_imap_password(
+                refresh_value, master_key
+            )
+            setattr(account, "encrypted_oauth_token", enc_bearer)
+            setattr(account, "encrypted_oauth_refresh_token", enc_refresh)
+            store_oauth_app_credentials(account, app_id, ms_app_key, master_key)
+            db.add(account)
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                flash(f"E-Mail '{email}' ist bereits mit einem Account verbunden", "danger")
+                return redirect(url_for("accounts.settings"))
+
+            session.pop("microsoft_oauth_client_id", None)
+            session.pop("microsoft_oauth_client_secret", None)
+            session.pop("microsoft_oauth_state", None)
+
+            flash(f"Microsoft 365-Konto '{email}' verbunden (IMAP/SMTP OAuth).", "success")
+            return redirect(url_for("accounts.settings"))
+    except Exception as e:
+        logger.error("microsoft_oauth_callback: %s", type(e).__name__)
+        flash("Fehler beim Microsoft-OAuth-Callback", "danger")
         return redirect(url_for("accounts.settings"))
 
 
@@ -2003,7 +2191,10 @@ def get_account_mail_count(account_id):
             if not account:
                 return jsonify({"error": "Account nicht gefunden"}), 404
             
-            if account.auth_type != "imap":
+            from src.helpers.mail_account_imap import account_uses_imap_protocol
+            from src.helpers.imap_fetcher_factory import build_imap_fetcher_for_account
+
+            if not account_uses_imap_protocol(account):
                 return jsonify({"error": "IMAP-Account erforderlich"}), 400
             
             master_key = session.get("master_key")
@@ -2011,25 +2202,10 @@ def get_account_mail_count(account_id):
                 return jsonify({"error": "Master-Key erforderlich"}), 401
             
             try:
-                imap_server = encryption.CredentialManager.decrypt_server(
-                    account.encrypted_imap_server, master_key
-                )
-                imap_username = encryption.CredentialManager.decrypt_email_address(
-                    account.encrypted_imap_username, master_key
-                )
-                imap_password = encryption.CredentialManager.decrypt_imap_password(
-                    account.encrypted_imap_password, master_key
-                )
+                fetcher = build_imap_fetcher_for_account(account, master_key)
             except Exception as e:
-                logger.error(f"get_account_mail_count: Entschlüsselungsfehler: {type(e).__name__}")
+                logger.error(f"get_account_mail_count: Fetcher: {type(e).__name__}")
                 return jsonify({"error": "Entschlüsselung fehlgeschlagen"}), 500
-            
-            fetcher = mail_fetcher.MailFetcher(
-                server=imap_server,
-                username=imap_username,
-                password=imap_password,
-                port=account.imap_port
-            )
             
             try:
                 fetcher.connect()
@@ -2140,7 +2316,10 @@ def get_account_folders(account_id):
             if not account:
                 return jsonify({"error": "Account nicht gefunden"}), 404
             
-            if account.auth_type != "imap":
+            from src.helpers.mail_account_imap import account_uses_imap_protocol
+            from src.helpers.imap_fetcher_factory import build_imap_fetcher_for_account
+
+            if not account_uses_imap_protocol(account):
                 return jsonify({"error": "IMAP-Account erforderlich"}), 400
             
             master_key = session.get("master_key")
@@ -2148,25 +2327,10 @@ def get_account_folders(account_id):
                 return jsonify({"error": "Master-Key erforderlich"}), 401
             
             try:
-                imap_server = encryption.CredentialManager.decrypt_server(
-                    account.encrypted_imap_server, master_key
-                )
-                imap_username = encryption.CredentialManager.decrypt_email_address(
-                    account.encrypted_imap_username, master_key
-                )
-                imap_password = encryption.CredentialManager.decrypt_imap_password(
-                    account.encrypted_imap_password, master_key
-                )
+                fetcher = build_imap_fetcher_for_account(account, master_key)
             except Exception as e:
-                logger.error(f"get_account_folders: Entschlüsselungsfehler: {type(e).__name__}")
+                logger.error(f"get_account_folders: Fetcher: {type(e).__name__}")
                 return jsonify({"error": "Entschlüsselung fehlgeschlagen"}), 500
-            
-            fetcher = mail_fetcher.MailFetcher(
-                server=imap_server,
-                username=imap_username,
-                password=imap_password,
-                port=account.imap_port
-            )
             
             try:
                 fetcher.connect()

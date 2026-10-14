@@ -260,12 +260,29 @@ class MailFetcher:
             raise ValueError("Username must be a non-empty string")
         if not password or not isinstance(password, str):
             raise ValueError("Password must be a non-empty string")
+        self.oauth_bearer = None
 
         self.server = server.strip()
         self.username = username
         self.password = password
         self.port = port
         self.connection: Optional[IMAPClient] = None
+
+    @classmethod
+    def for_oauth2(cls, server: str, username: str, bearer: str, port: int = 993):
+        """IMAP mit SASL XOAUTH2 (Microsoft 365 / Google IMAP)."""
+        if not bearer:
+            raise ValueError("OAuth bearer required")
+        if not server or not isinstance(server, str) or not server.strip():
+            raise ValueError("Server must be a non-empty string")
+        inst = cls.__new__(cls)
+        inst.server = server.strip()
+        inst.username = username
+        inst.password = ""
+        inst.port = port
+        inst.oauth_bearer = bearer
+        inst.connection = None
+        return inst
 
     def connect(self, retry_count: int = 1, timeout: float = 15.0):
         """Stellt Verbindung zum IMAP-Server her (IMAPClient)
@@ -293,8 +310,11 @@ class MailFetcher:
                 )
                 print(f"✅ TCP-Verbindung zu {self.server}:{self.port} erfolgreich")
                 
-                # Phase 2: IMAP Login
-                self.connection.login(self.username, self.password)
+                # Phase 2: IMAP Login (Passwort oder OAuth2)
+                if self.oauth_bearer:
+                    self.connection.oauth2_login(self.username, self.oauth_bearer)
+                else:
+                    self.connection.login(self.username, self.password)
                 print(f"✅ Login erfolgreich für {self.username}")
                 return  # Erfolg - fertig!
                 
@@ -1740,7 +1760,24 @@ def get_mail_fetcher_for_account(mail_account, master_key: str | None = None):
         if mail_account.oauth_provider == "google":
             return google_oauth.GoogleMailFetcher(access_token=decrypted_token)
         elif mail_account.oauth_provider == "microsoft":
-            raise NotImplementedError("Microsoft OAuth not yet implemented")
+            microsoft_oauth = importlib.import_module(".11_microsoft_oauth", "src")
+            bearer = microsoft_oauth.MicrosoftOAuthTokenManager.ensure_fresh_bearer(
+                mail_account, master_key
+            )
+            if not bearer:
+                raise ValueError("Microsoft OAuth: kein gültiges Bearer-Token")
+            imap_server = encryption.CredentialManager.decrypt_server(
+                mail_account.encrypted_imap_server, master_key
+            )
+            imap_username = encryption.CredentialManager.decrypt_email_address(
+                mail_account.encrypted_imap_username, master_key
+            )
+            return MailFetcher.for_oauth2(
+                server=imap_server,
+                username=imap_username,
+                bearer=bearer,
+                port=mail_account.imap_port or 993,
+            )
         else:
             raise ValueError(f"Unknown OAuth provider: {mail_account.oauth_provider}")
 

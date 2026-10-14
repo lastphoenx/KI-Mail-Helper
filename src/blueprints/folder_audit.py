@@ -19,6 +19,7 @@ from flask_login import login_required, current_user
 import importlib
 
 from src.helpers import get_db_session, get_current_user_model
+from src.helpers.mail_account_imap import sqlalchemy_imap_account_filter
 from src.services.folder_audit_service import FolderAuditService, TrashCategory, AuditConfigCache
 
 logger = logging.getLogger(__name__)
@@ -247,12 +248,12 @@ def folder_audit_page():
         
         models = _get_models()
         
-        # IMAP-Accounts laden
+        # IMAP-Accounts (inkl. Microsoft 365 OAuth)
         accounts = (
             db.query(models.MailAccount)
             .filter(
                 models.MailAccount.user_id == user.id,
-                models.MailAccount.auth_type == "imap",
+                sqlalchemy_imap_account_filter(models.MailAccount),
             )
             .all()
         )
@@ -614,7 +615,7 @@ def scan_trash():
             .filter(
                 models.MailAccount.id == account_id,
                 models.MailAccount.user_id == user.id,
-                models.MailAccount.auth_type == "imap",
+                sqlalchemy_imap_account_filter(models.MailAccount),
             )
             .first()
         )
@@ -987,7 +988,7 @@ def folder_audit_identity_check():
             .filter(
                 models.MailAccount.id == account_id,
                 models.MailAccount.user_id == user.id,
-                models.MailAccount.auth_type == "imap",
+                sqlalchemy_imap_account_filter(models.MailAccount),
             )
             .first()
         )
@@ -1100,7 +1101,7 @@ def preview_email():
             .filter(
                 models.MailAccount.id == account_id,
                 models.MailAccount.user_id == user.id,
-                models.MailAccount.auth_type == "imap",
+                sqlalchemy_imap_account_filter(models.MailAccount),
             )
             .first()
         )

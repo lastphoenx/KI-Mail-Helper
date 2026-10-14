@@ -131,6 +131,16 @@ Neue Codes erzeugst du in den Einstellungen. Dafür brauchst du das Passwort und
 | Benutzername | deine@gmail.com |
 | Passwort | 16-stelliges App-Passwort |
 
+#### Microsoft 365 OAuth (Exchange Online, z. B. Uni-Postfach)
+
+OAuth für **IMAP** (`outlook.office365.com`) und **SMTP** (`smtp.office365.com`) ohne Passwort — siehe **`docs/MICROSOFT_365_OAUTH.md`** (Entra-App, Redirect-URI, Token-Ablauf).
+
+1. **Einstellungen** → Mail-Account → **Microsoft 365 OAuth**
+2. Client-ID und Secret deiner Entra-App eingeben
+3. Bei Microsoft anmelden — Token werden automatisch gespeichert und erneuert
+
+> Shared Mailboxes und Campus-SMTP nur per VPN sind in dieser Version nicht abgedeckt.
+
 #### Google OAuth (empfohlen für Gmail)
 
 OAuth ist sicherer als App-Passwörter und ermöglicht automatische Token-Erneuerung:
