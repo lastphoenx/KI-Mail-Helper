@@ -180,7 +180,7 @@ vine==5.1.0
 wasabi==1.1.3
 wcwidth==0.8.4
 weasel==1.0.0
-Werkzeug==3.1.8
+Werkzeug==3.1.9
 wrapt==2.4.1
 WTForms==3.2.2
 yarl==1.25.1
