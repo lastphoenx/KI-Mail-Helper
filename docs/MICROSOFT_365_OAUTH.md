@@ -25,7 +25,7 @@ Du tippst **kein** Token manuell ein. Der Mail Helper holt es per **OAuth 2.0 Au
 | Geheimnis | Client secret erstellen und **einmal** im Mail Helper eingeben |
 | Delegierte Rechte | **Office 365 Exchange Online:** `IMAP.AccessAsUser.All`, `SMTP.Send` — **Microsoft Graph:** `User.Read`, `offline_access` |
 
-Uni-Tenant: ggf. **Administratorzustimmung** für die App — sonst schlägt der Login mit «consent»/Berechtigung fehl.
+Organisations-Tenant: ggf. **Administratorzustimmung** für die App — sonst schlägt der Login mit «consent»/Berechtigung fehl.
 
 ## Server-Einstellungen (automatisch)
 
@@ -49,7 +49,7 @@ Campus-SMTP per VPN (z. B. `smtp.university.example`, Port 25) ist **nicht** die
 | Kein Refresh Token | Beim ersten Consent `prompt=consent`; Secret/Redirect falsch |
 | `invalid_client` | Client-ID/Secret falsch oder Secret abgelaufen |
 | IMAP AUTH failed | Fehlende API-Berechtigung `IMAP.AccessAsUser.All` oder Basic Auth Policy (selten) |
-| Admin approval required | Uni-IT muss App im Tenant freigeben |
+| Admin approval required | IT muss App im Tenant freigeben |
 
 ## Technik (Entwickler)
 

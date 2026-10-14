@@ -131,7 +131,7 @@ Neue Codes erzeugst du in den Einstellungen. Dafür brauchst du das Passwort und
 | Benutzername | deine@gmail.com |
 | Passwort | 16-stelliges App-Passwort |
 
-#### Microsoft 365 OAuth (Exchange Online, z. B. Uni-Postfach)
+#### Microsoft 365 OAuth (Exchange Online / Outlook)
 
 OAuth für **IMAP** (`outlook.office365.com`) und **SMTP** (`smtp.office365.com`) ohne Passwort — siehe **`docs/MICROSOFT_365_OAUTH.md`** (Entra-App, Redirect-URI, Token-Ablauf).
 
