@@ -16,9 +16,9 @@ def _token() -> str:
 
 def test_add_domain_preserves_other_brands():
     other = _token()
-    dom_a = f"{_token()}.example"
-    dom_b = f"{_token()}.example"
-    dom_new = f"{_token()}.example"
+    dom_a = f"{_token()}.example.com"
+    dom_b = f"{_token()}.example.com"
+    dom_new = f"{_token()}.example.com"
     start = {other: [dom_a], "paypal": ["paypal.com"]}
     merged, added = add_domain_to_custom_brand_map(start, "paypal", dom_new)
     assert added is True
@@ -29,7 +29,7 @@ def test_add_domain_preserves_other_brands():
 
 def test_add_domain_idempotent_duplicate():
     brand = "twint"
-    dom = f"news.{_token()}.example"
+    dom = f"news.{_token()}.example.com"
     start = {brand: [dom]}
     merged, added = add_domain_to_custom_brand_map(start, brand, dom)
     assert added is False
@@ -47,7 +47,7 @@ def test_add_domain_rejects_short_brand():
 
 
 def test_add_domain_normalizes_brand_key():
-    dom = f"{_token()}.example"
+    dom = f"{_token()}.example.com"
     merged, _ = add_domain_to_custom_brand_map({}, "Swiss", dom)
     assert "swiss" in merged
     assert dom in merged["swiss"]
@@ -57,13 +57,13 @@ def test_prepare_save_surfaces_dbl_errors(monkeypatch):
     from src.services.brand_domain_health import prepare_save_brand_map
 
     def _fake_validate(cleaned, **kwargs):
-        return (["Spamhaus DBL: evil.example"], [])
+        return (["Spamhaus DBL: evil.example.com"], [])
 
     monkeypatch.setattr(
         "src.services.brand_domain_health.validate_official_domains_for_save",
         _fake_validate,
     )
-    proposed = {"paypal": ["evil.example"]}
+    proposed = {"paypal": ["evil.example.com"]}
     _, errors, _, _, _ = prepare_save_brand_map(
         proposed,
         [],

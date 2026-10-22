@@ -9,6 +9,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      SECRET_KEY: ci-test-secret-key-not-for-production-use
+      OLLAMA_BASE_URL: http://127.0.0.1:11434
+      OLLAMA_MODEL: test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
