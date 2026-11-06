@@ -117,7 +117,7 @@ propcache==0.5.4
 proto-plus==1.29.0
 protobuf==6.33.6
 psycopg2-binary==2.9.13
-pyasn1==0.6.4
+pyasn1==0.6.5
 pyasn1_modules==0.4.2
 pycodestyle==2.15.0
 pycparser==2.23
