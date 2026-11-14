@@ -79,7 +79,7 @@ numpy==2.4.1
 oauthlib==4.0.0
 ollama==0.6.3
 openai==1.109.1
-opentelemetry-api==1.45.1
+opentelemetry-api==1.45.2
 opentelemetry-exporter-otlp-proto-common==1.45.1
 opentelemetry-exporter-otlp-proto-http==1.45.1
 opentelemetry-proto==1.45.1
